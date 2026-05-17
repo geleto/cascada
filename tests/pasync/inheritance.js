@@ -297,6 +297,24 @@ describe('Inheritance rebuild', function () {
       expect(result).to.be('Hi');
     });
 
+    it('keeps standalone template block signatures on render-context values rather than placement locals', async function () {
+      const result = await env.renderTemplateString(
+        '{% set user = "Local" %}{% block implicit %}{{ user or "missing" }}{% endblock %}|{% block explicit(user) %}{{ user }}{% endblock %}',
+        { user: 'Context' }
+      );
+
+      expect(result).to.be('Context|Context');
+    });
+
+    it('passes multiple standalone template block render-context arguments by signature order', async function () {
+      const result = await env.renderTemplateString(
+        '{% block name(first, second) %}{{ second }}, {{ first }}{% endblock %}',
+        { first: 'Ada', second: 'Lovelace' }
+      );
+
+      expect(result).to.be('Lovelace, Ada');
+    });
+
     it('renders inherited templates through the selected constructor chain', async function () {
       const localEnv = createEnvironment({
         'base.njk': 'Base:{% block body(user = "guest") %}{{ user }}{% endblock %}',
@@ -325,6 +343,48 @@ describe('Inheritance rebuild', function () {
       expect(await localEnv.renderTemplate('child.njk', { user: 'Ada' })).to.be('Base[Ada]');
     });
 
+    it('passes explicit template super arguments to the parent block', async function () {
+      const localEnv = createEnvironment({
+        'base.njk': 'Base[{% block body(user) %}{{ user }}{% endblock %}]',
+        'child.njk': '{% extends "base.njk" %}{% block body(user) %}{{ user }}>{{ super("Grace") }}{% endblock %}'
+      });
+
+      expect(await localEnv.renderTemplate('child.njk', { user: 'Ada' })).to.be('Base[Ada>Grace]');
+    });
+
+    it('rejects template super calls with too many arguments through public render', async function () {
+      const localEnv = createEnvironment({
+        'base.njk': 'Base[{% block body(user) %}{{ user }}{% endblock %}]',
+        'child.njk': '{% extends "base.njk" %}{% block body(user) %}{{ super("Ada", "Lovelace") }}{% endblock %}'
+      });
+
+      try {
+        await localEnv.renderTemplate('child.njk', {});
+        expect().fail('Expected template super arity rejection');
+      } catch (error) {
+        expect(String(error)).to.contain('super(...) for block "body" received too many arguments');
+      }
+    });
+
+    it('rejects template super calls without a parent implementation through public render', async function () {
+      try {
+        await env.renderTemplateString('{% block body %}{{ super() }}{% endblock %}');
+        expect().fail('Expected missing template super parent rejection');
+      } catch (error) {
+        expect(String(error)).to.contain('super() in \'body\' has no parent implementation');
+      }
+    });
+
+    it('exports macros from a template that also extends', async function () {
+      const localEnv = createEnvironment({
+        'base.njk': 'Base[{% block body %}base{% endblock %}]',
+        'child.njk': '{% extends "base.njk" %}{% macro show(name) %}{{ name }}{% endmacro %}{% block body %}child{% endblock %}',
+        'main.njk': '{% import "child.njk" as child %}{{ child.show("Ada") }}'
+      });
+
+      expect(await localEnv.renderTemplate('main.njk', {})).to.be('Ada');
+    });
+
     it('writes and reads inferred template shared vars in constructor bodies', async function () {
       const result = await env.renderTemplateString('{% set this.theme = "dark" %}{{ this.theme }}');
 
@@ -349,6 +409,29 @@ describe('Inheritance rebuild', function () {
       expect(await localEnv.renderScript('child.script', {})).to.be('base:child');
     });
 
+    it('runs every explicit constructor super call through public render', async function () {
+      const localEnv = createEnvironment({
+        'base.script': 'shared text trace\nextends none\nthis.trace("base|")',
+        'child.script': 'shared text trace\nextends "base.script"\nsuper()\nsuper()\nreturn this.trace.snapshot()'
+      });
+
+      expect(await localEnv.renderScript('child.script', {})).to.be('base|base|');
+    });
+
+    it('rejects constructor super arguments through public render', async function () {
+      const localEnv = createEnvironment({
+        'base.script': 'extends none\nreturn "base"',
+        'child.script': 'extends "base.script"\nsuper("unused")\nreturn "child"'
+      });
+
+      try {
+        await localEnv.renderScript('child.script', {});
+        expect().fail('Expected constructor super arity rejection');
+      } catch (error) {
+        expect(String(error)).to.contain('super(...) for method "__constructor__" received too many arguments');
+      }
+    });
+
     it('resolves script super through each inherited method implementation', async function () {
       const localEnv = createEnvironment({
         'base.script': 'method build(name)\n  return "base(" + name + ")"\nendmethod',
@@ -366,6 +449,130 @@ describe('Inheritance rebuild', function () {
       });
 
       expect(await localEnv.renderScript('child.script', {})).to.be('before|method|Ada|after|done:Ada');
+    });
+
+    it('returns null from an inherited script method without an explicit return', async function () {
+      const localEnv = createEnvironment({
+        'base.script': [
+          'shared text trace',
+          'method mark()',
+          '  this.trace("marked|")',
+          'endmethod'
+        ].join('\n'),
+        'child.script': [
+          'shared text trace',
+          'extends "base.script"',
+          'var result = this.mark()',
+          'this.trace("after:" + result + "|")',
+          'return this.trace.snapshot()'
+        ].join('\n')
+      });
+
+      expect(await localEnv.renderScript('child.script', {})).to.be('marked|after:null|');
+    });
+
+    it('orders transitive inherited method shared-channel dependencies', async function () {
+      const localEnv = createEnvironment({
+        'base.script': [
+          'shared text trace',
+          'method touch()',
+          '  this.trace("touch|")',
+          'endmethod'
+        ].join('\n'),
+        'middle.script': [
+          'shared text trace',
+          'extends "base.script"',
+          'method outer()',
+          '  this.touch()',
+          'endmethod'
+        ].join('\n'),
+        'child.script': [
+          'shared text trace',
+          'extends "middle.script"',
+          'this.outer()',
+          'this.trace("after|")',
+          'return this.trace.snapshot()'
+        ].join('\n')
+      });
+
+      expect(await localEnv.renderScript('child.script', {})).to.be('touch|after|');
+    });
+
+    it('shares typed text channels across constructors and methods', async function () {
+      const localEnv = createEnvironment({
+        'base.script': 'shared text log\nthis.log("base|")',
+        'child.script': 'shared text log\nextends "base.script"\nsuper()\nthis.log("child|")\nreturn this.log.snapshot()'
+      });
+
+      expect(await localEnv.renderScript('child.script', {})).to.be('base|child|');
+    });
+
+    it('shares typed data channels across inherited method calls', async function () {
+      const localEnv = createEnvironment({
+        'base.script': [
+          'shared data state',
+          'method addBase()',
+          '  this.state.items.push("base")',
+          'endmethod'
+        ].join('\n'),
+        'child.script': [
+          'shared data state',
+          'extends "base.script"',
+          'this.state.items.push("child")',
+          'this.addBase()',
+          'return this.state.snapshot()'
+        ].join('\n')
+      });
+
+      expect(await localEnv.renderScript('child.script', {})).to.eql({ items: ['child', 'base'] });
+    });
+
+    it('keeps constructor value-consumption failures on the shared channel error path', async function () {
+      const localEnv = createEnvironment({
+        'child.script': [
+          'extends none',
+          'shared var status',
+          'this.status = fail()',
+          'return [this.status is error, this.status#.message]'
+        ].join('\n')
+      });
+
+      const result = await localEnv.renderScript('child.script', {
+        fail() {
+          return Promise.reject(new Error('constructor value failed'));
+        }
+      });
+
+      expect(result[0]).to.be(true);
+      expect(result[1]).to.contain('constructor value failed');
+    });
+
+    it('keeps inherited method value-consumption failures on the shared channel error path', async function () {
+      const localEnv = createEnvironment({
+        'base.script': [
+          'shared var status',
+          'method breakStatus()',
+          '  this.status = fail()',
+          '  return "done"',
+          'endmethod'
+        ].join('\n'),
+        'child.script': [
+          'shared var status',
+          'extends "base.script"',
+          'var result = this.breakStatus()',
+          'return [result, this.status is error, this.status#.message]'
+        ].join('\n')
+      });
+
+      const result = await localEnv.renderScript('child.script', {
+        fail() {
+          return Promise.reject(new Error('method value failed'));
+        }
+      });
+
+      expect(result[0]).to.be('done');
+      expect(result[1]).to.be(true);
+      expect(result[2]).to.contain('method value failed');
     });
 
     it('normalizes lazy script constructor results at the public render boundary', async function () {
@@ -477,6 +684,42 @@ describe('Inheritance rebuild', function () {
         expect().fail('Expected promised null template parent to fail');
       } catch (error) {
         expect(String(error)).to.contain('template extends must select a parent template');
+        expect(String(error)).to.contain('child.njk');
+      }
+    });
+
+    it('propagates dynamic template parent load failures through public render', async function () {
+      const localEnv = createEnvironment({
+        'child.njk': '{% extends parentTemplate %}{% block body %}child{% endblock %}'
+      });
+
+      try {
+        await localEnv.renderTemplate('child.njk', { parentTemplate: 'missing-parent.njk' });
+        expect().fail('Expected missing dynamic template parent to fail');
+      } catch (error) {
+        expect(String(error)).to.contain('missing-parent.njk');
+        expect(String(error)).to.contain('child.njk');
+      }
+    });
+
+    it('preserves loader errors while resolving a selected template parent', async function () {
+      class ThrowingParentLoader extends StringLoader {
+        getSource(name) {
+          if (name === 'throwing-parent.njk') {
+            throw new Error('loader exploded for selected parent');
+          }
+          return super.getSource(name);
+        }
+      }
+      const loader = new ThrowingParentLoader();
+      const localEnv = new AsyncEnvironment(loader);
+      loader.addTemplate('child.njk', '{% extends parentTemplate %}{% block body %}child{% endblock %}');
+
+      try {
+        await localEnv.renderTemplate('child.njk', { parentTemplate: 'throwing-parent.njk' });
+        expect().fail('Expected selected parent loader error');
+      } catch (error) {
+        expect(String(error)).to.contain('loader exploded for selected parent');
         expect(String(error)).to.contain('child.njk');
       }
     });
@@ -1477,6 +1720,25 @@ describe('Inheritance rebuild', function () {
       expect(await localEnv.renderScript('main.script', {})).to.eql(['child', 'child']);
     });
 
+    it('keeps independent component instances from sharing shared state', async function () {
+      const loader = new StringLoader();
+      const localEnv = new AsyncEnvironment(loader);
+      loader.addTemplate('component.script', [
+        'shared var count = 0',
+        'method next()',
+        '  this.count = this.count + 1',
+        '  return this.count',
+        'endmethod'
+      ].join('\n'));
+      loader.addTemplate('main.script', [
+        'component "component.script" as left',
+        'component "component.script" as right',
+        'return [left.next(), left.next(), right.next(), left.count, right.count]'
+      ].join('\n'));
+
+      expect(await localEnv.renderScript('main.script', {})).to.eql([1, 2, 1, 2, 1]);
+    });
+
     it('lets component payload select a dynamic inheritance parent', async function () {
       const loader = new StringLoader();
       const localEnv = new AsyncEnvironment(loader);
@@ -1499,6 +1761,27 @@ describe('Inheritance rebuild', function () {
       ].join('\n'));
 
       expect(await localEnv.renderScript('main.script', {})).to.be('child>base:child');
+    });
+
+    it('propagates component payload-selected parent load failures', async function () {
+      const loader = new StringLoader();
+      const localEnv = new AsyncEnvironment(loader);
+      loader.addTemplate('child.script', [
+        'extends parentScript',
+        'return "child"'
+      ].join('\n'));
+      loader.addTemplate('main.script', [
+        'component "child.script" as card with { parentScript: "missing-parent.script" }',
+        'return card.anything'
+      ].join('\n'));
+
+      try {
+        await localEnv.renderScript('main.script', {});
+        expect().fail('Expected missing component parent to fail');
+      } catch (error) {
+        expect(String(error)).to.contain('missing-parent.script');
+        expect(String(error)).to.contain('child.script');
+      }
     });
 
     it('keeps component payload vars separate from inherited shared storage', async function () {
@@ -1550,6 +1833,41 @@ describe('Inheritance rebuild', function () {
       ].join('\n'));
 
       expect(await localEnv.renderScript('main.script', {})).to.eql(['dark', 'method', 'method']);
+    });
+
+    it('observes component shared text channels through explicit snapshots', async function () {
+      const loader = new StringLoader();
+      const localEnv = new AsyncEnvironment(loader);
+      loader.addTemplate('component.script', [
+        'shared text log',
+        'this.log("ready|")',
+        'method add(item)',
+        '  this.log(item)',
+        'endmethod'
+      ].join('\n'));
+      loader.addTemplate('main.script', [
+        'component "component.script" as card',
+        'card.add("done|")',
+        'return card.log.snapshot()'
+      ].join('\n'));
+
+      expect(await localEnv.renderScript('main.script', {})).to.be('ready|done|');
+    });
+
+    it('rejects bare component reads of non-var shared channels', async function () {
+      const loader = new StringLoader();
+      const localEnv = new AsyncEnvironment(loader);
+      loader.addTemplate('component.script', 'shared text log\nthis.log("ready")');
+      loader.addTemplate('main.script', 'component "component.script" as card\nreturn card.log');
+
+      try {
+        await localEnv.renderScript('main.script', {});
+        expect().fail('Expected bare component text-channel read to fail');
+      } catch (error) {
+        expect(String(error)).to.contain('Shared channel');
+        expect(String(error)).to.contain('this.log');
+        expect(String(error)).to.contain('snapshot()');
+      }
     });
 
     it('rejects private and unknown component shared observations clearly', async function () {
@@ -1651,6 +1969,33 @@ describe('Inheritance rebuild', function () {
         expect(error).to.be(failure);
       }
     });
+
+    it('rejects later component operations when constructor initialization fails', async function () {
+      const loader = new StringLoader();
+      const localEnv = new AsyncEnvironment(loader);
+      loader.addTemplate('component.script', [
+        'shared var theme',
+        'this.theme = fail()',
+        'method read()',
+        '  return this.theme',
+        'endmethod'
+      ].join('\n'));
+      loader.addTemplate('main.script', [
+        'component "component.script" as card with context',
+        'return card.read()'
+      ].join('\n'));
+
+      try {
+        await localEnv.renderScript('main.script', {
+          fail() {
+            return Promise.reject(new Error('constructor value failed'));
+          }
+        });
+        expect().fail('Expected component constructor failure');
+      } catch (error) {
+        expect(String(error)).to.contain('constructor value failed');
+      }
+    });
   });
 
   describe('include participant render', function () {
@@ -1693,6 +2038,31 @@ describe('Inheritance rebuild', function () {
       loader.addTemplate('main.njk', '{% include "child.njk" with { parentName: "base-b.njk" } %}');
 
       expect(await localEnv.renderTemplate('main.njk', {})).to.be('B(child)');
+    });
+
+    it('lets included participants combine explicit payload with caller context', async function () {
+      const loader = new StringLoader();
+      const localEnv = new AsyncEnvironment(loader);
+      loader.addTemplate('base.njk', '{% block body %}{{ label }}:{{ site }}{% endblock %}');
+      loader.addTemplate('child.njk', '{% extends parentName %}{% block body %}{{ super() }}{% endblock %}');
+      loader.addTemplate('main.njk', '{% include "child.njk" with context, { parentName: "base.njk", label: "card" } %}');
+
+      expect(await localEnv.renderTemplate('main.njk', { site: 'Example' })).to.be('card:Example');
+    });
+
+    it('propagates include payload-selected parent load failures', async function () {
+      const loader = new StringLoader();
+      const localEnv = new AsyncEnvironment(loader);
+      loader.addTemplate('child.njk', '{% extends parentName %}{% block body %}child{% endblock %}');
+      loader.addTemplate('main.njk', '{% include "child.njk" with { parentName: "missing-parent.njk" } %}');
+
+      try {
+        await localEnv.renderTemplate('main.njk', {});
+        expect().fail('Expected missing include-selected parent to fail');
+      } catch (error) {
+        expect(String(error)).to.contain('missing-parent.njk');
+        expect(String(error)).to.contain('child.njk');
+      }
     });
 
     it('propagates participant load failures through include rendering', async function () {
