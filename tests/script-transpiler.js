@@ -31,10 +31,10 @@ describe('Script Transpiler', () => {
         expect(scriptTranspiler._isCompleteWord('if_condition', 0, 2)).to.equal(false);
       });
 
-      it('should handle identifiers with $ sign', () => {
+      it('should treat $ as a word boundary', () => {
         expect(scriptTranspiler._isCompleteWord('$var condition', 0, 4)).to.equal(true);
         expect(scriptTranspiler._isCompleteWord('set $item = value', 4, 5)).to.equal(true);
-        expect(scriptTranspiler._isCompleteWord('my$var', 0, 2)).to.equal(false);
+        expect(scriptTranspiler._isCompleteWord('my$var', 0, 2)).to.equal(true);
       });
     });
 

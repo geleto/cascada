@@ -257,6 +257,10 @@ function isRootConstructorExcludedNode(node) {
   );
 }
 
+function isRootDeclarationNode(node) {
+  return node instanceof nodes.Macro;
+}
+
 function hasThisSurface(node) {
   return node.findAll(nodes.LookupVal).some((lookupNode) =>
     lookupNode.target instanceof nodes.Symbol &&
@@ -542,6 +546,9 @@ function extractAsyncInheritanceMetadata(ast, scriptMode) {
       return false;
     }
     if (child instanceof nodes.Extends) {
+      return false;
+    }
+    if (isRootDeclarationNode(child)) {
       return false;
     }
     if (extendsIndex !== -1 && isRootConstructorExcludedNode(child)) {

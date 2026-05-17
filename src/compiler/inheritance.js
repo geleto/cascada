@@ -186,7 +186,21 @@ class CompileInheritance {
     return node._analysis.inheritanceSharedDeclarations ?? [];
   }
 
+  _getParticipantRootDeclarations(node) {
+    return node.children.filter((child) => child instanceof nodes.Macro);
+  }
+
+  _compileParticipantRootDeclarations(node) {
+    // Macros are root declarations: the transformer keeps them out of
+    // __constructor__, but participant roots bypass normal child compilation.
+    // Runtime bindings such as imports/from-imports stay constructor work.
+    this._getParticipantRootDeclarations(node).forEach((child) => {
+      this.compiler.compileMacro(child);
+    });
+  }
+
   compileParticipantRootBody(node) {
+    this._compileParticipantRootDeclarations(node);
     const originJson = JSON.stringify(this.compiler._createErrorContext(node));
     this.emit.line('runtime.renderInheritanceParticipantRoot({');
     this.emit.line('    entryTemplateOrScript: this,');
@@ -412,6 +426,15 @@ class CompileInheritance {
     const compiler = this.compiler;
     if (!compiler.scriptMode) {
       this._recordCallableDefinition(node);
+    }
+    const parentCallableAnalysis = this._getNearestCallableAnalysis(node._analysis.parent);
+    if (parentCallableAnalysis) {
+      this._recordInheritedMethodDependency(
+        parentCallableAnalysis,
+        'callableInheritedMethodDependencies',
+        node.name.value,
+        node
+      );
     }
     const signature = this._getCallableSignature(node);
     const declares = [];

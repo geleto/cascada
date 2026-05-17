@@ -106,16 +106,16 @@ describe('Template documentation examples', function () {
     const loader = new StringLoader();
     loader.addTemplate('inheritance-base.njk', `
       {% block content(user) %}
-        Base {{ user }} / {{ siteName }} / {{ theme or "light" }}
+        Base {{ user }} / {{ siteName }} / {{ this.theme or "light" }}
       {% endblock %}
     `);
     loader.addTemplate('inheritance-child.njk', `
-      {% set theme = "dark" %}
-      {% extends "inheritance-base.njk" with theme %}
+      {% extends "inheritance-base.njk" %}
+      {% set this.theme = "dark" %}
 
       {% block content(user) %}
-        {% set user = "Grace" %}
-        Child {{ user }} / {{ siteName }} / {{ super() }}
+        {% set displayUser = "Grace" %}
+        Child {{ displayUser }} / {{ siteName }} / {{ super(user) }}
       {% endblock %}
     `);
     env = new AsyncEnvironment(loader);

@@ -206,13 +206,15 @@ class CompilerCommon extends Obj {
         }
         keywordNameNodes.push(pair.key);
         keywordDefaults.push({
-          name: this.analysis.getBaseChannelName(pair.key.value),
+          name: this.analysis ? this.analysis.getBaseChannelName(pair.key.value) : pair.key.value,
           valueNode: pair.value
         });
       });
     }
 
-    const positionalArgNames = signature.positionalNames.map((name) => this.analysis.getBaseChannelName(name));
+    const positionalArgNames = signature.positionalNames.map((name) => (
+      this.analysis ? this.analysis.getBaseChannelName(name) : name
+    ));
 
     return {
       ...signature,

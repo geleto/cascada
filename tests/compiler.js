@@ -1314,7 +1314,7 @@ const {Template, Environment} = typeof window !== 'undefined'
         );
         expect().fail('Expected sync block signature rejection');
       } catch (err) {
-        expect(String(err)).to.contain('block signatures and block with-clauses are only supported in async mode');
+        expect(String(err)).to.contain('block signatures are only supported in async mode');
       }
       finish(done);
     });
@@ -1344,7 +1344,7 @@ const {Template, Environment} = typeof window !== 'undefined'
         );
         expect().fail('Expected sync extends-with rejection');
       } catch (err) {
-        expect(String(err)).to.contain('extends with explicit composition inputs is not supported in sync mode');
+        expect(String(err)).to.contain('expected block end in extends statement');
       }
       finish(done);
     });

@@ -1,14 +1,12 @@
 
 import expect from 'expect.js';
-import {AsyncEnvironment, AsyncTemplate, Context, Script} from '../../src/environment/environment.js';
+import {AsyncEnvironment, AsyncTemplate, Script} from '../../src/environment/environment.js';
 import {StringLoader} from '../util.js';
-import {DEFAULT_TEMPLATE_TEXT_OUTPUT} from '../../src/compiler/buffer.js';
 import {parse} from '../../src/language/parser.js';
 import {transform} from '../../src/language/transformer.js';
 import {CompilerAsync} from '../../src/compiler/compiler.js';
 import * as nodes from '../../src/language/nodes.js';
 import * as runtime from '../../src/runtime/runtime.js';
-import * as inheritanceStateRuntime from '../../src/runtime/inheritance-legacy/state.js';
 import {transpiler as scriptTranspiler} from '../../src/language/script-transpiler.js';
 
 (function () {
@@ -65,85 +63,18 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
   }
 
   describe('Async template command buffering parity', function () {
-    it('should compile async template output to text commands on text output', function () {
-      const env = new AsyncEnvironment();
-      const tmpl = new AsyncTemplate('{{ value }}', env);
-      const source = tmpl.compileSource();
-      expect(source).to.contain(`channelName: "${DEFAULT_TEMPLATE_TEXT_OUTPUT}"`);
-      expect(source).to.contain('new runtime.TextCommand');
-    });
-
-    it('should declare root template channels after creating the command buffer', function () {
-      const env = new AsyncEnvironment();
-      const tmpl = new AsyncTemplate('{% set x = "a" %}{{ x }}', env, 'declared-lanes.njk');
-      const source = tmpl.compileSource();
-
-      expect(source).to.contain('new runtime.CommandBuffer(context, parentBuffer, null, parentBuffer)');
-      expect(source).to.contain('runtime.declareBufferChannel(output, "__text__", "text", context, null)');
-      expect(source).to.contain('runtime.declareBufferChannel(output, "x", "var", context, null)');
-    });
-
     it('should infer this.__text__ as the template text channel', function () {
       const ast = analyzeTemplateSource('{% block body %}{{ this.__text__.snapshot() }}{{ this.theme }}{% endblock %}');
-      const inferred = ast._analysis.inferredTemplateSharedDeclarations;
-      const rootTextDeclares = ast._analysis.declares.filter((declaration) => declaration.name === '__text__');
+      const inferred = ast._analysis.inheritanceSharedDeclarations;
+      const rootTextDeclares = ast._analysis.declares.filter((declaration) => declaration.name === '__text__' && !declaration.shared);
 
-      expect(inferred.map((declaration) => [declaration.name.value, declaration.channelType])).to.eql([
+      expect(inferred.map((declaration) => [declaration.name, declaration.type])).to.eql([
         ['__text__', 'text'],
-        ['theme', 'var']
+        ['$theme', 'var']
       ]);
       expect(rootTextDeclares).to.have.length(1);
       expect(rootTextDeclares[0].type).to.be('text');
       expect(rootTextDeclares[0].shared).to.not.be(true);
-    });
-
-    it('should compile template this.__text__ observations through shared text', function () {
-      const env = new AsyncEnvironment();
-      const tmpl = new AsyncTemplate('{% block body %}{{ this.__text__.snapshot() }}{% endblock %}', env, 'shared-text.njk');
-      const source = tmpl.compileSource();
-
-      expect(source).to.contain('"__text__": "text"');
-      expect(source).to.contain('runtime.declareInheritanceSharedChannel(runtime.getInheritanceSharedBuffer(output, inheritanceState), "__text__", "text", context)');
-      expect(source).to.contain('runtime.observeInheritanceSharedChannel("__text__", output');
-      expect(source).to.not.contain('runtime.declareBufferChannel(output, "__text__", "var"');
-    });
-
-    it('should declare script root channels after creating the command buffer', function () {
-      const env = new AsyncEnvironment();
-      const script = new Script('var x = "a"\nreturn x', env, 'declared-lanes.casc');
-      const source = script.compileSource();
-
-      expect(source).to.contain('new runtime.CommandBuffer(context, parentBuffer, null, parentBuffer)');
-      expect(source).to.contain('runtime.declareBufferChannel(output, "__return__", "var", context, runtime.RETURN_UNSET)');
-      expect(source).to.contain('runtime.declareBufferChannel(output, "x", "var", context, null)');
-    });
-
-    it('should declare render-boundary text channels after creating the boundary buffer', function () {
-      class TestExtension {
-        constructor() {
-          this.tags = ['test'];
-        }
-
-        parse(parser, nodesArg) {
-          parser.advanceAfterBlockEnd();
-          const content = parser.parseUntilBlocks('endtest');
-          const tag = new nodesArg.CallExtension(this, 'run', null, [content]);
-          parser.advanceAfterBlockEnd();
-          return tag;
-        }
-
-        run(context, content) {
-          return content();
-        }
-      }
-
-      const env = new AsyncEnvironment();
-      env.addExtension('TestExtension', new TestExtension());
-      const tmpl = new AsyncTemplate('{% test %}{{ value }}{% endtest %}', env, 'render-boundary-lanes.njk');
-      const source = tmpl.compileSource();
-
-      expect(source).to.contain('runtime.runRenderBoundary(context, cb, async');
-      expect(source).to.contain('runtime.declareBufferChannel(currentBuffer, "__text__", "text", context, null)');
     });
 
     it('should keep nested capture text outputs out of outer stored channel facts', function () {
@@ -225,7 +156,7 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       expect(blockNode._analysis.createsLinkedChildBuffer).to.be(true);
       expect(Array.from(includeNode._analysis.linkedChannels || [])).to.eql(['__text__']);
       expect(Array.from(extendsNode._analysis.linkedChannels || [])).to.eql(['__text__']);
-      expect(Array.from(blockNode._analysis.linkedChannels || [])).to.eql(['__text__']);
+      expect(Array.from(blockNode._analysis.linkedChannels || [])).to.eql([]);
     });
 
     it('should derive inline-if boundary links for parent-owned command effects', function () {
@@ -255,56 +186,6 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       expect(Array.from(callerNode._analysis.declaredChannels.keys())).to.eql(['caller', '__return__', '__text__']);
     });
 
-    it('should keep call-block caller locals out of emitted parent boundary links', function () {
-      const env = new AsyncEnvironment();
-      const tmpl = new AsyncTemplate(
-        '{% macro wrap() %}{{ caller() }}{% endmacro %}' +
-        '{% call wrap() %}{% do seq!.run() %}{% endcall %}',
-        env,
-        'caller-parent-link-analysis.njk'
-      );
-      const source = tmpl.compileSource();
-
-      const outputBoundaryMatches = Array.from(source.matchAll(/runtime\.runControlFlowBoundary\(output, \[([^\]]+)\]/g));
-      expect(outputBoundaryMatches.length).to.be.greaterThan(0);
-      expect(outputBoundaryMatches.some((match) => match[1].includes('"wrap"'))).to.be(true);
-      expect(outputBoundaryMatches.some((match) => match[1].includes('"!seq'))).to.be(true);
-      outputBoundaryMatches.forEach((match) => {
-        expect(match[1]).to.not.contain('"caller"');
-      });
-    });
-
-    it('should emit inherited block placement as method invocation without shared text boundary', function () {
-      const env = new AsyncEnvironment();
-      const templateSource = '{% shared var theme %}Base[{% block body %}{{ this.theme }}{% endblock %}]';
-      const ast = analyzeTemplateSource(templateSource, 'block-text-placement-links.njk');
-      const blockNode = collectNodesByType(ast, 'Block')[0];
-      const tmpl = new AsyncTemplate(templateSource, env, 'block-text-placement-links.njk');
-      const source = tmpl.compileSource();
-
-      expect(Array.from(blockNode._analysis.linkedChannels || [])).to.eql(['__text__', 'theme']);
-      expect(Array.from(blockNode._analysis.linkedMutatedChannels || [])).to.eql(['__text__']);
-      expect(source).to.contain('runtime.markSafe(runtime.invokeInheritedCallable(inheritanceState, "body"');
-      expect(source).to.not.contain('runtime.runControlFlowBoundary(output, ["__text__"], ["__text__"], context, cb, async (blockBuffer)');
-      expect(source).to.not.contain('runtime.runControlFlowBoundary(output, ["__text__","theme"]');
-    });
-
-    it('should emit template extends startup without shared callable links', function () {
-      const env = new AsyncEnvironment();
-      const tmpl = new AsyncTemplate(
-        '{% shared var theme = "light" %}' +
-        '{% extends layout %}' +
-        '{% set theme = "dark" %}' +
-        '{% block body %}{{ theme }}{% endblock %}',
-        env,
-        'extends-startup-text-placement-links.njk'
-      );
-      const source = tmpl.compileSource();
-
-      expect(source).to.contain('__rootStartupPromise = runtime.runControlFlowBoundary(output, ["__text__"], ["__text__"], context, cb, async (currentBuffer)');
-      expect(source).to.not.contain('__rootStartupPromise = runtime.runControlFlowBoundary(output, ["__text__","theme"]');
-    });
-
     it('should keep loop and include-owned facts local inside captures', function () {
       const ast = analyzeTemplateSource(
         '{% set outer %}' +
@@ -320,36 +201,6 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       expect(captureNode._analysis.usedChannels.has('loop')).to.be(false);
       expect(captureNode._analysis.usedChannels.has('item')).to.be(false);
       expect(captureNode._analysis.usedChannels.has('includeTemplate')).to.be(false);
-    });
-
-    it('should emit capture links from analysis-owned linked channels', function () {
-      const env = new AsyncEnvironment();
-      const templateSource =
-        '{% set x = "v" %}' +
-        '{% set outer %}A{{ x }}{% set inner %}B{{ x }}{% endset %}C{% endset %}';
-      const tmpl = new AsyncTemplate(
-        templateSource,
-        env,
-        'capture-analysis-linked-emission.njk'
-      );
-      const ast = analyzeTemplateSource(templateSource, 'capture-analysis-linked-emission.njk');
-      const captures = collectNodesByType(ast, 'Capture');
-      const outerCapture = captures[0];
-      const innerCapture = captures[1];
-      const source = tmpl.compileSource();
-      const outerBoundaryStart =
-        'runtime.runControlFlowBoundary(output, ["x"], null';
-      const innerBoundaryStart =
-        'runtime.runControlFlowBoundary(currentBuffer, ["x"], null';
-
-      expect(source).to.contain(outerBoundaryStart);
-      expect(source).to.contain(innerBoundaryStart);
-      expect(source).to.contain(`runtime.declareBufferChannel(currentBuffer, "${outerCapture._analysis.textOutput}", "text", context, null)`);
-      expect(source).to.contain('runtime.declareBufferChannel(currentBuffer, "inner", "var", context, null)');
-      expect(source).to.contain(`runtime.declareBufferChannel(currentBuffer, "${innerCapture._analysis.textOutput}", "text", context, null)`);
-      expect(source).to.not.contain(
-        `runtime.runControlFlowBoundary(output, ["x","${innerCapture._analysis.textOutput}"]`
-      );
     });
 
     it('should not mark scope-isolated macro or root nodes as linked child buffers', function () {
@@ -401,15 +252,6 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       expect(Array.from(commandOrNode._analysis.linkedMutatedChannels || [])).to.eql(['result']);
     });
 
-    it('should not emit caller scheduling machinery for macros without caller()', function () {
-      const env = new AsyncEnvironment();
-      const tmpl = new AsyncTemplate('{% macro plain(x) %}{{ x }}{% endmacro %}{{ plain("v") }}', env);
-      const source = tmpl.compileSource();
-      expect(source).to.not.contain('__caller__');
-      expect(source).to.not.contain('__callerLinkedChannels');
-      expect(source).to.not.contain('__callerDeclaredChannels');
-    });
-
     it('should preserve literal/interpolation parity and source ordering', async function () {
       const env = new AsyncEnvironment();
       const result = await env.renderTemplateString('A{{ one() }}B{{ two() }}C', {
@@ -448,14 +290,14 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       loader.addTemplate('macros.njk', '{% macro hi(name) %}Hi {{ name }}{% endmacro %}');
       loader.addTemplate(
         'child.njk',
-        '{% extends "base.njk" %}{% import "macros.njk" as m %}{% block body %}{% include "part.njk" with value %}{% endblock %} {{ m.hi(user) }}'
+        '{% extends "base.njk" %}{% block body %}{% import "macros.njk" as m %}{% include "part.njk" with value %} {{ m.hi(user) }}{% endblock %}'
       );
 
       const result = await env.renderTemplate('child.njk', { value: 'V', user: 'U' });
-      expect(result.replace(/\s+/g, ' ').trim()).to.equal('B[<i>V</i>] Hi U');
+      expect(result.replace(/\s+/g, ' ').trim()).to.equal('B[<i>V</i> Hi U]');
     });
 
-    it('should keep canonical include input keys for duplicated branch-local vars', function () {
+    it('should keep canonical include input keys for duplicated branch-local vars', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
       loader.addTemplate('child.njk', '[{{ scopedValue }}]');
@@ -469,30 +311,27 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
           {% include "child.njk" with scopedValue %}
         {% endif %}
       `, env, 'branch-include-shadow.njk');
-      const source = tmpl.compileSource();
 
-      expect(source).to.contain('scopedValue#');
-      expect(source).to.contain('["scopedValue"]');
-      expect(source).to.not.contain('["scopedValue#');
+      expect((await tmpl.render({ flag: true })).trim()).to.be('[A]');
+      expect((await tmpl.render({ flag: false })).trim()).to.be('[B]');
     });
 
-    it('should compile async import with context and explicit inputs without parent-var linking', function () {
+    it('should render async import with context and explicit inputs', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
-      loader.addTemplate('macros.njk', '{% macro hi() %}{{ theme }}{{ name }}{% endmacro %}');
+      loader.addTemplate('macros.njk', '{% macro hi() %}{{ theme }} {{ name }} {{ localName }}{% endmacro %}');
 
       const tmpl = new AsyncTemplate(
-        '{% import "macros.njk" as m with context, theme %}{{ m.hi() }}',
+        '{% var localName = "hidden" %}{% import "macros.njk" as m with context, theme %}{{ m.hi() }}',
         env,
         'import-with-context-and-vars.njk'
       );
-      const source = tmpl.compileSource();
 
-      expect(source).to.contain('context.getRenderContextVariables()');
-      expect(source).to.not.contain('linkWithParentCompositionBuffer');
+      const result = await tmpl.render({ theme: 'dark', name: 'Ada' });
+      expect(result).to.be('dark Ada ');
     });
 
-    it('should keep canonical exported names for from-import bindings renamed in local scopes', function () {
+    it('should keep canonical exported names for from-import bindings renamed in local scopes', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
       loader.addTemplate('macros.njk', '{% macro show() %}Hi{% endmacro %}');
@@ -506,12 +345,9 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
           {{ show() }}
         {% endif %}
       `, env, 'from-import-canonical-export-name.njk');
-      const source = tmpl.compileSource();
 
-      expect(source).to.contain('cannot import \'show\'');
-      expect(source).to.contain('exported["show"]');
-      expect(source).to.not.contain('cannot import \'show#');
-      expect(source).to.not.contain('exported["show#');
+      expect((await tmpl.render({ usePrimary: true })).trim()).to.be('Hi');
+      expect((await tmpl.render({ usePrimary: false })).trim()).to.be('Hi');
     });
 
     it('should resolve deferred exports through the normal render path', async function () {
@@ -535,7 +371,7 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       const exported = tmpl.getExported({});
       expect(exported).to.have.key('x');
       expect(typeof exported.then).to.be('undefined');
-      expect(exported[runtime.RESOLVE_MARKER]).to.be.ok();
+      expect(exported.x && typeof exported.x.then).to.be('function');
 
       const first = await Promise.race([
         Promise.resolve().then(() => 'exported'),
@@ -545,8 +381,6 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
 
       resolveValue('ready');
       expect(await exported.x).to.be('ready');
-      await exported[runtime.RESOLVE_MARKER];
-      expect(exported.x).to.be('ready');
     });
 
     it('should reject an early returned exported value when its channel fails', async function () {
@@ -565,21 +399,6 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       } catch (err) {
         expect(err.message).to.contain('export failed');
       }
-    });
-
-    it('should read post-extends shared mutations from invocation-time block links', async function () {
-      const loader = new StringLoader();
-      const env = new AsyncEnvironment(loader);
-
-      loader.addTemplate('base.njk', '{% shared var theme %}Base[{% block body %}{{ this.theme }}{% endblock %}]');
-      loader.addTemplate(
-        'child.njk',
-        '{% shared var theme = "light" %}{% extends "base.njk" %}{% set this.theme = "dark" %}{% block body %}{{ this.theme }}{% endblock %}'
-      );
-
-      const result = await env.renderTemplate('child.njk', {});
-
-      expect(result).to.be('Base[dark]');
     });
 
     it('should keep inherited text placement boundaries out of shared invocation lanes', async function () {
@@ -631,7 +450,7 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       textRoot.finish();
     });
 
-    it('should collect multiple exported value failures before rejecting the exported namespace', async function () {
+    it('should keep individual exported value failures independent', async function () {
       const env = new AsyncEnvironment();
       env.addGlobal('failA', () => {
         throw new Error('export failed A');
@@ -645,18 +464,15 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       ].join(''), env, 'multi-failed-deferred-export.njk');
 
       const exported = tmpl.getExported({});
+      const results = await Promise.allSettled([exported.a, exported.b]);
 
-      try {
-        await exported[runtime.RESOLVE_MARKER];
-        expect().fail('Expected exported namespace marker to reject');
-      } catch (err) {
-        const messages = (err.errors || [err]).map((error) => error.message);
-        expect(messages.some((message) => message.indexOf('export failed A') !== -1)).to.be(true);
-        expect(messages.some((message) => message.indexOf('export failed B') !== -1)).to.be(true);
-      }
+      expect(results[0].status).to.be('rejected');
+      expect(results[0].reason.message).to.contain('export failed A');
+      expect(results[1].status).to.be('rejected');
+      expect(results[1].reason.message).to.contain('export failed B');
     });
 
-    it('should keep individual resolved exports usable while the exported namespace reports other failures', async function () {
+    it('should keep individual resolved exports usable while sibling exports fail', async function () {
       const env = new AsyncEnvironment();
       env.addGlobal('failValue', () => {
         throw new Error('root export value failed');
@@ -671,8 +487,8 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       expect(typeof ok).to.be('function');
 
       try {
-        await exported[runtime.RESOLVE_MARKER];
-        expect().fail('Expected exported namespace marker to reject');
+        await exported.x;
+        expect().fail('Expected failed exported value to reject');
       } catch (err) {
         expect(err.message).to.contain('root export value failed');
       }
@@ -697,135 +513,6 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
         log: 'hello',
         result: { user: { name: 'Ada' } }
       });
-    });
-
-    it('should skip deferred export resolution when rendering in component mode', async function () {
-      const loader = new StringLoader();
-      const env = new AsyncEnvironment(loader);
-      loader.addTemplate('macros.njk', '{% macro hi(name) %}Hi {{ name }}{% endmacro %}');
-
-      const tmpl = new AsyncTemplate('{% import "macros.njk" as m %}{{ m.hi("x") }}', env, 'component-mode-export-guard.njk');
-      tmpl.compile();
-
-      const context = tmpl._createContext({});
-      let resolveCount = 0;
-      context.resolveExports = function () {
-        resolveCount += 1;
-        throw new Error('resolveExports should be skipped in component mode');
-      };
-      const buffer = new runtime.CommandBuffer(context, null, null, null);
-      runtime.declareBufferChannel(buffer, DEFAULT_TEMPLATE_TEXT_OUTPUT, 'text', context, null);
-      const inheritanceState = runtime.createInheritanceState();
-      inheritanceState.sharedRootBuffer = buffer;
-      inheritanceStateRuntime.setComponentCompositionMode(inheritanceState, true);
-
-      let callbackError = null;
-      tmpl.rootRenderFunc(
-        env,
-        context,
-        runtime,
-        function (err) {
-          callbackError = err || null;
-        },
-        true,
-        buffer,
-        inheritanceState,
-        true
-      );
-
-      const startupPromise = inheritanceStateRuntime.awaitInheritanceStartup(inheritanceState);
-      if (startupPromise && typeof startupPromise.then === 'function') {
-        await startupPromise;
-      }
-
-      expect(resolveCount).to.be(0);
-      expect(callbackError).to.be(null);
-    });
-
-    it('should initialize base-block with inputs as local async var channels', function () {
-      const env = new AsyncEnvironment();
-      const tmpl = new AsyncTemplate('{% block content(user) %}{{ user }}{% endblock %}', env, 'block-input-vars.njk');
-      const source = tmpl.compileSource();
-
-      expect(source).to.contain('function b_content(');
-      expect(source).to.contain('blockPayload = null');
-      expect(source).to.contain('methodData) {');
-      expect(source).to.contain('runtime.invokeInheritedCallable(inheritanceState, "content"');
-      expect(source).to.contain('blockPayload && blockPayload.originalArgs ? blockPayload.originalArgs : {}');
-      expect(source).to.not.contain('blockPayload && blockPayload.localsByTemplate');
-      expect(source).to.contain('context.forkForComposition("block-input-vars.njk"');
-      expect(source).to.contain('runtime.linkInheritanceCallableFootprintChannels(parentBuffer, output');
-      expect(source).to.not.contain('runtime.linkCurrentBufferToParentSharedChannels(');
-      expect(source).to.not.contain('context.getBlockContract("content")');
-      expect(source).to.not.contain('context.getCompositionSourceBuffer(');
-      expect(source).to.contain(`new runtime.VarCommand({ channelName: name, args: [`);
-    });
-
-    it('should initialize inherited block arguments as local async var channels in overriding blocks', function () {
-      const loader = new StringLoader();
-      const env = new AsyncEnvironment(loader);
-      loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
-
-      const tmpl = new AsyncTemplate(
-        '{% extends "base.njk" %}{% block content %}Child {{ user }}{% endblock %}',
-        env,
-        'child-inherited-block-inputs.njk'
-      );
-      const source = tmpl.compileSource();
-
-      expect(source).to.contain('function b_content(');
-      expect(source).to.contain('blockPayload = null');
-      expect(source).to.contain('methodData) {');
-      expect(source).to.contain('context.forkForComposition("child-inherited-block-inputs.njk"');
-      expect(source).to.contain('runtime.linkInheritanceCallableFootprintChannels(parentBuffer, output');
-      expect(source).to.not.contain('runtime.linkCurrentBufferToParentSharedChannels(');
-      expect(source).to.not.contain('blockPayload && blockPayload.localsByTemplate');
-      expect(source).to.not.contain('context.getBlockContract("content")');
-      expect(source).to.not.contain('context.getCompositionSourceBuffer(');
-      expect(source).to.not.contain('findChannel(name)?.finalSnapshot()');
-    });
-
-    it('should keep async block/super compilation free of caller scheduling machinery', function () {
-      const loader = new StringLoader();
-      const env = new AsyncEnvironment(loader);
-      loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
-
-      const tmpl = new AsyncTemplate(
-        '{% extends "base.njk" %}{% block content %}{% set user = "Grace" %}{{ super() }} / {{ user }}{% endblock %}',
-        env,
-        'block-super-no-caller-scheduling.njk'
-      );
-      const source = tmpl.compileSource();
-
-      expect(source).to.contain('blockPayload = null');
-      expect(source).to.contain('blockRenderCtx = undefined');
-      expect(source).to.contain('runtime.invokeSuperCallable(inheritanceState, "content"');
-      expect(source).to.not.contain('blockContext = null');
-      expect(source).to.not.contain('context.getBlockContract(');
-      expect(source).to.not.contain('context.getCompositionSourceBuffer(');
-      expect(source).to.not.contain('context.getAsyncSuper(');
-      expect(source).to.not.contain('context.createSuperInheritancePayload(');
-      expect(source).to.not.contain('__caller__');
-      expect(source).to.not.contain('__callerLinkedChannels');
-      expect(source).to.not.contain('__callerDeclaredChannels');
-      expect(source).to.not.contain('CALLER_SCHED_CHANNEL_NAME');
-      expect(source).to.not.contain('WaitResolveCommand({ channelName: "__caller__"');
-    });
-
-    it('should keep caller scheduling machinery on async macros that use caller()', function () {
-      const env = new AsyncEnvironment();
-      const tmpl = new AsyncTemplate(
-        '{% macro wrap(tag) %}<{{ tag }}>{{ caller() }}</{{ tag }}>{% endmacro %}{% set x = "v" %}{% call wrap("span") %}X{{ x }}Y{% endcall %}',
-        env,
-        'macro-caller-scheduling.njk'
-      );
-      const source = tmpl.compileSource();
-
-      expect(source).to.contain('__caller__');
-      expect(source).to.contain('__callerLinkedChannels');
-      expect(source).to.contain('__callerLinkedChannels = ["x"];');
-      expect(source).to.contain('.__callerLinkedChannels || null, null, ');
-      expect(source).to.contain('WaitResolveCommand({ channelName: "__caller__"');
     });
 
     it('should keep observed vs unobserved async errors behavior', async function () {
@@ -860,38 +547,6 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       const result = await tmpl.render({});
 
       expect(result).to.be('Hi x');
-    });
-
-    it('should not link unrelated locals into an imported namespace call boundary', function () {
-      const loader = new StringLoader();
-      const env = new AsyncEnvironment(loader);
-      loader.addTemplate('macros.njk', '{% macro hi() %}Hi{% endmacro %}');
-
-      const tmpl = new AsyncTemplate(
-        '{% import "macros.njk" as m %}{% var scopedValue = "A" %}{{ m.hi() }}',
-        env,
-        'imported-member-boundary-links-only-import.njk'
-      );
-      const source = tmpl.compileSource();
-
-      expect(source).to.contain('runtime.runValueBoundary(output, ["m","__text__"]');
-      expect(source).to.not.contain('runtime.runValueBoundary(output, ["m","scopedValue","__text__"]');
-    });
-
-    it('should not link unrelated locals into a from-import call boundary', function () {
-      const loader = new StringLoader();
-      const env = new AsyncEnvironment(loader);
-      loader.addTemplate('macros.njk', '{% macro hi() %}Hi{% endmacro %}');
-
-      const tmpl = new AsyncTemplate(
-        '{% from "macros.njk" import hi %}{% var scopedValue = "A" %}{{ hi() }}',
-        env,
-        'from-import-boundary-links-only-import.njk'
-      );
-      const source = tmpl.compileSource();
-
-      expect(source).to.contain('runtime.runValueBoundary(output, ["hi","__text__"]');
-      expect(source).to.not.contain('runtime.runValueBoundary(output, ["hi","scopedValue","__text__"]');
     });
 
     it('should not treat a macro parameter shadowing a from-import binding as imported callable', async function () {

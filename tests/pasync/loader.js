@@ -1087,7 +1087,7 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
         expect(result.trim()).to.equal('Async Outer Async Inner');
       });
 
-      it('should handle blocks within loops without exposing loop-local values into block scope', async () => {
+      it('should handle inherited block placements within loops without exposing loop-local values into block scope', async () => {
         const context = {
           async getItems() {
             await delay(3);
@@ -1102,7 +1102,9 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
             return 'Block';
           }
         };
-        const template = '{% for item in getItems() %}{% block item %}{{ getPrefix() }} {{ getLabel() }}{% endblock %}{% endfor %}';
+        loader.addTemplate('loop-block-base.njk', '{% for item in getItems() %}{{ this.item() }}{% endfor %}');
+        const template = '{% extends "loop-block-base.njk" %}{% block item %}{{ getPrefix() }} {{ getLabel() }}{% endblock %}';
+
         const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('Processed BlockProcessed BlockProcessed Block');
       });
@@ -1295,7 +1297,7 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
           await env.renderTemplateString(childTemplate, { user: 'Ada' });
           expect().fail('Expected legacy named block with-input rejection');
         } catch (err) {
-          expect(String(err)).to.contain('block with-clauses are not supported');
+          expect(String(err)).to.contain('expected block end in block statement');
         }
       });
 
@@ -1307,9 +1309,7 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
           await env.renderTemplateString(childTemplate, { user: 'Ada', username: 'Grace' });
           expect().fail('Expected overriding block signature mismatch');
         } catch (err) {
-          expect(String(err)).to.contain('block "content" signature mismatch');
-          expect(String(err)).to.contain('content(username)');
-          expect(String(err)).to.contain('content(user)');
+          expect(String(err)).to.contain(`method 'content' renames an inherited argument`);
         }
       });
 
@@ -1321,7 +1321,7 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
           await env.renderTemplateString(childTemplate, { user: 'Ada', username: 'Grace' });
           expect().fail('Expected block with-context rejection');
         } catch (err) {
-          expect(String(err)).to.contain('block with-clauses are not supported');
+          expect(String(err)).to.contain('expected block end in block statement');
         }
       });
 
@@ -1334,9 +1334,7 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
           await env.renderTemplateString(childTemplate, { user: 'Ada', username: 'Grace' });
           expect().fail('Expected multi-file signature mismatch');
         } catch (err) {
-          expect(String(err)).to.contain('block "content" signature mismatch');
-          expect(String(err)).to.contain('content(username)');
-          expect(String(err)).to.contain('content(user)');
+          expect(String(err)).to.contain(`method 'content' renames an inherited argument`);
         }
       });
 
@@ -1399,13 +1397,14 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
       });
 
       it('should let explicit block arguments shadow render-context properties of the same name', async () => {
-        const template = '{% set user = "ExplicitUser" %}{% block content(user) %}{{ user }}{% endblock %}';
+        loader.addTemplate('explicit-arg-base.njk', '{% set user = "ExplicitUser" %}{{ this.content(user) }}');
+        const template = '{% extends "explicit-arg-base.njk" %}{% block content(user) %}{{ user }}{% endblock %}';
 
         const result = await env.renderTemplateString(template, { user: 'RenderUser' });
         expect(result.trim()).to.equal('ExplicitUser');
       });
 
-      it('should handle blocks inside a for loop without exposing loop-local values into block scope', async () => {
+      it('should pass explicit loop values to inherited block placements without exposing implicit loop locals', async () => {
         const context = {
           async getItems() {
             await delay(4);
@@ -1421,18 +1420,20 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
           }
         };
 
+        loader.addTemplate('loop-block-arg-base.njk', `
+          {% for item in getItems() -%}
+            {{- this.item_block(item) -}}
+          {% endfor %}
+        `);
         const template = `
-            {% for item in getItems() -%}
-              {%- block item_block -%}
-                {{ getPrefix() }} {{ getLabel() }}
-              {% endblock -%}
-            {% endfor %}
-          `;
+          {% extends "loop-block-arg-base.njk" %}
+          {% block item_block(item) -%}
+            {{ getPrefix() }} {{ getLabel() }} {{ item }}|
+          {%- endblock %}
+        `;
 
         const result = await env.renderTemplateString(template, context);
-        expect(result.trim()).to.equal(`Item: BLOCK
-              Item: BLOCK
-              Item: BLOCK`);
+        expect(result.trim()).to.equal('Item: BLOCK apple|Item: BLOCK banana|Item: BLOCK cherry|');
       });
 
       it('should handle async conditionals within blocks', async () => {
@@ -1460,81 +1461,24 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
           }
         };
 
-        const template = `
+        loader.addTemplate('if-block-base.njk', `
           {% if enabled %}
             {% set scoped = getScopedValue() %}
-            {% block content %}{{ scoped }}{% endblock %}
+            {{ this.content() }}
           {% endif %}
-        `;
+        `);
+        const template = '{% extends "if-block-base.njk" %}{% block content %}{{ scoped }}{% endblock %}';
 
         const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('');
       });
 
-      it('should configure base payload through extends with explicit named inputs', async () => {
-        loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }} / {{ theme }}{% endblock %}');
-        const childTemplate = '{% set theme = "dark" %}{% extends "base.njk" with theme %}{% block content(user) %}Child {{ super() }}{% endblock %}';
-
-        const result = await env.renderTemplateString(childTemplate, { user: 'Ada', theme: 'render' });
-        expect(result.trim()).to.equal('Child Base Ada / dark');
-      });
-
-      it('should keep extends-with capture stable without exposing later constructor-local reassignment to inherited blocks', async () => {
-        loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }} / {{ theme }}{% endblock %}');
-        const childTemplate = '{% set theme = "dark" %}{% extends "base.njk" with theme %}{% set localTheme = "changed" %}{% block content(user) %}{{ super() }} / {{ theme }}{% endblock %}';
-
-        const result = await env.renderTemplateString(childTemplate, { user: 'Ada' });
-        expect(result.trim()).to.equal('Base Ada / dark / dark');
-      });
-
-      it('should let extends payload expose render-context values while explicit names still win', async () => {
-        loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }} / {{ locale }} / {{ theme }} / {{ siteName }}{% endblock %}');
-        const childTemplate = '{% set theme = "dark" %}{% extends "base.njk" with context, theme %}{% block content(user) %}{{ super() }}{% endblock %}';
-
-        const result = await env.renderTemplateString(childTemplate, { user: 'Ada', locale: 'de', siteName: 'Docs', theme: 'render-theme' });
-        expect(result.trim()).to.equal('Base Ada / de / dark / Docs');
-      });
-
-      it('should preserve explicit payload names when inherited blocks read render context', async () => {
-        loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }} / {{ locale }} / {{ theme }} / {{ siteName }}{% endblock %}');
-        const childTemplate = '{% set theme = "dark" %}{% extends "base.njk" with theme %}{% block content(user) %}{{ super() }}{% endblock %}';
-
-        const result = await env.renderTemplateString(childTemplate, { user: 'Ada', locale: 'de', siteName: 'Docs' });
-        expect(result.trim()).to.equal('Base Ada / de / dark / Docs');
-      });
-
-      it('should pass pending promise values transparently through extends with', async () => {
-        loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }} / {{ theme }}{% endblock %}');
-        const childTemplate = '{% set theme = getTheme() %}{% extends "base.njk" with theme %}{% block content(user) %}{{ super() }}{% endblock %}';
-
-        const result = await env.renderTemplateString(childTemplate, {
-          user: 'Ada',
-          getTheme() {
-            return delay(5).then(() => 'async-dark');
-          }
-        });
-        expect(result.trim()).to.equal('Base Ada / async-dark');
-      });
-
       it('should keep child locals out of the base root unless explicitly passed through extends with', async () => {
         loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }} / {{ theme }} / {{ siteName }}{% endblock %}');
-        const childTemplate = '{% set theme = "dark" %}{% extends "base.njk" %}{% block content(user) %}{{ super() }}{% endblock %}';
+        const childTemplate = '{% extends "base.njk" %}{% set theme = "dark" %}{% block content(user) %}{{ super() }}{% endblock %}';
 
         const result = await env.renderTemplateString(childTemplate, { user: 'Ada', siteName: 'Docs' });
-        expect(result.trim()).to.equal('Base Ada /  / Docs');
-      });
-
-      it('should isolate extends-with root configuration across concurrent renders of the same templates', async () => {
-        loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }} / {{ theme }}{% endblock %}');
-        loader.addTemplate('child.njk', '{% set theme = inputTheme %}{% extends "base.njk" with theme %}{% block content(user) %}{{ super() }}{% endblock %}');
-
-        const [first, second] = await Promise.all([
-          env.renderTemplate('child.njk', { user: 'Ada', inputTheme: 'dark' }),
-          env.renderTemplate('child.njk', { user: 'Grace', inputTheme: 'blue' })
-        ]);
-
-        expect(first.trim()).to.equal('Base Ada / dark');
-        expect(second.trim()).to.equal('Base Grace / blue');
+        expect(result.trim()).to.equal('Base  /  / Docs');
       });
     });
 

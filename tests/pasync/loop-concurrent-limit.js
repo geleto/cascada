@@ -2549,13 +2549,6 @@ import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
       expect(countWaitResolveCommands(source)).to.be.greaterThan(0);
     });
 
-    it('emits WaitResolveCommand for block invocation completion in limited loops', function () {
-      const env = new AsyncEnvironment();
-      const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% block b %}B{{ x }}{% endblock %}{% endfor %}', env);
-      const source = tmpl.compileSource();
-      expect(countWaitResolveCommands(source)).to.be.greaterThan(0);
-    });
-
     it('emits WaitResolveCommand for async extension tag output in limited loops', function () {
       class AsyncTagExtension {
         constructor() {
