@@ -23,8 +23,6 @@ export * from './inheritance/invoke.js';
 export * from './inheritance/shared.js';
 export * from './inheritance/instance.js';
 export * from './inheritance/component.js';
-export * from './inheritance-legacy/state.js';
-export * from './inheritance-legacy/bootstrap.js';
 export * from './lookup.js';
 export * from './jinja-compat.js';
 export * from './call.js';

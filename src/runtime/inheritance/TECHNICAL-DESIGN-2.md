@@ -172,11 +172,11 @@ type InheritanceInstanceState = {
 }
 ```
 
-`context` is the instance execution context. For direct rendering it is based
-on the render context. For components it is built from the explicit component
-payload, with caller context included only when component `with context` is
-used. Every file in the selected inheritance chain uses this same instance
-context.
+`context` is the instance execution context. For direct rendering and include
+it is based on the render context (for include, the `with` payload variables
+are merged in). For components it is built from the explicit component payload,
+with caller context included only when component `with context` is used. Every
+file in the selected inheritance chain uses this same instance context.
 
 Allowed:
 
@@ -218,8 +218,8 @@ Allowed:
 - declare and initialize shared channels as method code requires
 - call `super()` through finalized owner-relative links
 
-The constructor is just the `__constructor__` method. Direct rendering and
-component creation start by invoking that method once. The runtime does not
+The constructor is just the `__constructor__` method. Direct rendering,
+include, and component creation all start by invoking that method once. The runtime does not
 manually iterate the parent chain to execute constructors.
 
 `runtimeState.methods.__constructor__` is the most-derived available concrete
@@ -242,7 +242,7 @@ Forbidden:
 - use per-block parent-decision promises
 - use lifecycle mode flags to change this phase's behavior
 
-### Phase 4: Direct Render Completion
+### Phase 4: Direct Render or Include Completion
 
 Input:
 
@@ -333,13 +333,13 @@ Component instances use the same load/finalize/constructor lifecycle. Their
 root buffer remains open for the component binding lifetime and closes when the
 owner binding completes or the instance is explicitly closed.
 
-Components are not a different compiled template/script mode. A direct render and a
-component instance both initialize the same inheritance instance shape and invoke
-the same `__constructor__` method through the same runtime dispatch path. The
-only difference is ownership of buffer completion:
+Components are not a different compiled template/script mode. A direct render,
+an include, and a component instance all initialize the same inheritance instance
+shape and invoke the same `__constructor__` method through the same runtime
+dispatch path. The difference is ownership of buffer completion:
 
-- direct render finishes the instance root/shared buffers after constructor
-  execution and result materialization via `finishRender(entryResult)`
+- direct render and include finish the instance root/shared buffers after
+  constructor execution and result materialization via `finishRender(entryResult)`
 - component creation binds the instance to the caller's component
   side-channel, treats constructor completion as initialization, and finishes
   the instance root/shared buffers via `close()` only when that side-channel's
@@ -628,7 +628,8 @@ The compiled/runtime schema key is that name. Generated code maps
 `this.theme` and `component.theme` to `$theme`. This keeps shared storage
 separate from an ordinary local `var theme` and lets callable footprints filter
 ordinary `usedChannels` / `mutatedChannels` by shared names. Diagnostics may
-strip the `$` or render it as `this.theme` in a later cleanup pass.
+strip the `$` or render it as `this.theme` whenever the storage key itself is
+not the user-visible subject of the test or error.
 
 ## Load And Runtime Shapes
 
@@ -732,16 +733,17 @@ const entryResult = await instance.invoke("__constructor__", [], origin)
 return instance.finishRender(entryResult)
 ```
 
-Direct template/script rendering creates an instance, invokes `__constructor__`,
-then calls `finishRender(entryResult)`. Component creation creates an instance,
-schedules the same `__constructor__` method call in component command order,
-and calls `close()` only when the component lifetime ends.
+Direct template/script rendering and template include both create an instance,
+invoke `__constructor__`, then call `finishRender(entryResult)`. Component
+creation creates an instance, schedules the same `__constructor__` method call
+in component command order, and calls `close()` only when the component
+lifetime ends.
 
-Direct render and component creation share the same instance primitive, but they
-do not share ownership timing:
+Direct render, include, and component creation share the same instance
+primitive, but they do not share ownership timing:
 
-- direct render creates the instance, invokes `__constructor__` immediately, and
-  finishes it in the same public render call
+- direct render and include create the instance, invoke `__constructor__`
+  immediately, and finish it in the same call
 - component creation creates the instance and invokes `__constructor__` in
   owner command order; Step 6 owns component close timing and caller-side
   operation scheduling
@@ -818,7 +820,7 @@ parent callable.
 Step 4 reuse boundary:
 
 - inherited invocation mirrors async macro/function positional, keyword, and
-  default behavior, but keeps its own temporary runtime mapper until Step 8
+  default behavior and reuses the macro keyword-argument detection helper
 - compiler-side signature parsing and local `var` channel binding shape are
   shared with async macro/function code; inherited callables should continue to
   move toward those existing argument semantics rather than inventing a parallel
@@ -831,11 +833,13 @@ Step 4 reuse boundary:
   and context-isolation rules out of inherited invocation
 - keep inherited invocation in `invoke.js`; it consumes finalized dispatch
   entries, owner-relative `super` links, owner metadata, linked footprints, and
-  invocation buffers, then calls the inherited-callable mapper rather than
-  `runtime.makeMacro` or macro-specific compiler wrappers
+  invocation buffers, then builds an inherited callable argument frame rather
+  than using `runtime.makeMacro` or macro-specific compiler wrappers
 
-Step 8 should deduplicate the inherited-callable mapper with the macro/function
-argument helper once the final invocation surfaces are stable.
+Step 8 deduplicates keyword-argument detection with macros. Full frame
+construction remains inheritance-owned because macros invoke compiled functions
+with positional parameters while inherited callables pass one local argument
+frame object into a command-buffer-backed callable body.
 
 ## Method Entry Shapes
 
@@ -1012,15 +1016,13 @@ existed.
   ownership, and direct render completion
 - `finalize.js`: metadata validation, method-table construction, super wiring,
   shared-schema finalization, footprint merging, runtime-entry pruning
-- `invoke.js`: inherited-callable argument-frame mapping while it waits for
-  Step 8 macro/callable deduplication. It must not own lookup, footprint
-  access, buffer choice, or `super` dispatch; those belong to compiled
+- `invoke.js`: inherited-callable invocation helpers, including argument-frame
+  construction and linking finalized callable footprint channels into an
+  invocation buffer. It may reuse macro keyword-argument helpers, but it must
+  not own lookup, buffer choice, or `super` dispatch; those belong to compiled
   metadata and `InheritanceInstance`.
-- `callable.js`: compiler-private callable resolver/prologue helpers introduced
-  before final invocation ownership is complete
-- Step 8 shared argument helper module or existing macro helper extraction:
-  runtime argument-frame mapping reused by macros and inheritance callables
-  after the temporary Step 4 mapper is removed
+- `callable.js`: compiler-private inheritance callable helpers, including
+  parent selection and callable context setup
 - `shared.js`: shared schema/runtime operations and shared-root buffer access
 - `component.js`: component instance lifecycle, command-based operations,
   explicit shared observation, and owner side-channel lifetime wiring around
@@ -1660,8 +1662,8 @@ Goal:
 - implement inherited-callable argument-frame mapping with the same
   positional/keyword/default behavior as regular function and macro calls
 - keep regular function/macro argument behavior unchanged; compiler-side
-  argument binding shape may be shared now, while final runtime argument-frame
-  deduplication is Step 8 cleanup
+  argument binding shape may be shared now, while runtime keyword-argument
+  detection is shared with macros
 - implement `InheritanceInstance.create(...)`
 - `create(...)` owns load + finalize + root/shared buffer setup
 - `create(...)` returns a ready-to-invoke instance and does not invoke methods
@@ -1941,11 +1943,13 @@ Goal:
 - remove inheritance lifecycle mode flags from generated roots
 - update generated-source tests and browser precompiled fixtures
 - update docs to name this design as authoritative
-- migrate or delete provisional unit/synthetic tests that are now covered by
-  integration tests
+- migrate or delete Step 8-focused provisional unit/synthetic tests that are
+  now covered by integration tests
 - deduplicate macro and inherited-callable argument-frame mapping once both
   paths have settled on the same keyword/positional behavior
-- triage skipped inheritance tests as deleted, rewritten, or still required
+- triage skipped inheritance tests as deleted, rewritten, or still required;
+  legacy suites outside the Step 8 focused gate remain a separate full-suite
+  reconciliation pass
 - verify compiler-private runtime helpers do not look like public API
 - map internal `$` shared-storage names back to user-facing `this.name` or
   `name` in diagnostics, snapshots, and docs where the storage key is not the
@@ -1959,12 +1963,13 @@ Goal:
 - document or type the `RuntimeFatalError` constructor overload that accepts an
   error-context object as its second argument, so the parameter name does not
   imply that only a raw line number is valid
-- consider renaming `withComponentInstance` if a clearer name emerges during
-  cleanup; the current helper both resolves a promise-backed component
-  side-channel target and caches the resolved instance
+- keep `applyWithResolvedComponentInstance` private to component commands; it
+  resolves a promise-backed component side-channel target and caches the
+  resolved instance
 - replace the include participant callback-to-promise bridge with a cleaner
-  promise-returning participant include/root API if that can preserve
-  include-site error context without the current message-only bridge error
+  promise-returning participant include/root API; the current bridge should
+  only forward the participant result or rejection and should not re-contextualize
+  participant errors as include-site errors
 - replace constructor-emitted shared default claims with finalized-schema-driven
   default initialization if that can be done without changing source-order
   semantics
@@ -1972,6 +1977,10 @@ Goal:
   `docs/code/source-order-declarations.md` as a separate compiler correctness
   pass; Step 8 should only remove temporary inheritance assumptions that become
   unnecessary after that pass exists
+- keep async exports as ordinary Cascada promise values: exported channel
+  snapshots are bound when the export is declared, root completion must not
+  await or "resolve" exports, and consumers remain responsible for awaiting at
+  the point of use
 
 Tests:
 
@@ -1980,20 +1989,25 @@ Tests:
 - no `startup.js` or old lifecycle-mode helper remains unless the file/helper
   is renamed and justified by this design
 - tests do not depend on private command-buffer/channel fields
-- browser/precompiled fixtures contain the `root` ABI
-- browser/precompiled fixtures regenerated from target compiler output
-- provisional loader/finalization/invocation unit tests are either promoted to
-  integration tests, retained with an invariant-specific reason, or deleted
-- tests that still construct removed legacy component objects are migrated to
-  real `InheritanceInstance` component fixtures or deleted if they cover only
-  obsolete APIs
+- generated browser/precompiled fixtures contain the `root` ABI when produced
+  by `scripts/runprecompile.js`; the checked-in source of truth is the compiler
+  output because `tests/browser/precompiled-templates.js` is ignored
+- Step 8-focused provisional loader/finalization/invocation unit tests are
+  either promoted to integration tests, retained with an invariant-specific
+  reason, or deleted
+- Step 8-focused tests that still construct removed legacy component objects
+  are migrated to real `InheritanceInstance` component fixtures or deleted if
+  they cover only obsolete APIs
 - generated-source tests distinguish deliberate internal `$` storage-name
   assertions from user-facing diagnostics
-- no skipped inheritance test group remains without an explicit disposition
+- no skipped inheritance test group in the Step 8 focused suites remains
+  without an explicit disposition
 - `src/compiler/inheritance.js` contains only clean async inheritance compiler
   code, or any retained sync bridge has an explicit non-inheritance-module home
 - focused inheritance suites pass
-- full `npm run test:quick` at the final integration gate
+- focused inheritance/component/precompiled suites pass; full `npm run
+  test:quick` remains the broader integration gate after stale sync, legacy
+  inheritance, and macro-suite expectations are reconciled
 
 ## Acceptance Criteria
 

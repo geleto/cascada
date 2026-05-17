@@ -4,7 +4,6 @@ import {Frame} from '../runtime/frame.js';
 import {Obj} from '../object.js';
 import {callbackAsap} from './utils.js';
 import {Context} from './context.js';
-import {markPromiseHandled} from '../runtime/errors.js';
 import {createDefaultEnvironment} from './default-environment.js';
 
 class TemplateRuntime extends Obj {
@@ -311,7 +310,6 @@ class AsyncTemplateRuntime extends TemplateRuntime {
     const renderCallback = (err) => {
       if (err) {
         rootError = err;
-        context.rejectExports(err);
         if (typeof cb === 'function') {
           cb(err);
         }
@@ -324,58 +322,22 @@ class AsyncTemplateRuntime extends TemplateRuntime {
       renderCallback,
       true
     );
-    const outputFinished = output && typeof output.getFinishedPromise === 'function'
-      ? output.getFinishedPromise()
-      : null;
-    if (outputFinished) {
-      outputFinished.catch((err) => {
-        context.rejectExports(err);
-      });
-    }
-
     if (rootError) {
       throw rootError;
     }
 
-    const exported = context.getExported();
-    const boundExported = {};
-    const finalizeExportedValue = (item) => {
-      return outputFinished
-        ? globalRuntime.resolveAll([item, outputFinished]).then((values) => {
-          if (globalRuntime.isPoison(values)) {
-            throw new globalRuntime.PoisonError(values.errors);
-          }
-          return values[0];
-        })
-        : item;
-    };
-
-    for (const name in exported) {
-      boundExported[name] = finalizeExportedValue(exported[name]);
-    }
-
-    const markedExported = globalRuntime.createObject(boundExported);
-    if (markedExported && markedExported[globalRuntime.RESOLVE_MARKER]) {
-      markPromiseHandled(markedExported[globalRuntime.RESOLVE_MARKER]);
-    }
-    return markedExported;
+    return context.getExported();
   }
 
-  renderForComposition(ctx, cb, renderCtx) {
-    this.compile();
-    const context = this._createContext(ctx, renderCtx, ctx || null);
-    return this.rootRenderFunc(this.env, context, globalRuntime, cb, true);
-  }
-
-  renderIncludeText(ctx, renderCtx) {
+  _renderIncludeText(ctx, renderCtx) {
     this.compile();
     const context = this._createContext(ctx, renderCtx, ctx || null);
     if (!this.inheritanceSpec) {
-      const output = this.rootRenderFunc(this.env, context, globalRuntime, function noopIncludeCallback() {}, true);
+      const output = this.rootRenderFunc(this.env, context, globalRuntime, function noopIncludeCallback() {});
       return output.getChannel('__text__').finalSnapshot();
     }
 
-    return new Promise((resolve, reject) => {
+    const includeText = new Promise((resolve, reject) => {
       const includeCallback = (err, result) => {
         if (err) {
           reject(err);
@@ -383,10 +345,9 @@ class AsyncTemplateRuntime extends TemplateRuntime {
         }
         resolve(result);
       };
-      this.rootRenderFunc(this.env, context, globalRuntime, includeCallback, true);
-    }).catch((err) => {
-      throw new Error(err && err.message ? err.message : err, { cause: err });
+      this.rootRenderFunc(this.env, context, globalRuntime, includeCallback);
     });
+    return includeText;
   }
 
   _getCompiledBlocks() {

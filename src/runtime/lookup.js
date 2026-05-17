@@ -9,10 +9,9 @@ import {
   collectErrors,
 } from './errors.js';
 
-import * as inheritanceCall from './inheritance-legacy/call.js';
-import * as inheritanceState from './inheritance-legacy/state.js';
 import {resolveDuo} from './resolve.js';
 import {SnapshotCommand, IsErrorCommand, GetErrorCommand} from './channels/observation.js';
+import {getSharedSourceName} from '../inheritance/shared-names.js';
 /**
  * Sync member lookup for templates.
  * Returns undefined if obj is undefined or null.
@@ -224,17 +223,6 @@ function _addObservationCommand(targetBuffer, channelName, pos, mode) {
   throw new Error(`Unsupported shared-channel observation mode '${mode}'`);
 }
 
-function _observeResolvedInheritanceSharedChannel(name, currentBuffer, channelType, pos, errorContext, mode, implicitVarRead) {
-  if (implicitVarRead && channelType && channelType !== 'var') {
-    throw new RuntimeFatalError(
-      `Shared channel '${name}' cannot be used as a bare symbol. Use '${name}.snapshot()' instead.`,
-      errorContext
-    );
-  }
-
-  return _addObservationCommand(currentBuffer, name, pos, mode);
-}
-
 function observeInheritanceSharedChannel(name, currentBuffer, errorContext = null, inheritanceStateValue = null, mode = 'snapshot', implicitVarRead = false) {
   if (!currentBuffer || !inheritanceStateValue) {
     return undefined;
@@ -245,53 +233,26 @@ function observeInheritanceSharedChannel(name, currentBuffer, errorContext = nul
   if (runtimeSharedSchema) {
     const schemaEntry = runtimeSharedSchema[name] ?? null;
     if (!schemaEntry) {
+      const sourceName = getSharedSourceName(name);
       throw new RuntimeFatalError(
-        `unknown inherited shared channel '${name}'`,
+        `unknown inherited shared channel '${sourceName}'`,
         errorContext
       );
     }
-    return _observeResolvedInheritanceSharedChannel(
-      name,
-      currentBuffer,
-      schemaEntry.type,
-      pos,
-      errorContext,
-      mode,
-      implicitVarRead
-    );
+    if (implicitVarRead && schemaEntry.type && schemaEntry.type !== 'var') {
+      const sourceName = getSharedSourceName(name);
+      throw new RuntimeFatalError(
+        `Shared channel 'this.${sourceName}' cannot be used as a bare symbol. Use 'this.${sourceName}.snapshot()' instead.`,
+        errorContext
+      );
+    }
+    return _addObservationCommand(currentBuffer, name, pos, mode);
   }
 
-  const sharedSchema = inheritanceState.ensureInheritanceSharedSchemaTable(inheritanceStateValue || {});
-  if (Object.prototype.hasOwnProperty.call(sharedSchema, name)) {
-    // The metadata-ready barrier guarantees normal inherited dispatch observes
-    // a finalized shared schema before method/block execution starts. Keep the
-    // structural link assertion on the same turn so temporary buffer-entry
-    // cleanup cannot erase a valid linked path before we enqueue the ordered
-    // snapshot command on the current buffer.
-    return _observeResolvedInheritanceSharedChannel(
-      name,
-      currentBuffer,
-      sharedSchema[name],
-      pos,
-      errorContext,
-      mode,
-      implicitVarRead
-    );
-  }
-
-  const channelType = inheritanceCall.resolveInheritanceSharedChannel(
-    inheritanceStateValue,
-    name,
+  const sourceName = getSharedSourceName(name);
+  throw new RuntimeFatalError(
+    `unknown inherited shared channel '${sourceName}'`,
     errorContext
-  );
-  return _observeResolvedInheritanceSharedChannel(
-    name,
-    currentBuffer,
-    channelType,
-    pos,
-    errorContext,
-    mode,
-    implicitVarRead
   );
 }
 

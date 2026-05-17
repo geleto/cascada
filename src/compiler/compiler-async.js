@@ -661,7 +661,8 @@ class CompilerAsync extends CompilerBaseAsync {
       this.emit.line(`  cb(null, runtime.normalizeFinalPromise(${returnVar}));`);
     } else {
       this.emit.line(`  ${this.buffer.currentBuffer}.finish();`);
-      this.emit.line(`  cb(null, await ${this.buffer.currentTextChannelVar}.finalSnapshot());`);
+      this.emit.line(`  const textResult = await ${this.buffer.currentTextChannelVar}.finalSnapshot();`);
+      this.emit.line('  cb(null, textResult);');
     }
     this.emit.line('})().catch(e => {');
     this.emit.line(`  var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this._generateErrorContext(node)}", context.path);`);

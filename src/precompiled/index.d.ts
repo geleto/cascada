@@ -29,7 +29,6 @@ export class AsyncTemplate {
    */
   constructor(src: PrecompiledTemplateSource, env?: AsyncEnvironment, path?: string, eagerCompile?: boolean);
   render(context?: object): Promise<string>;
-  renderForComposition(context: object, callback: TemplateCallback<string>, renderContext?: object | null): any;
 }
 
 export class PrecompiledTemplate extends Template {}

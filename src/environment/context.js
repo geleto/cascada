@@ -6,10 +6,7 @@ import {createPoison, markPromiseHandled} from '../runtime/errors.js';
 class ContextExecutionState {
   constructor() {
     this.blocks = {};
-    this.exportResolveFunctions = Object.create(null);
-    this.exportRejectFunctions = Object.create(null);
-    this.exportError = null;
-    this.exportChannels = Object.create(null);
+    this.exportedNames = new Set();
   }
 }
 
@@ -45,16 +42,8 @@ class Context extends Obj {
     return this.executionState.blocks;
   }
 
-  get exportResolveFunctions() {
-    return this.executionState.exportResolveFunctions;
-  }
-
-  get exportRejectFunctions() {
-    return this.executionState.exportRejectFunctions;
-  }
-
-  get exportChannels() {
-    return this.executionState.exportChannels;
+  get exportedNames() {
+    return this.executionState.exportedNames;
   }
 
   //if the variable is not found, returns undefined
@@ -164,80 +153,35 @@ class Context extends Obj {
   }
 
   addResolvedExport(name, value) {
-    if (this.exportResolveFunctions[name] !== undefined) {
+    if (this.exportedNames.has(name)) {
       return;
     }
     this.ctx[name] = value;
-    this.exportResolveFunctions[name] = null;
-    this.exportRejectFunctions[name] = null;
+    this.exportedNames.add(name);
   }
 
   addDeferredExport(name, channelName, buffer) {
-    if (this.exportResolveFunctions[name] !== undefined) {
+    if (this.exportedNames.has(name)) {
       return;
     }
 
-    let resolve;
-    let reject;
-    const promise = new Promise((res, rej) => {
-      resolve = res;
-      reject = rej;
-    });
+    const channel = buffer.getOwnChannel(channelName);
+    if (!channel) {
+      throw new Error(`Deferred export "${name}" could not resolve producer channel "${channelName}"${this.path ? ` in ${this.path}` : ''}`);
+    }
+    const promise = channel.finalSnapshot();
     // Deferred exports are often internal-only script locals. If such a local
     // resolves to poison and no consumer reads the export promise directly, the
     // channel still owns the error; the export promise should not become a
     // process-level unhandled rejection.
     markPromiseHandled(promise);
-    this.exportResolveFunctions[name] = resolve;
-    this.exportRejectFunctions[name] = reject;
-    this.exportChannels[name] = { channelName, buffer };
+    this.exportedNames.add(name);
     this.ctx[name] = promise;
-    if (this.executionState.exportError) {
-      reject(this.executionState.exportError);
-    }
-  }
-
-  resolveExports() {
-    const names = Object.keys(this.exportResolveFunctions);
-    for (const name of names) {
-      const resolve = this.exportResolveFunctions[name];
-      if (!resolve) {
-        continue;
-      }
-      const exportChannel = this.exportChannels[name];
-      if (!exportChannel || !exportChannel.buffer || !exportChannel.channelName) {
-        throw new Error(`Deferred export "${name}" is missing an explicit producer record${this.path ? ` in ${this.path}` : ''}`);
-      }
-      const channel = exportChannel.buffer.getOwnChannel(exportChannel.channelName);
-      if (!channel) {
-        throw new Error(`Deferred export "${name}" could not resolve producer channel "${exportChannel.channelName}"${this.path ? ` in ${this.path}` : ''}`);
-      }
-      resolve(channel.finalSnapshot());
-      this.exportResolveFunctions[name] = null;
-      this.exportRejectFunctions[name] = null;
-    }
-  }
-
-  rejectExports(error) {
-    if (!error) {
-      return;
-    }
-    this.executionState.exportError = error;
-    const names = Object.keys(this.exportRejectFunctions);
-    for (const name of names) {
-      const reject = this.exportRejectFunctions[name];
-      if (reject) {
-        reject(error);
-        this.exportResolveFunctions[name] = null;
-        this.exportRejectFunctions[name] = null;
-      }
-    }
   }
 
   getExported() {
     var exported = {};
-    const exportNames = Object.keys(this.exportResolveFunctions);
-    exportNames.forEach((name) => {
+    this.exportedNames.forEach((name) => {
       exported[name] = this.ctx[name];
     });
     return exported;

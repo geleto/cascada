@@ -92,7 +92,6 @@ export class AsyncTemplate {
   constructor(src: string, env?: AsyncEnvironment, path?: string, eagerCompile?: boolean);
   compileSource(): string;
   render(context?: object): Promise<string>;
-  renderForComposition(context: object, callback: TemplateCallback<string>, renderContext?: object | null): any;
 }
 
 interface ConfigureOptions {

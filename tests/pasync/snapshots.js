@@ -11,7 +11,7 @@ import {
   declareBufferChannel,
   createPoison,
   isPoisonError,
-  linkCurrentBufferToParentChannels,
+  linkInheritanceCallableFootprintChannels,
   runControlFlowBoundary
 } from '../../src/runtime/runtime.js';
 
@@ -284,7 +284,7 @@ describe('channel.finalSnapshot', function () {
       expect(constructedChild.isLinkedMutatedChannel('text')).to.be(true);
 
       const lateLinkedChild = new CommandBuffer(context, null);
-      linkCurrentBufferToParentChannels(parent, lateLinkedChild, ['text', 'data'], ['data']);
+      linkInheritanceCallableFootprintChannels(parent, lateLinkedChild, ['text', 'data'], ['data']);
       expect(lateLinkedChild.isLinkedMutatedChannel('text')).to.be(false);
       expect(lateLinkedChild.isLinkedMutatedChannel('data')).to.be(true);
     });
@@ -295,7 +295,7 @@ describe('channel.finalSnapshot', function () {
       parent.finish();
 
       const child = new CommandBuffer(context);
-      linkCurrentBufferToParentChannels(parent, child, ['text']);
+      linkInheritanceCallableFootprintChannels(parent, child, ['text']);
 
       expect(child.getChannel('text')).to.be(channel);
       expect(parent.arrays.text).to.be(null);

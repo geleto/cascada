@@ -92,4 +92,4 @@ function numArgs(args) {
   }
 }
 
-export { makeMacro, invokeMacro, withPath, makeKeywordArgs, numArgs };
+export { makeMacro, invokeMacro, withPath, makeKeywordArgs, getKeywordArgs, numArgs };

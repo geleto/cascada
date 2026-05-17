@@ -742,17 +742,6 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       expect(callbackError).to.be(null);
     });
 
-    it('should assert when a deferred export is missing its explicit producer record', function () {
-      const env = new AsyncEnvironment();
-      const context = new Context({}, {}, env, 'missing-export-producer.njk');
-
-      context.addDeferredExport('value', 'value', null);
-
-      expect(function () {
-        context.resolveExports();
-      }).to.throwException(/missing an explicit producer record/);
-    });
-
     it('should initialize base-block with inputs as local async var channels', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% block content(user) %}{{ user }}{% endblock %}', env, 'block-input-vars.njk');
@@ -765,7 +754,7 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       expect(source).to.contain('blockPayload && blockPayload.originalArgs ? blockPayload.originalArgs : {}');
       expect(source).to.not.contain('blockPayload && blockPayload.localsByTemplate');
       expect(source).to.contain('context.forkForComposition("block-input-vars.njk"');
-      expect(source).to.contain('runtime.linkCurrentBufferToParentChannels(parentBuffer, output');
+      expect(source).to.contain('runtime.linkInheritanceCallableFootprintChannels(parentBuffer, output');
       expect(source).to.not.contain('runtime.linkCurrentBufferToParentSharedChannels(');
       expect(source).to.not.contain('context.getBlockContract("content")');
       expect(source).to.not.contain('context.getCompositionSourceBuffer(');
@@ -788,7 +777,7 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       expect(source).to.contain('blockPayload = null');
       expect(source).to.contain('methodData) {');
       expect(source).to.contain('context.forkForComposition("child-inherited-block-inputs.njk"');
-      expect(source).to.contain('runtime.linkCurrentBufferToParentChannels(parentBuffer, output');
+      expect(source).to.contain('runtime.linkInheritanceCallableFootprintChannels(parentBuffer, output');
       expect(source).to.not.contain('runtime.linkCurrentBufferToParentSharedChannels(');
       expect(source).to.not.contain('blockPayload && blockPayload.localsByTemplate');
       expect(source).to.not.contain('context.getBlockContract("content")');

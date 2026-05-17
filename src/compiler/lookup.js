@@ -1,4 +1,5 @@
 import * as nodes from '../language/nodes.js';
+import {getSharedSourceName} from '../inheritance/shared-names.js';
 
 class CompileLookup {
   constructor(compiler) {
@@ -162,8 +163,9 @@ class CompileLookup {
       return true;
     }
     if (thisSharedFacts.channelType !== 'var') {
+      const sourceName = getSharedSourceName(thisSharedFacts.channelName);
       compiler.fail(
-        `Channel '${thisSharedFacts.channelName}' cannot be used as a bare symbol. Use '${thisSharedFacts.channelName}.snapshot()' instead.`,
+        `Channel 'this.${sourceName}' cannot be used as a bare symbol. Use 'this.${sourceName}.snapshot()' instead.`,
         node.lineno,
         node.colno,
         node

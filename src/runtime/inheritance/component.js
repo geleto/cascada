@@ -2,21 +2,23 @@ import {MutatingCommand, MutatingResultCommand} from '../channels/command-base.j
 import {CommandBuffer} from '../command-buffer.js';
 import {RuntimeFatalError, markPromiseHandled} from '../errors.js';
 import {resolveSingle} from '../resolve.js';
-import {isPrivateSharedName} from '../../inheritance/shared-names.js';
+import {getSharedSourceName, isPrivateSharedName} from '../../inheritance/shared-names.js';
 import {InheritanceInstance} from './instance.js';
 
 function getComponentSharedSchemaEntry(instance, channelName, errorContext) {
+  const sourceName = getSharedSourceName(channelName);
   if (isPrivateSharedName(channelName)) {
-    throw new RuntimeFatalError(`Shared channel '${channelName}' is private and cannot be accessed through a component`, errorContext);
+    throw new RuntimeFatalError(`Shared channel '${sourceName}' is private and cannot be accessed through a component`, errorContext);
   }
   const schemaEntry = instance.runtimeState.sharedSchema[channelName] || null;
   if (!schemaEntry) {
-    throw new RuntimeFatalError(`Shared channel '${channelName}' was not found`, errorContext);
+    throw new RuntimeFatalError(`Shared channel '${sourceName}' was not found`, errorContext);
   }
   return schemaEntry;
 }
 
 async function observeComponentSharedChannel(instance, observationCommand, errorContext = null, implicitVarRead = false) {
+  instance.assertOpen(errorContext);
   if (!observationCommand.isUniversalObservationCommand || !observationCommand.channelName) {
     throw new RuntimeFatalError('Component shared observation requires a universal observational channel command', errorContext);
   }
@@ -24,8 +26,9 @@ async function observeComponentSharedChannel(instance, observationCommand, error
   const channelName = observationCommand.channelName;
   const schemaEntry = getComponentSharedSchemaEntry(instance, channelName, errorContext);
   if (implicitVarRead && schemaEntry.type !== 'var') {
+    const sourceName = getSharedSourceName(channelName);
     throw new RuntimeFatalError(
-      `Shared channel '${channelName}' cannot be used as a bare symbol. Use '${channelName}.snapshot()' instead.`,
+      `Shared channel 'this.${sourceName}' cannot be used as a bare symbol. Use 'this.${sourceName}.snapshot()' instead.`,
       errorContext
     );
   }
@@ -47,7 +50,7 @@ class ComponentOperationCommand extends MutatingResultCommand {
 
   apply(channel) {
     return this.settleResultFrom(() => {
-      return withComponentInstance(channel, (instance) =>
+      return applyWithResolvedComponentInstance(channel, (instance) =>
         instance.invoke(this.methodName, this.args, this.errorContext)
       );
     });
@@ -68,7 +71,7 @@ class ObserveComponentChannelCommand extends MutatingResultCommand {
 
   apply(channel) {
     return this.settleResultFrom(() => {
-      return withComponentInstance(channel, (instance) =>
+      return applyWithResolvedComponentInstance(channel, (instance) =>
         observeComponentSharedChannel(
           instance,
           this.observationCommand,
@@ -80,7 +83,7 @@ class ObserveComponentChannelCommand extends MutatingResultCommand {
   }
 }
 
-function withComponentInstance(channel, fn) {
+function applyWithResolvedComponentInstance(channel, fn) {
   const target = channel._target;
   if (target && typeof target.then === 'function') {
     return target.then((instance) => {
@@ -135,7 +138,7 @@ async function createComponentInstance(spec) {
   try {
     await instance.invokeConstructor(errorContext);
   } catch (error) {
-    instance.close();
+    instance.close(error);
     if (cb) {
       cb(error);
     }

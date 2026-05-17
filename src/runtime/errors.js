@@ -184,8 +184,16 @@ class RuntimeError extends Error {
 /**
  * Fatal runtime error that should be reported to the callback even for async blocks.
  * Used for critical failures like broken sequential loop contracts.
+ * @todo - switch to errorConextObject only
  */
 class RuntimeFatalError extends RuntimeError {
+  /**
+   * @param {string|Error} message
+   * @param {number|ErrorContext|object} lineno - Line number, or an error-context object.
+   * @param {number} colno
+   * @param {string|null} errorContextString
+   * @param {string|null} path
+   */
   constructor(message, lineno = 0, colno = 0, errorContextString = null, path = null) {
     if (lineno && typeof lineno === 'object') {
       const errorContext = lineno;

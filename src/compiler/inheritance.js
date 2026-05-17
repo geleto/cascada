@@ -693,7 +693,7 @@ class CompileInheritance {
   _emitCallableEntryParentLinks(callableNode, isScriptMethod) {
     this.emit.line(`${this.compiler.buffer.currentBuffer}._context = context;`);
     this.emit.line(
-      `runtime.linkCurrentBufferToParentChannels(` +
+      `runtime.linkInheritanceCallableFootprintChannels(` +
       `parentBuffer, ${this.compiler.buffer.currentBuffer}, ` +
       `methodData.mergedLinkedChannels, ` +
       `methodData.mergedMutatedChannels` +

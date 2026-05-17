@@ -13,6 +13,8 @@ class InheritanceInstance {
     this.rootBuffer = options.rootBuffer;
     this.sharedRootBuffer = options.sharedRootBuffer;
     this.context = options.context;
+    this.failure = null;
+    this.closed = false;
   }
 
   static async create(options) {
@@ -46,14 +48,17 @@ class InheritanceInstance {
   }
 
   invoke(methodName, args = [], origin = null) {
+    this.assertOpen(origin);
     return this._invokeFromMethodData(this.getMethod(methodName, origin), args, origin, this.sharedRootBuffer, this.context);
   }
 
   invokeFromCurrentBuffer(methodName, args, context, currentBuffer, origin = null) {
+    this.assertOpen(origin);
     return this._invokeFromMethodData(this.getMethod(methodName, origin), args, origin, currentBuffer, context);
   }
 
   invokeSuper(methodData, args, context, currentBuffer, origin = null) {
+    this.assertOpen(origin);
     if (!methodData || !methodData.super) {
       throw new RuntimeFatalError(
         `super() in '${methodData ? methodData.name : '<unknown>'}' has no parent implementation`,
@@ -64,11 +69,24 @@ class InheritanceInstance {
   }
 
   invokeConstructor(origin = null) {
+    this.assertOpen(origin);
     const constructorEntry = this.runtimeState.methods.__constructor__ || null;
     if (!constructorEntry) {
       return undefined;
     }
     return this._invokeFromMethodData(constructorEntry, [], origin, this.sharedRootBuffer, this.context);
+  }
+
+  assertOpen(origin = null) {
+    if (this.failure) {
+      throw this.failure;
+    }
+    if (this.closed) {
+      throw new RuntimeFatalError(
+        'Inheritance instance is closed and cannot accept new operations',
+        origin
+      );
+    }
   }
 
   getMethod(methodName, origin) {
@@ -122,13 +140,16 @@ class InheritanceInstance {
   }
 
   finishRender(entryResult) {
-    this.sharedRootBuffer.finish();
-    this.rootBuffer.finish();
+    this.close();
     const finished = this.rootBuffer.getFinishedPromise();
     return finished.then(() => entryResult);
   }
 
-  close() {
+  close(error = null) {
+    if (error && !this.failure) {
+      this.failure = error;
+    }
+    this.closed = true;
     this.sharedRootBuffer.finish();
     this.rootBuffer.finish();
   }
@@ -145,8 +166,13 @@ async function renderInheritanceParticipantRoot({ entryTemplateOrScript, env, co
     origin
   });
   let entryResult;
-  entryResult = await instance.invokeConstructor(origin);
-  return normalizeFinalPromise(instance.finishRender(entryResult));
+  try {
+    entryResult = await instance.invokeConstructor(origin);
+    return normalizeFinalPromise(instance.finishRender(entryResult));
+  } catch (error) {
+    instance.close(error);
+    throw error;
+  }
 }
 
 export {InheritanceInstance, renderInheritanceParticipantRoot};

@@ -1,11 +1,10 @@
 import {RuntimeFatalError} from '../errors.js';
+import {getKeywordArgs, numArgs} from '../macro.js';
 
-// TODO(Step 8): Deduplicate with macro keyword/positional argument mapping
-// once inherited callables and macros share one runtime argument-frame helper.
 function getInvocationArgs(args) {
-  const values = Array.isArray(args) ? args.slice() : [];
-  const lastValue = values[values.length - 1];
-  const kwargs = lastValue?.__hasKeywordArgs === true ? values.pop() : {};
+  const sourceArgs = Array.isArray(args) ? args : [];
+  const values = sourceArgs.slice(0, numArgs(sourceArgs));
+  const kwargs = getKeywordArgs(sourceArgs);
   return { values, kwargs };
 }
 
@@ -41,6 +40,46 @@ function createInheritanceCallableArgumentFrame(
   return argumentFrame;
 }
 
+function linkInheritanceCallableFootprintChannels(parentBuffer, currentBuffer, channelNames, linkedMutatedChannelNames = null) {
+  if (parentBuffer === currentBuffer) {
+    return currentBuffer;
+  }
+
+  const linkedMutatedChannelSet = new Set(linkedMutatedChannelNames || []);
+  for (const channelName of channelNames) {
+    const channel = parentBuffer.getChannel(channelName);
+    if (currentBuffer.getChannelIfExists(channelName) === channel) {
+      if (linkedMutatedChannelSet.has(channelName)) {
+        currentBuffer._markLinkedMutatedChannel(channelName);
+      }
+      continue;
+    }
+    if (currentBuffer.hasChannel(channelName)) {
+      throw new RuntimeFatalError(
+        `Cannot link channel '${channelName}' because the current buffer already has a different channel object`,
+        0,
+        0,
+        null,
+        null
+      );
+    }
+    if (parentBuffer.isChannelFinished(channelName) || parentBuffer.isFinished()) {
+      currentBuffer._installLinkedChannel(channelName, channel);
+      if (linkedMutatedChannelSet.has(channelName)) {
+        currentBuffer._markLinkedMutatedChannel(channelName);
+      }
+      continue;
+    }
+    parentBuffer.addBuffer(currentBuffer, channelName);
+    if (linkedMutatedChannelSet.has(channelName)) {
+      currentBuffer._markLinkedMutatedChannel(channelName);
+    }
+  }
+
+  return currentBuffer;
+}
+
 export {
-  createInheritanceCallableArgumentFrame
+  createInheritanceCallableArgumentFrame,
+  linkInheritanceCallableFootprintChannels
 };

@@ -1536,7 +1536,7 @@ describe('Inheritance rebuild', function () {
       }
     });
 
-    it('closes component instances through owner side-channel completion without an instance preflight check', async function () {
+    it('closes component instances through owner side-channel completion and rejects later operations', async function () {
       const participant = inheritanceParticipant('component.script', {
         scriptMode: true,
         methodEntries: {
@@ -1570,7 +1570,12 @@ describe('Inheritance rebuild', function () {
       await sideChannelFinished;
       await Promise.resolve();
 
-      expect(await instance.invoke('ping', [], { path: 'main.script', lineno: 2, colno: 1 })).to.be('pong');
+      expect(function () {
+        instance.invoke('ping', [], { path: 'main.script', lineno: 2, colno: 1 });
+      }).to.throwException((error) => {
+        expect(error).to.be.a(runtime.RuntimeFatalError);
+        expect(error.message).to.contain('cannot accept new operations');
+      });
       expect(function () {
         instance.close();
       }).not.to.throwException();
@@ -1652,7 +1657,7 @@ describe('Inheritance rebuild', function () {
       expect(await localEnv.renderTemplate('main.njk', {})).to.be('B(child)');
     });
 
-    it('preserves include-site context for participant load failures', async function () {
+    it('propagates participant load failures through include rendering', async function () {
       const loader = new StringLoader();
       const localEnv = new AsyncEnvironment(loader);
       loader.addTemplate('child.njk', '{% extends "missing-parent.njk" %}{% block body %}child{% endblock %}');
@@ -1665,12 +1670,12 @@ describe('Inheritance rebuild', function () {
         await localEnv.renderTemplate('main.njk', {});
         expect().fail('Expected include participant load failure');
       } catch (error) {
-        expect(error.message).to.contain('(main.njk)');
+        expect(error.message).to.contain('(child.njk)');
         expect(error.message).to.contain('missing-parent.njk');
       }
     });
 
-    it('preserves include-site context for participant constructor failures', async function () {
+    it('propagates participant constructor failures through include rendering', async function () {
       const loader = new StringLoader();
       const localEnv = new AsyncEnvironment(loader);
       const failure = new Error('constructor boom');
@@ -1685,7 +1690,7 @@ describe('Inheritance rebuild', function () {
         await localEnv.renderTemplate('main.njk', {});
         expect().fail('Expected include participant constructor failure');
       } catch (error) {
-        expect(error.message).to.contain('(main.njk)');
+        expect(error.message).to.contain('(child.njk)');
         expect(error.message).to.contain('constructor boom');
       }
     });

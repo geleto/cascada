@@ -251,6 +251,7 @@ class CompileComposition {
       const includeVarsVar = this.compiler._tmpid();
       const includeContextVar = this.compiler._tmpid();
       const includeTextValue = this.compiler._tmpid();
+      const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
 
       this.emit(`let ${templateNameVar} = `);
       this.compiler.compileExpression(node.template, null, node.template, true);
@@ -263,7 +264,7 @@ class CompileComposition {
 
       this.emit.line(`const ${templateVar}_resolved = await runtime.resolveSingle(${templateVar});`);
       this.emit.line(`${templateVar}_resolved.compile();`);
-      this.emit.line(`let ${includeTextValue} = ${templateVar}_resolved.renderIncludeText(${includeContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'});`);
+      this.emit.line(`let ${includeTextValue} = ${templateVar}_resolved._renderIncludeText(${includeContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, ${errorContextJson});`);
       this.emit.line(`${this.compiler.buffer.currentBuffer}.addCommand(new runtime.TextCommand({ channelName: "${this.compiler.buffer.currentTextChannelName}", args: [${includeTextValue}], pos: {lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0}} }), "${this.compiler.buffer.currentTextChannelName}");`);
       this.compiler.buffer.emitLimitedLoopCompletion(includeTextValue, node);
     });

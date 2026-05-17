@@ -86,15 +86,12 @@ const noopTmplSrc = {
 const noopTmplSrcAsync = {
   type: 'code',
   obj: {
-    root(env, context, runtime, cb, compositionMode = false) {
+    root(env, context, runtime, cb) {
       try {
-        if (!compositionMode) {
-          cb(null, '');
-          return;
-        }
         const output = new runtime.CommandBuffer(context, null);
         runtime.declareBufferChannel(output, '__text__', 'text', context, null);
         output.finish();
+        cb(null, '');
         return output;
       } catch (e) {
         const err = handleError(e, null, null, null, context ? context.path : null);
