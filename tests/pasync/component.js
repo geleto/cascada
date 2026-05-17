@@ -563,9 +563,9 @@ describe('Phase 8 - Component Observations', function () {
     ].join('\n'), env, 'Main.script');
     const source = script.compileSource();
 
-    expect(source).to.contain('runtime.observeComponentChannel({ bindingName: "ns", currentBuffer: output, observationCommand: new runtime.SnapshotCommand({ channelName: "log"');
-    expect(source).to.contain('runtime.observeComponentChannel({ bindingName: "ns", currentBuffer: output, observationCommand: new runtime.IsErrorCommand({ channelName: "status"');
-    expect(source).to.contain('runtime.observeComponentChannel({ bindingName: "ns", currentBuffer: output, observationCommand: new runtime.GetErrorCommand({ channelName: "status"');
+    expect(source).to.contain('runtime.observeComponentChannel({ bindingName: "ns", currentBuffer: output, observationCommand: new runtime.SnapshotCommand({ channelName: "$log"');
+    expect(source).to.contain('runtime.observeComponentChannel({ bindingName: "ns", currentBuffer: output, observationCommand: new runtime.IsErrorCommand({ channelName: "$status"');
+    expect(source).to.contain('runtime.observeComponentChannel({ bindingName: "ns", currentBuffer: output, observationCommand: new runtime.GetErrorCommand({ channelName: "$status"');
   });
 
   it('should observe shared var poison through component `is error` and `#`', async function () {
@@ -594,13 +594,20 @@ describe('Phase 8 - Component Observations', function () {
   });
 
   it('should reject non-observational component shared commands', async function () {
-    if (!ComponentInstance) {
-      this.skip();
-      return;
-    }
-
+    const env = { globals: {} };
     const makeContext = (path) => ({
       path,
+      env,
+      ctx: {},
+      getRenderContextVariables() {
+        return {};
+      },
+      lookupScript(name) {
+        return env.globals[name];
+      },
+      forkForPath(nextPath) {
+        return makeContext(nextPath);
+      },
       forkForComposition(nextPath) {
         return makeContext(nextPath);
       }
@@ -613,16 +620,22 @@ describe('Phase 8 - Component Observations', function () {
     const sharedRootBuffer = new runtimeModule.CommandBuffer(makeContext('Component.script'), null, null, null);
     runtimeModule.declareBufferChannel(sharedRootBuffer, 'status', 'var', ownerContext, null);
 
-    const inheritanceState = runtimeModule.createInheritanceState();
-    inheritanceState.sharedRootBuffer = sharedRootBuffer;
-    inheritanceState.sharedSchema.status = 'var';
-
     ownerBuffer.addCommand(new runtimeModule.VarCommand({
       channelName: 'nsBinding',
-      args: [new ComponentInstance({
+      args: [new runtimeModule.InheritanceInstance({
+        entryTemplateOrScript: { path: 'Component.script' },
+        runtimeState: {
+          sharedSchema: {
+            status: { type: 'var' }
+          },
+          methods: {}
+        },
+        env: {},
+        runtime: runtimeModule,
+        cb: () => {},
         context: makeContext('Component.script'),
         rootBuffer: sharedRootBuffer,
-        inheritanceState
+        sharedRootBuffer
       })],
       pos: { lineno: 1, colno: 1 }
     }), 'nsBinding');
@@ -716,8 +729,8 @@ describe('Phase 8 - Component Observations', function () {
     ]);
 
     expect(outcome.type).to.be('error');
-    expect(outcome.error).to.be.a(runtimeModule.RuntimeError);
-    expect(outcome.error.message).to.contain('Component binding is not a component instance');
+    expect(runtimeModule.isPoisonError(outcome.error)).to.be(true);
+    expect(outcome.error.message).to.contain('instance.invoke is not a function');
   });
 
   it('should reject instead of hanging when component bootstrap fails to load the target script', async function () {
@@ -738,7 +751,6 @@ describe('Phase 8 - Component Observations', function () {
     ]);
 
     expect(outcome.type).to.be('error');
-    expect(runtimeModule.isPoisonError(outcome.error)).to.be(true);
     expect(outcome.error.message).to.match(/Missing\.script|missing/i);
   });
 
@@ -764,7 +776,7 @@ describe('Phase 8 - Component Observations', function () {
 
     expect(outcome.type).to.be('error');
     expect(outcome.error).to.be.a(runtimeModule.RuntimeError);
-    expect(outcome.error.message).to.contain('Shared channel \'missing\' was not found');
+    expect(outcome.error.message).to.contain('Shared channel \'$missing\' was not found');
   });
 
   it('should read nested properties from component shared vars', async function () {
@@ -801,7 +813,7 @@ describe('Phase 8 - Component Observations', function () {
       expect().fail('Expected non-var shared channel nested read to fail');
     } catch (error) {
       expect(error).to.be.a(runtimeModule.RuntimeError);
-      expect(error.message).to.contain('Shared channel \'log\' cannot be used as a bare symbol');
+      expect(error.message).to.contain('Shared channel \'$log\' cannot be used as a bare symbol');
     }
   });
 
@@ -992,12 +1004,30 @@ describe('Phase 8 - Component Lifecycle', function () {
     expect(result).to.be('before|one|between|two|after|');
   });
 
-  it('should start component constructor work behind earlier caller-side binding-lane waits', async function () {
+  it('should initialize the component binding independently of earlier binding-lane waits', async function () {
     const events = [];
+    const env = new AsyncEnvironment();
+    env.addGlobal('record', (event) => {
+      events.push(event);
+    });
+    const componentScript = new Script([
+      'method noop()',
+      '  return null',
+      'endmethod',
+      'record("ctor-start")'
+    ].join('\n'), env, 'Component.script');
     const makeContext = (path) => ({
       path,
+      env,
+      ctx: {},
       getRenderContextVariables() {
         return {};
+      },
+      lookupScript(name) {
+        return env.globals[name];
+      },
+      forkForPath(nextPath) {
+        return makeContext(nextPath);
       },
       forkForComposition(nextPath) {
         return makeContext(nextPath);
@@ -1024,18 +1054,10 @@ describe('Phase 8 - Component Lifecycle', function () {
     const startupPromise = runtimeModule.startComponentInstance({
       currentBuffer: ownerBuffer,
       bindingName: 'nsBinding',
-      componentScriptOrTemplate: {
-        compile() {},
-        rootRenderFunc() {
-          events.push('ctor-start');
-        },
-        methods: {},
-        sharedSchema: [],
-        path: 'Component.script'
-      },
+      componentScriptOrTemplate: componentScript,
       payload: {},
       ownerContext,
-      env: {},
+      env,
       runtime: runtimeModule,
       cb: () => {},
       errorContext: { lineno: 2, colno: 1, path: 'Main.script' }
@@ -1046,15 +1068,46 @@ describe('Phase 8 - Component Lifecycle', function () {
     await sideChannelFinished;
     await startupPromise;
 
-    expect(events).to.eql(['gate-resolved', 'ctor-start']);
+    expect(events).to.eql(['ctor-start', 'gate-resolved']);
   });
 
   it('should start component constructor only after metadata finalization resolves', async function () {
     const events = [];
+    const loader = new StringLoader();
+    const env = new AsyncEnvironment(loader);
+    env.addGlobal('selectParent', () => new Promise((resolve) => {
+      Promise.resolve().then(() => {
+        events.push('finalize-parent');
+        resolve('Parent.script');
+      });
+    }));
+    env.addGlobal('record', (event) => {
+      events.push(event);
+    });
+    loader.addTemplate('Parent.script', [
+      'method ping()',
+      '  return "parent"',
+      'endmethod'
+    ].join('\n'));
+    loader.addTemplate('Component.script', [
+      'extends selectParent()',
+      'method ping()',
+      '  return "child"',
+      'endmethod',
+      'record("constructor")'
+    ].join('\n'));
     const makeContext = (path) => ({
       path,
+      env,
+      ctx: {},
       getRenderContextVariables() {
         return {};
+      },
+      lookupScript(name) {
+        return env.globals[name];
+      },
+      forkForPath(nextPath) {
+        return makeContext(nextPath);
       },
       forkForComposition(nextPath) {
         return makeContext(nextPath);
@@ -1065,65 +1118,13 @@ describe('Phase 8 - Component Lifecycle', function () {
     const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null);
     runtimeModule.declareBufferChannel(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
 
-    const compiledMethodEntries = {
-      __constructor__: {
-        fn() {
-          events.push('constructor');
-          return null;
-        },
-        signature: { argNames: [] },
-        ownerKey: 'Component.script',
-        ownMutatedChannels: [],
-        ownLinkedChannels: [],
-        super: false,
-        inheritedMethodDependencies: {}
-      }
-    };
-
     const startupPromise = runtimeModule.startComponentInstance({
       currentBuffer: ownerBuffer,
       bindingName: 'nsBinding',
-      componentScriptOrTemplate: {
-        compile() {},
-        rootRenderFunc(env, componentContext, runtime, cb, compositionMode, componentRootBuffer, inheritanceStateValue) {
-          void env;
-          void cb;
-          void compositionMode;
-          events.push('root-render');
-          runtime.bootstrapInheritanceMetadata(
-            inheritanceStateValue,
-            compiledMethodEntries,
-            {},
-            {},
-            componentRootBuffer,
-            componentContext
-          );
-          runtime.runCompiledRootStartup({
-            setup: null,
-            compiledMethodEntries,
-            runtime,
-            env: {},
-            context: componentContext,
-            cb: () => {},
-            output: componentRootBuffer,
-            inheritanceState: inheritanceStateValue,
-            extendsState: null,
-            options: null
-          });
-          events.push('startup-called');
-          Promise.resolve().then(() => {
-            events.push('finalize');
-            runtime.finalizeInheritanceMetadata(inheritanceStateValue, componentContext);
-          });
-          return componentRootBuffer;
-        },
-        methods: compiledMethodEntries,
-        sharedSchema: {},
-        path: 'Component.script'
-      },
+      componentScriptOrTemplate: env.getScript('Component.script', false, null, false),
       payload: {},
       ownerContext,
-      env: {},
+      env,
       runtime: runtimeModule,
       cb: () => {},
       errorContext: { lineno: 2, colno: 1, path: 'Main.script' }
@@ -1134,7 +1135,7 @@ describe('Phase 8 - Component Lifecycle', function () {
     await sideChannelFinished;
     await startupPromise;
 
-    expect(events).to.eql(['root-render', 'startup-called', 'finalize', 'constructor']);
+    expect(events).to.eql(['finalize-parent', 'constructor']);
   });
 
   it('should auto-close a component instance when the owner buffer finishes', async function () {

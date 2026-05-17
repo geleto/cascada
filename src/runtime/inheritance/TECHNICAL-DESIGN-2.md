@@ -1917,6 +1917,12 @@ Tests:
 - nested includes of inheritance participants do not share instance state unless
   ordinary include/context rules explicitly pass shared values
 
+Deferred from Step 6:
+
+- include remains the only planned way to render an inheritance participant
+  template inside another template; `component` remains stateful script-facing
+  binding semantics and does not become a drop-in include replacement.
+
 ### Step 8: Cleanup, Fixtures, And Test Migration
 
 Authoritative sections:
@@ -1937,12 +1943,22 @@ Goal:
   paths have settled on the same keyword/positional behavior
 - triage skipped inheritance tests as deleted, rewritten, or still required
 - verify compiler-private runtime helpers do not look like public API
+- map internal `$` shared-storage names back to user-facing `this.name` or
+  `name` in diagnostics, snapshots, and docs where the storage key is not the
+  thing being tested
 - delete or move remaining sync inheritance compiler methods from the clean
   async inheritance module; the sync compiler continues to use the Nunjucks
   inheritance path and is outside this rebuild
 - evaluate splitting inheritance-specific generated-source emission into an
   `InheritanceEmit` helper owned by `CompileInheritance`; do this only if the
   boundary is pure emission and reduces coupling
+- replace constructor-emitted shared default claims with finalized-schema-driven
+  default initialization if that can be done without changing source-order
+  semantics
+- keep the source-order declaration-log work in
+  `docs/code/source-order-declarations.md` as a separate compiler correctness
+  pass; Step 8 should only remove temporary inheritance assumptions that become
+  unnecessary after that pass exists
 
 Tests:
 
@@ -1955,6 +1971,11 @@ Tests:
 - browser/precompiled fixtures regenerated from target compiler output
 - provisional loader/finalization/invocation unit tests are either promoted to
   integration tests, retained with an invariant-specific reason, or deleted
+- tests that still construct removed legacy component objects are migrated to
+  real `InheritanceInstance` component fixtures or deleted if they cover only
+  obsolete APIs
+- generated-source tests distinguish deliberate internal `$` storage-name
+  assertions from user-facing diagnostics
 - no skipped inheritance test group remains without an explicit disposition
 - `src/compiler/inheritance.js` contains only clean async inheritance compiler
   code, or any retained sync bridge has an explicit non-inheritance-module home

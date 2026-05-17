@@ -1,9 +1,9 @@
 import {MutatingCommand, MutatingResultCommand} from '../channels/command-base.js';
 import {CommandBuffer} from '../command-buffer.js';
-import {RuntimeFatalError} from '../errors.js';
+import {RuntimeFatalError, markPromiseHandled} from '../errors.js';
 import {resolveSingle} from '../resolve.js';
-import {InheritanceInstance} from './instance.js';
 import {isPrivateSharedName} from '../../inheritance/shared-names.js';
+import {InheritanceInstance} from './instance.js';
 
 function getComponentSharedSchemaEntry(instance, channelName, errorContext) {
   if (isPrivateSharedName(channelName)) {
@@ -46,52 +46,10 @@ class ComponentOperationCommand extends MutatingResultCommand {
   }
 
   apply(channel) {
-    return this.settleResult(
-      resolveSingle(channel._getTarget())
-        .then((instance) => instance.invoke(this.methodName, this.args, this.errorContext))
-    );
-  }
-}
-
-class StartComponentInstanceCommand extends MutatingCommand {
-  constructor({
-    componentScriptOrTemplate,
-    payload,
-    ownerContext,
-    env,
-    runtime,
-    cb = null,
-    ownerBuffer,
-    sideChannelName,
-    errorContext = null
-  }) {
-    super();
-    this.componentScriptOrTemplate = componentScriptOrTemplate;
-    this.payload = payload;
-    this.ownerContext = ownerContext;
-    this.env = env;
-    this.runtime = runtime;
-    this.cb = cb;
-    this.ownerBuffer = ownerBuffer;
-    this.sideChannelName = sideChannelName;
-    this.errorContext = errorContext;
-  }
-
-  apply(channel) {
-    const createdInstance = createComponentInstance({
-      componentScriptOrTemplate: this.componentScriptOrTemplate,
-      payload: this.payload,
-      ownerContext: this.ownerContext,
-      env: this.env,
-      runtime: this.runtime,
-      cb: this.cb,
-      ownerBuffer: this.ownerBuffer,
-      sideChannelName: this.sideChannelName,
-      errorContext: this.errorContext
-    });
-    return createdInstance.then((instance) => {
-      channel.setInitialValue(instance);
-      return instance;
+    return this.settleResultFrom(() => {
+      return withComponentInstance(channel, (instance) =>
+        instance.invoke(this.methodName, this.args, this.errorContext)
+      );
     });
   }
 }
@@ -109,15 +67,28 @@ class ObserveComponentChannelCommand extends MutatingResultCommand {
   }
 
   apply(channel) {
-    return this.settleResult(
-      resolveSingle(channel._getTarget()).then((instance) => observeComponentSharedChannel(
-        instance,
-        this.observationCommand,
-        this.errorContext,
-        this.implicitVarRead
-      ))
-    );
+    return this.settleResultFrom(() => {
+      return withComponentInstance(channel, (instance) =>
+        observeComponentSharedChannel(
+          instance,
+          this.observationCommand,
+          this.errorContext,
+          this.implicitVarRead
+        )
+      );
+    });
   }
+}
+
+function withComponentInstance(channel, fn) {
+  const target = channel._target;
+  if (target && typeof target.then === 'function') {
+    return target.then((instance) => {
+      channel.setInitialValue(instance);
+      return fn(instance);
+    });
+  }
+  return fn(target);
 }
 
 async function createComponentInstance(spec) {
@@ -189,7 +160,8 @@ function startComponentInstance(spec) {
     errorContext = null
   } = spec;
   const sideChannelName = bindingName;
-  const command = new StartComponentInstanceCommand({
+  const channel = currentBuffer.getChannel(sideChannelName);
+  const componentInstancePromise = createComponentInstance({
     componentScriptOrTemplate,
     payload,
     ownerContext,
@@ -200,7 +172,9 @@ function startComponentInstance(spec) {
     sideChannelName,
     errorContext
   });
-  currentBuffer.addCommand(command, sideChannelName);
+  markPromiseHandled(componentInstancePromise);
+  channel.setInitialValue(componentInstancePromise);
+  return componentInstancePromise;
 }
 
 function callComponentMethod(spec) {

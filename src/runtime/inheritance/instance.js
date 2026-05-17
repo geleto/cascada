@@ -105,24 +105,20 @@ class InheritanceInstance {
       };
     const renderContext = methodData.isConstructor ? undefined : context.getRenderContextVariables();
 
-    try {
-      const result = await methodData.fn(
-        this.env,
-        context,
-        this.runtime,
-        this.cb,
-        invocationBuffer,
-        callablePayload,
-        renderContext,
-        methodData,
-        this
-      );
-      invocationBuffer.finish();
-      return result;
-    } catch (error) {
-      invocationBuffer.finish();
-      throw error;
-    }
+    const result = await methodData.fn(
+      this.env,
+      context,
+      this.runtime,
+      this.cb,
+      invocationBuffer,
+      callablePayload,
+      renderContext,
+      methodData,
+      this
+    );
+    invocationBuffer.finish();
+    await invocationBuffer.getFinishedPromise();
+    return result;
   }
 
   finishRender(entryResult) {

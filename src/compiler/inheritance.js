@@ -620,11 +620,25 @@ class CompileInheritance {
       this._emitCallableEntryReturn(false);
       return;
     }
+    this._emitConstructorSuperReturn(constructorDefinition);
+  }
+
+  _emitConstructorSuperReturn(constructorDefinition) {
     const errorContextJson = JSON.stringify(this.compiler._createErrorContext(constructorDefinition));
     this.emit.line(`return runtime.resolveSingle(currentInstance.invokeSuper(methodData, [], context, ${this.compiler.buffer.currentBuffer}, ${errorContextJson})).then((parentResult) => {`);
     this.emit.line(`  ${this.compiler.buffer.currentBuffer}.finish();`);
     this.emit.line('  return parentResult;');
     this.emit.line('});');
+  }
+
+  _emitScriptSharedDefaultConstructorEntryReturn(hasExtends, constructorDefinition) {
+    // Shared defaults still run through constructor execution. This helper is
+    // for scripts with shared default initializers but no user constructor body.
+    if (!hasExtends) {
+      this._emitCallableEntryReturn(true);
+      return;
+    }
+    this._emitConstructorSuperReturn(constructorDefinition);
   }
 
   _getCallableSignature(callableNode) {
@@ -749,6 +763,8 @@ class CompileInheritance {
     });
     if (constructorRootNode && !isScriptMethod) {
       this._emitTemplateConstructorEntryReturn(constructorRootNode._analysis.inheritance.hasExtends, callableNode);
+    } else if (constructorRootNode && callableNode.isSharedDefaultOnlyConstructor) {
+      this._emitScriptSharedDefaultConstructorEntryReturn(constructorRootNode._analysis.inheritance.hasExtends, callableNode);
     } else {
       this._emitCallableEntryReturn(isScriptMethod);
     }
@@ -786,6 +802,7 @@ class CompileInheritance {
 
     if (constructorEntry) {
       const constructorUsesSuper = (!this.compiler.scriptMode && node._analysis.inheritance.hasExtends) ||
+        (this.compiler.scriptMode && constructorEntry.isSharedDefaultOnlyConstructor && node._analysis.inheritance.hasExtends) ||
         constructorEntry._analysis.callableUsesSuper;
       methodEntries.push(this._compileMethodEntryObject(this._createMethodEntryDescriptor(constructorEntry, {
         name: '__constructor__',

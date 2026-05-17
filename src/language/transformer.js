@@ -555,6 +555,9 @@ function extractAsyncInheritanceMetadata(ast, scriptMode) {
   const constructorDefinition = (constructorBodyChildren.length > 0 || hasSharedDefault)
     ? createRootConstructorDefinition(constructorBodyChildren, ast)
     : null;
+  if (constructorDefinition) {
+    constructorDefinition.isSharedDefaultOnlyConstructor = hasSharedDefault && constructorBodyChildren.length === 0;
+  }
 
   ast.children = executableChildren.filter((child) =>
     !constructorChildSet.has(child) || child instanceof nodes.Block

@@ -72,6 +72,18 @@ class Command {
     return resolve(result);
   }
 
+  // Use when computing the command result can throw synchronously before it
+  // returns a value or promise. The command result promise still needs to reject
+  // in that case.
+  settleResultFrom(fn) {
+    try {
+      return this.settleResult(fn());
+    } catch (err) {
+      this.rejectResult(err);
+      throw err;
+    }
+  }
+
   getError() {
     return null;
   }

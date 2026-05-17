@@ -97,7 +97,7 @@ function createRuntimeMethodEntry(compiledEntry, ownerEntry, parentEntry, errors
     superEntry ? superEntry.mergedMutatedChannels : []
   );
 
-  return Object.freeze({
+  return {
     name: compiledEntry.name,
     fn: compiledEntry.fn,
     signature: compiledEntry.signature,
@@ -105,9 +105,9 @@ function createRuntimeMethodEntry(compiledEntry, ownerEntry, parentEntry, errors
     isConstructor: !!compiledEntry.isConstructor,
     ownerEntry,
     super: superEntry,
-    mergedLinkedChannels: Object.freeze(mergedLinkedChannels),
-    mergedMutatedChannels: Object.freeze(mergedMutatedChannels)
-  });
+    mergedLinkedChannels,
+    mergedMutatedChannels
+  };
 }
 
 function createRuntimeSharedSchema(entries, errors, context) {
@@ -187,6 +187,70 @@ function validateInheritedMethodDependencies(entries, methodNames, errors, conte
   });
 }
 
+function expandAllMethodDependencyFootprints(runtimeEntries, runtimeMethodsByName, dependencyNamesByEntry) {
+  const dependencyEntriesByEntry = new Map();
+  runtimeEntries.forEach((entry) => {
+    const dependencyEntries = (dependencyNamesByEntry.get(entry) || [])
+      .map((name) => runtimeMethodsByName[name]);
+    dependencyEntriesByEntry.set(entry, dependencyEntries);
+  });
+
+  let changed = true;
+  let remainingPasses = runtimeEntries.length;
+  while (changed && remainingPasses > 0) {
+    changed = false;
+    remainingPasses--;
+    runtimeEntries.forEach((entry) => {
+      if (expandMethodDependencyFootprint(entry, dependencyEntriesByEntry, new Set())) {
+        changed = true;
+      }
+    });
+  }
+
+  runtimeEntries.forEach((entry) => {
+    entry.mergedLinkedChannels = Object.freeze(entry.mergedLinkedChannels.slice());
+    entry.mergedMutatedChannels = Object.freeze(entry.mergedMutatedChannels.slice());
+    Object.freeze(entry);
+  });
+}
+
+function expandMethodDependencyFootprint(entry, dependencyEntriesByEntry, visiting) {
+  if (visiting.has(entry)) {
+    return false;
+  }
+  visiting.add(entry);
+
+  const dependencyEntries = dependencyEntriesByEntry.get(entry) || [];
+  let changed = false;
+  dependencyEntries.forEach((dependency) => {
+    if (expandMethodDependencyFootprint(dependency, dependencyEntriesByEntry, visiting)) {
+      changed = true;
+    }
+  });
+
+  if (dependencyEntries.length > 0) {
+    const nextLinkedChannels = mergeChannelFootprintNames(
+      entry.mergedLinkedChannels,
+      ...dependencyEntries.map((dependency) => dependency.mergedLinkedChannels)
+    );
+    const nextMutatedChannels = mergeChannelFootprintNames(
+      entry.mergedMutatedChannels,
+      ...dependencyEntries.map((dependency) => dependency.mergedMutatedChannels)
+    );
+    if (
+      nextLinkedChannels.length !== entry.mergedLinkedChannels.length ||
+      nextMutatedChannels.length !== entry.mergedMutatedChannels.length
+    ) {
+      entry.mergedLinkedChannels = nextLinkedChannels;
+      entry.mergedMutatedChannels = nextMutatedChannels;
+      changed = true;
+    }
+  }
+
+  visiting.delete(entry);
+  return changed;
+}
+
 function finalizeInheritanceChain(chain, context = null) {
   const errors = [];
   const entries = chain.entries;
@@ -194,6 +258,8 @@ function finalizeInheritanceChain(chain, context = null) {
   const methodNames = new Set();
   const runtimeMethodsByName = Object.create(null);
   const parentRuntimeEntriesByName = Object.create(null);
+  const runtimeEntries = [];
+  const dependencyNamesByEntry = new Map();
 
   entries.forEach((entry) => {
     Object.keys(entry.spec.methodEntries || {}).forEach((name) => methodNames.add(name));
@@ -210,11 +276,17 @@ function finalizeInheritanceChain(chain, context = null) {
       const runtimeEntry = createRuntimeMethodEntry(compiledEntry, ownerEntry, parentEntry, errors, context);
       parentRuntimeEntriesByName[name] = runtimeEntry;
       runtimeMethodsByName[name] = runtimeEntry;
+      runtimeEntries.push(runtimeEntry);
+      dependencyNamesByEntry.set(
+        runtimeEntry,
+        Object.keys(compiledEntry.inheritedMethodDependencies || {})
+      );
     });
   }
 
   validateInheritedMethodDependencies(entries, methodNames, errors, context);
   assertNoFinalizationErrors(errors);
+  expandAllMethodDependencyFootprints(runtimeEntries, runtimeMethodsByName, dependencyNamesByEntry);
 
   return Object.freeze({
     methods: Object.freeze(runtimeMethodsByName),
