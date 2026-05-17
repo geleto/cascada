@@ -431,6 +431,25 @@ describe('Phase 8 - Component Observations', function () {
     expect(result).to.be('Example|dark|on');
   });
 
+  it('should use shared component composition-input grammar with context names and object payloads', async function () {
+    const loader = new StringLoader();
+    const env = new AsyncEnvironment(loader);
+
+    loader.addTemplate('Component.script', [
+      'method build()',
+      '  return site + "|" + locale + "|" + theme + "|" + id',
+      'endmethod'
+    ].join('\n'));
+    loader.addTemplate('Main.script', [
+      'var theme = "dark"',
+      'component "Component.script" as ns with context, locale, { theme: theme, id: "card-7" }',
+      'return ns.build()'
+    ].join('\n'));
+
+    const result = await env.renderScript('Main.script', { site: 'Example', locale: 'fr' });
+    expect(result).to.be('Example|fr|dark|card-7');
+  });
+
   it('should keep plain component payload inputs compatible with shared observations', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);

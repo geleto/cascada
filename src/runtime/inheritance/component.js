@@ -84,6 +84,8 @@ function withComponentInstance(channel, fn) {
   const target = channel._target;
   if (target && typeof target.then === 'function') {
     return target.then((instance) => {
+      // Component startup publishes a promise immediately. Cache the resolved
+      // instance on the side-channel so later operations take the direct path.
       channel.setInitialValue(instance);
       return fn(instance);
     });
@@ -159,6 +161,8 @@ function startComponentInstance(spec) {
     cb,
     errorContext = null
   } = spec;
+  // The user binding is also the internal side-channel lane that orders later
+  // component method calls and observations for this instance.
   const sideChannelName = bindingName;
   const channel = currentBuffer.getChannel(sideChannelName);
   const componentInstancePromise = createComponentInstance({

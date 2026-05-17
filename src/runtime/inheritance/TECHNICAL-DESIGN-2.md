@@ -1952,6 +1952,12 @@ Goal:
 - evaluate splitting inheritance-specific generated-source emission into an
   `InheritanceEmit` helper owned by `CompileInheritance`; do this only if the
   boundary is pure emission and reduces coupling
+- document or type the `RuntimeFatalError` constructor overload that accepts an
+  error-context object as its second argument, so the parameter name does not
+  imply that only a raw line number is valid
+- consider renaming `withComponentInstance` if a clearer name emerges during
+  cleanup; the current helper both resolves a promise-backed component
+  side-channel target and caches the resolved instance
 - replace constructor-emitted shared default claims with finalized-schema-driven
   default initialization if that can be done without changing source-order
   semantics
