@@ -306,6 +306,25 @@ describe('Inheritance rebuild', function () {
       expect(await localEnv.renderTemplate('child.njk', {})).to.be('Base:Child guest');
     });
 
+    it('keeps template block overriding and super chained through constructors', async function () {
+      const localEnv = createEnvironment({
+        'grand.njk': 'Grand[{% block body %}grand{% endblock %}]',
+        'parent.njk': '{% extends "grand.njk" %}{% block body %}parent>{{ super() }}{% endblock %}',
+        'child.njk': '{% extends "parent.njk" %}{% block body %}child>{{ super() }}{% endblock %}'
+      });
+
+      expect(await localEnv.renderTemplate('child.njk', {})).to.be('Grand[child>parent>grand]');
+    });
+
+    it('passes parent block arguments into overriding template blocks', async function () {
+      const localEnv = createEnvironment({
+        'base.njk': 'Base[{% block body(user) %}{{ user }}{% endblock %}]',
+        'child.njk': '{% extends "base.njk" %}{% block body(user) %}{{ user }}{% endblock %}'
+      });
+
+      expect(await localEnv.renderTemplate('child.njk', { user: 'Ada' })).to.be('Base[Ada]');
+    });
+
     it('writes and reads inferred template shared vars in constructor bodies', async function () {
       const result = await env.renderTemplateString('{% set this.theme = "dark" %}{{ this.theme }}');
 
@@ -328,6 +347,25 @@ describe('Inheritance rebuild', function () {
       });
 
       expect(await localEnv.renderScript('child.script', {})).to.be('base:child');
+    });
+
+    it('resolves script super through each inherited method implementation', async function () {
+      const localEnv = createEnvironment({
+        'base.script': 'method build(name)\n  return "base(" + name + ")"\nendmethod',
+        'middle.script': 'extends "base.script"\nmethod build(name)\n  return "middle>" + super(name)\nendmethod',
+        'child.script': 'extends "middle.script"\nmethod build(name)\n  return "child>" + super(name)\nendmethod\nreturn this.build("Ada")'
+      });
+
+      expect(await localEnv.renderScript('child.script', {})).to.be('child>middle>base(Ada)');
+    });
+
+    it('keeps inherited method shared-channel writes ordered at the call site', async function () {
+      const localEnv = createEnvironment({
+        'base.script': 'shared text trace\nmethod build(name)\n  this.trace("method|" + name + "|")\n  return "done:" + name\nendmethod',
+        'child.script': 'shared text trace\nextends "base.script"\nthis.trace("before|")\nvar result = this.build("Ada")\nthis.trace("after|")\nthis.trace(result)\nreturn this.trace.snapshot()'
+      });
+
+      expect(await localEnv.renderScript('child.script', {})).to.be('before|method|Ada|after|done:Ada');
     });
 
     it('normalizes lazy script constructor results at the public render boundary', async function () {

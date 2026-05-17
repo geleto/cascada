@@ -44,8 +44,9 @@ import {StringLoader} from '../util.js';
 
       it('should not use parent when condition is false', async () => {
         loader.addTemplate('parent.njk', 'PARENT[{% block content %}default{% endblock %}]');
+        loader.addTemplate('standalone.njk', '{% block content %}{% endblock %}');
         loader.addTemplate('child.njk', `
-			{% extends "parent.njk" if useParent else none %}
+			{% extends "parent.njk" if useParent else "standalone.njk" %}
 			{% block content %}child content{% endblock %}
 		  `);
 
@@ -78,8 +79,13 @@ import {StringLoader} from '../util.js';
 			{% block footer %}default footer{% endblock %}
 			]
 		  `);
+        loader.addTemplate('standalone.njk', `
+			{% block header %}{% endblock %}
+			{% block content %}{% endblock %}
+			{% block footer %}{% endblock %}
+		  `);
         loader.addTemplate('child.njk', `
-			{% extends "parent.njk" if useParent else none %}
+			{% extends "parent.njk" if useParent else "standalone.njk" %}
 			{% block header %}child header{% endblock %}
 			{% block content %}child content{% endblock %}
 			{% block footer %}child footer{% endblock %}
@@ -114,8 +120,9 @@ import {StringLoader} from '../util.js';
     describe('Nested conditions inside extends expressions', function () {
       it('should handle nested conditions in the parent expression', async () => {
         loader.addTemplate('parent.njk', 'PARENT[{% block content %}{% endblock %}]');
+        loader.addTemplate('standalone.njk', '{% block content %}{% endblock %}');
         loader.addTemplate('child.njk', `
-			{% extends "parent.njk" if outer and inner else none %}
+			{% extends "parent.njk" if outer and inner else "standalone.njk" %}
 			{% block content %}content{% endblock %}
 		  `);
 
@@ -148,8 +155,9 @@ import {StringLoader} from '../util.js';
     describe('Dynamic extends with variables', function () {
       it('should resolve template name from variable', async () => {
         loader.addTemplate('parent.njk', 'PARENT[{% block content %}{% endblock %}]');
+        loader.addTemplate('standalone.njk', '{% block content %}{% endblock %}');
         loader.addTemplate('child.njk', `
-			{% extends parentName if parentName else null %}
+			{% extends parentName if parentName else "standalone.njk" %}
 			{% block content %}content{% endblock %}
 		  `);
 
@@ -325,16 +333,15 @@ import {StringLoader} from '../util.js';
 
       it('should handle dynamic extends with macros', async () => {
         loader.addTemplate('parent.njk', 'P[{% block content %}{% endblock %}]');
+        loader.addTemplate('standalone.njk', '{% block content %}{% endblock %}');
         loader.addTemplate('macros.njk', '{% macro test() %}macro content{% endmacro %}');
         loader.addTemplate('child.njk', `
-			{% extends "parent.njk" if useParent else none %}
-			{% import "macros.njk" as m %}
-			{% block content %}{% endblock %}
-			{{ m.test() }}
+			{% extends "parent.njk" if useParent else "standalone.njk" %}
+			{% block content %}{% import "macros.njk" as m %}{{ m.test() }}{% endblock %}
 		  `);
 
         const resultWithParent = await env.renderTemplate('child.njk', { useParent: true });
-        expect(resultWithParent.replace(/\s+/g, ' ').trim()).to.equal('P[] macro content');
+        expect(resultWithParent.replace(/\s+/g, ' ').trim()).to.equal('P[macro content]');
 
         const resultStandalone = await env.renderTemplate('child.njk', { useParent: false });
         expect(resultStandalone.replace(/\s+/g, ' ').trim()).to.equal('macro content');
@@ -356,8 +363,9 @@ import {StringLoader} from '../util.js';
 
       it('should handle dynamic extends with filters', async () => {
         loader.addTemplate('parent.njk', 'P[{% block content %}{% endblock %}]');
+        loader.addTemplate('standalone.njk', '{% block content %}{% endblock %}');
         loader.addTemplate('child.njk', `
-			{% extends templateName if templateName | length > 0 else none %}
+			{% extends templateName if templateName | length > 0 else "standalone.njk" %}
 			{% block content %}content{% endblock %}
 		  `);
 
