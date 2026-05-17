@@ -343,6 +343,12 @@ All composition boundaries are isolated in async mode - the child sees only what
 
 All Cascada composition operations support `with` for passing data across isolation boundaries - the same syntax as in scripts, and unlike classic Nunjucks which has no equivalent. See [`with`: Composition Payload](https://geleto.github.io/cascada-script/#with-composition-payload) in the script docs for the full rules.
 
+### Unresolved Names
+
+**In templates**, a bare name that is neither declared nor found in the context becomes `undefined` (standard Nunjucks behavior — renders as empty).
+
+**In scripts**, the same lookup becomes poison and will cause the script to fail if consumed or returned.
+
 ## Unsupported Features
 
 ### Script features not available in templates
