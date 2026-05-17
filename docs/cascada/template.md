@@ -184,6 +184,7 @@ The full composition model - `with`, `with context`, resolution order, and pass-
 **Template-specific notes:**
 
 - `include` is supported in templates (it is not available in scripts). It follows the same isolation and `with` rules as `import`.
+- Templates do not support `component`. To render another template, including an inherited template, use `include`; each include render gets its own inheritance state.
 - Template inheritance uses `{% block name(args) %}` / `{% endblock %}` where scripts use `method name(args)` / `endmethod`. Both support `this.blockName(args)` / `this.methodName(args)` for calling an override via inherited dispatch.
 - `with` clauses and the explicit payload model are async-only. In classic Nunjucks (sync) mode, templates retain implicit access to all parent-scope variables.
 
