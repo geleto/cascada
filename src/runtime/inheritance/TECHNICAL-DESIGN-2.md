@@ -106,7 +106,7 @@ Allowed:
 - validate `super()` parent availability
 - validate override argument-name compatibility
 - wire owner-relative `super` links
-- compute merged channel footprints
+- compute merged chain footprints
 - collect independent recoverable finalization errors
 
 `RuntimeMethodEntry.super` is wired to the nearest parent implementation for
@@ -115,7 +115,7 @@ execution must not dynamically search the chain to resolve `super()`.
 
 Merged linked/mutated footprints are computed transitively across the full
 `super` chain, including overridden parent entries. Invocation links exactly the
-channels that any implementation reachable through that callable chain may
+chains that any implementation reachable through that callable chain may
 observe or mutate.
 
 Forbidden:
@@ -214,8 +214,8 @@ Output:
 Allowed:
 
 - invoke a finalized inherited callable through the normal invocation machinery
-- link exactly the channels needed by the callable
-- declare and initialize shared channels as method code requires
+- link exactly the chains needed by the callable
+- declare and initialize shared chains as method code requires
 - call `super()` through finalized owner-relative links
 
 The constructor is just the `__constructor__` method. Direct rendering,
@@ -258,7 +258,7 @@ Templates:
 - No additional template user code runs in this phase.
 - Template structure was already produced by executing constructors in Phase 3.
 - This phase uses the same completion rule as ordinary async template roots:
-  finish the root output buffer and materialize the root text channel's final
+  finish the root output buffer and materialize the root text chain's final
   snapshot.
 
 Scripts:
@@ -322,12 +322,12 @@ Forbidden:
 Input:
 
 - component-owned `InheritanceInstance`
-- owner side-channel / binding lifetime
+- owner side-chain / binding lifetime
 
 Output:
 
 - initialized component instance exposed to the owner binding
-- finished component root/shared buffers after close or side-channel completion
+- finished component root/shared buffers after close or side-chain completion
 
 Component instances use the same load/finalize/constructor lifecycle. Their
 root buffer remains open for the component binding lifetime and closes when the
@@ -341,8 +341,8 @@ dispatch path. The difference is ownership of buffer completion:
 - direct render and include finish the instance root/shared buffers after
   constructor execution and result materialization via `finishRender(entryResult)`
 - component creation binds the instance to the caller's component
-  side-channel, treats constructor completion as initialization, and finishes
-  the instance root/shared buffers via `close()` only when that side-channel's
+  side-chain, treats constructor completion as initialization, and finishes
+  the instance root/shared buffers via `close()` only when that side-chain's
   final snapshot settles or the component is explicitly closed
 
 Component creation is a composition boundary. By default a component receives
@@ -516,7 +516,7 @@ They may not read:
 - variables created by top-level `{% set %}` / script `var` in the same
   template/script
 - inferred shared vars from `this.<name>` usage in the current template
-- shared channels declared or created by the current script constructor
+- shared chains declared or created by the current script constructor
 - command-buffer state
 - any source-ordered value that would require constructor execution
 
@@ -608,12 +608,12 @@ participate in inheritance.
 
 For scripts, the compiler can classify `this.<name>` from local declarations:
 
-- declared shared channel only: shared access
+- declared shared chain only: shared access
 - local method only:
   - `this.name(...)` is an inherited callable call
   - bare `this.name` is a structural error; inherited callables must be called
-- both shared channel and callable: structural ambiguity error
-- neither shared channel nor callable: structural missing-name error
+- both shared chain and callable: structural ambiguity error
+- neither shared chain nor callable: structural missing-name error
 
 For templates, static `this.<name>` property access infers shared `var`
 participation, while `this.name(...)` is an inherited callable call. If the
@@ -623,11 +623,11 @@ reports the ambiguity.
 Bare names do not probe the inheritance shared schema. Bare names follow the
 ordinary ambient lookup path: locals, arguments, instance context, and globals.
 
-Shared storage uses compiler-internal channel names such as `$theme`.
+Shared storage uses compiler-internal chain names such as `$theme`.
 The compiled/runtime schema key is that name. Generated code maps
 `this.theme` and `component.theme` to `$theme`. This keeps shared storage
 separate from an ordinary local `var theme` and lets callable footprints filter
-ordinary `usedChannels` / `mutatedChannels` by shared names. Diagnostics may
+ordinary `usedChains` / `mutatedChains` by shared names. Diagnostics may
 strip the `$` or render it as `this.theme` whenever the storage key itself is
 not the user-visible subject of the test or error.
 
@@ -759,7 +759,7 @@ the loaded chain to recover them.
 - template structure owner, for template chains: the topmost selected template,
   `loadedChain.entries[loadedChain.entries.length - 1]`
 
-## Composition Payload, Argument Frames, And Shared Channels
+## Composition Payload, Argument Frames, And Shared Chains
 
 Composition payload is the explicit caller-input mechanism for components,
 imports, includes, and related composition boundaries. It is not inheritance
@@ -773,7 +773,7 @@ Rules:
 - every file in an inheritance chain sees the same instance context
 - component/include/import boundaries decide whether and how payload/context is
   supplied
-- payload values do not write to shared channels automatically
+- payload values do not write to shared chains automatically
 - shared defaults or constructor code may read payload values by bare name
 - normal bare-name lookup consults the instance context and globals
 
@@ -784,7 +784,7 @@ the same storage location.
 Invocation arguments are a different mechanism. A call such as
 `this.card(user, "lg")` or `super(user)` creates an argument frame for one
 callable invocation. Argument frames are per-call local bindings, not
-composition payload, not inherited shared channels, and not entries in the
+composition payload, not inherited shared chains, and not entries in the
 shared schema.
 
 ```js
@@ -800,20 +800,20 @@ Invocation maps `InvocationArgs` through the target signature's ordered
 `argNames` to produce an `ArgumentFrame`. Callable bodies read those names as
 local arguments. The invocation buffer exists because the callable body may
 enqueue commands and argument values may be async or poisoned; it does not make
-arguments hierarchy channels.
+arguments hierarchy chains.
 
 Template named placement bindings are a separate surface from script keyword
 arguments. They map placement locals to block argument names before ordinary
 invocation begins.
 
-Async macros are the precedent: macro parameters are local `var` channels in
+Async macros are the precedent: macro parameters are local `var` chains in
 the macro invocation buffer, initialized from call arguments. Inherited
 callables should use the same model. Argument names become local `var` bindings
 inside the invocation buffer. Reassigning an argument mutates only that local
 call frame; it does not mutate the caller's variable, composition payload, or
 shared state.
 
-Argument channels are local to each invocation. `super()` passes no arguments;
+Argument chains are local to each invocation. `super()` passes no arguments;
 use explicit arguments such as `super(user, fallbackUser)` to pass values to the
 parent callable.
 
@@ -821,7 +821,7 @@ Step 4 reuse boundary:
 
 - inherited invocation mirrors async macro/function positional, keyword, and
   default behavior and reuses the macro keyword-argument detection helper
-- compiler-side signature parsing and local `var` channel binding shape are
+- compiler-side signature parsing and local `var` chain binding shape are
   shared with async macro/function code; inherited callables should continue to
   move toward those existing argument semantics rather than inventing a parallel
   argument model
@@ -855,8 +855,8 @@ type CompiledMethodEntry = {
   super: boolean,
   superOrigin: SourceOrigin | null,
   inheritedMethodDependencies: Record<string, InheritedMethodDependency>,
-  ownLinkedChannels: string[],
-  ownMutatedChannels: string[]
+  ownLinkedChains: string[],
+  ownMutatedChains: string[]
 }
 ```
 
@@ -876,13 +876,13 @@ type RuntimeMethodEntry = {
   isConstructor: boolean,
   ownerEntry: RuntimeOwnerEntry,
   super: RuntimeMethodEntry | null,
-  mergedLinkedChannels: string[],
-  mergedMutatedChannels: string[]
+  mergedLinkedChains: string[],
+  mergedMutatedChains: string[]
 }
 ```
 
 Finalization-only fields such as `callsSuper`, `inheritedMethodDependencies`,
-`superOrigin`, `ownLinkedChannels`, and `ownMutatedChannels` must not survive on
+`superOrigin`, `ownLinkedChains`, and `ownMutatedChains` must not survive on
 the long-lived execution entry. If a field survives, it must be justified as an
 execution-time requirement.
 
@@ -917,18 +917,18 @@ Rules:
   invocation buffer; this includes `this.someMethod(...)` and `super(...)`
   from inside constructors, methods, and blocks
 - the invocation child buffer links exactly the target's
-  `mergedLinkedChannels` and `mergedMutatedChannels`
+  `mergedLinkedChains` and `mergedMutatedChains`
 - callable entry prologue may validate `methodData`, but it must not resolve
   metadata asynchronously or widen the footprint
-- shared-channel observation enqueues on the current buffer and uses the
+- shared-chain observation enqueues on the current buffer and uses the
   finalized shared schema to route the exact observation to the shared root
 - missing finalized metadata at an execution boundary is a fatal structural
   error, not an ambient lookup fallback
 
-Do not link all shared-schema channels as a convenience. Exact linking is part
+Do not link all shared-schema chains as a convenience. Exact linking is part
 of the concurrency contract.
 
-The shared/root buffer is the storage owner for inheritance shared channels. It
+The shared/root buffer is the storage owner for inheritance shared chains. It
 is not a catch-all ambient scope. Public entrypoints start from it to prevent
 component/direct method calls from seeing a caller's local scope accidentally.
 Internal calls link through the currently executing invocation buffer so they
@@ -1017,7 +1017,7 @@ existed.
 - `finalize.js`: metadata validation, method-table construction, super wiring,
   shared-schema finalization, footprint merging, runtime-entry pruning
 - `invoke.js`: inherited-callable invocation helpers, including argument-frame
-  construction and linking finalized callable footprint channels into an
+  construction and linking finalized callable footprint chains into an
   invocation buffer. It may reuse macro keyword-argument helpers, but it must
   not own lookup, buffer choice, or `super` dispatch; those belong to compiled
   metadata and `InheritanceInstance`.
@@ -1025,7 +1025,7 @@ existed.
   parent selection and callable context setup
 - `shared.js`: shared schema/runtime operations and shared-root buffer access
 - `component.js`: component instance lifecycle, command-based operations,
-  explicit shared observation, and owner side-channel lifetime wiring around
+  explicit shared observation, and owner side-chain lifetime wiring around
   `InheritanceInstance`
 - `index.js`: explicit compiler-private runtime exports
 
@@ -1115,7 +1115,7 @@ Return semantics stay explicit:
 
 - `extends` is not a value-producing expression
 - `return` is supported in script constructors and inherited script methods
-- method returns use the normal `__return__` channel / unset-sentinel machinery
+- method returns use the normal `__return__` chain / unset-sentinel machinery
 - `this.method(...)` receives the called method's return value
 - `super()` receives the parent method or parent constructor return value
 - direct-render scripts return the result of the entry `__constructor__`
@@ -1124,7 +1124,7 @@ Return semantics stay explicit:
   values observed by an explicit `super()` call and then explicitly returned by
   the entry constructor
 - template rendering returns the final text output
-- template block output is text-channel output; script-style `return` is not
+- template block output is text-chain output; script-style `return` is not
   part of template block rendering
 - component construction returns the component instance to the owner binding,
   not the constructor's user return value
@@ -1157,7 +1157,7 @@ Rules:
   `this.<name>` usage, but `{% set this.name = ... %}` is constructor code and
   is not allowed before `extends`.
 - the `extends` target expression cannot read inferred shared vars, because
-  shared channels are initialized by constructor execution after loading.
+  shared chains are initialized by constructor execution after loading.
 - dynamic selection cycles fail during loading.
 - dynamic selection reads only context/payload/global inputs available before
   constructor execution. Bare symbols in the expression compile as ambient
@@ -1185,14 +1185,14 @@ Scripts:
   with `= none` has `hasDefault: true`; a declaration without an initializer
   has `hasDefault: false` and does not block parent defaults.
 - bare names never mean shared access in scripts, even when the same file
-  declares a shared channel with that name
+  declares a shared chain with that name
 
 Templates:
 
 - infer static `this.<name>` roots as shared `var`
 - reject all template `shared` declarations, including `shared var`
-- reject non-shared channel declarations in templates
-- reserve `this.__text__` as the inherited template text-channel exception
+- reject non-shared chain declarations in templates
+- reserve `this.__text__` as the inherited template text-chain exception
 - `{% set this.name = ... %}` is a runtime write, not a default claim. In an
   extending template it runs before the implicit trailing constructor
   `super()`, so parent constructor writes may overwrite child constructor
@@ -1209,28 +1209,28 @@ Shared access forms:
 - `this.varName.path = value`: shared `var` nested update when object-path
   assignment is otherwise supported
 - `this.textName(value)`: shared `text` append/call in scripts
-- `this.dataName.path = value`: shared `data` channel update in scripts
+- `this.dataName.path = value`: shared `data` chain update in scripts
 - `this.dataName.command(args)`: shared `data` command in scripts
 - `this.sequenceName.method(args)`: shared `sequence` call in scripts
-- `this.channel.snapshot()`: explicit snapshot of any declared shared channel
-- `this.channel is error` and `this.channel#`: shared-channel error
+- `this.chain.snapshot()`: explicit snapshot of any declared shared chain
+- `this.chain is error` and `this.chain#`: shared-chain error
   observation
 
 Template `this.<name>` access is var-only except for the reserved inherited
-text channel `this.__text__`. Templates do not access script typed shared
-channels implicitly.
+text chain `this.__text__`. Templates do not access script typed shared
+chains implicitly.
 
-Shared channels are linked by exact finalized footprints. Broad setup-time
+Shared chains are linked by exact finalized footprints. Broad setup-time
 whole-schema linking is not part of the target architecture.
 
-The runtime must keep channel type behavior centralized. Declaration and shared
-re-declaration initializer handling both go through channel type metadata; they
+The runtime must keep chain type behavior centralized. Declaration and shared
+re-declaration initializer handling both go through chain type metadata; they
 must not scatter direct sequence/var setter branches through inheritance code.
 
 ## Components
 
 Components wrap an `InheritanceInstance` with caller-side command ordering and
-side-channel lifetime ownership. Component creation publishes the initialized
+side-chain lifetime ownership. Component creation publishes the initialized
 instance through the owner binding; component close calls `instance.close()`.
 
 Command-based component operations preserve source order by enqueueing on the
@@ -1256,10 +1256,10 @@ Caller-side component observation:
 - `componentName.sharedVar` observes a component shared `var` snapshot
 - `componentName.sharedVar.path` observes the shared `var` then applies normal
   property lookup
-- non-`var` shared channels require explicit observation such as
+- non-`var` shared chains require explicit observation such as
   `.snapshot()`, `is error`, or `#`
 - implicit nested reads are not allowed for `text`, `data`, or `sequence`
-  shared channels
+  shared chains
 - caller-side observation is read-only; component state mutation goes through
   component methods or the component's own constructor
 - shared names that start with `_` are private to the component. Component
@@ -1349,7 +1349,7 @@ cross-file conflicts can point at the relevant declaration sites. Runtime shared
 schema remains structural metadata only: type, declaration origin, selected
 default origin, and whether a default exists. Default expressions are not
 evaluated during finalization.
-Do not keep a runtime `claimInheritanceSharedDefault` side channel in the final
+Do not keep a runtime `claimInheritanceSharedDefault` side chain in the final
 lifecycle. The current `claimedSharedDefaults` WeakSet is transitional
 scaffolding for constructor-emitted default expressions: it lets the first
 selected declaration with an initializer run once while keeping unselected
@@ -1358,7 +1358,7 @@ default-initialization path driven directly by finalized schema metadata.
 
 Compiler ABI metadata is an invariant after compilation. Finalization may copy,
 deduplicate, and freeze/normalize arrays for stable runtime use, but it must
-not silently fabricate missing signatures, invoked refs, channel names, or
+not silently fabricate missing signatures, invoked refs, chain names, or
 method shapes. Malformed ABI metadata is a fatal implementation error.
 
 Do not add complex aggregation machinery if it obscures finalization. But the
@@ -1446,8 +1446,8 @@ Goal:
 - support template block placement arguments, including named placement
   bindings such as `{% block item(user = selectedUser) %}`
 - support mixed positional/named block placement bindings using the same
-  argument-channel initialization path as functions/macros
-- reject all template channel declarations, including `shared var`
+  argument-chain initialization path as functions/macros
+- reject all template chain declarations, including `shared var`
 - allow each template to use a top-level dynamic `extends`
 - reject dynamic template `extends` nested inside runtime control flow
 - reject dynamic template `extends` resolving to no parent at runtime
@@ -1468,7 +1468,7 @@ Tests:
   callable argument frame
 - template `shared var`, `shared text`, `shared data`, and `shared sequence`
   declarations fail
-- non-shared template channel declarations fail
+- non-shared template chain declarations fail
 - top-level dynamic template extends compiles
 - dynamic template extends inside `if`/`for`/block fails
 - declarations before template `extends` fail
@@ -1615,7 +1615,7 @@ Goal:
   with type, origin, default origin, and `hasDefault`
 - runtime method entries are pruned to execution-time fields
 - recoverable metadata errors are collected where practical
-- replace transitional shared-channel bootstrap helpers with clean `shared.js`
+- replace transitional shared-chain bootstrap helpers with clean `shared.js`
   runtime operations; compiler output must not call legacy shared-buffer helpers
   once finalization owns shared schema setup
 - keep `claimedSharedDefaults` only as transitional scaffolding; it is not part
@@ -1637,7 +1637,7 @@ Tests:
 - at least two independent recoverable metadata errors are collected from one
   chain when practical
 - shared/method collisions are reported across files as well as within one file
-- merged channel footprints include all overridden entries in the super chain
+- merged chain footprints include all overridden entries in the super chain
 - runtime method entries do not retain finalization-only fields
 - owner entries carry template/script, origin, and structural-template facts
   needed by invocation
@@ -1652,7 +1652,7 @@ Authoritative sections:
 - Phase 2.5: Create Instance
 - Phase 3: Execute Method
 - Inheritance Instance API
-- Composition Payload, Argument Frames, And Shared Channels
+- Composition Payload, Argument Frames, And Shared Chains
 - Invocation And Linking
 - `this.<name>` Disambiguation
 - File Ownership
@@ -1686,10 +1686,10 @@ Goal:
   inherited method calls and `super(...)`
 - move callable entry prologue policy into clean invocation helpers:
   callable context creation, argument-frame
-  mapping, and entry-local channel initialization should be runtime-owned
+  mapping, and entry-local chain initialization should be runtime-owned
   helpers reused by scripts/templates
 - keep compiler output limited to evaluating argument/default expressions,
-  declaring entry-local channels, and calling runtime invocation/prologue
+  declaring entry-local chains, and calling runtime invocation/prologue
   helpers with compiled metadata
 
 Tests:
@@ -1715,7 +1715,7 @@ Tests:
 - no-argument `super()` passes no arguments
 - explicit `super(...)` builds an argument frame for the parent signature
 - explicit `super(arg)` evaluates the current local argument value
-- argument reassignment mutates only the local argument channel for that call
+- argument reassignment mutates only the local argument chain for that call
 - `this.method(...)` inside another method uses the current invocation buffer
 - `super()` uses the parent owner metadata and the same instance context
 - inherited script method with `return` returns a value to `this.method(...)`
@@ -1795,7 +1795,7 @@ Tests:
   constructor
 - script with a concrete constructor body runs parent constructors only through
   explicit `super()`
-- constructor writes are visible according to shared/channel rules
+- constructor writes are visible according to shared/chain rules
 - inline block placement observes constructor writes from selected concrete
   constructor bodies
 - structural template renders text before and after inline blocks
@@ -1816,9 +1816,9 @@ Tests:
 - script shared default slots are selected child-to-parent by the first
   declaration with an initializer, and an unselected parent default expression
   is not evaluated
-- `this.__text__` remains the reserved inherited template text-channel
+- `this.__text__` remains the reserved inherited template text-chain
   exception
-- shared-channel linking is exact-footprint based, with no whole-schema setup
+- shared-chain linking is exact-footprint based, with no whole-schema setup
   linking
 - every selected parent constructor/block sees the same instance context as the
   entry
@@ -1864,14 +1864,14 @@ Tests:
 - component `with context, name` and `with context, { key: expr }` use the
   shared composition-input grammar
 - component method calls and observations preserve owner-buffer source order
-- observing an unknown component shared channel reports a clear error
+- observing an unknown component shared chain reports a clear error
 - observing a private `_` shared name through the component binding fails
   clearly
-- non-`var` component shared channel observation requires an explicit
+- non-`var` component shared chain observation requires an explicit
   snapshot/error operation
 - component shared observation remains separate from inherited method calls;
   observing shared state does not invoke component methods
-- owner side-channel final snapshot closes component root/shared buffers
+- owner side-chain final snapshot closes component root/shared buffers
 - explicit close rejects later operations
 - explicit close is idempotent or errors by an explicitly documented rule
 - constructor initialization failure records instance failure and closes buffer
@@ -1964,7 +1964,7 @@ Goal:
   error-context object as its second argument, so the parameter name does not
   imply that only a raw line number is valid
 - keep `applyWithResolvedComponentInstance` private to component commands; it
-  resolves a promise-backed component side-channel target and caches the
+  resolves a promise-backed component side-chain target and caches the
   resolved instance
 - replace the include participant callback-to-promise bridge with a cleaner
   promise-returning participant include/root API; the current bridge should
@@ -1977,7 +1977,7 @@ Goal:
   `docs/code/source-order-declarations.md` as a separate compiler correctness
   pass; Step 8 should only remove temporary inheritance assumptions that become
   unnecessary after that pass exists
-- keep async exports as ordinary Cascada promise values: exported channel
+- keep async exports as ordinary Cascada promise values: exported chain
   snapshots are bound when the export is declared, root completion must not
   await or "resolve" exports, and consumers remain responsible for awaiting at
   the point of use
@@ -1988,7 +1988,7 @@ Tests:
   and plain templates/scripts do not emit inheritance ABI
 - no `startup.js` or old lifecycle-mode helper remains unless the file/helper
   is renamed and justified by this design
-- tests do not depend on private command-buffer/channel fields
+- tests do not depend on private command-buffer/chain fields
 - generated browser/precompiled fixtures contain the `root` ABI when produced
   by `scripts/runprecompile.js`; the checked-in source of truth is the compiler
   output because `tests/browser/precompiled-templates.js` is ignored
@@ -2060,7 +2060,7 @@ Tests:
   repaired.
 - Shared-schema conflict diagnostics retain declaration-origin quality during
   finalization.
-- Inheritance runtime code uses public channel/buffer APIs rather than private
-  channel fields.
+- Inheritance runtime code uses public chain/buffer APIs rather than private
+  chain fields.
 - Public feature behavior remains where it does not contradict the
   lifecycle contract.

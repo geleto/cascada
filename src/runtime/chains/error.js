@@ -1,6 +1,6 @@
 
 import {PoisonError, createPoison} from '../errors.js';
-import {MutatingCommand, contextualizeErrorsForChannel} from './command-base.js';
+import {MutatingCommand, contextualizeErrorsForChain} from './command-base.js';
 
 class ErrorCommand extends MutatingCommand {
   constructor(errors) {
@@ -18,11 +18,11 @@ class ErrorCommand extends MutatingCommand {
   }
 }
 
-// Writes poison directly into a channel target: pushes a PoisonedValue onto a text buffer, or replaces a data/var/sequence target with one.
+// Writes poison directly into a chain target: pushes a PoisonedValue onto a text buffer, or replaces a data/var/sequence target with one.
 class TargetPoisonCommand extends MutatingCommand {
-  constructor({ channelName, errors = null, pos = null }) {
+  constructor({ chainName, errors = null, pos = null }) {
     super();
-    this.channelName = channelName;
+    this.chainName = chainName;
     this.pos = pos || { lineno: 0, colno: 0 };
     this.errors = Array.isArray(errors) ? errors : [errors || new Error('Command buffer entry produced an unspecified error')];
   }
@@ -31,21 +31,21 @@ class TargetPoisonCommand extends MutatingCommand {
     return new PoisonError(this.errors);
   }
 
-  apply(channel) {
-    if (!channel) {
+  apply(chain) {
+    if (!chain) {
       return;
     }
-    const contextualizedErrors = contextualizeErrorsForChannel(channel, this.pos, this.errors);
-    const channelType = channel._channelType;
-    if (channelType === 'text') {
-      if (!Array.isArray(channel._target)) {
-        channel._setTarget([]);
+    const contextualizedErrors = contextualizeErrorsForChain(chain, this.pos, this.errors);
+    const chainType = chain._chainType;
+    if (chainType === 'text') {
+      if (!Array.isArray(chain._target)) {
+        chain._setTarget([]);
       }
-      channel._target.push(createPoison(contextualizedErrors));
-      channel._markStateChanged();
+      chain._target.push(createPoison(contextualizedErrors));
+      chain._markStateChanged();
       return;
     }
-    channel._applyPoisonErrors(contextualizedErrors);
+    chain._applyPoisonErrors(contextualizedErrors);
   }
 }
 

@@ -14,7 +14,7 @@ class CompileCompositionPayload {
   emitInputVariables(node, targetVarsVar, emitValue) {
     const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
     withVars.forEach((nameNode) => {
-      const inputName = this.compiler.analysis.getBaseChannelName(nameNode.value);
+      const inputName = this.compiler.analysis.getBaseChainName(nameNode.value);
       this.emit(`${targetVarsVar}[${JSON.stringify(inputName)}] = `);
       emitValue(nameNode, inputName);
       this.emit.line(';');

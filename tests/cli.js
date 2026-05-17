@@ -136,7 +136,7 @@ import {fileURLToPath} from 'url';
           done(err);
           return;
         }
-        expect(stdout).to.contain('runtime.declareBufferChannel(output, "x", "var"');
+        expect(stdout).to.contain('runtime.declareBufferChain(output, "x", "var"');
         expect(stdout).to.contain('new runtime.VarCommand');
         expect(filterDebuggerMessages(stderr)).to.equal('');
         done();

@@ -13,24 +13,24 @@ import {createPoison, isPoison, isPoisonError, collectErrors, Frame} from '../..
   function setupSequentialRuntimeForTests(root) {
     const context = { path: 'test', env: {} };
     const currentBuffer = new runtime.CommandBuffer(context, null);
-    runtime.declareBufferChannel(currentBuffer, '!lockKey', 'sequential_path', context, null);
+    runtime.declareBufferChain(currentBuffer, '!lockKey', 'sequential_path', context, null);
     return currentBuffer;
   }
 
   async function expectLockPoison(lock, root, currentBuffer, lockKey = '!lockKey') {
-    const output = currentBuffer.getChannel(lockKey);
+    const output = currentBuffer.getChain(lockKey);
     const errs = output._getSequentialPathPoisonErrors();
     expect(Array.isArray(errs) && errs.length > 0).to.be(true);
   }
 
   async function expectLockTrue(lock, root, currentBuffer, lockKey = '!lockKey') {
-    const output = currentBuffer.getChannel(lockKey);
+    const output = currentBuffer.getChain(lockKey);
     const errs = output._getSequentialPathPoisonErrors();
     expect(!errs || errs.length === 0).to.be(true);
   }
 
   async function expectLockValue(lock, value, root, currentBuffer, lockKey = '!lockKey') {
-    const output = currentBuffer.getChannel(lockKey);
+    const output = currentBuffer.getChain(lockKey);
     const errs = output._getSequentialPathPoisonErrors();
     expect(!errs || errs.length === 0).to.be(true);
     expect(output._getCurrentResult()).to.equal(value);
@@ -544,7 +544,7 @@ import {createPoison, isPoison, isPoisonError, collectErrors, Frame} from '../..
         const lockPoison = createPoison(new Error('Lock poisoned'));
         root = new Frame();
         currentBuffer = setupSequentialRuntimeForTests(root);
-        currentBuffer.getChannel('!lockKey')._applySequentialPathPoisonErrors(lockPoison.errors);
+        currentBuffer.getChain('!lockKey')._applySequentialPathPoisonErrors(lockPoison.errors);
 
         try {
           await runtime.sequentialCallWrapValue(

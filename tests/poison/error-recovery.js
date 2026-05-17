@@ -591,7 +591,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
     });
 
     // not implemented yet
-    describe('@data Channel Error Recovery', () => {
+    describe('@data Chain Error Recovery', () => {
       const errorPromise = (msg) => Promise.reject(new Error(msg));
 
       it('should recover from error in simple assignment', async () => {

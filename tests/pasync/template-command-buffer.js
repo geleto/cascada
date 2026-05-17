@@ -1,6 +1,6 @@
 
 import expect from 'expect.js';
-import {AsyncEnvironment, AsyncTemplate, Script} from '../../src/environment/environment.js';
+import {AsyncEnvironment, AsyncTemplate} from '../../src/environment/environment.js';
 import {StringLoader} from '../util.js';
 import {parse} from '../../src/language/parser.js';
 import {transform} from '../../src/language/transformer.js';
@@ -63,7 +63,7 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
   }
 
   describe('Async template command buffering parity', function () {
-    it('should infer this.__text__ as the template text channel', function () {
+    it('should infer this.__text__ as the template text chain', function () {
       const ast = analyzeTemplateSource('{% block body %}{{ this.__text__.snapshot() }}{{ this.theme }}{% endblock %}');
       const inferred = ast._analysis.inheritanceSharedDeclarations;
       const rootTextDeclares = ast._analysis.declares.filter((declaration) => declaration.name === '__text__' && !declaration.shared);
@@ -77,7 +77,7 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       expect(rootTextDeclares[0].shared).to.not.be(true);
     });
 
-    it('should keep nested capture text outputs out of outer stored channel facts', function () {
+    it('should keep nested capture text outputs out of outer stored chain facts', function () {
       const ast = analyzeTemplateSource(
         '{% set x = "v" %}' +
         '{% set outer %}A{{ x }}{% set inner %}B{{ x }}{% endset %}C{% endset %}',
@@ -87,15 +87,15 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       const outer = captures[0]._analysis;
       const inner = captures[1]._analysis;
 
-      expect(Array.from(outer.usedChannels || [])).to.eql([outer.textOutput, 'x']);
-      expect(Array.from(outer.mutatedChannels || [])).to.eql([outer.textOutput]);
-      expect(Array.from(inner.usedChannels || [])).to.eql([inner.textOutput, 'x']);
-      expect(Array.from(inner.mutatedChannels || [])).to.eql([inner.textOutput]);
-      expect(outer.usedChannels.has(inner.textOutput)).to.be(false);
-      expect(outer.mutatedChannels.has(inner.textOutput)).to.be(false);
+      expect(Array.from(outer.usedChains || [])).to.eql([outer.textOutput, 'x']);
+      expect(Array.from(outer.mutatedChains || [])).to.eql([outer.textOutput]);
+      expect(Array.from(inner.usedChains || [])).to.eql([inner.textOutput, 'x']);
+      expect(Array.from(inner.mutatedChains || [])).to.eql([inner.textOutput]);
+      expect(outer.usedChains.has(inner.textOutput)).to.be(false);
+      expect(outer.mutatedChains.has(inner.textOutput)).to.be(false);
     });
 
-    it('should preserve parent-owned mutations in stored capture channel facts', function () {
+    it('should preserve parent-owned mutations in stored capture chain facts', function () {
       const ast = analyzeTemplateSource(
         '{% set x = "v" %}' +
         '{% set outer %}{% set x = "outer" %}{% set inner %}{{ x }}{% set x = "inner" %}{% endset %}{% endset %}',
@@ -105,15 +105,15 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       const outer = captures[0]._analysis;
       const inner = captures[1]._analysis;
 
-      expect(Array.from(outer.usedChannels || [])).to.eql(['x']);
-      expect(Array.from(outer.mutatedChannels || [])).to.eql(['x']);
-      expect(Array.from(inner.usedChannels || [])).to.eql([inner.textOutput, 'x']);
-      expect(Array.from(inner.mutatedChannels || [])).to.eql([inner.textOutput, 'x']);
-      expect(outer.usedChannels.has(inner.textOutput)).to.be(false);
-      expect(outer.mutatedChannels.has(inner.textOutput)).to.be(false);
+      expect(Array.from(outer.usedChains || [])).to.eql(['x']);
+      expect(Array.from(outer.mutatedChains || [])).to.eql(['x']);
+      expect(Array.from(inner.usedChains || [])).to.eql([inner.textOutput, 'x']);
+      expect(Array.from(inner.mutatedChains || [])).to.eql([inner.textOutput, 'x']);
+      expect(outer.usedChains.has(inner.textOutput)).to.be(false);
+      expect(outer.mutatedChains.has(inner.textOutput)).to.be(false);
     });
 
-    it('should derive boundary linked channels from stored facts minus declarations', function () {
+    it('should derive boundary linked chains from stored facts minus declarations', function () {
       const ast = analyzeTemplateSource(
         '{% set x = "v" %}' +
         '{% set outer %}A{{ x }}{% set inner %}B{{ x }}{% endset %}C{% endset %}',
@@ -121,13 +121,13 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       );
       const captures = collectNodesByType(ast, 'Capture');
 
-      expect(Array.from(captures[0]._analysis.linkedChannels || [])).to.eql(['x']);
-      expect(Array.from(captures[0]._analysis.linkedMutatedChannels || [])).to.eql([]);
-      expect(Array.from(captures[1]._analysis.linkedChannels || [])).to.eql(['x']);
-      expect(Array.from(captures[1]._analysis.linkedMutatedChannels || [])).to.eql([]);
+      expect(Array.from(captures[0]._analysis.linkedChains || [])).to.eql(['x']);
+      expect(Array.from(captures[0]._analysis.linkedMutatedChains || [])).to.eql([]);
+      expect(Array.from(captures[1]._analysis.linkedChains || [])).to.eql(['x']);
+      expect(Array.from(captures[1]._analysis.linkedMutatedChains || [])).to.eql([]);
     });
 
-    it('should include parent-owned mutations in derived boundary linked channels', function () {
+    it('should include parent-owned mutations in derived boundary linked chains', function () {
       const ast = analyzeTemplateSource(
         '{% set x = "v" %}' +
         '{% if flag %}{{ x }}{% set x = "updated" %}{% var local = "local" %}{{ local }}{% endif %}',
@@ -135,8 +135,8 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       );
       const ifNode = collectNodesByType(ast, 'If')[0];
 
-      expect(Array.from(ifNode._analysis.linkedChannels || [])).to.eql(['__text__', 'x']);
-      expect(Array.from(ifNode._analysis.linkedMutatedChannels || [])).to.eql(['__text__', 'x']);
+      expect(Array.from(ifNode._analysis.linkedChains || [])).to.eql(['__text__', 'x']);
+      expect(Array.from(ifNode._analysis.linkedMutatedChains || [])).to.eql(['__text__', 'x']);
     });
 
     it('should mark include, extends, and block nodes as linked child buffers', function () {
@@ -154,9 +154,9 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       expect(includeNode._analysis.createsLinkedChildBuffer).to.be(true);
       expect(extendsNode._analysis.createsLinkedChildBuffer).to.be(true);
       expect(blockNode._analysis.createsLinkedChildBuffer).to.be(true);
-      expect(Array.from(includeNode._analysis.linkedChannels || [])).to.eql(['__text__']);
-      expect(Array.from(extendsNode._analysis.linkedChannels || [])).to.eql(['__text__']);
-      expect(Array.from(blockNode._analysis.linkedChannels || [])).to.eql([]);
+      expect(Array.from(includeNode._analysis.linkedChains || [])).to.eql(['__text__']);
+      expect(Array.from(extendsNode._analysis.linkedChains || [])).to.eql(['__text__']);
+      expect(Array.from(blockNode._analysis.linkedChains || [])).to.eql([]);
     });
 
     it('should derive inline-if boundary links for parent-owned command effects', function () {
@@ -168,8 +168,8 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       const inlineIfNode = collectNodesByType(ast, 'InlineIf')[0];
 
       expect(inlineIfNode._analysis.createsLinkedChildBuffer).to.be(true);
-      expect(Array.from(inlineIfNode._analysis.linkedChannels || [])).to.eql(['result']);
-      expect(Array.from(inlineIfNode._analysis.linkedMutatedChannels || [])).to.eql(['result']);
+      expect(Array.from(inlineIfNode._analysis.linkedChains || [])).to.eql(['result']);
+      expect(Array.from(inlineIfNode._analysis.linkedMutatedChains || [])).to.eql(['result']);
     });
 
     it('should derive caller invocation links from analysis-owned caller facts', function () {
@@ -182,8 +182,8 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       const callerNode = collectNodesByType(ast, 'Caller')[0];
 
       expect(callerNode._analysis.createsLinkedChildBuffer).to.be(true);
-      expect(Array.from(callerNode._analysis.linkedChannels || [])).to.eql(['x']);
-      expect(Array.from(callerNode._analysis.declaredChannels.keys())).to.eql(['caller', '__return__', '__text__']);
+      expect(Array.from(callerNode._analysis.linkedChains || [])).to.eql(['x']);
+      expect(Array.from(callerNode._analysis.declaredChains.keys())).to.eql(['caller', '__return__', '__text__']);
     });
 
     it('should keep loop and include-owned facts local inside captures', function () {
@@ -197,10 +197,10 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       );
       const captureNode = collectNodesByType(ast, 'Capture')[0];
 
-      expect(Array.from(captureNode._analysis.linkedChannels || [])).to.eql([]);
-      expect(captureNode._analysis.usedChannels.has('loop')).to.be(false);
-      expect(captureNode._analysis.usedChannels.has('item')).to.be(false);
-      expect(captureNode._analysis.usedChannels.has('includeTemplate')).to.be(false);
+      expect(Array.from(captureNode._analysis.linkedChains || [])).to.eql([]);
+      expect(captureNode._analysis.usedChains.has('loop')).to.be(false);
+      expect(captureNode._analysis.usedChains.has('item')).to.be(false);
+      expect(captureNode._analysis.usedChains.has('includeTemplate')).to.be(false);
     });
 
     it('should not mark scope-isolated macro or root nodes as linked child buffers', function () {
@@ -211,9 +211,9 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       const macroNode = collectNodesByType(ast, 'Macro')[0];
 
       expect(ast._analysis.createsLinkedChildBuffer).to.be(false);
-      expect(ast._analysis.linkedChannels).to.be(null);
+      expect(ast._analysis.linkedChains).to.be(null);
       expect(macroNode._analysis.createsLinkedChildBuffer).to.be(false);
-      expect(macroNode._analysis.linkedChannels).to.be(null);
+      expect(macroNode._analysis.linkedChains).to.be(null);
     });
 
     it('should derive short-circuit expression links only when command effects are present', function () {
@@ -226,14 +226,14 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       const valueInlineIfNode = collectNodesByType(valueOnlyAst, 'InlineIf')[0];
 
       expect(valueAndNode._analysis.createsLinkedChildBuffer).to.be(false);
-      expect(valueAndNode._analysis.linkedChannels).to.be(null);
-      expect(valueAndNode._analysis.linkedMutatedChannels).to.be(null);
+      expect(valueAndNode._analysis.linkedChains).to.be(null);
+      expect(valueAndNode._analysis.linkedMutatedChains).to.be(null);
       expect(valueOrNode._analysis.createsLinkedChildBuffer).to.be(false);
-      expect(valueOrNode._analysis.linkedChannels).to.be(null);
-      expect(valueOrNode._analysis.linkedMutatedChannels).to.be(null);
+      expect(valueOrNode._analysis.linkedChains).to.be(null);
+      expect(valueOrNode._analysis.linkedMutatedChains).to.be(null);
       expect(valueInlineIfNode._analysis.createsLinkedChildBuffer).to.be(false);
-      expect(valueInlineIfNode._analysis.linkedChannels).to.be(null);
-      expect(valueInlineIfNode._analysis.linkedMutatedChannels).to.be(null);
+      expect(valueInlineIfNode._analysis.linkedChains).to.be(null);
+      expect(valueInlineIfNode._analysis.linkedMutatedChains).to.be(null);
 
       const commandEffectAst = analyzeScriptSource([
         'data result',
@@ -245,11 +245,11 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       const commandOrNode = collectNodesByType(commandEffectAst, 'Or')[0];
 
       expect(commandAndNode._analysis.createsLinkedChildBuffer).to.be(true);
-      expect(Array.from(commandAndNode._analysis.linkedChannels || [])).to.eql(['result']);
-      expect(Array.from(commandAndNode._analysis.linkedMutatedChannels || [])).to.eql(['result']);
+      expect(Array.from(commandAndNode._analysis.linkedChains || [])).to.eql(['result']);
+      expect(Array.from(commandAndNode._analysis.linkedMutatedChains || [])).to.eql(['result']);
       expect(commandOrNode._analysis.createsLinkedChildBuffer).to.be(true);
-      expect(Array.from(commandOrNode._analysis.linkedChannels || [])).to.eql(['result']);
-      expect(Array.from(commandOrNode._analysis.linkedMutatedChannels || [])).to.eql(['result']);
+      expect(Array.from(commandOrNode._analysis.linkedChains || [])).to.eql(['result']);
+      expect(Array.from(commandOrNode._analysis.linkedMutatedChains || [])).to.eql(['result']);
     });
 
     it('should preserve literal/interpolation parity and source ordering', async function () {
@@ -383,7 +383,7 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       expect(await exported.x).to.be('ready');
     });
 
-    it('should reject an early returned exported value when its channel fails', async function () {
+    it('should reject an early returned exported value when its chain fails', async function () {
       const env = new AsyncEnvironment();
       env.addGlobal('failValue', () => {
         throw new Error('export failed');
@@ -404,10 +404,10 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
     it('should keep inherited text placement boundaries out of shared invocation lanes', async function () {
       const createRootBuffer = () => {
         const rootBuffer = new runtime.CommandBuffer(null);
-        runtime.declareBufferChannel(rootBuffer, '__text__', 'text', null, null);
-        runtime.declareBufferChannel(rootBuffer, 'theme', 'var', null, null);
+        runtime.declareBufferChain(rootBuffer, '__text__', 'text', null, null);
+        runtime.declareBufferChain(rootBuffer, 'theme', 'var', null, null);
         rootBuffer.addCommand(new runtime.VarCommand({
-          channelName: 'theme',
+          chainName: 'theme',
           args: ['dark'],
           pos: { lineno: 1, colno: 1 }
         }), 'theme');
@@ -421,7 +421,7 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       const sharedLaneSibling = new runtime.CommandBuffer(null, null, ['theme'], blockedRoot);
       const invocationBuffer = new runtime.CommandBuffer(null, null, ['theme'], blockedRoot);
       const blockedRead = invocationBuffer.addCommand(new runtime.SnapshotCommand({
-        channelName: 'theme',
+        chainName: 'theme',
         pos: { lineno: 1, colno: 1 }
       }), 'theme');
       let blockedReadSettled = false;
@@ -440,7 +440,7 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       const textPlacementBoundary = new runtime.CommandBuffer(null, null, ['__text__'], textRoot);
       const admittedInvocation = new runtime.CommandBuffer(null, null, ['theme'], textRoot);
       const admittedRead = admittedInvocation.addCommand(new runtime.SnapshotCommand({
-        channelName: 'theme',
+        chainName: 'theme',
         pos: { lineno: 1, colno: 1 }
       }), 'theme');
 
@@ -494,10 +494,10 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       }
     });
 
-    it('should export root script channels through final snapshots', async function () {
+    it('should export root script chains through final snapshots', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
-      loader.addTemplate('channels.script', [
+      loader.addTemplate('chains.script', [
         'text log',
         'data result',
         'log("hello")',
@@ -505,7 +505,7 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       ].join('\n'));
 
       const rendered = await env.renderScriptString([
-        'import "channels.script" as lib',
+        'import "chains.script" as lib',
         'return { log: lib.log, result: lib.result }'
       ].join('\n'));
 

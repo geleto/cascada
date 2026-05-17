@@ -55,13 +55,13 @@ additions that the old document lacked entirely.
 ### What's correct
 All major architectural claims verified against `src/compiler/macro.js` and
 `src/runtime/command-buffer.js`:
-- `CALLER_SCHED_CHANNEL_NAME = "__caller__"` ✓ (macro.js:6)
+- `CALLER_SCHED_CHAIN_NAME = "__caller__"` ✓ (macro.js:6)
 - Three-level ownership model (Macro Buffer / All-Callers Buffer / Per-Invocation
   Buffers) fully matches implementation ✓
 - `WaitResolveCommand` used for `__caller__` timing bookkeeping ✓
 - `CommandBuffer.getFinishedPromise()` exists ✓ (command-buffer.js:85)
-- `addCommand(new SnapshotCommand({ channelName: "__caller__", ... }), "__caller__")` → await → `allCallersBuffer.finish()` finalization sequence ✓
-- `_macroUsesCaller()` detection, `__callerUsedChannels` metadata ✓
+- `addCommand(new SnapshotCommand({ chainName: "__caller__", ... }), "__caller__")` → await → `allCallersBuffer.finish()` finalization sequence ✓
+- `_macroUsesCaller()` detection, `__callerUsedChains` metadata ✓
 - All Runtime/Compiler Touchpoints verified ✓
 - `__caller__` vs `__waited__` distinction is accurate ✓
 
@@ -81,31 +81,31 @@ reference.
 
 ---
 
-## expression-channels.md
+## expression-chains.md
 
 ### Verdict: Mostly correct — one inaccuracy about observation commands, some lost rationale
 
 ### What's correct
 - The core left-to-right evaluation guarantee and why it matters ✓
-- Listed command-emitting forms (sequential paths, caller(), sequence-channel
+- Listed command-emitting forms (sequential paths, caller(), sequence-chain
   calls) ✓
 - Three structural boundary cases (inline-if with mutations, and/or with
   mutations, ambiguous imported callables) ✓
-- `usedChannels` / `mutatedChannels` analysis vocabulary ✓
+- `usedChains` / `mutatedChains` analysis vocabulary ✓
 - `resolveSingle` / `resolveDuo` / `resolveAll` value consumption ✓
 - All 7 invariants are sound ✓
 
 ### Correctness fix
 - **Observation commands (snapshot, isError, getError) are listed as
   command-emitting expressions, but they only emit commands in script mode.**
-  `compileSpecialChannelFunCall()` returns `false` when `!compiler.scriptMode`
-  (channel.js:265-267) and they fall through to normal dynamic calls in template
-  expressions. The document must qualify this as script-mode channel syntax or
+  `compileSpecialChainFunCall()` returns `false` when `!compiler.scriptMode`
+  (chain.js:265-267) and they fall through to normal dynamic calls in template
+  expressions. The document must qualify this as script-mode chain syntax or
   remove observations from the general command-emitting list.
 
 ### Should restore
 - No cross-reference to `output-scoping.md`, even though expression analysis
-  (`mutatedChannels`) directly drives buffer linking decisions described there.
+  (`mutatedChains`) directly drives buffer linking decisions described there.
   A one-line "See also" at the bottom of each document is enough.
 
 ### Optional breadth
@@ -125,12 +125,12 @@ reference.
 ### Verdict: Good rewrite, but one misleading claim about buffer creation sites
 
 ### What's correct
-- Channel analysis vocabulary (`declaredChannels`, `usedChannels`,
-  `mutatedChannels`) matches `src/compiler/analysis.js` lines 100-102 ✓
+- Chain analysis vocabulary (`declaredChains`, `usedChains`,
+  `mutatedChains`) matches `src/compiler/analysis.js` lines 100-102 ✓
 - All files in Key Files section exist ✓
-- `__waited__` channel description ✓
-- Control-flow poisoning via `poisonChannels` ✓ (compiler-async.js:416, 460, 783, 812)
-- Linked channels mechanism ✓ (command-buffer.js)
+- `__waited__` chain description ✓
+- Control-flow poisoning via `poisonChains` ✓ (compiler-async.js:416, 460, 783, 812)
+- Linked chains mechanism ✓ (command-buffer.js)
 - Guard scopes and sequential-path declarations ✓
 - All 7 invariants are sound and grounded in the implementation ✓
 
@@ -163,9 +163,9 @@ The file content is moderately stale. Many items it tracks have been implemented
 in `script.md` and could be removed. Items that still look open:
 
 - Context value semantics (`appConfig.debug = true` — local copy vs. mutation)
-- Guard in sequence channel placement ("not the place!!!")
+- Guard in sequence chain placement ("not the place!!!")
 - Exception for macros with `!` on parameters (verify if implemented)
-- Error handling reference at start of channels/guard sections
+- Error handling reference at start of chains/guard sections
 - Macro error handling behavior clarification
 
 Consider a follow-up pass to strike completed items and keep only active work.
@@ -203,10 +203,10 @@ All three factual claims verified:
 
 ### What's correct
 All technical claims verified:
-- `runtime.runWaitedControlFlowBoundary(parentBuffer, usedChannels, context, cb, asyncFn, waitedChannelName)` exists exactly as documented in `src/runtime/async-boundaries.js:51-62` ✓
+- `runtime.runWaitedControlFlowBoundary(parentBuffer, usedChains, context, cb, asyncFn, waitedChainName)` exists exactly as documented in `src/runtime/async-boundaries.js:51-62` ✓
 - All Key Files exist ✓
-- `finish()`, `getChannel()`, `finalSnapshot()` all present ✓
-- `WaitResolveCommand` in `channels/wait-commands.js` ✓
+- `finish()`, `getChain()`, `finalSnapshot()` all present ✓
+- `WaitResolveCommand` in `chains/wait-commands.js` ✓
 - While loop `false`/`true` return (no STOP_WHILE sentinel) ✓
 - Nested loop propagation rules ✓
 - Error/poison behavior ✓
@@ -242,10 +242,10 @@ The Key Files section is also a useful addition.
 - **Correctness fixes that must be done before these documents are treated as
   authoritative:**
   1. `sleep()` in Error Handling Patterns — verify or replace
-  2. Observation commands in expression-channels.md — qualify as script-mode only
+  2. Observation commands in expression-chains.md — qualify as script-mode only
   3. import/from-import in output-scoping.md — remove from buffer creation list
 - **Should-restore items** (real information lost, worth a short edit):
   1. caller.md — dual WaitResolveCommand tracking
   2. waited-loops.md — deadlock cycle explanation + `compileExpression` rule
   3. undocumented.md — compiler error string + explicit action items for `without context`
-  4. expression-channels.md ↔ output-scoping.md — mutual cross-references
+  4. expression-chains.md ↔ output-scoping.md — mutual cross-references

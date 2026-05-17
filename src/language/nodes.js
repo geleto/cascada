@@ -169,7 +169,7 @@ class IfAsync extends If {
 
 class Guard extends Node {
   get fields() {
-    return ['body', 'channelTargets', 'typeTargets', 'variableTargets', 'sequenceTargets', 'recoveryBody', 'errorVar'];
+    return ['body', 'chainTargets', 'typeTargets', 'variableTargets', 'sequenceTargets', 'recoveryBody', 'errorVar'];
   }
 }
 
@@ -349,9 +349,9 @@ class CallAssign extends Node {
   }
 }
 
-class ChannelDeclaration extends Node {
-  get typename() { return 'ChannelDeclaration'; }
-  get fields() { return ['channelType', 'name', 'initializer', 'isShared']; }
+class ChainDeclaration extends Node {
+  get typename() { return 'ChainDeclaration'; }
+  get fields() { return ['chainType', 'name', 'initializer', 'isShared']; }
 }
 
 class Switch extends Node {
@@ -496,8 +496,8 @@ class Do extends NodeList {
   get typename() { return 'Do'; }
 }
 
-class ChannelCommand extends Node {
-  get typename() { return 'ChannelCommand'; }
+class ChainCommand extends Node {
+  get typename() { return 'ChainCommand'; }
   get fields() { return ['call']; }
 }
 
@@ -605,7 +605,7 @@ export {
   Include,
   Set,
   CallAssign,
-  ChannelDeclaration,
+  ChainDeclaration,
   Switch,
   Case,
   LookupVal,
@@ -631,7 +631,7 @@ export {
   CallExtension,
   CallExtensionAsync,
   Do,
-  ChannelCommand,
+  ChainCommand,
   isWhitespaceOutputNode,
   printNodes
 };

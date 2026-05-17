@@ -7,7 +7,7 @@ function isCommandBufferLike(value) {
     typeof value === 'object' &&
     value.arrays &&
     typeof value.isFinished === 'function' &&
-    typeof value.isChannelFinished === 'function' &&
+    typeof value.isChainFinished === 'function' &&
     typeof value.onIteratorEnterBuffer === 'function'
   );
 }
@@ -31,16 +31,16 @@ class BufferIterator {
     this._requestAdvance();
   }
 
-  onBufferFinished(buffer, channelName) {
-    if (channelName && channelName !== this.channelName) {
+  onBufferFinished(buffer, chainName) {
+    if (chainName && chainName !== this.chainName) {
       return;
     }
     this._requestAdvance();
   }
 
   _reset(rootBuffer) {
-    if (this._enteredBuffer && this.channelName) {
-      this._enteredBuffer.onIteratorLeaveBuffer(this, this.channelName);
+    if (this._enteredBuffer && this.chainName) {
+      this._enteredBuffer.onIteratorLeaveBuffer(this, this.chainName);
     }
 
     this.stack = [];
@@ -80,7 +80,7 @@ class BufferIterator {
     while (this.stack.length > 0) {
       const cursor = this._currentCursor();
       const buffer = cursor.buffer;
-      const arr = buffer.arrays[this.channelName];
+      const arr = buffer.arrays[this.chainName];
       const nextIndex = cursor.index + 1;
 
       if (arr && nextIndex < arr.length && arr[nextIndex] != null) {
@@ -95,7 +95,7 @@ class BufferIterator {
             continue;
           }
           if (applyResult && typeof applyResult.then === 'function') {
-            // The channel/command path owns the apply result. This chained
+            // The chain/command path owns the apply result. This chained
             // promise only performs iterator cleanup and must not surface a
             // duplicate unhandled rejection if applyResult rejects.
             markPromiseHandled(Promise.resolve(applyResult).finally(() => {
@@ -111,9 +111,9 @@ class BufferIterator {
           this._releaseProcessedEntry(buffer, nextIndex);
         }
       }
-      else if (buffer.isChannelFinished(this.channelName) && this.stack.length > 1) {
+      else if (buffer.isChainFinished(this.chainName) && this.stack.length > 1) {
         this._leaveCurrentToParent();
-      } else if (buffer.isChannelFinished(this.channelName)) {
+      } else if (buffer.isChainFinished(this.chainName)) {
         this.stack.pop();
         this._setCurrentBuffer(null);
         this.finished = true;
@@ -189,7 +189,7 @@ class BufferIterator {
     }
 
     if (leaving && leaving.buffer) {
-      leaving.buffer.onIteratorLeaveBuffer(this, this.channelName);
+      leaving.buffer.onIteratorLeaveBuffer(this, this.chainName);
       this._releaseFinishedLane(leaving.buffer);
     }
     if (parentCursor.index >= 0) {
@@ -200,10 +200,10 @@ class BufferIterator {
   }
 
   _releaseProcessedEntry(buffer, index) {
-    if (!buffer || index < 0 || !this.channelName) {
+    if (!buffer || index < 0 || !this.chainName) {
       return;
     }
-    const arr = buffer.arrays[this.channelName];
+    const arr = buffer.arrays[this.chainName];
     if (!arr || index >= arr.length) {
       return;
     }
@@ -211,22 +211,22 @@ class BufferIterator {
   }
 
   _releaseFinishedLane(buffer) {
-    if (!buffer || !this.channelName || !buffer.arrays) {
+    if (!buffer || !this.chainName || !buffer.arrays) {
       return;
     }
-    if (!(this.channelName in buffer.arrays)) {
+    if (!(this.chainName in buffer.arrays)) {
       return;
     }
-    buffer.arrays[this.channelName] = null;
+    buffer.arrays[this.chainName] = null;
   }
 
   _setCurrentBuffer(buffer, skipLeave = false) {
-    if (!skipLeave && this._enteredBuffer && this.channelName) {
-      this._enteredBuffer.onIteratorLeaveBuffer(this, this.channelName);
+    if (!skipLeave && this._enteredBuffer && this.chainName) {
+      this._enteredBuffer.onIteratorLeaveBuffer(this, this.chainName);
     }
     this._enteredBuffer = buffer || null;
-    if (buffer && this.channelName) {
-      buffer.onIteratorEnterBuffer(this, this.channelName);
+    if (buffer && this.chainName) {
+      buffer.onIteratorEnterBuffer(this, this.chainName);
     }
   }
 
@@ -255,11 +255,11 @@ class BufferIterator {
     this._needsAdvance = false;
   }
 
-  get channelName() {
+  get chainName() {
     if (!this.output) {
       return null;
     }
-    return this.output._channelName;
+    return this.output._chainName;
   }
 }
 

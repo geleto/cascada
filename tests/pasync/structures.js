@@ -655,7 +655,7 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
           // Accessing 'complex.nested.l2' should wait for resolution if it's used in an output or operation?
           // Actually, in Cascada Script, variables hold the raw values (promises/markers).
           // They are resolved when:
-          // 1. Used in channel commands (like @data, @text)
+          // 1. Used in chain commands (like @data, @text)
           // 2. Used in expressions that require values (like math, string concat) - handled by compiler-base expression compilation
 
           result.val1 = complex.l1

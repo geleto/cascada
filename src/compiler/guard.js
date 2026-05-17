@@ -27,11 +27,11 @@ class CompileGuard {
 
   postAnalyzeGuard(node) {
     const guardTargets = node._analysis.guardTargets;
-    const bodyUsedChannels = Array.from(node.body._analysis.usedChannels ?? []);
+    const bodyUsedChains = Array.from(node.body._analysis.usedChains ?? []);
     const modifiedLocks = new Set();
-    bodyUsedChannels.forEach((channelName) => {
-      if (channelName && channelName.startsWith('!')) {
-        modifiedLocks.add(channelName);
+    bodyUsedChains.forEach((chainName) => {
+      if (chainName && chainName.startsWith('!')) {
+        modifiedLocks.add(chainName);
       }
     });
 
@@ -40,10 +40,10 @@ class CompileGuard {
       guardTargets,
       modifiedLocks
     );
-    const guardChannels = this._getResolvedGuardChannelNames(
+    const guardChains = this._getResolvedGuardChainNames(
       node,
       guardTargets,
-      bodyUsedChannels,
+      bodyUsedChains,
       resolvedSequenceTargets
     );
     const hasSequenceTargets = guardTargets.sequenceTargets;
@@ -53,7 +53,7 @@ class CompileGuard {
         targets: guardTargets,
         needsGuardState: guardTargets.variableTargetsAll || hasSequenceTargets,
         resolvedSequenceTargets,
-        guardChannels
+        guardChains
       }
     };
   }
@@ -69,10 +69,10 @@ class CompileGuard {
       compiler.guardDepth = previousGuardDepth + 1;
 
       try {
-        this.emit.line(`runtime.markChannelBufferScope(${compiler.buffer.currentBuffer});`);
+        this.emit.line(`runtime.markChainBufferScope(${compiler.buffer.currentBuffer});`);
         let guardRepairLinePos = null;
-        const channelGuardInitLinePos = compiler.codebuf.length;
-        let channelGuardStateVar = null;
+        const chainGuardInitLinePos = compiler.codebuf.length;
+        let chainGuardStateVar = null;
         this.emit.line('');
         if (guardStateVar) {
           this.emit.line(`const ${guardStateVar} = runtime.guard.init(cb);`);
@@ -83,33 +83,33 @@ class CompileGuard {
         compiler.compile(node.body, null);
 
         const resolvedSequenceTargets = guardFacts.resolvedSequenceTargets ?? [];
-        const guardChannels = guardFacts.guardChannels ?? [];
+        const guardChains = guardFacts.guardChains ?? [];
         if (resolvedSequenceTargets.length > 0) {
           this.emit.insertLine(
             guardRepairLinePos,
-            `runtime.guard.repairSequenceChannels(${compiler.buffer.currentBuffer}, ${guardStateVar}, ${JSON.stringify(resolvedSequenceTargets)});`
+            `runtime.guard.repairSequenceChains(${compiler.buffer.currentBuffer}, ${guardStateVar}, ${JSON.stringify(resolvedSequenceTargets)});`
           );
         }
 
-        if (guardChannels.length > 0) {
-          channelGuardStateVar = compiler._tmpid();
+        if (guardChains.length > 0) {
+          chainGuardStateVar = compiler._tmpid();
           this.emit.insertLine(
-            channelGuardInitLinePos,
-            `const ${channelGuardStateVar} = runtime.guard.initChannelSnapshots(${JSON.stringify(guardChannels)}, ${compiler.buffer.currentBuffer}, cb);`
+            chainGuardInitLinePos,
+            `const ${chainGuardStateVar} = runtime.guard.initChainSnapshots(${JSON.stringify(guardChains)}, ${compiler.buffer.currentBuffer}, cb);`
           );
         }
 
         const guardErrorsVar = compiler._tmpid();
         this.emit.line(
-          `const ${guardErrorsVar} = await runtime.guard.finalizeGuard(${guardStateVar || 'null'}, ${compiler.buffer.currentBuffer}, ${JSON.stringify(guardChannels)}, ${channelGuardStateVar || 'null'});`
+          `const ${guardErrorsVar} = await runtime.guard.finalizeGuard(${guardStateVar || 'null'}, ${compiler.buffer.currentBuffer}, ${JSON.stringify(guardChains)}, ${chainGuardStateVar || 'null'});`
         );
         this.emit.line(`if (${guardErrorsVar}.length > 0) {`);
 
         if (node.recoveryBody) {
           if (node.errorVar) {
-            this.emit.line(`runtime.declareBufferChannel(${compiler.buffer.currentBuffer}, "${node.errorVar}", "var", context, null);`);
+            this.emit.line(`runtime.declareBufferChain(${compiler.buffer.currentBuffer}, "${node.errorVar}", "var", context, null);`);
             this.emit.line(
-              `${compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ channelName: '${node.errorVar}', args: [new runtime.PoisonError(${guardErrorsVar})], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${node.errorVar}');`
+              `${compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ chainName: '${node.errorVar}', args: [new runtime.PoisonError(${guardErrorsVar})], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${node.errorVar}');`
             );
           }
           compiler.compile(node.recoveryBody, null);
@@ -162,43 +162,43 @@ class CompileGuard {
     return Array.from(resolvedSequenceTargets);
   }
 
-  _getResolvedGuardChannelNames(node, guardTargets, bodyUsedChannels, resolvedSequenceTargets) {
+  _getResolvedGuardChainNames(node, guardTargets, bodyUsedChains, resolvedSequenceTargets) {
     const compiler = this.compiler;
-    const merged = new Set(this._getGuardedChannelNames(
-      bodyUsedChannels,
+    const merged = new Set(this._getGuardedChainNames(
+      bodyUsedChains,
       guardTargets,
       node.body._analysis
     ));
     for (const lockName of resolvedSequenceTargets) {
       merged.add(lockName);
     }
-    const bodyDeclaredChannels = Array.from((node.body._analysis.declaredChannels ?? new Map()).keys());
-    for (const name of bodyDeclaredChannels) {
+    const bodyDeclaredChains = Array.from((node.body._analysis.declaredChains ?? new Map()).keys());
+    for (const name of bodyDeclaredChains) {
       merged.add(name);
     }
-    return compiler.return.excludeGuardCaptureChannels(merged);
+    return compiler.return.excludeGuardCaptureChains(merged);
   }
 
-  _getGuardedChannelNames(usedChannels, guardTargets, analysis) {
+  _getGuardedChainNames(usedChains, guardTargets, analysis) {
     const compiler = this.compiler;
-    const used = usedChannels;
+    const used = usedChains;
 
     if (!guardTargets) {
       return [];
     }
 
-    if (guardTargets.channelSelector === '*') {
+    if (guardTargets.chainSelector === '*') {
       return used;
     }
 
-    const hasNamedChannels = Array.isArray(guardTargets.channelSelector) && guardTargets.channelSelector.length > 0;
-    const hasTypedChannels = Array.isArray(guardTargets.typeTargets) && guardTargets.typeTargets.length > 0;
-    if (hasNamedChannels || hasTypedChannels) {
-      const guardedSet = new Set(hasNamedChannels ? guardTargets.channelSelector : []);
+    const hasNamedChains = Array.isArray(guardTargets.chainSelector) && guardTargets.chainSelector.length > 0;
+    const hasTypedChains = Array.isArray(guardTargets.typeTargets) && guardTargets.typeTargets.length > 0;
+    if (hasNamedChains || hasTypedChains) {
+      const guardedSet = new Set(hasNamedChains ? guardTargets.chainSelector : []);
       if (!compiler.scriptMode && guardedSet.has('text')) {
-        guardedSet.add(compiler.analysis.getCurrentTextChannel(analysis));
+        guardedSet.add(compiler.analysis.getCurrentTextChain(analysis));
       }
-      const guardedTypes = new Set(hasTypedChannels ? guardTargets.typeTargets : []);
+      const guardedTypes = new Set(hasTypedChains ? guardTargets.typeTargets : []);
       return used.filter((name) => {
         if (guardedSet.has(name)) {
           return true;
@@ -206,11 +206,11 @@ class CompileGuard {
         if (guardedTypes.size === 0) {
           return false;
         }
-        const channelDecl = compiler.analysis.findDeclaration(analysis, name);
-        if (channelDecl) {
-          return guardedTypes.has(channelDecl.type);
+        const chainDecl = compiler.analysis.findDeclaration(analysis, name);
+        if (chainDecl) {
+          return guardedTypes.has(chainDecl.type);
         }
-        if (!compiler.scriptMode && name === compiler.analysis.getCurrentTextChannel(analysis) && guardedTypes.has('text')) {
+        if (!compiler.scriptMode && name === compiler.analysis.getCurrentTextChain(analysis) && guardedTypes.has('text')) {
           return true;
         }
         return guardedTypes.has(name);
@@ -222,8 +222,8 @@ class CompileGuard {
         if (name && name.charAt(0) === '!') {
           return false;
         }
-        const channelDecl = compiler.analysis.findDeclaration(analysis, name);
-        return channelDecl && channelDecl.type === 'var';
+        const chainDecl = compiler.analysis.findDeclaration(analysis, name);
+        return chainDecl && chainDecl.type === 'var';
       });
     }
 
@@ -236,13 +236,13 @@ class CompileGuard {
 
   _getGuardTargets(guardNode) {
     const compiler = this.compiler;
-    const channelTargetsRaw = Array.isArray(guardNode.channelTargets) &&
-      guardNode.channelTargets.length > 0
-      ? guardNode.channelTargets
+    const chainTargetsRaw = Array.isArray(guardNode.chainTargets) &&
+      guardNode.chainTargets.length > 0
+      ? guardNode.chainTargets
       : null;
-    let channelSelector = !channelTargetsRaw
+    let chainSelector = !chainTargetsRaw
       ? null
-      : (channelTargetsRaw.includes('@') ? '*' : channelTargetsRaw);
+      : (chainTargetsRaw.includes('@') ? '*' : chainTargetsRaw);
     const typeTargets = Array.isArray(guardNode.typeTargets) && guardNode.typeTargets.length > 0
       ? guardNode.typeTargets
       : null;
@@ -257,39 +257,39 @@ class CompileGuard {
     const variableValidationTargets = [];
 
     if (Array.isArray(variableTargetsRaw) && variableTargetsRaw.length > 0) {
-      const resolvedChannels = new Set(Array.isArray(channelSelector) ? channelSelector : []);
+      const resolvedChains = new Set(Array.isArray(chainSelector) ? chainSelector : []);
 
       for (const name of variableTargetsRaw) {
-        const channelDecl = compiler.analysis.findDeclaration(guardNode._analysis, name);
-        const isDeclaredVar = channelDecl && channelDecl.type === 'var';
+        const chainDecl = compiler.analysis.findDeclaration(guardNode._analysis, name);
+        const isDeclaredVar = chainDecl && chainDecl.type === 'var';
 
         if (isDeclaredVar) {
           variableValidationTargets.push(name);
         }
-        if (channelDecl) {
-          resolvedChannels.add(name);
+        if (chainDecl) {
+          resolvedChains.add(name);
         }
-        if (!compiler.scriptMode && !isDeclaredVar && !channelDecl && name === 'text') {
-          resolvedChannels.add(compiler.analysis.getCurrentTextChannel(guardNode._analysis));
+        if (!compiler.scriptMode && !isDeclaredVar && !chainDecl && name === 'text') {
+          resolvedChains.add(compiler.analysis.getCurrentTextChain(guardNode._analysis));
           continue;
         }
-        if (!isDeclaredVar && !channelDecl) {
+        if (!isDeclaredVar && !chainDecl) {
           variableValidationTargets.push(name);
         }
       }
 
-      if (channelSelector !== '*') {
-        channelSelector = resolvedChannels.size > 0 ? Array.from(resolvedChannels) : null;
+      if (chainSelector !== '*') {
+        chainSelector = resolvedChains.size > 0 ? Array.from(resolvedChains) : null;
       }
     }
     const sequenceTargets = Array.isArray(guardNode.sequenceTargets) && guardNode.sequenceTargets.length > 0
       ? guardNode.sequenceTargets
       : null;
 
-    const hasAnySelectors = !!channelSelector || !!typeTargets || hasVariableTargetsSelector || !!sequenceTargets;
+    const hasAnySelectors = !!chainSelector || !!typeTargets || hasVariableTargetsSelector || !!sequenceTargets;
 
     return {
-      channelSelector,
+      chainSelector,
       typeTargets,
       variableTargetsAll,
       variableValidationTargets: variableValidationTargets.length > 0 ? variableValidationTargets : null,

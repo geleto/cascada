@@ -16,8 +16,8 @@ function compiledComponentMethod(name, options = {}) {
     super: null,
     superOrigin: null,
     inheritedMethodDependencies: {},
-    ownLinkedChannels: [],
-    ownMutatedChannels: []
+    ownLinkedChains: [],
+    ownMutatedChains: []
   };
 }
 
@@ -57,7 +57,7 @@ describe('Phase 8 - Component Method Calls', function () {
     expect(result).to.be('hello Ada');
   });
 
-  it('should isolate method-local temporary channels across calls', async function () {
+  it('should isolate method-local temporary chains across calls', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
@@ -574,7 +574,7 @@ describe('Phase 8 - Component Observations', function () {
     expect(result).to.eql(['dark', 'light']);
   });
 
-  it('should observe shared non-var channels through component observation calls', async function () {
+  it('should observe shared non-var chains through component observation calls', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
@@ -611,9 +611,9 @@ describe('Phase 8 - Component Observations', function () {
     ].join('\n'), env, 'Main.script');
     const source = script.compileSource();
 
-    expect(source).to.contain('runtime.observeComponentChannel({ bindingName: "ns", currentBuffer: output, observationCommand: new runtime.SnapshotCommand({ channelName: "$log"');
-    expect(source).to.contain('runtime.observeComponentChannel({ bindingName: "ns", currentBuffer: output, observationCommand: new runtime.IsErrorCommand({ channelName: "$status"');
-    expect(source).to.contain('runtime.observeComponentChannel({ bindingName: "ns", currentBuffer: output, observationCommand: new runtime.GetErrorCommand({ channelName: "$status"');
+    expect(source).to.contain('runtime.observeComponentChain({ bindingName: "ns", currentBuffer: output, observationCommand: new runtime.SnapshotCommand({ chainName: "$log"');
+    expect(source).to.contain('runtime.observeComponentChain({ bindingName: "ns", currentBuffer: output, observationCommand: new runtime.IsErrorCommand({ chainName: "$status"');
+    expect(source).to.contain('runtime.observeComponentChain({ bindingName: "ns", currentBuffer: output, observationCommand: new runtime.GetErrorCommand({ chainName: "$status"');
   });
 
   it('should observe shared var poison through component `is error` and `#`', async function () {
@@ -663,13 +663,13 @@ describe('Phase 8 - Component Observations', function () {
 
     const ownerContext = makeContext('Main.script');
     const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null);
-    runtimeModule.declareBufferChannel(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
+    runtimeModule.declareBufferChain(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
 
     const sharedRootBuffer = new runtimeModule.CommandBuffer(makeContext('Component.script'), null, null, null);
-    runtimeModule.declareBufferChannel(sharedRootBuffer, 'status', 'var', ownerContext, null);
+    runtimeModule.declareBufferChain(sharedRootBuffer, 'status', 'var', ownerContext, null);
 
     ownerBuffer.addCommand(new runtimeModule.VarCommand({
-      channelName: 'nsBinding',
+      chainName: 'nsBinding',
       args: [new runtimeModule.InheritanceInstance({
         entryTemplateOrScript: { path: 'Component.script' },
         runtimeState: {
@@ -688,11 +688,11 @@ describe('Phase 8 - Component Observations', function () {
       pos: { lineno: 1, colno: 1 }
     }), 'nsBinding');
 
-    const observationPromise = runtimeModule.observeComponentChannel({
+    const observationPromise = runtimeModule.observeComponentChain({
       bindingName: 'nsBinding',
       currentBuffer: ownerBuffer,
       observationCommand: new runtimeModule.VarCommand({
-        channelName: 'status',
+        chainName: 'status',
         args: ['bad'],
         pos: { lineno: 2, colno: 1 }
       }),
@@ -706,7 +706,7 @@ describe('Phase 8 - Component Observations', function () {
       expect().fail('Expected component observation to reject');
     } catch (error) {
       expect(error).to.be.a(runtimeModule.RuntimeFatalError);
-      expect(error.message).to.contain('universal observational channel command');
+      expect(error.message).to.contain('universal observational chain command');
     }
   });
 
@@ -802,7 +802,7 @@ describe('Phase 8 - Component Observations', function () {
     expect(outcome.error.message).to.match(/Missing\.script|missing/i);
   });
 
-  it('should reject instead of hanging when observing a missing shared component channel', async function () {
+  it('should reject instead of hanging when observing a missing shared component chain', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
@@ -824,7 +824,7 @@ describe('Phase 8 - Component Observations', function () {
 
     expect(outcome.type).to.be('error');
     expect(outcome.error).to.be.a(runtimeModule.RuntimeError);
-    expect(outcome.error.message).to.contain('Shared channel \'missing\' was not found');
+    expect(outcome.error.message).to.contain('Shared chain \'missing\' was not found');
   });
 
   it('should read nested properties from component shared vars', async function () {
@@ -843,7 +843,7 @@ describe('Phase 8 - Component Observations', function () {
     expect(result).to.eql(['dark', 'warm']);
   });
 
-  it('should reject nested component shared-property chaining for non-var channels', async function () {
+  it('should reject nested component shared-property chaining for non-var chains', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
@@ -858,14 +858,14 @@ describe('Phase 8 - Component Observations', function () {
 
     try {
       await env.renderScript('Main.script', {});
-      expect().fail('Expected non-var shared channel nested read to fail');
+      expect().fail('Expected non-var shared chain nested read to fail');
     } catch (error) {
       expect(error).to.be.a(runtimeModule.RuntimeError);
-      expect(error.message).to.contain('Shared channel \'this.log\' cannot be used as a bare symbol');
+      expect(error.message).to.contain('Shared chain \'this.log\' cannot be used as a bare symbol');
     }
   });
 
-  it('should allow explicit snapshot property reads for component non-var shared channels', async function () {
+  it('should allow explicit snapshot property reads for component non-var shared chains', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
@@ -973,7 +973,7 @@ describe('Phase 8 - Component Lifecycle', function () {
     expect(result).to.be('A|');
   });
 
-  it('should keep the component shared root open until slow side-channel work finishes', async function () {
+  it('should keep the component shared root open until slow side-chain work finishes', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
@@ -1084,7 +1084,7 @@ describe('Phase 8 - Component Lifecycle', function () {
 
     const ownerContext = makeContext('Main.script');
     const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null);
-    runtimeModule.declareBufferChannel(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
+    runtimeModule.declareBufferChain(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
 
     const gate = new Promise((resolve) => {
       setTimeout(() => {
@@ -1094,7 +1094,7 @@ describe('Phase 8 - Component Lifecycle', function () {
     });
 
     ownerBuffer.addCommand(new runtimeModule.WaitResolveCommand({
-      channelName: 'nsBinding',
+      chainName: 'nsBinding',
       args: [gate],
       pos: { lineno: 1, colno: 1 }
     }), 'nsBinding');
@@ -1111,9 +1111,9 @@ describe('Phase 8 - Component Lifecycle', function () {
       errorContext: { lineno: 2, colno: 1, path: 'Main.script' }
     });
 
-    const sideChannelFinished = ownerBuffer.getChannel('nsBinding').finalSnapshot();
+    const sideChainFinished = ownerBuffer.getChain('nsBinding').finalSnapshot();
     ownerBuffer.finish();
-    await sideChannelFinished;
+    await sideChainFinished;
     await startupPromise;
 
     expect(events).to.eql(['ctor-start', 'gate-resolved']);
@@ -1164,7 +1164,7 @@ describe('Phase 8 - Component Lifecycle', function () {
 
     const ownerContext = makeContext('Main.script');
     const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null);
-    runtimeModule.declareBufferChannel(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
+    runtimeModule.declareBufferChain(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
 
     const startupPromise = runtimeModule.startComponentInstance({
       currentBuffer: ownerBuffer,
@@ -1178,9 +1178,9 @@ describe('Phase 8 - Component Lifecycle', function () {
       errorContext: { lineno: 2, colno: 1, path: 'Main.script' }
     });
 
-    const sideChannelFinished = ownerBuffer.getChannel('nsBinding').finalSnapshot();
+    const sideChainFinished = ownerBuffer.getChain('nsBinding').finalSnapshot();
     ownerBuffer.finish();
-    await sideChannelFinished;
+    await sideChainFinished;
     await startupPromise;
 
     expect(events).to.eql(['finalize-parent', 'constructor']);
@@ -1199,7 +1199,7 @@ describe('Phase 8 - Component Lifecycle', function () {
 
     const ownerContext = makeContext('Main.script');
     const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null);
-    runtimeModule.declareBufferChannel(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
+    runtimeModule.declareBufferChain(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
 
     const componentInstance = await runtimeModule.createComponentInstance({
       componentScriptOrTemplate: componentParticipant('Component.script', {
@@ -1222,14 +1222,14 @@ describe('Phase 8 - Component Lifecycle', function () {
     });
 
     ownerBuffer.addCommand(new runtimeModule.VarCommand({
-      channelName: 'nsBinding',
+      chainName: 'nsBinding',
       args: [componentInstance],
       pos: { lineno: 1, colno: 1 }
     }), 'nsBinding');
 
-    const sideChannelFinished = ownerBuffer.getChannel('nsBinding').finalSnapshot();
+    const sideChainFinished = ownerBuffer.getChain('nsBinding').finalSnapshot();
     ownerBuffer.finish();
-    await sideChannelFinished;
+    await sideChainFinished;
     await Promise.resolve();
 
     expect(() => componentInstance.invoke(

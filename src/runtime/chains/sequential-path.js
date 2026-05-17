@@ -1,21 +1,21 @@
 
 import {isPoison, isPoisonError, PoisonError, createPoison} from '../errors.js';
-import {ObservableCommand, MutatingResultCommand, contextualizeErrorsForChannel} from './command-base.js';
-import {Channel, mergePoisonErrors} from './base.js';
+import {ObservableCommand, MutatingResultCommand, contextualizeErrorsForChain} from './command-base.js';
+import {Chain, mergePoisonErrors} from './base.js';
 
 class SequentialPathReadCommand extends ObservableCommand {
-  constructor({ channelName, pathKey, operation, repair = false, pos = null }) {
+  constructor({ chainName, pathKey, operation, repair = false, pos = null }) {
     super();
-    this.channelName = channelName;
-    this.pathKey = pathKey || this.channelName;
+    this.chainName = chainName;
+    this.pathKey = pathKey || this.chainName;
     this.operation = operation;
     this.repair = !!repair;
     this.pos = pos || { lineno: 0, colno: 0 };
   }
 
-  apply(channel) {
+  apply(chain) {
 
-    const existingPoison = channel._getSequentialPathPoisonErrors();
+    const existingPoison = chain._getSequentialPathPoisonErrors();
     if (!this.repair && Array.isArray(existingPoison) && existingPoison.length > 0) {
       this.rejectResult(new PoisonError(existingPoison.slice()));
       return;
@@ -27,7 +27,7 @@ class SequentialPathReadCommand extends ObservableCommand {
         result = this.operation();
       } catch (err) {
         const errs = isPoisonError(err) ? err.errors : [err];
-        const contextualized = contextualizeErrorsForChannel(channel, this.pos, errs);
+        const contextualized = contextualizeErrorsForChain(chain, this.pos, errs);
         this.rejectResult(new PoisonError(contextualized));
         return;
       }
@@ -35,19 +35,19 @@ class SequentialPathReadCommand extends ObservableCommand {
       const resolveResultValue = (value) => {
         if (isPoison(value)) {
           const errs = Array.isArray(value.errors) ? value.errors : [value];
-          const contextualized = contextualizeErrorsForChannel(channel, this.pos, errs);
+          const contextualized = contextualizeErrorsForChain(chain, this.pos, errs);
           this.rejectResult(new PoisonError(contextualized));
           return;
         }
         if (this.repair) {
-          channel._clearSequentialPathPoison();
+          chain._clearSequentialPathPoison();
         }
         this.resolveResult(value);
       };
 
       const rejectResultError = (err) => {
         const errs = isPoisonError(err) ? err.errors : [err];
-        const contextualized = contextualizeErrorsForChannel(channel, this.pos, errs);
+        const contextualized = contextualizeErrorsForChain(chain, this.pos, errs);
         this.rejectResult(new PoisonError(contextualized));
       };
 
@@ -75,18 +75,18 @@ class RepairReadCommand extends SequentialPathReadCommand {
 
 // Executes a `!`-path write/call operation in source order. Poisons the path on failure so subsequent commands on the same path are skipped. Mutating.
 class SequentialPathWriteCommand extends MutatingResultCommand {
-  constructor({ channelName, pathKey, operation, repair = false, pos = null }) {
+  constructor({ chainName, pathKey, operation, repair = false, pos = null }) {
     super();
-    this.channelName = channelName;
-    this.pathKey = pathKey || this.channelName;
+    this.chainName = chainName;
+    this.pathKey = pathKey || this.chainName;
     this.operation = operation;
     this.repair = !!repair;
     this.pos = pos || { lineno: 0, colno: 0 };
   }
 
-  apply(channel) {
+  apply(chain) {
 
-    const existingPoison = channel._getSequentialPathPoisonErrors();
+    const existingPoison = chain._getSequentialPathPoisonErrors();
     if (!this.repair && Array.isArray(existingPoison) && existingPoison.length > 0) {
       this.rejectResult(new PoisonError(existingPoison.slice()));
       return;
@@ -98,8 +98,8 @@ class SequentialPathWriteCommand extends MutatingResultCommand {
         result = this.operation();
       } catch (err) {
         const errs = isPoisonError(err) ? err.errors : [err];
-        const contextualized = contextualizeErrorsForChannel(channel, this.pos, errs);
-        channel._applySequentialPathPoisonErrors(contextualized);
+        const contextualized = contextualizeErrorsForChain(chain, this.pos, errs);
+        chain._applySequentialPathPoisonErrors(contextualized);
         this.rejectResult(new PoisonError(contextualized));
         return;
       }
@@ -107,22 +107,22 @@ class SequentialPathWriteCommand extends MutatingResultCommand {
       const resolveResultValue = (value) => {
         if (isPoison(value)) {
           const errs = Array.isArray(value.errors) ? value.errors : [value];
-          const contextualized = contextualizeErrorsForChannel(channel, this.pos, errs);
-          channel._applySequentialPathPoisonErrors(contextualized);
+          const contextualized = contextualizeErrorsForChain(chain, this.pos, errs);
+          chain._applySequentialPathPoisonErrors(contextualized);
           this.rejectResult(new PoisonError(contextualized));
           return;
         }
         if (this.repair) {
-          channel._clearSequentialPathPoison();
+          chain._clearSequentialPathPoison();
         }
-        channel._setSequentialPathLastResult(value);
+        chain._setSequentialPathLastResult(value);
         this.resolveResult(value);
       };
 
       const rejectResultError = (err) => {
         const errs = isPoisonError(err) ? err.errors : [err];
-        const contextualized = contextualizeErrorsForChannel(channel, this.pos, errs);
-        channel._applySequentialPathPoisonErrors(contextualized);
+        const contextualized = contextualizeErrorsForChain(chain, this.pos, errs);
+        chain._applySequentialPathPoisonErrors(contextualized);
         this.rejectResult(new PoisonError(contextualized));
       };
 
@@ -148,11 +148,11 @@ class RepairWriteCommand extends SequentialPathWriteCommand {
   }
 }
 
-class SequentialPathChannel extends Channel {
+class SequentialPathChain extends Chain {
 
-  constructor(buffer, channelName, context, channelType) {
+  constructor(buffer, chainName, context, chainType) {
 
-    super(buffer, channelName, context, channelType, true, null);
+    super(buffer, chainName, context, chainType, true, null);
 
     this._sequentialPathPoisonErrors = null;
 
@@ -276,4 +276,4 @@ class SequentialPathChannel extends Channel {
 
 }
 
-export { SequentialPathChannel, SequentialPathReadCommand, RepairReadCommand, SequentialPathWriteCommand, RepairWriteCommand };
+export { SequentialPathChain, SequentialPathReadCommand, RepairReadCommand, SequentialPathWriteCommand, RepairWriteCommand };

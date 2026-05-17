@@ -6,32 +6,32 @@ class CompileBoundaries {
 
   _withBoundaryBufferState(bufferCompiler, {
     bufferExpr,
-    textChannelVar = null,
-    textChannelName = bufferCompiler.currentTextChannelName
+    textChainVar = null,
+    textChainName = bufferCompiler.currentTextChainName
   }, emitBody) {
     bufferCompiler.withBufferState({
       currentBuffer: bufferExpr,
-      currentTextChannelVar: textChannelVar,
-      currentTextChannelName: textChannelName
+      currentTextChainVar: textChainVar,
+      currentTextChainName: textChainName
     }, emitBody);
   }
 
-  _emitTextChannelSnapshot(bufferExpr, channelName, positionNode, resultId) {
+  _emitTextChainSnapshot(bufferExpr, chainName, positionNode, resultId) {
     this.compiler.emit.line(
-      `let ${resultId} = ${bufferExpr}.addCommand(new runtime.SnapshotCommand({ channelName: "${channelName}", pos: {lineno: ${positionNode.lineno}, colno: ${positionNode.colno}} }), "${channelName}");`
+      `let ${resultId} = ${bufferExpr}.addCommand(new runtime.SnapshotCommand({ chainName: "${chainName}", pos: {lineno: ${positionNode.lineno}, colno: ${positionNode.colno}} }), "${chainName}");`
     );
   }
 
   compileExpressionControlFlowBoundary(bufferCompiler, node, emitBody) {
     const parentBufferArg = bufferCompiler.currentBuffer;
-    const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
-    const linkedMutatedChannelsArg = this.compiler.emit.getLinkedMutatedChannelsArg(node);
+    const linkedChainsArg = this.compiler.emit.getLinkedChainsArg(node);
+    const linkedMutatedChainsArg = this.compiler.emit.getLinkedMutatedChainsArg(node);
 
     // Reserve a structural child buffer synchronously before any async
     // condition/operand resolution so later sibling operands stay ordered.
     // Expression boundaries must return a value/rejection to their expression
     // consumer; control-flow boundaries report errors through cb instead.
-    this.compiler.emit(`runtime.runValueBoundary(${parentBufferArg}, ${linkedChannelsArg}, ${linkedMutatedChannelsArg}, async (currentBuffer) => {`);
+    this.compiler.emit(`runtime.runValueBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, async (currentBuffer) => {`);
     this.compiler.emit.asyncClosureDepth++;
     bufferCompiler.withBufferState({ currentBuffer: 'currentBuffer' }, () => {
       emitBody.call(this.compiler);
@@ -42,18 +42,18 @@ class CompileBoundaries {
 
   compileValueBoundary(bufferCompiler, node, emitValue, positionNode = node) {
     const parentBufferArg = bufferCompiler.currentBuffer || 'null';
-    const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
-    const linkedMutatedChannelsArg = this.compiler.emit.getLinkedMutatedChannelsArg(node);
+    const linkedChainsArg = this.compiler.emit.getLinkedChainsArg(node);
+    const linkedMutatedChainsArg = this.compiler.emit.getLinkedMutatedChainsArg(node);
     const resultId = this.compiler._tmpid();
 
     this.compiler.emit.line(
-      `runtime.runValueBoundary(${parentBufferArg}, ${linkedChannelsArg}, ${linkedMutatedChannelsArg}, async (currentBuffer) => {`
+      `runtime.runValueBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, async (currentBuffer) => {`
     );
     this.compiler.emit.asyncClosureDepth++;
 
     bufferCompiler.withBufferState({
       currentBuffer: 'currentBuffer',
-      currentTextChannelVar: null
+      currentTextChainVar: null
     }, () => {
       this.compiler.emit.line('try {');
       this.compiler.emit(`  let ${resultId} = `);
@@ -72,23 +72,23 @@ class CompileBoundaries {
   }
 
   compileAsyncControlFlowBoundary(bufferCompiler, node, emitFunc = null) {
-    if (bufferCompiler.currentWaitedChannelName) {
+    if (bufferCompiler.currentWaitedChainName) {
       return this._compileAsyncWaitedControlFlowBoundary(bufferCompiler, node, emitFunc);
     }
 
     const parentBufferArg = bufferCompiler.currentBuffer;
-    const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
-    const linkedMutatedChannelsArg = this.compiler.emit.getLinkedMutatedChannelsArg(node);
+    const linkedChainsArg = this.compiler.emit.getLinkedChainsArg(node);
+    const linkedMutatedChainsArg = this.compiler.emit.getLinkedMutatedChainsArg(node);
     const controlFlowPromiseId = this.compiler._tmpid();
 
     this.compiler.emit(
-      `let ${controlFlowPromiseId} = runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChannelsArg}, ${linkedMutatedChannelsArg}, context, cb, async (currentBuffer) => {`
+      `let ${controlFlowPromiseId} = runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, cb, async (currentBuffer) => {`
     );
     this.compiler.emit.asyncClosureDepth++;
 
     bufferCompiler.withBufferState({
       currentBuffer: 'currentBuffer',
-      currentWaitedChannelName: bufferCompiler.currentWaitedChannelName,
+      currentWaitedChainName: bufferCompiler.currentWaitedChainName,
       currentWaitedOwnerBuffer: bufferCompiler.currentWaitedOwnerBuffer
     }, () => {
       if (emitFunc) {
@@ -103,23 +103,23 @@ class CompileBoundaries {
 
   _compileAsyncWaitedControlFlowBoundary(bufferCompiler, node, emitFunc = null) {
     const parentBufferArg = bufferCompiler.currentBuffer;
-    const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
-    const linkedMutatedChannelsArg = this.compiler.emit.getLinkedMutatedChannelsArg(node);
-    const controlFlowWaitedChannelName = `__waited__${this.compiler._tmpid()}`;
+    const linkedChainsArg = this.compiler.emit.getLinkedChainsArg(node);
+    const linkedMutatedChainsArg = this.compiler.emit.getLinkedMutatedChainsArg(node);
+    const controlFlowWaitedChainName = `__waited__${this.compiler._tmpid()}`;
     const controlFlowWaitedOwnerBufferId = this.compiler._tmpid();
     const controlFlowPromiseId = this.compiler._tmpid();
 
     this.compiler.emit(
-      `let ${controlFlowPromiseId} = runtime.runWaitedControlFlowBoundary(${parentBufferArg}, ${linkedChannelsArg}, ${linkedMutatedChannelsArg}, context, cb, async (currentBuffer) => {`
+      `let ${controlFlowPromiseId} = runtime.runWaitedControlFlowBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, cb, async (currentBuffer) => {`
     );
     this.compiler.emit.asyncClosureDepth++;
 
     bufferCompiler.withBufferState({
       currentBuffer: 'currentBuffer',
-      currentWaitedChannelName: controlFlowWaitedChannelName,
+      currentWaitedChainName: controlFlowWaitedChainName,
       currentWaitedOwnerBuffer: controlFlowWaitedOwnerBufferId
     }, () => {
-      this.compiler.emit.line(`runtime.declareBufferChannel(currentBuffer, "${controlFlowWaitedChannelName}", "var", context, null);`);
+      this.compiler.emit.line(`runtime.declareBufferChain(currentBuffer, "${controlFlowWaitedChainName}", "var", context, null);`);
       this.compiler.emit.line(`const ${controlFlowWaitedOwnerBufferId} = currentBuffer;`);
 
       if (emitFunc) {
@@ -127,7 +127,7 @@ class CompileBoundaries {
       }
     });
     this.compiler.emit.asyncClosureDepth--;
-    this.compiler.emit.line(`}, "${controlFlowWaitedChannelName}");`);
+    this.compiler.emit.line(`}, "${controlFlowWaitedChainName}");`);
     bufferCompiler.emitLimitedLoopCompletion(controlFlowPromiseId, node);
     return {};
   }
@@ -149,19 +149,19 @@ class CompileBoundaries {
     emitCompiler.line('runtime.runRenderBoundary(context, cb, async (currentBuffer) =>{');
     const resultId = this.compiler._tmpid();
 
-    const textChannelName = this.compiler.buffer.currentTextChannelName;
-    emitCompiler.line(`let ${resultId}_textChannelVar = runtime.declareBufferChannel(currentBuffer, "${textChannelName}", "text", context, null);`);
+    const textChainName = this.compiler.buffer.currentTextChainName;
+    emitCompiler.line(`let ${resultId}_textChainVar = runtime.declareBufferChain(currentBuffer, "${textChainName}", "text", context, null);`);
 
     const originalAsyncClosureDepth = emitCompiler.asyncClosureDepth;
     emitCompiler.asyncClosureDepth = 0;
 
     this._withBoundaryBufferState(this.compiler.buffer, {
       bufferExpr: 'currentBuffer',
-      textChannelVar: `${resultId}_textChannelVar`,
-      textChannelName
+      textChainVar: `${resultId}_textChainVar`,
+      textChainName
     }, () => {
       if (this.compiler.scriptMode) {
-        this.compiler.return.emitDeclareChannel('currentBuffer');
+        this.compiler.return.emitDeclareChain('currentBuffer');
         innerBodyFunction.call(this.compiler);
       } else {
         innerBodyFunction.call(this.compiler);
@@ -173,7 +173,7 @@ class CompileBoundaries {
     if (this.compiler.scriptMode) {
       this.compiler.return.emitFinalSnapshot('currentBuffer', resultId);
     } else {
-      this._emitTextChannelSnapshot('currentBuffer', textChannelName, positionNode, resultId);
+      this._emitTextChainSnapshot('currentBuffer', textChainName, positionNode, resultId);
     }
 
     emitCallbackResult(resultId);
@@ -217,22 +217,22 @@ class CompileBoundaries {
     bufferCompiler,
     resultId,
     positionNode,
-    targetChannelName,
+    targetChainName,
     targetBufferExpr = 'currentBuffer',
     normalizeTextArgs = false
   ) {
     const valueExpr = bufferCompiler._emitTemplateTextCommandExpression(resultId, positionNode, normalizeTextArgs);
-    this.compiler.emit.line(`${targetBufferExpr}.addCommand(${valueExpr}, "${targetChannelName}");`);
+    this.compiler.emit.line(`${targetBufferExpr}.addCommand(${valueExpr}, "${targetChainName}");`);
   }
 
   _compileAsyncTextBoundary(
     bufferCompiler,
     {
       parentBufferExpr = bufferCompiler.currentBuffer,
-      linkedChannelsArg,
-      linkedMutatedChannelsArg = 'null',
+      linkedChainsArg,
+      linkedMutatedChainsArg = 'null',
       callbackParams,
-      targetChannelName,
+      targetChainName,
       targetBufferExpr,
       positionNode,
       normalizeTextArgs = false,
@@ -244,7 +244,7 @@ class CompileBoundaries {
     const boundaryPrefix = boundaryPromiseId ? `const ${boundaryPromiseId} = ` : '';
 
     this.compiler.emit.line(
-      `${boundaryPrefix}runtime.runControlFlowBoundary(${parentBufferExpr}, ${linkedChannelsArg}, ${linkedMutatedChannelsArg}, context, cb, async ${callbackParams} => {`
+      `${boundaryPrefix}runtime.runControlFlowBoundary(${parentBufferExpr}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, cb, async ${callbackParams} => {`
     );
     this.compiler.emit.asyncClosureDepth++;
 
@@ -253,7 +253,7 @@ class CompileBoundaries {
       bufferCompiler,
       emitBody.resultId,
       positionNode,
-      targetChannelName,
+      targetChainName,
       targetBufferExpr,
       normalizeTextArgs
     );
@@ -284,7 +284,7 @@ class CompileBoundaries {
       const emitBufferExpr = emitInCurrentBuffer ? 'currentBuffer' : bufferCompiler.currentBuffer;
       this._withBoundaryBufferState(bufferCompiler, {
         bufferExpr: emitBufferExpr,
-        textChannelVar: null
+        textChainVar: null
       }, () => {
         this.compiler.emit(`let ${valueId} = `);
         emitValue(null, valueId);
@@ -295,10 +295,10 @@ class CompileBoundaries {
 
     return this._compileAsyncTextBoundary(bufferCompiler, {
       parentBufferExpr: bufferCompiler.currentBuffer,
-      linkedChannelsArg: this.compiler.emit.getLinkedChannelsArg(node),
-      linkedMutatedChannelsArg: this.compiler.emit.getLinkedMutatedChannelsArg(node),
+      linkedChainsArg: this.compiler.emit.getLinkedChainsArg(node),
+      linkedMutatedChainsArg: this.compiler.emit.getLinkedMutatedChainsArg(node),
       callbackParams: '(currentBuffer)',
-      targetChannelName: bufferCompiler.currentTextChannelName,
+      targetChainName: bufferCompiler.currentTextChainName,
       targetBufferExpr: 'currentBuffer',
       positionNode,
       normalizeTextArgs: true,
@@ -309,27 +309,27 @@ class CompileBoundaries {
 
   compileCaptureBoundary(bufferCompiler, node, innerBodyFunction, positionNode = node) {
     const captureTextOutputName = node._analysis.textOutput;
-    const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
-    const linkedMutatedChannelsArg = this.compiler.emit.getLinkedMutatedChannelsArg(node);
+    const linkedChainsArg = this.compiler.emit.getLinkedChainsArg(node);
+    const linkedMutatedChainsArg = this.compiler.emit.getLinkedMutatedChainsArg(node);
     const outerParentBuffer = bufferCompiler.currentBuffer;
 
     this.compiler.emit(
-      `runtime.runControlFlowBoundary(${outerParentBuffer}, ${linkedChannelsArg}, ${linkedMutatedChannelsArg}, context, cb, async (currentBuffer) => {`
+      `runtime.runControlFlowBoundary(${outerParentBuffer}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, cb, async (currentBuffer) => {`
     );
     this.compiler.emit.asyncClosureDepth++;
 
     this._withBoundaryBufferState(bufferCompiler, {
       bufferExpr: 'currentBuffer',
-      textChannelVar: 'output_textChannelVar',
-      textChannelName: captureTextOutputName
+      textChainVar: 'output_textChainVar',
+      textChainName: captureTextOutputName
     }, () => {
       // Capture owns a separate text tree. The child buffer exists for that
       // boundary, not because capture text values need pre-resolution.
       this.compiler.emit.line('let output = currentBuffer;');
-      this.compiler.emit.line(`let output_textChannelVar = runtime.declareBufferChannel(currentBuffer, "${captureTextOutputName}", "text", context, null);`);
+      this.compiler.emit.line(`let output_textChainVar = runtime.declareBufferChain(currentBuffer, "${captureTextOutputName}", "text", context, null);`);
 
       innerBodyFunction.call(this.compiler);
-      this._emitTextChannelSnapshot('currentBuffer', captureTextOutputName, positionNode, 'captureResult');
+      this._emitTextChainSnapshot('currentBuffer', captureTextOutputName, positionNode, 'captureResult');
       this.compiler.emit.line('return captureResult;');
     });
 

@@ -1,32 +1,32 @@
 
 import * as nodes from '../language/nodes.js';
-import {CHANNEL_TYPE_FACTS} from '../channel-types.js';
-import {validateChannelDeclarationNode} from './validation.js';
+import {CHAIN_TYPE_FACTS} from '../chain-types.js';
+import {validateChainDeclarationNode} from './validation.js';
 import {getSharedSourceName, renameSharedName} from '../inheritance/shared-names.js';
 
-class CompileChannel {
+class CompileChain {
   constructor(compiler) {
     this.compiler = compiler;
   }
 
-  emitLocalVarChannelDeclaration(bufferId, name) {
-    this.compiler.emit.line(`runtime.declareBufferChannel(${bufferId}, "${name}", "var", context, null);`);
+  emitLocalVarChainDeclaration(bufferId, name) {
+    this.compiler.emit.line(`runtime.declareBufferChain(${bufferId}, "${name}", "var", context, null);`);
   }
 
-  emitLocalVarChannelInit(bufferId, name, emitValueExpression, positionNode = null) {
+  emitLocalVarChainInit(bufferId, name, emitValueExpression, positionNode = null) {
     const lineno = positionNode && positionNode.lineno !== undefined ? positionNode.lineno : 0;
     const colno = positionNode && positionNode.colno !== undefined ? positionNode.colno : 0;
-    this.compiler.emit(`${bufferId}.addCommand(new runtime.VarCommand({ channelName: ${JSON.stringify(name)}, args: [`);
+    this.compiler.emit(`${bufferId}.addCommand(new runtime.VarCommand({ chainName: ${JSON.stringify(name)}, args: [`);
     emitValueExpression();
     this.compiler.emit.line(`], pos: {lineno: ${lineno}, colno: ${colno}} }), ${JSON.stringify(name)});`);
   }
 
-  emitLocalVarChannelBindings(bufferId, bindings) {
+  emitLocalVarChainBindings(bufferId, bindings) {
     bindings.forEach((binding) => {
-      this.emitLocalVarChannelDeclaration(bufferId, binding.name);
+      this.emitLocalVarChainDeclaration(bufferId, binding.name);
     });
     bindings.forEach((binding) => {
-      this.emitLocalVarChannelInit(
+      this.emitLocalVarChainInit(
         bufferId,
         binding.name,
         binding.emitValueExpression,
@@ -123,9 +123,9 @@ class CompileChannel {
         compiler.emit(`, ${JSON.stringify(thisSharedPath.path)}, ${valueId})`);
         compiler.emit.line(';');
       }
-      compiler.buffer.emitAddChannelCommandByType({
-        channelType: 'var',
-        channelName: thisSharedPath.name,
+      compiler.buffer.emitAddChainCommandByType({
+        chainType: 'var',
+        chainName: thisSharedPath.name,
         argsExpr: `[${resultId}]`,
         positionNode: node
       });
@@ -134,9 +134,9 @@ class CompileChannel {
 
     if (thisSharedPath.type === 'data') {
       const dataPath = thisSharedPath.path.length > 0 ? thisSharedPath.path : [null];
-      compiler.buffer.emitAddChannelCommandByType({
-        channelType: 'data',
-        channelName: thisSharedPath.name,
+      compiler.buffer.emitAddChainCommandByType({
+        chainType: 'data',
+        chainName: thisSharedPath.name,
         operation: 'set',
         argsExpr: `[${JSON.stringify(dataPath)}, ${valueId}]`,
         positionNode: node
@@ -145,7 +145,7 @@ class CompileChannel {
     }
 
     compiler.fail(
-      `Channel '${thisSharedPath.name}' cannot be assigned through this.${thisSharedPath.name}.`,
+      `Chain '${thisSharedPath.name}' cannot be assigned through this.${thisSharedPath.name}.`,
       node.lineno,
       node.colno,
       node
@@ -169,10 +169,10 @@ class CompileChannel {
     if (!staticPath || staticPath.length < 2 || staticPath[0] !== 'this') {
       return null;
     }
-    const channelName = staticPath[1];
+    const chainName = staticPath[1];
     const activeAnalysis = analysisNode || node._analysis;
-    const sharedName = renameSharedName(channelName);
-    const channelDecl = compiler.inheritance.findRootSharedDeclaration(
+    const sharedName = renameSharedName(chainName);
+    const chainDecl = compiler.inheritance.findRootSharedDeclaration(
       compiler.analysis.getRootScopeOwner(activeAnalysis),
       sharedName
     );
@@ -182,15 +182,15 @@ class CompileChannel {
       parentNode.name === node;
     if (
       isCallableRoot &&
-      (!compiler.scriptMode || !channelDecl)
+      (!compiler.scriptMode || !chainDecl)
     ) {
       return null;
     }
     if (
       compiler.scriptMode &&
-      !channelDecl &&
+      !chainDecl &&
       staticPath.length === 2 &&
-      compiler.inheritance.hasLocalMethodDefinition(activeAnalysis, channelName)
+      compiler.inheritance.hasLocalMethodDefinition(activeAnalysis, chainName)
     ) {
       return null;
     }
@@ -204,13 +204,13 @@ class CompileChannel {
     if (!declaration) {
       return null;
     }
-    const channelPath = [channelName].concat(staticPath.slice(2));
+    const chainPath = [chainName].concat(staticPath.slice(2));
     return {
-      channelName: declaration.name,
-      channelType: declaration.type,
-      channelPath: [declaration.name].concat(staticPath.slice(2)),
-      pathPrefix: channelPath.length > 2 ? channelPath.slice(1, -1) : [],
-      propertyName: channelPath.length >= 2 ? channelPath[channelPath.length - 1] : null
+      chainName: declaration.name,
+      chainType: declaration.type,
+      chainPath: [declaration.name].concat(staticPath.slice(2)),
+      pathPrefix: chainPath.length > 2 ? chainPath.slice(1, -1) : [],
+      propertyName: chainPath.length >= 2 ? chainPath[chainPath.length - 1] : null
     };
   }
 
@@ -220,8 +220,8 @@ class CompileChannel {
     let declaration = compiler.inheritance.findRootSharedDeclaration(rootAnalysis, name);
     let type = declaration ? declaration.type : null;
     if (!compiler.scriptMode) {
-      type = type || (name === compiler.buffer.currentTextChannelName ? 'text' : 'var');
-      if (type !== 'var' && name !== compiler.buffer.currentTextChannelName) {
+      type = type || (name === compiler.buffer.currentTextChainName ? 'text' : 'var');
+      if (type !== 'var' && name !== compiler.buffer.currentTextChainName) {
         return null;
       }
       if (!declaration || !declaration.shared) {
@@ -251,14 +251,14 @@ class CompileChannel {
     return declaration;
   }
 
-  analyzeChannelDeclaration(node) {
+  analyzeChainDeclaration(node) {
     node.name._analysis = { declarationTarget: true };
-    validateChannelDeclarationNode(this.compiler, node);
+    validateChainDeclarationNode(this.compiler, node);
     const name = node.name.value;
     return {
       declares: [{
         name,
-        type: node.channelType,
+        type: node.chainType,
         initializer: node.initializer || null,
         shared: !!node.isShared
       }],
@@ -266,16 +266,16 @@ class CompileChannel {
     };
   }
 
-  compileChannelDeclaration(node) {
+  compileChainDeclaration(node) {
     const compiler = this.compiler;
-    const channelType = node.channelType;
-    const channelFacts = CHANNEL_TYPE_FACTS[channelType] || null;
+    const chainType = node.chainType;
+    const chainFacts = CHAIN_TYPE_FACTS[chainType] || null;
     const name = node.name.value;
-    const declareHelperName = node.isShared ? 'declareInheritanceSharedChannel' : 'declareBufferChannel';
+    const declareHelperName = node.isShared ? 'declareInheritanceSharedChain' : 'declareBufferChain';
     const targetBufferExpr = node.isShared ? 'currentInstance.sharedRootBuffer' : compiler.buffer.currentBuffer;
 
-    compiler.emit(`runtime.${declareHelperName}(${targetBufferExpr}, "${name}", "${channelType}", context`);
-    if (!node.isShared && channelFacts && channelFacts.requiresInitializer && node.initializer) {
+    compiler.emit(`runtime.${declareHelperName}(${targetBufferExpr}, "${name}", "${chainType}", context`);
+    if (!node.isShared && chainFacts && chainFacts.requiresInitializer && node.initializer) {
       compiler.emit(', ');
       compiler.compile(node.initializer, null);
     }
@@ -289,25 +289,25 @@ class CompileChannel {
       compiler.emit.line(`context.addDeferredExport("${name}", "${name}", ${targetBufferExpr});`);
     }
 
-    this._emitChannelDeclarationInitializer(node, targetBufferExpr);
+    this._emitChainDeclarationInitializer(node, targetBufferExpr);
   }
 
-  _emitChannelDeclarationInitializer(node, targetBufferExpr) {
+  _emitChainDeclarationInitializer(node, targetBufferExpr) {
     if (!node.initializer) {
       return;
     }
     const compiler = this.compiler;
-    const channelType = node.channelType;
-    const channelFacts = CHANNEL_TYPE_FACTS[channelType] || null;
+    const chainType = node.chainType;
+    const chainFacts = CHAIN_TYPE_FACTS[chainType] || null;
     const name = node.name.value;
 
-    if (!node.isShared && channelFacts && channelFacts.requiresInitializer) {
+    if (!node.isShared && chainFacts && chainFacts.requiresInitializer) {
       return;
     }
 
     const emitInitializer = () => {
-      if (channelType === 'sequence') {
-        compiler.emit(`runtime.declareInheritanceSharedChannel(${targetBufferExpr}, "${name}", "${channelType}", context, `);
+      if (chainType === 'sequence') {
+        compiler.emit(`runtime.declareInheritanceSharedChain(${targetBufferExpr}, "${name}", "${chainType}", context, `);
         compiler.compile(node.initializer, null);
         compiler.emit.line(');');
         return;
@@ -319,10 +319,10 @@ class CompileChannel {
       compiler.emit(`let ${initValueId} = `);
       compiler.compileExpression(initNode, null, initNode);
       compiler.emit.line(';');
-      compiler.buffer.emitAddChannelCommandByType({
+      compiler.buffer.emitAddChainCommandByType({
         bufferExpr: targetBufferExpr,
-        channelType,
-        channelName: name,
+        chainType,
+        chainName: name,
         valueExpr: initValueId,
         positionNode: initNode,
         initializeIfNotSet: !!node.isShared
@@ -339,86 +339,86 @@ class CompileChannel {
     compiler.emit.line('}');
   }
 
-  analyzeChannelCommand(node) {
+  analyzeChainCommand(node) {
     const compiler = this.compiler;
     const callNode = node.call instanceof nodes.FunCall ? node.call : null;
     const path = compiler.sequential._extractStaticPath(callNode ? callNode.name : node.call);
     if (!path || path.length === 0) {
       return {};
     }
-    const channelName = path[0];
-    const channelDecl = channelName ? compiler.analysis.findDeclaration(node._analysis, channelName) : null;
-    const isSequenceGet = !callNode && channelDecl && channelDecl.type === 'sequence';
+    const chainName = path[0];
+    const chainDecl = chainName ? compiler.analysis.findDeclaration(node._analysis, chainName) : null;
+    const isSequenceGet = !callNode && chainDecl && chainDecl.type === 'sequence';
     const isObservation = isSequenceGet ||
       (callNode && path.length === 2 &&
        (path[1] === 'snapshot' || path[1] === 'isError' || path[1] === 'getError'));
-    return isObservation ? { uses: [channelName] } : { uses: [channelName], mutates: [channelName] };
+    return isObservation ? { uses: [chainName] } : { uses: [chainName], mutates: [chainName] };
   }
 
-  compileChannelCommand(node) {
-    this.compiler.buffer.compileChannelCommand(node);
+  compileChainCommand(node) {
+    this.compiler.buffer.compileChainCommand(node);
   }
 
-  compileSpecialChannelFunCall(node) {
-    const specialChannelCall = node._analysis.specialChannelCall;
-    if (!specialChannelCall) {
+  compileSpecialChainFunCall(node) {
+    const specialChainCall = node._analysis.specialChainCall;
+    if (!specialChainCall) {
       return false;
     }
-    if (specialChannelCall.channelType === 'var') {
+    if (specialChainCall.chainType === 'var') {
       return false;
     }
-    if (this._compileChannelObservationFunCall(node, specialChannelCall)) {
+    if (this._compileChainObservationFunCall(node, specialChainCall)) {
       return true;
     }
-    if (this._compileSequenceChannelFunCall(node, specialChannelCall)) {
+    if (this._compileSequenceChainFunCall(node, specialChainCall)) {
       return true;
     }
-    return this._compileSharedChannelStatementFunCall(node, specialChannelCall);
+    return this._compileSharedChainStatementFunCall(node, specialChainCall);
   }
 
-  _compileChannelObservationFunCall(node, specialChannelCall) {
+  _compileChainObservationFunCall(node, specialChainCall) {
     const compiler = this.compiler;
-    if (specialChannelCall.pathPrefix.length !== 0) {
+    if (specialChainCall.pathPrefix.length !== 0) {
       return false;
     }
-    if (specialChannelCall.methodName === 'snapshot') {
-      if (specialChannelCall.shared) {
-        compiler.inheritance.emitSharedChannelObservation(specialChannelCall.channelName, node, 'snapshot');
+    if (specialChainCall.methodName === 'snapshot') {
+      if (specialChainCall.shared) {
+        compiler.inheritance.emitSharedChainObservation(specialChainCall.chainName, node, 'snapshot');
       } else {
-        compiler.buffer.emitAddSnapshot(specialChannelCall.channelName, node);
+        compiler.buffer.emitAddSnapshot(specialChainCall.chainName, node);
       }
       return true;
     }
-    if (specialChannelCall.methodName === 'isError') {
-      if (specialChannelCall.shared) {
-        compiler.inheritance.emitSharedChannelObservation(specialChannelCall.channelName, node, 'isError');
+    if (specialChainCall.methodName === 'isError') {
+      if (specialChainCall.shared) {
+        compiler.inheritance.emitSharedChainObservation(specialChainCall.chainName, node, 'isError');
       } else {
-        compiler.buffer.emitAddIsError(specialChannelCall.channelName, node);
+        compiler.buffer.emitAddIsError(specialChainCall.chainName, node);
       }
       return true;
     }
-    if (specialChannelCall.methodName === 'getError') {
-      if (specialChannelCall.shared) {
-        compiler.inheritance.emitSharedChannelObservation(specialChannelCall.channelName, node, 'getError');
+    if (specialChainCall.methodName === 'getError') {
+      if (specialChainCall.shared) {
+        compiler.inheritance.emitSharedChainObservation(specialChainCall.chainName, node, 'getError');
       } else {
-        compiler.buffer.emitAddGetError(specialChannelCall.channelName, node);
+        compiler.buffer.emitAddGetError(specialChainCall.chainName, node);
       }
       return true;
     }
     return false;
   }
 
-  _compileSequenceChannelFunCall(node, specialChannelCall) {
+  _compileSequenceChainFunCall(node, specialChainCall) {
     const compiler = this.compiler;
-    if (specialChannelCall.channelType !== 'sequence' || specialChannelCall.methodName === 'snapshot') {
+    if (specialChainCall.chainType !== 'sequence' || specialChainCall.methodName === 'snapshot') {
       return false;
     }
     compiler._compileAggregate(node.args, null, '[', ']', false, false, function (resolvedArgs) {
       this.emit('return ');
       this.buffer.emitAddSequenceCall(
-        specialChannelCall.channelName,
-        specialChannelCall.methodName,
-        specialChannelCall.pathPrefix,
+        specialChainCall.chainName,
+        specialChainCall.methodName,
+        specialChainCall.pathPrefix,
         resolvedArgs,
         node
       );
@@ -427,31 +427,31 @@ class CompileChannel {
     return true;
   }
 
-  _compileSharedChannelStatementFunCall(node, specialChannelCall) {
+  _compileSharedChainStatementFunCall(node, specialChainCall) {
     const compiler = this.compiler;
-    if (!specialChannelCall.shared) {
+    if (!specialChainCall.shared) {
       return false;
     }
-    if (specialChannelCall.channelType === 'text') {
+    if (specialChainCall.chainType === 'text') {
       compiler.buffer.asyncAddValueToBuffer((resultVar) => {
-        compiler.emit(`${resultVar} = new runtime.TextCommand({ channelName: ${JSON.stringify(specialChannelCall.channelName)}, `);
-        if (specialChannelCall.methodName) {
-          compiler.emit(`operation: ${JSON.stringify(specialChannelCall.methodName)}, `);
+        compiler.emit(`${resultVar} = new runtime.TextCommand({ chainName: ${JSON.stringify(specialChainCall.chainName)}, `);
+        if (specialChainCall.methodName) {
+          compiler.emit(`operation: ${JSON.stringify(specialChainCall.methodName)}, `);
         }
         compiler.emit('normalizeArgs: true, args: ');
         compiler._compileAggregate(node.args, null, '[', ']', false, true);
         compiler.emit(`, pos: ${compiler.buffer._emitPositionLiteral(node)} })`);
-      }, node, specialChannelCall.channelName);
+      }, node, specialChainCall.chainName);
       return true;
     }
-    if (specialChannelCall.channelType === 'data') {
-      if (!specialChannelCall.methodName) {
-        compiler.fail('Invalid data command syntax: expected this.dataChannel.command(...)', node.lineno, node.colno, node);
+    if (specialChainCall.chainType === 'data') {
+      if (!specialChainCall.methodName) {
+        compiler.fail('Invalid data command syntax: expected this.dataChain.command(...)', node.lineno, node.colno, node);
       }
       compiler.buffer.asyncAddValueToBuffer((resultVar) => {
-        compiler.emit(`${resultVar} = new runtime.DataCommand({ channelName: ${JSON.stringify(specialChannelCall.channelName)}, operation: ${JSON.stringify(specialChannelCall.methodName)}, args: `);
-        const pathArg = specialChannelCall.pathPrefix && specialChannelCall.pathPrefix.length > 0
-          ? JSON.stringify(specialChannelCall.pathPrefix)
+        compiler.emit(`${resultVar} = new runtime.DataCommand({ chainName: ${JSON.stringify(specialChainCall.chainName)}, operation: ${JSON.stringify(specialChainCall.methodName)}, args: `);
+        const pathArg = specialChainCall.pathPrefix && specialChainCall.pathPrefix.length > 0
+          ? JSON.stringify(specialChainCall.pathPrefix)
           : 'null';
         compiler.emit(`[${pathArg}`);
         if (node.args && node.args.children && node.args.children.length > 0) {
@@ -460,11 +460,11 @@ class CompileChannel {
         }
         compiler.emit(']');
         compiler.emit(`, pos: ${compiler.buffer._emitPositionLiteral(node)} })`);
-      }, node, specialChannelCall.channelName);
+      }, node, specialChainCall.chainName);
       return true;
     }
     return false;
   }
 }
 
-export {CompileChannel};
+export {CompileChain};

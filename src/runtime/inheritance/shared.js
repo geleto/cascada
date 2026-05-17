@@ -1,41 +1,41 @@
 import {RuntimeFatalError} from '../errors.js';
-import {applyChannelInitializer} from '../../channel-types.js';
-import {declareBufferChannel} from '../channels/index.js';
+import {applyChainInitializer} from '../../chain-types.js';
+import {declareBufferChain} from '../chains/index.js';
 
 const claimedSharedDefaults = new WeakSet();
 
-function declareInheritanceSharedChannel(buffer, channelName, channelType, context, initializer) {
+function declareInheritanceSharedChain(buffer, chainName, chainType, context, initializer) {
   const hasInitializer = initializer !== undefined;
-  const existingChannel = buffer.getOwnChannel(channelName);
-  if (existingChannel) {
-    if (existingChannel.channelType !== channelType) {
+  const existingChain = buffer.getOwnChain(chainName);
+  if (existingChain) {
+    if (existingChain.chainType !== chainType) {
       throw new RuntimeFatalError(
-        `shared channel '${channelName}' was declared as '${existingChannel.channelType}' and '${channelType}'`,
+        `shared chain '${chainName}' was declared as '${existingChain.chainType}' and '${chainType}'`,
         context
       );
     }
     if (hasInitializer) {
-      applyChannelInitializer(existingChannel, channelType, initializer);
+      applyChainInitializer(existingChain, chainType, initializer);
     }
-    return existingChannel;
+    return existingChain;
   }
 
-  return declareBufferChannel(buffer, channelName, channelType, context, initializer);
+  return declareBufferChain(buffer, chainName, chainType, context, initializer);
 }
 
-function claimInheritanceSharedDefault(buffer, channelName) {
+function claimInheritanceSharedDefault(buffer, chainName) {
   // TODO(Step 7): Replace constructor-emitted shared default claims with
   // finalized-schema-driven default initialization.
   // Remove when shared-root setup evaluates only the finalized schema default.
-  const channel = buffer.getOwnChannel(channelName);
-  if (!channel || claimedSharedDefaults.has(channel)) {
+  const chain = buffer.getOwnChain(chainName);
+  if (!chain || claimedSharedDefaults.has(chain)) {
     return false;
   }
-  claimedSharedDefaults.add(channel);
+  claimedSharedDefaults.add(chain);
   return true;
 }
 
 export {
-  declareInheritanceSharedChannel,
+  declareInheritanceSharedChain,
   claimInheritanceSharedDefault
 };

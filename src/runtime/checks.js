@@ -32,9 +32,9 @@ function checkFrameBalance(frame, parent) {
  * @param {Object} buffer - The CommandBuffer to check
  * @throws {Error} If buffer is finished
  */
-function checkFinishedBuffer(buffer, channelName = null) {
-  const isFinished = channelName != null
-    ? buffer.isChannelFinished(channelName)
+function checkFinishedBuffer(buffer, chainName = null) {
+  const isFinished = chainName != null
+    ? buffer.isChainFinished(chainName)
     : buffer.isFinished();
   if (isFinished) {
     throw new Error(
@@ -45,28 +45,28 @@ function checkFinishedBuffer(buffer, channelName = null) {
   }
 }
 
-function ensureSequentialPathChannel(currentBuffer, pathKey) {
-  const channel = currentBuffer.getChannelIfExists(pathKey);
+function ensureSequentialPathChain(currentBuffer, pathKey) {
+  const chain = currentBuffer.getChainIfExists(pathKey);
 
-  if (!channel) {
-    throw new Error(`Sequential path '${pathKey}' was not predeclared as a channel (expected compile-time declaration)`);
+  if (!chain) {
+    throw new Error(`Sequential path '${pathKey}' was not predeclared as a chain (expected compile-time declaration)`);
   }
 
-  const channelType = channel._channelType;
-  if (channelType !== 'sequential_path') {
-    throw new Error(`Sequential path '${pathKey}' is declared with incompatible channel type '${channelType || 'unknown'}'`);
+  const chainType = chain._chainType;
+  if (chainType !== 'sequential_path') {
+    throw new Error(`Sequential path '${pathKey}' is declared with incompatible chain type '${chainType || 'unknown'}'`);
   }
 }
 
-function assertChannelLaneAvailable(buffer, channelName) {
-  if (buffer.arrays && channelName in buffer.arrays) {
+function assertChainLaneAvailable(buffer, chainName) {
+  if (buffer.arrays && chainName in buffer.arrays) {
     return;
   }
 
   throw new RuntimeFatalError(
-    `Channel '${channelName}' is visible but this buffer has no linked lane for it`,
+    `Chain '${chainName}' is visible but this buffer has no linked lane for it`,
     buffer._context
   );
 }
 
-export { assertChannelLaneAvailable, checkFrameBalance, checkFinishedBuffer, ensureSequentialPathChannel };
+export { assertChainLaneAvailable, checkFrameBalance, checkFinishedBuffer, ensureSequentialPathChain };

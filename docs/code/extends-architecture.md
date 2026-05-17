@@ -62,14 +62,14 @@ Blocks/methods move to a separate AST node in the transformer.
 
 That node compiles into a key-value object (`methods`) at the start of the JS
 file. The keys are the method/block names. The values contain both metadata
-(like linked/mutated channels), the function, as well as the `super` object. The
+(like linked/mutated chains), the function, as well as the `super` object. The
 constructor is part of this too, named `__constructor__` or similar.
 
 Blocks and methods should share the same runtime model and syntax. The main
 difference is only in what the compiled function does:
 
 - script entries may return
-- template entries write to the text channel
+- template entries write to the text chain
 
 Blocks do not have their own `withContext` mode. They follow the enclosing
 template/script `withContext`.
@@ -93,7 +93,7 @@ Templates follow the same model:
   - do not move `extends` into `if`, `switch`, loops, or other
     constructor-time control flow
 
-Templates do not declare channels, shared or otherwise. In templates, shared
+Templates do not declare chains, shared or otherwise. In templates, shared
 `var` participation is inferred from static `this.<name>` usage. No template
 declaration may appear before `extends`, and `extends` expressions cannot read
 template locals or inferred shared variables because those values are created by
@@ -117,8 +117,8 @@ directly from the local method/block AST:
 
 - `fn`
 - `signature`
-- `ownLinkedChannels`
-- `ownMutatedChannels`
+- `ownLinkedChains`
+- `ownMutatedChains`
 - `super`
 - `superOrigin`
 - `ownerKey`
@@ -140,8 +140,8 @@ each value is replaced with the final override-resolved method metadata for
 that name. `super()` is not represented here because it is owner-relative and
 uses the separate `super` field.
 
-The compiler should emit only the channels directly touched by the local method
-body. Channels reached through `super()` and ordinary inherited calls are
+The compiler should emit only the chains directly touched by the local method
+body. Chains reached through `super()` and ordinary inherited calls are
 computed during metadata finalization.
 
 Finalization work metadata temporarily includes the graph edges needed to
@@ -152,8 +152,8 @@ compute the transitive callable footprint:
 - `ownerKey`
 - `super`
 - `invokedMethods`
-- `mergedLinkedChannels`
-- `mergedMutatedChannels`
+- `mergedLinkedChains`
+- `mergedMutatedChains`
 
 After finalization, normal execution uses the pruned execution method metadata
 shape:
@@ -162,14 +162,14 @@ shape:
 - `signature`
 - `ownerKey`
 - `super`
-- `mergedLinkedChannels`
-- `mergedMutatedChannels`
+- `mergedLinkedChains`
+- `mergedMutatedChains`
 
-`mergedLinkedChannels` and `mergedMutatedChannels` are the full transitive
-callable footprint: the callable's own channels, its reachable `super()` chain,
+`mergedLinkedChains` and `mergedMutatedChains` are the full transitive
+callable footprint: the callable's own chains, its reachable `super()` chain,
 and all ordinary inherited methods it may invoke.
 
-Compiled `ownLinkedChannels`, `ownMutatedChannels`, `superOrigin`, and
+Compiled `ownLinkedChains`, `ownMutatedChains`, `superOrigin`, and
 callable-local `invokedMethods` are bootstrap/finalization inputs. They are not
 part of the long-lived execution method data once the footprint has been
 computed.
@@ -180,24 +180,24 @@ Compiled files expose an `inheritanceSpec` descriptor containing `setup`,
 referenced anywhere in the file. Bootstrap resolves that catalog once against
 the final method table, then gives each callable its filtered direct map.
 
-### Shared-Channel Entries
+### Shared-Chain Entries
 
-Also collect all shared channels. The key is the channel name. The value is
-the shared-channel type.
+Also collect all shared chains. The key is the chain name. The value is
+the shared-chain type.
 
-The shared channel schema should stay explicit and type-only:
+The shared chain schema should stay explicit and type-only:
 `sharedSchema[name] = "var" | "text" | "data" | "sequence" | ...`. Local
 default expressions stay in the compiled startup code rather than the metadata
-schema. This is still enough for each script/template to add channels that are
+schema. This is still enough for each script/template to add chains that are
 not yet present in the shared command buffer while keeping default evaluation in
 source order.
 
-Shared channel metadata follows the same structural timing as method metadata:
+Shared chain metadata follows the same structural timing as method metadata:
 blocking bootstrap produces a final direct shared schema before execution.
 Normal execution does not depend on pending shared-schema entries.
 
-The resolved shared-channel metadata shape should stay small: channel type is
-enough to choose the side-channel command shape and detect conflicting
+The resolved shared-chain metadata shape should stay small: chain type is
+enough to choose the side-chain command shape and detect conflicting
 declarations across scripts/templates. Child-first shared defaults are enforced
 by the shared-buffer startup path, not by storing default values in
 `sharedSchema`.
@@ -213,7 +213,7 @@ allowed inside methods/blocks.
 
 That restriction is also the visibility boundary for inherited execution:
 
-- methods/blocks may read shared channels
+- methods/blocks may read shared chains
 - methods/blocks may read their explicit call payload / arguments
 - methods/blocks may read any explicitly-enabled render/context payload that
   the language feature allows
@@ -222,28 +222,28 @@ That restriction is also the visibility boundary for inherited execution:
 In particular, the constructor/root body is not a special outer scope that
 other methods can inspect later. It is just the `__constructor__` method.
 Constructor-local values therefore do not become ambient inherited state unless
-they are written into shared channels or forwarded explicitly in payload.
+they are written into shared chains or forwarded explicitly in payload.
 
 ### Script shared-state access surface
 
 Inside a script, shared state is accessed exclusively through `this.<name>`.
 Bare names — even names that are declared as `shared` in the same file — follow
 ordinary ambient lookup only. The compiler maps `this.<name>` to the correct
-shared-channel operation based on the current file's `shared` declaration for
+shared-chain operation based on the current file's `shared` declaration for
 that name:
 
 - `this.sharedVar` — shared `var` read (implicit snapshot)
 - `this.sharedVar = value` — shared `var` write
 - `this.sharedVar.nested.prop` — shared `var` read followed by ordinary
   property lookup on the snapshot value
-- `this.sharedText("msg")` — shared `text` channel append
-- `this.sharedData.path = value` — shared `data` channel `set` command
-- `this.sharedData.command(args)` — shared `data` channel command call
-- `this.sharedChannel.snapshot()` — explicit snapshot of any channel type
-- `this.sharedChannel is error` — error check on any channel type
-- `this.sharedChannel#` — peek error message on any channel type
-- `this.sharedSequence.method(args)` — shared `sequence` channel call
-  (ordered by the channel mechanism; the `!` operator is not used here)
+- `this.sharedText("msg")` — shared `text` chain append
+- `this.sharedData.path = value` — shared `data` chain `set` command
+- `this.sharedData.command(args)` — shared `data` chain command call
+- `this.sharedChain.snapshot()` — explicit snapshot of any chain type
+- `this.sharedChain is error` — error check on any chain type
+- `this.sharedChain#` — peek error message on any chain type
+- `this.sharedSequence.method(args)` — shared `sequence` chain call
+  (ordered by the chain mechanism; the `!` operator is not used here)
 
 Any bare name in a script follows ordinary name resolution — context, globals,
 and composition payload — regardless of whether that name is also declared as
@@ -252,7 +252,7 @@ migration error at compile time.
 
 For async/script mode, name resolution stays split into two explicit classes:
 
-- declared names: ordinary declared vars, declared shared vars/channels, args,
+- declared names: ordinary declared vars, declared shared vars/chains, args,
   loop vars, and composition payload bindings
 - ambient names: undeclared bare names, plus bare names where `this.<name>` is
   the shared access surface, resolved through context/global/render-context
@@ -280,9 +280,9 @@ Explicit `shared` declarations are script-only and are rejected in template
 source.
 
 Ordinary template shared access is var-only. The compiler does not infer shared
-`data` or `sequence` channels for templates; those typed channels are a
+`data` or `sequence` chains for templates; those typed chains are a
 script-only concept at this surface. Reserved `this.__text__` is the one typed
-exception and refers to the inherited template text channel.
+exception and refers to the inherited template text chain.
 
 Template inference applies only when the template uses inheritance nodes
 (`extends` or `block`). A plain async template that does not participate in
@@ -292,7 +292,7 @@ Within an inheritance template, `this` is reserved as the inheritance-instance
 surface and a render-context variable named `this` does not intercept
 `this.<name>` shared-var lookup.
 
-All shared channels should be declared before any `extends` and before any
+All shared chains should be declared before any `extends` and before any
 `super()`-driven inherited work that depends on them.
 
 Shared defaults follow the inheritance contract:
@@ -304,15 +304,15 @@ Shared defaults follow the inheritance contract:
 Shared default handling should stay simple:
 
 - a shared declaration without an initializer only declares participation; it
-  does not claim the channel default
+  does not claim the chain default
 - the first assigned default in child-to-parent startup order claims the shared
-  channel default
-- if a later ancestor also has an assigned default for that shared channel, its
+  chain default
+- if a later ancestor also has an assigned default for that shared chain, its
   default expression is ignored
 - `with ...` / `compositionPayload` does not override shared defaults, even
   though shared defaults may read values from that payload
 
-Per-channel-type shared rules stay explicit:
+Per-chain-type shared rules stay explicit:
 
 - `shared var x = value` is allowed
 - `shared text x = value` is allowed
@@ -320,11 +320,11 @@ Per-channel-type shared rules stay explicit:
 - `shared sequence db = sinkExpr` initializes the shared sequence
 - `shared sequence db` declares participation without an initializer
 
-Shared channel declaration should only do work when the channel does not yet
-exist. Re-declaring an already existing shared channel with the same type is
+Shared chain declaration should only do work when the chain does not yet
+exist. Re-declaring an already existing shared chain with the same type is
 effectively a no-op.
 
-Re-declaring an existing shared channel with a different type is a
+Re-declaring an existing shared chain with a different type is a
 `RuntimeFatalError` as soon as it is detected, then normal fatal handling
 applies.
 
@@ -342,7 +342,7 @@ Bootstrap order should stay deterministic:
 5. Build the final override-resolved method table.
 6. Resolve owner-relative `super()` metadata.
 7. Resolve file-level and per-callable `invokedMethods`.
-8. Compute final `mergedLinkedChannels` and `mergedMutatedChannels`.
+8. Compute final `mergedLinkedChains` and `mergedMutatedChains`.
 9. Finalize shared-root ownership.
 
 Parent methods are registered before child methods, then child overrides replace
@@ -350,12 +350,12 @@ the effective method entry for a name. Ordinary `this.method()` dispatch uses
 the final override-resolved method table. `super()` remains owner-relative and
 walks from the current owner to the next parent implementation.
 
-Merged-channel calculation is part of finalization, not runtime lazy
+Merged-chain calculation is part of finalization, not runtime lazy
 resolution. The fixed-point pass includes:
 
-- each callable's own channels
-- reachable owner-relative `super()` channels
-- transitive channels from ordinary inherited calls in `invokedMethods`
+- each callable's own chains
+- reachable owner-relative `super()` chains
+- transitive chains from ordinary inherited calls in `invokedMethods`
 
 Invoked-method cycles are valid call-graph metadata and are handled by the
 fixed-point merge. Parent-chain cycles are fatal structural bootstrap errors.
@@ -381,7 +381,7 @@ empty.
 
 Because the body is just the constructor method, it does not create a separate
 "parent scope" that other methods can read from. Later methods/blocks follow
-the same visibility rules as any other method call: shared channels plus
+the same visibility rules as any other method call: shared chains plus
 explicit payload/context only.
 
 Constructor and inherited-method dispatch use the same runtime call model.
@@ -401,7 +401,7 @@ other structural async boundaries split execution.
 
 The initial entrypoint is the import-run script/template itself. It executes
 exactly like a normal import-run wrapper, but it receives the shared metadata
-object after bootstrap and uses it for method dispatch and shared-channel
+object after bootstrap and uses it for method dispatch and shared-chain
 access. It returns the shared metadata object.
 
 Imported components should not have a meaningful return value of their own.
@@ -420,7 +420,7 @@ Inherited dispatch is explicit:
 - `this.method` without a call is a compile-time error
 
 Inherited methods operate on shared state, method arguments, and method
-payload. They do not depend on ancestor-private constructor-local channels.
+payload. They do not depend on ancestor-private constructor-local chains.
 
 Sequential `!` paths inside inherited methods should work like normal Cascada
 sequential paths, but this can be deferred in the implementation plan.
@@ -437,7 +437,7 @@ direct metadata object.
 Each method call should still create its own child invocation buffer after the
 target metadata is finalized. That child invocation buffer lives inside the
 shared command-buffer tree. Linking uses the call target's final
-`mergedLinkedChannels` and `mergedMutatedChannels`.
+`mergedLinkedChains` and `mergedMutatedChains`.
 
 ## Direct Metadata and Linking
 
@@ -445,22 +445,22 @@ Normal execution should not use runtime-pending metadata helpers. Admission and
 method entry startup receive direct method metadata that bootstrap has already
 finalized.
 
-Call sites should not read `ownLinkedChannels` / `ownMutatedChannels` for
+Call sites should not read `ownLinkedChains` / `ownMutatedChains` for
 admission. They should use:
 
-- `mergedLinkedChannels`
-- `mergedMutatedChannels`
+- `mergedLinkedChains`
+- `mergedMutatedChains`
 
 Those merged fields are conservative for the full callable footprint, including
 the reachable `super()` chain and ordinary inherited calls that were represented
 by `invokedMethods` during finalization.
 
-There are two kinds of side-channel commands:
+There are two kinds of side-chain commands:
 
 - method-call commands
-- shared-channel-lookup commands
+- shared-chain-lookup commands
 
-Method-call side-channel commands use finalized direct method metadata. A small
+Method-call side-chain commands use finalized direct method metadata. A small
 synchronous guard such as `requireMethodData(...)` may still be useful at
 runtime boundaries, but it should only validate direct metadata and throw a
 fatal metadata error for missing or invalid entries.
@@ -474,16 +474,16 @@ both templates and scripts:
 - validation should happen where an include/import-style isolated composition
   boundary actually consumes externs, not at each intermediate inheritance hop
 
-Current-call linkage uses the call target's merged channel effect set:
+Current-call linkage uses the call target's merged chain effect set:
 
-- compiled `ownLinkedChannels` / `ownMutatedChannels` describe the local body only
+- compiled `ownLinkedChains` / `ownMutatedChains` describe the local body only
   during finalization
-- `mergedLinkedChannels` / `mergedMutatedChannels` describe the current callable
+- `mergedLinkedChains` / `mergedMutatedChains` describe the current callable
   level plus the reachable inherited work from `super()` and `this.method()`
 
-So inherited execution remains lazy, but channel metadata is conservative:
+So inherited execution remains lazy, but chain metadata is conservative:
 
-- current-call side-channel apply links using the current level's merged effect
+- current-call side-chain apply links using the current level's merged effect
   set
 - later `super()` or `this.method()` execution reuses already-resolved metadata
 - "exact" means exact to the resolved callable's full inherited effect set,
@@ -493,64 +493,64 @@ This still must not turn into broad unrelated linkage:
 
 - merged callable metadata may include reachable inherited calls
 - it must not widen into blanket `sharedSchema` / hierarchy-wide linking for
-  channels the callable chain does not touch
+  chains the callable chain does not touch
 
 This is important for correctness as well as performance: broad eager
-resolution/linking can serialize later unrelated shared-channel work and
+resolution/linking can serialize later unrelated shared-chain work and
 violate the architecture's intended concurrency model.
 
-Optional caches for pre-merged invocation-link channels or body-link channels
+Optional caches for pre-merged invocation-link chains or body-link chains
 belong on finalized metadata. They should not reintroduce lazy metadata
 resolution.
 
-## Shared-Channel Access
+## Shared-Chain Access
 
-Shared channel access uses finalized direct shared-schema metadata. Normal
+Shared chain access uses finalized direct shared-schema metadata. Normal
 execution should not wait for pending shared-schema entries.
 
 Chain-level shared schema is used to validate and execute declared shared
-channels. It does not rescue undeclared ordinary lookups.
+chains. It does not rescue undeclared ordinary lookups.
 
-The effective shared-channel metadata is used to choose and construct the
-side-channel command. Missing or invalid shared metadata at an execution
+The effective shared-chain metadata is used to choose and construct the
+side-chain command. Missing or invalid shared metadata at an execution
 boundary is a fatal metadata error.
 
-Within a script or inherited template, shared channels are accessed through
+Within a script or inherited template, shared chains are accessed through
 `this.<name>` (see Script shared-state access surface and Template
 shared-state access surface above). The `this.` prefix is what routes the
-access through the shared-channel machinery; bare names always follow ambient
+access through the shared-chain machinery; bare names always follow ambient
 lookup.
 
-Allowed `this.<name>` operations on a shared channel:
+Allowed `this.<name>` operations on a shared chain:
 
-- `this.name` — implicit snapshot (var channels only)
+- `this.name` — implicit snapshot (var chains only)
 - `this.name.path` — snapshot followed by ordinary property lookup
-- `this.name.snapshot()` — explicit snapshot of any channel type
+- `this.name.snapshot()` — explicit snapshot of any chain type
 - `this.name is error` — error check
 - `this.name#` — peek error message
-- `this.name(...)` — channel operation call (text channels)
-- `this.name.path = value` — channel set command (data and var channels)
-- `this.name.command(args)` — channel command call (data channels)
-- `this.name.method(args)` — sequential channel call (sequence channels)
+- `this.name(...)` — chain operation call (text chains)
+- `this.name.path = value` — chain set command (data and var chains)
+- `this.name.command(args)` — chain command call (data chains)
+- `this.name.method(args)` — sequential chain call (sequence chains)
 
-Any operation that does not match the channel's type should fail with a clear
+Any operation that does not match the chain's type should fail with a clear
 error at compile time where possible, or at the execution boundary otherwise.
 
-Method-call side-channel commands use finalized method channel metadata.
-Shared-channel-lookup side-channel commands use finalized shared-channel
+Method-call side-chain commands use finalized method chain metadata.
+Shared-chain-lookup side-chain commands use finalized shared-chain
 metadata.
 
-Shared-channel observation remains a current-buffer operation. The caller does
-not receive a stored JS channel object. Instead:
+Shared-chain observation remains a current-buffer operation. The caller does
+not receive a stored JS chain object. Instead:
 
-- the caller/current buffer receives a side-channel observation command
-- that side-channel command already knows the exact shared channel being read
-- it carries the exact observational channel command to run
+- the caller/current buffer receives a side-chain observation command
+- that side-chain command already knows the exact shared chain being read
+- it carries the exact observational chain command to run
 - in `apply()`, it enqueues that observational command on the hierarchy or
   component shared root buffer for the exact shared lane
 - it returns the observational command's deferred result promise
 
-For component access specifically, the side-channel observation command should
+For component access specifically, the side-chain observation command should
 carry the exact observational command instance rather than hardcoding modes. In
 the current model that means:
 
@@ -558,11 +558,11 @@ the current model that means:
   special-cases component-bound properties to route them into component shared
   observation instead of ordinary lookup/peek handling
 - `comp.someVar` uses a `SnapshotCommand` plus implicit-var-read validation
-- `comp.someChannel.snapshot()` uses `SnapshotCommand`
-- `comp.someChannel is error` uses `IsErrorCommand`
-- `comp.someChannel#` uses `GetErrorCommand`
+- `comp.someChain.snapshot()` uses `SnapshotCommand`
+- `comp.someChain is error` uses `IsErrorCommand`
+- `comp.someChain#` uses `GetErrorCommand`
 
-This keeps the side-channel command generic and future-friendly. New
+This keeps the side-chain command generic and future-friendly. New
 observational commands can be supported later without changing the shared-root
 enqueue model, as long as they remain safe observational commands rather than
 mutations.
@@ -575,7 +575,7 @@ gets its own shared metadata object.
 
 Component use should have explicit syntax. Use a `component` keyword instead of
 overloading `import`, so the compiler has a clear compile-time signal to emit
-component-specific code such as instance creation, side-channel operations, and
+component-specific code such as instance creation, side-chain operations, and
 lifecycle handling.
 
 `component` is therefore an intentionally reserved keyword on this new path.
@@ -605,11 +605,11 @@ Components use the same shared metadata object model. On the caller side,
 
 - look up the method in the shared component metadata object
 - read the finalized direct method metadata
-- perform linking from the method's final `mergedLinkedChannels` and
-  `mergedMutatedChannels`
+- perform linking from the method's final `mergedLinkedChains` and
+  `mergedMutatedChains`
 
 Multiple component instantiations are fully independent instances with separate
-shared roots, shared state, side-channels, and method calls.
+shared roots, shared state, side-chains, and method calls.
 
 If a script/template receives the shared metadata object but defines no
 blocks/methods, it should still be able to declare or override the constructor.
@@ -626,7 +626,7 @@ context object: arbitrary keys are allowed.
 
 Normal context lookup should also check `compositionPayload`.
 
-Component `with` values feed `compositionPayload`, not shared channels.
+Component `with` values feed `compositionPayload`, not shared chains.
 Supported forms include:
 
 - `component "X" as ns with context`
@@ -708,7 +708,7 @@ Nunjucks-compatible path.
 
 The redesign should still enable:
 
-- shared channels readable and writable across the hierarchy
+- shared chains readable and writable across the hierarchy
 - JS-style dynamic dispatch from ancestor constructors
 - independent instances via explicit `component` instantiation
 - `compositionPayload` values usable from shared defaults and constructors

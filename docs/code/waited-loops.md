@@ -1,7 +1,7 @@
-# Sequential and Bounded Loop `__waited__` Channel
+# Sequential and Bounded Loop `__waited__` Chain
 
 Sequential loops (`while`, `each`) and bounded-concurrency loops
-(`for ... of N`) use a per-iteration `__waited__` channel to define when an
+(`for ... of N`) use a per-iteration `__waited__` chain to define when an
 iteration is complete.
 
 `__waited__` is loop-specific infrastructure. It is not a general async-boundary
@@ -13,7 +13,7 @@ A waited-loop iteration is complete only after:
 
 1. the iteration body has finished enqueueing commands,
 2. the iteration child buffer has been marked finished, and
-3. the buffer iterator has fully applied that iteration's `__waited__` channel.
+3. the buffer iterator has fully applied that iteration's `__waited__` chain.
 
 This gives the runtime one authoritative signal for:
 
@@ -27,22 +27,22 @@ Async waited-loop bodies execute through explicit control-flow/boundary helpers.
 
 The key runtime primitive for waited control flow is:
 
-- `runtime.runWaitedControlFlowBoundary(parentBuffer, usedChannels, context, cb,
-  asyncFn, waitedChannelName)`
+- `runtime.runWaitedControlFlowBoundary(parentBuffer, usedChains, context, cb,
+  asyncFn, waitedChainName)`
 
 That helper:
 
-1. creates a child buffer linked to the requested parent channels,
-2. declares the child-local waited channel,
+1. creates a child buffer linked to the requested parent chains,
+2. declares the child-local waited chain,
 3. runs the async body,
 4. marks the child buffer finished,
-5. awaits `childBuffer.getChannel(waitedChannelName).finalSnapshot()`.
+5. awaits `childBuffer.getChain(waitedChainName).finalSnapshot()`.
 
 The mark-before-snapshot order is essential. The parent iterator cannot descend
-into the child buffer until it is marked finished, and the waited-channel
-snapshot cannot complete until the iterator has applied that channel. If
+into the child buffer until it is marked finished, and the waited-chain
+snapshot cannot complete until the iterator has applied that chain. If
 `finalSnapshot()` were called before `finish()`, the system
-would deadlock: the snapshot waits for the iterator to apply the waited channel,
+would deadlock: the snapshot waits for the iterator to apply the waited chain,
 the iterator waits for the child buffer to be marked finished, and the child
 buffer never gets marked finished because the iteration body is still waiting on
 the snapshot.
@@ -53,17 +53,17 @@ For sequential and bounded loops, the compiler emits an iteration body that
 uses a child buffer as the active `currentBuffer`.
 
 At the end of an async iteration body, generated code marks the child buffer
-finished and awaits the child waited-channel `finalSnapshot()`. For async
+finished and awaits the child waited-chain `finalSnapshot()`. For async
 `while`, the body returns:
 
 - `false` when the condition is false and the loop should stop
-- `true` after a successful iteration has completed through the waited channel
+- `true` after a successful iteration has completed through the waited chain
 
 There is no separate stop sentinel.
 
 ## WaitResolveCommand Rules
 
-The `__waited__` channel is populated with `WaitResolveCommand` (WRC) entries.
+The `__waited__` chain is populated with `WaitResolveCommand` (WRC) entries.
 These commands are timing-only bookkeeping. They do not mutate user-visible
 output.
 
@@ -84,7 +84,7 @@ In a waited scope, a root expression:
 1. compiles normally,
 2. captures its result value,
 3. emits one `WaitResolveCommand` for that result into the owning waited
-   channel,
+   chain,
 4. returns the same value unchanged.
 
 Recursive subexpressions do not emit their own waited commands. Aggregate roots
@@ -104,7 +104,7 @@ scope:
 - `do` roots
 - script `var` roots
 - `return` roots
-- async channel initializer roots
+- async chain initializer roots
 - include/import/from-import boundaries
 - block invocation and `super()` boundaries
 - text-producing composition boundaries whose text promise defines one
@@ -130,14 +130,14 @@ contributes one waited unit through its own child boundary.
 ## Async Control Flow Inside Waited Loops
 
 Async `if`, `switch`, and similar control-flow blocks inside waited loops use a
-child-local waited channel.
+child-local waited chain.
 
 The implemented model is:
 
 1. reserve a child control-flow buffer synchronously,
-2. declare a waited channel local to that child buffer,
+2. declare a waited chain local to that child buffer,
 3. compile branch roots so their waited commands go to the child-local waited
-   channel,
+   chain,
 4. add one parent waited command for the whole control-flow boundary.
 
 This avoids:
@@ -148,33 +148,33 @@ This avoids:
 
 ## Nested Loops
 
-Nested unrestricted loops do not own a new waited channel. Their root work
+Nested unrestricted loops do not own a new waited chain. Their root work
 propagates to the enclosing waited scope.
 
-Nested sequential or bounded loops own their own waited channel. The parent
+Nested sequential or bounded loops own their own waited chain. The parent
 waited scope sees the nested loop as one completion unit; internal per-root
 waited commands do not leak upward.
 
 ## Text-Producing Boundaries Outside Waited Loops
 
-Text-producing boundaries may return promises derived from text-channel
+Text-producing boundaries may return promises derived from text-chain
 snapshots. That is normal value behavior.
 
 Those promises enter `__waited__` only when a waited loop owns the surrounding
 iteration. Outside sequential/bounded loop coordination:
 
-- no `__waited__` channel is created solely for text finalization
+- no `__waited__` chain is created solely for text finalization
 - parents do not eagerly wait for child text promises unless they consume them
 - command/buffer structure still must be registered early
 
-## Flat Waited Channel
+## Flat Waited Chain
 
-The waited channel stays flat. It holds `WaitResolveCommand` leaves, not child
+The waited chain stays flat. It holds `WaitResolveCommand` leaves, not child
 buffers.
 
-Child buffers are linked through their real output/channel lanes. When a child
+Child buffers are linked through their real output/chain lanes. When a child
 boundary must participate in iteration completion, the parent `__waited__`
-channel receives one timing command for that boundary's completion promise.
+chain receives one timing command for that boundary's completion promise.
 
 ## Error And Poison Behavior
 
@@ -182,7 +182,7 @@ Waited commands do not change error semantics.
 
 Errors still flow through normal Cascada poison/output behavior:
 
-- failed body roots poison affected channels
+- failed body roots poison affected chains
 - failed loop sources or conditions poison the effects described by loop/control
   metadata
 - failed composition boundaries poison the surrounding waited iteration through
@@ -194,8 +194,8 @@ correct gating and source-order output application.
 ## Key Files
 
 - `src/compiler/loop.js` - sequential/bounded loop lowering
-- `src/compiler/buffer.js` - waited-channel state and waited command emission
+- `src/compiler/buffer.js` - waited-chain state and waited command emission
 - `src/compiler/boundaries.js` - waited control-flow boundary lowering
 - `src/compiler/compiler-base-async.js` - root expression waited emission
 - `src/runtime/async-boundaries.js` - waited boundary runtime helpers
-- `src/runtime/channels/wait-commands.js` - `WaitResolveCommand`
+- `src/runtime/chains/wait-commands.js` - `WaitResolveCommand`

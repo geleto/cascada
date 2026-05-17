@@ -34,7 +34,7 @@ class CompileLoop {
     const whileConditionNode = options.whileConditionNode || null;
     const loopVarNames = Array.isArray(options.loopVarNames) ? options.loopVarNames : null;
     const sourcePositionNode = options.sourcePositionNode || node.arr;
-    const parentWaitedChannelName = this.compiler.buffer.currentWaitedChannelName;
+    const parentWaitedChainName = this.compiler.buffer.currentWaitedChainName;
 
     this.compiler.buffer._compileAsyncControlFlowBoundary(node, () => {
       const arr = this.compiler._tmpid();
@@ -42,7 +42,7 @@ class CompileLoop {
       if (iteratorCompiler) {
         iteratorCompiler(sourcePositionNode, null, arr);
       } else {
-        this.compiler.buffer.skipOwnWaitedChannel(() => {
+        this.compiler.buffer.skipOwnWaitedChain(() => {
           this.compiler.emit(`let ${arr} = `);
           this.compiler.compileExpression(node.arr, null, node.arr, true);
           this.compiler.emit.line(';');
@@ -51,7 +51,7 @@ class CompileLoop {
 
       const limitVar = node.concurrentLimit ? this.compiler._tmpid() : null;
       if (node.concurrentLimit) {
-        this.compiler.buffer.skipOwnWaitedChannel(() => {
+        this.compiler.buffer.skipOwnWaitedChain(() => {
           this.compiler.emit(`let ${limitVar} = `);
           this.compiler.compileExpression(node.concurrentLimit, null, node.concurrentLimit, true);
           this.compiler.emit.line(';');
@@ -71,14 +71,14 @@ class CompileLoop {
         loopVarNames
       );
 
-      const bodyChannels = this.compiler.analysis.getChannelsUsedFromParent(node.body);
-      const returnCheckChannelName = this.compiler.return.getSequentialLoopAdvanceCheckChannel({
+      const bodyChains = this.compiler.analysis.getChainsUsedFromParent(node.body);
+      const returnCheckChainName = this.compiler.return.getSequentialLoopAdvanceCheckChain({
         sequentialLoopBody,
         whileConditionNode,
-        bodyChannels
+        bodyChains
       });
       let elseFuncId = 'null';
-      let elseChannels = null;
+      let elseChains = null;
 
       if (node.else_) {
         elseFuncId = this.compiler._tmpid();
@@ -86,20 +86,20 @@ class CompileLoop {
         this.compiler.emit('(async function() {');
         this.compiler.compile(node.else_, null);
         this.compiler.emit.line('}).bind(context);');
-        elseChannels = this.compiler.analysis.getChannelsUsedFromParent(node.else_);
+        elseChains = this.compiler.analysis.getChainsUsedFromParent(node.else_);
       }
 
       const asyncOptionsCode = `{
         sequential: ${sequentialLoopBody},
-        bodyChannels: ${JSON.stringify(Array.from(bodyChannels))},
-        elseChannels: ${JSON.stringify(elseChannels ? Array.from(elseChannels) : [])},
+        bodyChains: ${JSON.stringify(Array.from(bodyChains))},
+        elseChains: ${JSON.stringify(elseChains ? Array.from(elseChains) : [])},
         concurrentLimit: ${node.concurrentLimit ? limitVar : 'null'},
-        returnCheckChannelName: ${returnCheckChannelName ? `"${returnCheckChannelName}"` : 'null'},
+        returnCheckChainName: ${returnCheckChainName ? `"${returnCheckChainName}"` : 'null'},
         errorContext: { lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: "${this.compiler._generateErrorContext(node)}", path: context.path }
       }`;
 
       const loopOwnsWaitedCompletion = sequentialLoopBody || hasConcurrentLimit;
-      const shouldTrackNestedLoopCompletion = loopOwnsWaitedCompletion && !!parentWaitedChannelName;
+      const shouldTrackNestedLoopCompletion = loopOwnsWaitedCompletion && !!parentWaitedChainName;
       const iteratePromiseId = this.compiler._tmpid();
       this.compiler.emit(`let ${iteratePromiseId} = runtime.iterate(${arr}, ${loopBodyFuncId}, ${elseFuncId}, ${this.compiler.buffer.currentBuffer}, [`);
       loopVars.forEach((varName, index) => {
@@ -134,7 +134,7 @@ class CompileLoop {
       if (iteratorCompiler) {
         iteratorCompiler(sourcePositionNode, innerFrame, arr);
       } else {
-        this.compiler.buffer.skipOwnWaitedChannel(() => {
+        this.compiler.buffer.skipOwnWaitedChain(() => {
           this.compiler.emit(`let ${arr} = `);
           this.compiler.compileExpression(node.arr, innerFrame, node.arr, true);
           this.compiler.emit.line(';');
@@ -143,7 +143,7 @@ class CompileLoop {
 
       const limitVar = node.concurrentLimit ? this.compiler._tmpid() : null;
       if (node.concurrentLimit) {
-        this.compiler.buffer.skipOwnWaitedChannel(() => {
+        this.compiler.buffer.skipOwnWaitedChain(() => {
           this.compiler.emit(`let ${limitVar} = `);
           this.compiler.compileExpression(node.concurrentLimit, innerFrame, node.concurrentLimit, true);
           this.compiler.emit.line(';');
@@ -215,31 +215,31 @@ class CompileLoop {
 
     const shouldAwaitLoopBody = sequentialLoopBody || hasConcurrencyLimit;
     const parentBufferArg = this.compiler.buffer.currentBuffer;
-    const linkedChannelsArg = this.compiler.emit.getLinkedChannelsArg(node);
-    const linkedMutatedChannelsArg = this.compiler.emit.getLinkedMutatedChannelsArg(node);
+    const linkedChainsArg = this.compiler.emit.getLinkedChainsArg(node);
+    const linkedMutatedChainsArg = this.compiler.emit.getLinkedMutatedChainsArg(node);
     this.compiler.emit(
-      `return runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChannelsArg}, ${linkedMutatedChannelsArg}, context, cb, async (currentBuffer) => {`
+      `return runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, cb, async (currentBuffer) => {`
     );
     this.compiler.emit.asyncClosureDepth++;
 
     this.compiler.buffer.withBufferState({
       currentBuffer: 'currentBuffer',
-      currentTextChannelVar: null
+      currentTextChainVar: null
     }, () => {
-      const limitedWaitedChannelName = (hasConcurrencyLimit || sequentialLoopBody)
-        ? (node.body && node.body._analysis && node.body._analysis.waitedChannelName)
+      const limitedWaitedChainName = (hasConcurrencyLimit || sequentialLoopBody)
+        ? (node.body && node.body._analysis && node.body._analysis.waitedChainName)
         : null;
-      if (limitedWaitedChannelName) {
-        this.compiler.emit.line(`runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${limitedWaitedChannelName}", "var", context, null);`);
+      if (limitedWaitedChainName) {
+        this.compiler.emit.line(`runtime.declareBufferChain(${this.compiler.buffer.currentBuffer}, "${limitedWaitedChainName}", "var", context, null);`);
       }
 
       const compileIterationBody = () => {
         const buffer = this.compiler.buffer.currentBuffer;
         loopVars.forEach((name) => {
-          this.compiler.emit.line(`runtime.declareBufferChannel(${buffer}, "${name}", "var", context, null);`);
+          this.compiler.emit.line(`runtime.declareBufferChain(${buffer}, "${name}", "var", context, null);`);
         });
         if (node.loopRuntimeName) {
-          this.compiler.emit.line(`runtime.declareBufferChannel(${buffer}, "${node.loopRuntimeName}", "var", context, null);`);
+          this.compiler.emit.line(`runtime.declareBufferChain(${buffer}, "${node.loopRuntimeName}", "var", context, null);`);
           this._emitLoopMetadataValueBinding(node, loopIndex, loopLength, isLast);
         }
         this._emitLoopIterationBindings(node, loopVars, loopVarNames, (varName, valueExpr) => {
@@ -254,7 +254,7 @@ class CompileLoop {
           this.compiler.emit(`let ${whileCondId};`);
           this.compiler.emit('try {');
           this.compiler.emit(`${whileCondId} = `);
-          this.compiler.buffer.skipOwnWaitedChannel(() => {
+          this.compiler.buffer.skipOwnWaitedChain(() => {
             this.compiler._compileAwaitedExpression(whileConditionNode, null);
           });
           this.compiler.emit.line(';');
@@ -275,16 +275,16 @@ class CompileLoop {
         });
 
         if (whileConditionNode && catchPoisonPos !== null) {
-          const bodyChannels = new Set(node.body._analysis.usedChannels ?? []);
-          for (const channelName of bodyChannels) {
-            this.compiler.emit.insertLine(catchPoisonPos, `  ${this.compiler.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(Array.isArray(contextualError) ? contextualError : [contextualError]), "${channelName}");`);
+          const bodyChains = new Set(node.body._analysis.usedChains ?? []);
+          for (const chainName of bodyChains) {
+            this.compiler.emit.insertLine(catchPoisonPos, `  ${this.compiler.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(Array.isArray(contextualError) ? contextualError : [contextualError]), "${chainName}");`);
           }
         }
 
         if (shouldAwaitLoopBody) {
           const waitedSnapshotId = this.compiler._tmpid();
           this.compiler.emit.line(`${this.compiler.buffer.currentBuffer}.finish();`);
-          this.compiler.emit.line(`const ${waitedSnapshotId} = ${this.compiler.buffer.currentBuffer}.getChannel("${limitedWaitedChannelName}").finalSnapshot();`);
+          this.compiler.emit.line(`const ${waitedSnapshotId} = ${this.compiler.buffer.currentBuffer}.getChain("${limitedWaitedChainName}").finalSnapshot();`);
           if (whileConditionNode) {
             this.compiler.emit.line(`await ${waitedSnapshotId};`);
             this.compiler.emit.line('return true;');
@@ -294,16 +294,16 @@ class CompileLoop {
         }
       };
 
-      if ((sequentialLoopBody || hasConcurrencyLimit) && !limitedWaitedChannelName) {
-        this.compiler.fail('compileFor: limited/sequential loop body has no waited channel вЂ” compiler analysis bug', node.lineno, node.colno, node);
+      if ((sequentialLoopBody || hasConcurrencyLimit) && !limitedWaitedChainName) {
+        this.compiler.fail('compileFor: limited/sequential loop body has no waited chain вЂ” compiler analysis bug', node.lineno, node.colno, node);
       }
 
-      if (!limitedWaitedChannelName) {
+      if (!limitedWaitedChainName) {
         compileIterationBody();
       } else {
         const waitedOwnerBufferId = this.compiler._tmpid();
         this.compiler.emit.line(`const ${waitedOwnerBufferId} = ${this.compiler.buffer.currentBuffer};`);
-        this.compiler.buffer.withOwnWaitedChannel(limitedWaitedChannelName, compileIterationBody, waitedOwnerBufferId);
+        this.compiler.buffer.withOwnWaitedChain(limitedWaitedChainName, compileIterationBody, waitedOwnerBufferId);
       }
 
     });
@@ -343,7 +343,7 @@ class CompileLoop {
     if (whileConditionNode) {
       const whileCondId = this.compiler._tmpid();
       this.compiler.emit(`const ${whileCondId} = `);
-      this.compiler.buffer.skipOwnWaitedChannel(() => {
+      this.compiler.buffer.skipOwnWaitedChain(() => {
         this.compiler._compileAwaitedExpression(whileConditionNode, bodyFrame);
       });
       this.compiler.emit.line(';');
@@ -397,9 +397,9 @@ class CompileLoop {
     emitBinding(varName, varName);
   }
 
-  _emitLoopValueAssignment(node, channelName, valueExpr) {
+  _emitLoopValueAssignment(node, chainName, valueExpr) {
     this.compiler.emit.line(
-      `${this.compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ channelName: '${channelName}', args: [${valueExpr}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${channelName}');`
+      `${this.compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ chainName: '${chainName}', args: [${valueExpr}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${chainName}');`
     );
   }
 

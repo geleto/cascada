@@ -8,7 +8,7 @@ shape that grew during the initial implementation.
 
 `return` should behave like ordinary structured control flow from the script
 author's point of view. The transpiler implementation may need guards and
-return-channel checks, but those details should stay small, local, and aligned
+return-chain checks, but those details should stay small, local, and aligned
 with the existing line/tag processing model.
 
 The current direction is:
@@ -275,7 +275,7 @@ The guard condition is the internal helper:
 __return_is_unset__()
 ```
 
-It compiles to `ReturnIsUnsetCommand`, which reads the return channel without
+It compiles to `ReturnIsUnsetCommand`, which reads the return chain without
 poison inspection. This is required because a returned poison value must count
 as "return has happened" without surfacing through later guard checks.
 
@@ -333,17 +333,17 @@ Parallel `for` bodies should be gated with the same return-unset check. This
 preserves Cascada's concurrency invariance:
 
 - iterations may start in parallel;
-- once a source-visible return has written the return channel, later guarded
+- once a source-visible return has written the return chain, later guarded
   work observes that and skips;
 - no special `for ... with return` syntax is part of this design.
 
 ### `each`
 
 Sequential `each` uses the same body guard at transpile time. The compiler/runtime
-may also use the return channel as an ordered advancement check between
+may also use the return chain as an ordered advancement check between
 iterations, but the transpiler does not need separate loop metadata to request
 that. The generated body references `__return__` through `__return_is_unset__()`,
-so normal used-channel analysis can discover the dependency.
+so normal used-chain analysis can discover the dependency.
 
 ### `while`
 

@@ -36,7 +36,7 @@ class CompileComponent {
     const rootContextVar = this.compiler._tmpid();
     const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
 
-    this.emit.line(`runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${targetName}", "var", context, null);`);
+    this.emit.line(`runtime.declareBufferChain(${this.compiler.buffer.currentBuffer}, "${targetName}", "var", context, null);`);
     this.emit.line(`const ${componentVarsVar} = {};`);
     this.compiler.compositionPayload.emitCompiledInputs(node, componentVarsVar);
     this.compiler.compositionPayload.emitContext(rootContextVar, componentVarsVar, node.withContext);
@@ -69,7 +69,7 @@ class CompileComponent {
       return {
         bindingName,
         kind: 'shared-read',
-        channelName: renameSharedName(staticPath[1]),
+        chainName: renameSharedName(staticPath[1]),
         implicitVarRead: true
       };
     }
@@ -82,7 +82,7 @@ class CompileComponent {
       return {
         bindingName,
         kind: 'shared-observe',
-        channelName: renameSharedName(staticPath[1]),
+        chainName: renameSharedName(staticPath[1]),
         mode: staticPath[2],
         implicitVarRead: false
       };
@@ -140,30 +140,30 @@ class CompileComponent {
     this.emit(`, runtime, cb, errorContext: ${errorContextJson} })`);
   }
 
-  emitObservationCommand(channelName, node, mode = 'snapshot') {
+  emitObservationCommand(chainName, node, mode = 'snapshot') {
     const posLiteral = this.compiler.buffer._emitPositionLiteral(node);
-    const channelNameJson = JSON.stringify(channelName);
+    const chainNameJson = JSON.stringify(chainName);
     if (mode === 'snapshot') {
-      this.emit(`new runtime.SnapshotCommand({ channelName: ${channelNameJson}, pos: ${posLiteral} })`);
+      this.emit(`new runtime.SnapshotCommand({ chainName: ${chainNameJson}, pos: ${posLiteral} })`);
       return;
     }
     if (mode === 'isError') {
-      this.emit(`new runtime.IsErrorCommand({ channelName: ${channelNameJson}, pos: ${posLiteral} })`);
+      this.emit(`new runtime.IsErrorCommand({ chainName: ${chainNameJson}, pos: ${posLiteral} })`);
       return;
     }
     if (mode === 'getError') {
-      this.emit(`new runtime.GetErrorCommand({ channelName: ${channelNameJson}, pos: ${posLiteral} })`);
+      this.emit(`new runtime.GetErrorCommand({ chainName: ${chainNameJson}, pos: ${posLiteral} })`);
       return;
     }
     throw new Error(`Unsupported component observation mode '${mode}'`);
   }
 
-  emitChannelObservation(componentBindingFacts, node) {
+  emitChainObservation(componentBindingFacts, node) {
     const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
-    this.emit('runtime.observeComponentChannel({ ');
+    this.emit('runtime.observeComponentChain({ ');
     this.emit(`bindingName: ${JSON.stringify(componentBindingFacts.bindingName)}, `);
     this.emit(`currentBuffer: ${this.compiler.buffer.currentBuffer}, observationCommand: `);
-    this.emitObservationCommand(componentBindingFacts.channelName, node, componentBindingFacts.mode || 'snapshot');
+    this.emitObservationCommand(componentBindingFacts.chainName, node, componentBindingFacts.mode || 'snapshot');
     this.emit(`, errorContext: ${errorContextJson}, implicitVarRead: ${componentBindingFacts.implicitVarRead ? 'true' : 'false'} })`);
   }
 
@@ -175,10 +175,10 @@ class CompileComponent {
     nestedPath.forEach(() => {
       this.emit('runtime.memberLookupScript((');
     });
-    this.emitChannelObservation({
+    this.emitChainObservation({
       bindingName: componentBindingRoot.bindingName,
       kind: 'shared-read',
-      channelName: renameSharedName(staticPath[1]),
+      chainName: renameSharedName(staticPath[1]),
       implicitVarRead: true
     }, node);
     nestedPath.forEach((propertyName) => {

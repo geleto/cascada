@@ -148,7 +148,7 @@ Sometimes, an error can only be detected long after the initial compile site, in
 a generic command-application path. In these cases, context is propagated
 **through command data structures**.
 
-Channel commands are the main example:
+Chain commands are the main example:
 
 1.  **Compile Time:** The compiler encounters `result.push(...)` at line 20,
     column 10. It compiles this as a `DataCommand`, not as an immediate
@@ -156,15 +156,15 @@ Channel commands are the main example:
     ```javascript
     // compiled_template.js
     currentBuffer.add(new runtime.DataCommand({
-      channelName: 'result',
+      chainName: 'result',
       command: 'push',
       args: [...],
       pos: { lineno: 20, colno: 10 } // Context is now data
     }), 'result');
     ```
 2.  **Apply Time:** Later, the buffer iterator reaches the command and applies
-    it to the `result` channel.
-3.  **Error Detection:** If the channel command fails while resolving arguments
+    it to the `result` chain.
+3.  **Error Detection:** If the chain command fails while resolving arguments
     or applying the data operation, it still has the original `pos`.
 4.  **Error Enrichment:** The runtime uses that position to call `handleError`,
     creating a contextualized error even though the failure happened far away

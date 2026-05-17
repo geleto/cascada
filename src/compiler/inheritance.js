@@ -26,10 +26,10 @@ class CompileInheritance {
     this.currentCallableNode = null;
   }
 
-  emitSharedChannelObservation(channelName, node, mode = 'snapshot', implicitVarRead = false) {
+  emitSharedChainObservation(chainName, node, mode = 'snapshot', implicitVarRead = false) {
     const compiler = this.compiler;
     compiler.emit(
-      `runtime.observeInheritanceSharedChannel(${JSON.stringify(channelName)}, ${compiler.buffer.currentBuffer}, ` +
+      `runtime.observeInheritanceSharedChain(${JSON.stringify(chainName)}, ${compiler.buffer.currentBuffer}, ` +
       `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(compiler._generateErrorContext(node))}, path: context.path }, ` +
       `currentInstance, ${JSON.stringify(mode)}, ${implicitVarRead})`
     );
@@ -81,9 +81,9 @@ class CompileInheritance {
 
     declaration.shared = true;
     declaration.declarationOrigin = this.compiler.analysis.getTopmostChildAnalysis(originAnalysis);
-    rootOwner.declaredChannels = rootOwner.declaredChannels || new Map();
-    if (!rootOwner.declaredChannels.has(declaration.name)) {
-      rootOwner.declaredChannels.set(declaration.name, declaration);
+    rootOwner.declaredChains = rootOwner.declaredChains || new Map();
+    if (!rootOwner.declaredChains.has(declaration.name)) {
+      rootOwner.declaredChains.set(declaration.name, declaration);
     }
     // The declaration table is rebuilt during finalization, so keep implicit
     // shared declarations in the root declaration list as their source of truth.
@@ -106,7 +106,7 @@ class CompileInheritance {
 
   postAnalyzeCallableDefinition(node) {
     // Blocks contribute template text output; script methods contribute return output.
-    return this._getCallableChannelFootprint(node);
+    return this._getCallableChainFootprint(node);
   }
 
   analyzeRoot(node) {
@@ -274,7 +274,7 @@ class CompileInheritance {
         return;
       }
       this.compiler.fail(
-        `shared channel '${methodName}' conflicts with method '${methodName}' defined in this file`,
+        `shared chain '${methodName}' conflicts with method '${methodName}' defined in this file`,
         method.name.lineno,
         method.name.colno,
         method,
@@ -304,7 +304,7 @@ class CompileInheritance {
     if (!methodName) {
       return null;
     }
-    const thisSharedAccess = this.compiler.channel.probeThisSharedAccessFacts(
+    const thisSharedAccess = this.compiler.chain.probeThisSharedAccessFacts(
       node.name,
       analysisPass,
       node._analysis
@@ -470,15 +470,15 @@ class CompileInheritance {
         declares: bodyDeclares
       };
     }
-    const textChannel = !compiler.scriptMode
-      ? compiler.analysis.getCurrentTextChannel(node._analysis)
+    const textChain = !compiler.scriptMode
+      ? compiler.analysis.getCurrentTextChain(node._analysis)
       : null;
     return {
       createScope: true,
       scopeBoundary: true,
       parentReadOnly: true,
-      uses: textChannel ? [textChannel] : [],
-      mutates: textChannel ? [textChannel] : [],
+      uses: textChain ? [textChain] : [],
+      mutates: textChain ? [textChain] : [],
       createsLinkedChildBuffer: true
     };
   }
@@ -488,7 +488,7 @@ class CompileInheritance {
       this._recordCallableDefinition(node);
     }
     const analysis = this.analyzeBlock(node);
-    analysis.declares = [this.compiler.return.createChannelDeclaration()];
+    analysis.declares = [this.compiler.return.createChainDeclaration()];
     return analysis;
   }
 
@@ -518,7 +518,7 @@ class CompileInheritance {
     emitValue();
     this.emit.line(';');
     const textCmdExpr = this.compiler.buffer._emitTemplateTextCommandExpression(id, node, true);
-    this.emit.line(`${this.compiler.buffer.currentBuffer}.addCommand(${textCmdExpr}, "${this.compiler.buffer.currentTextChannelName}");`);
+    this.emit.line(`${this.compiler.buffer.currentBuffer}.addCommand(${textCmdExpr}, "${this.compiler.buffer.currentTextChainName}");`);
     this.compiler.buffer.emitLimitedLoopCompletion(id, node);
   }
 
@@ -556,7 +556,7 @@ class CompileInheritance {
   _emitSharedDeclaration(declaration) {
     const targetBufferExpr = 'currentInstance.sharedRootBuffer';
     this.emit(
-      `runtime.declareInheritanceSharedChannel(${targetBufferExpr}, ${JSON.stringify(declaration.name)}, ${JSON.stringify(declaration.type)}, context`
+      `runtime.declareInheritanceSharedChain(${targetBufferExpr}, ${JSON.stringify(declaration.name)}, ${JSON.stringify(declaration.type)}, context`
     );
     this.emit.line(');');
     if (!declaration.initializer) {
@@ -566,7 +566,7 @@ class CompileInheritance {
     this.emit.line(`if (runtime.claimInheritanceSharedDefault(${targetBufferExpr}, ${JSON.stringify(declaration.name)})) {`);
     if (declaration.type === 'sequence' || declaration.type === 'var') {
       this.emit(
-        `runtime.declareInheritanceSharedChannel(${targetBufferExpr}, ${JSON.stringify(declaration.name)}, ${JSON.stringify(declaration.type)}, context, `
+        `runtime.declareInheritanceSharedChain(${targetBufferExpr}, ${JSON.stringify(declaration.name)}, ${JSON.stringify(declaration.type)}, context, `
       );
       this.compiler.compile(declaration.initializer, null);
       this.emit.line(');');
@@ -578,10 +578,10 @@ class CompileInheritance {
     this.emit(`let ${initValueId} = `);
     this.compiler.compileExpression(declaration.initializer, null, declaration.initializer);
     this.emit.line(';');
-    this.compiler.buffer.emitAddChannelCommandByType({
+    this.compiler.buffer.emitAddChainCommandByType({
       bufferExpr: targetBufferExpr,
-      channelType: declaration.type,
-      channelName: declaration.name,
+      chainType: declaration.type,
+      chainName: declaration.name,
       valueExpr: initValueId,
       positionNode: declaration.initializer,
       initializeIfNotSet: true
@@ -692,10 +692,10 @@ class CompileInheritance {
     }
   }
 
-  _emitCallableArgumentChannels(callableNode, callableSignature, payloadOriginalArgsVar) {
-    this.compiler.channel.emitLocalVarChannelBindings(
+  _emitCallableArgumentChains(callableNode, callableSignature, payloadOriginalArgsVar) {
+    this.compiler.chain.emitLocalVarChainBindings(
       this.compiler.buffer.currentBuffer,
-      this.compiler.createCallableArgumentChannelBindings(
+      this.compiler.createCallableArgumentChainBindings(
         callableSignature,
         (name, defaultValueNode) => {
           this._emitCallableArgumentValue(payloadOriginalArgsVar, name, defaultValueNode);
@@ -716,14 +716,14 @@ class CompileInheritance {
   _emitCallableEntryParentLinks(callableNode, isScriptMethod) {
     this.emit.line(`${this.compiler.buffer.currentBuffer}._context = context;`);
     this.emit.line(
-      `runtime.linkInheritanceCallableFootprintChannels(` +
+      `runtime.linkInheritanceCallableFootprintChains(` +
       `parentBuffer, ${this.compiler.buffer.currentBuffer}, ` +
-      `methodData.mergedLinkedChannels, ` +
-      `methodData.mergedMutatedChannels` +
+      `methodData.mergedLinkedChains, ` +
+      `methodData.mergedMutatedChains` +
       `);`
     );
     if (!isScriptMethod) {
-      this.emit.line(`${this.compiler.buffer.currentTextChannelVar}._context = context;`);
+      this.emit.line(`${this.compiler.buffer.currentTextChainVar}._context = context;`);
     }
   }
 
@@ -747,7 +747,7 @@ class CompileInheritance {
     }
 
     this.emit.line(`${this.compiler.buffer.currentBuffer}.finish();`);
-    this.emit.line(`return ${this.compiler.buffer.currentTextChannelVar}.finalSnapshot();`);
+    this.emit.line(`return ${this.compiler.buffer.currentTextChainVar}.finalSnapshot();`);
   }
 
   _compileCallableEntry(callableNode, functionName = `b_${callableNode.name.value}`, isConstructorEntry = false) {
@@ -771,13 +771,13 @@ class CompileInheritance {
       INHERITED_CALLABLE_EXTRA_PARAMS
     );
     if (isScriptMethod) {
-      this.compiler.return.emitDeclareChannel(this.compiler.buffer.currentBuffer);
+      this.compiler.return.emitDeclareChain(this.compiler.buffer.currentBuffer);
     }
     const payloadOriginalArgsVar = this.compiler._tmpid();
     this.emit.line(`const ${payloadOriginalArgsVar} = runtime.getInheritanceCallableOriginalArgs(blockPayload);`);
     this._emitCallableContextSetup(callableNode, isScriptMethod, invocationPath);
     this._emitCallableEntryParentLinks(callableNode, isScriptMethod);
-    this._emitCallableArgumentChannels(callableNode, callableSignature, payloadOriginalArgsVar);
+    this._emitCallableArgumentChains(callableNode, callableSignature, payloadOriginalArgsVar);
     if (constructorRootNode) {
       this.emitRootSharedDeclarations(constructorRootNode);
     }
@@ -857,16 +857,16 @@ class CompileInheritance {
   }
 
   _compileMethodEntryObject(entry) {
-    const callableFootprint = this._getCallableChannelFootprint(entry.ownerNode);
-    const ownLinkedChannelNames = callableFootprint.linkedChannels;
+    const callableFootprint = this._getCallableChainFootprint(entry.ownerNode);
+    const ownLinkedChainNames = callableFootprint.linkedChains;
     // Keep mutations separate from links so inherited/component calls can
     // later distinguish read-only participation from write barriers.
-    const ownMutatedChannelNames = callableFootprint.mutatedChannels;
-    const ownLinkedChannels = JSON.stringify(ownLinkedChannelNames);
-    const ownMutatedChannels = JSON.stringify(ownMutatedChannelNames);
+    const ownMutatedChainNames = callableFootprint.mutatedChains;
+    const ownLinkedChains = JSON.stringify(ownLinkedChainNames);
+    const ownMutatedChains = JSON.stringify(ownMutatedChainNames);
     const origin = JSON.stringify(this.compiler._createErrorContext(entry.originNode));
     const name = JSON.stringify(entry.name);
-    return `${name}: { name: ${name}, fn: ${entry.fnExpr}, signature: ${JSON.stringify(entry.signature)}, origin: ${origin}, isConstructor: ${entry.isConstructor ? 'true' : 'false'}, super: ${entry.usesSuper ? 'true' : 'false'}, superOrigin: ${entry.superOrigin || 'null'}, inheritedMethodDependencies: ${entry.inheritedMethodDependencies || '{}'}, ownLinkedChannels: ${ownLinkedChannels}, ownMutatedChannels: ${ownMutatedChannels} }`;
+    return `${name}: { name: ${name}, fn: ${entry.fnExpr}, signature: ${JSON.stringify(entry.signature)}, origin: ${origin}, isConstructor: ${entry.isConstructor ? 'true' : 'false'}, super: ${entry.usesSuper ? 'true' : 'false'}, superOrigin: ${entry.superOrigin || 'null'}, inheritedMethodDependencies: ${entry.inheritedMethodDependencies || '{}'}, ownLinkedChains: ${ownLinkedChains}, ownMutatedChains: ${ownMutatedChains} }`;
   }
 
   _compileInheritedMethodDependenciesObject(methodDependencies) {
@@ -899,17 +899,17 @@ class CompileInheritance {
     return `{ ${entries.join(', ')} }`;
   }
 
-  _getCallableChannelFootprint(ownerNode) {
+  _getCallableChainFootprint(ownerNode) {
     const bodyAnalysis = ownerNode.body ? ownerNode.body._analysis : ownerNode._analysis;
-    const usedChannels = bodyAnalysis.usedChannels ?? new Set();
-    const mutatedChannels = bodyAnalysis.mutatedChannels ?? new Set();
+    const usedChains = bodyAnalysis.usedChains ?? new Set();
+    const mutatedChains = bodyAnalysis.mutatedChains ?? new Set();
     const rootNode = this.compiler.analysis.getRootNode(ownerNode._analysis);
     const sharedStorageNames = new Set(this._getSharedDeclarations(rootNode).map((declaration) => declaration.name));
-    const linkedChannelNames = Array.from(usedChannels).filter((name) => sharedStorageNames.has(name));
-    const mutatedChannelNames = Array.from(mutatedChannels).filter((name) => sharedStorageNames.has(name));
+    const linkedChainNames = Array.from(usedChains).filter((name) => sharedStorageNames.has(name));
+    const mutatedChainNames = Array.from(mutatedChains).filter((name) => sharedStorageNames.has(name));
     return {
-      linkedChannels: linkedChannelNames,
-      mutatedChannels: mutatedChannelNames
+      linkedChains: linkedChainNames,
+      mutatedChains: mutatedChainNames
     };
   }
 

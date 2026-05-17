@@ -4,7 +4,7 @@ import * as nodes from './nodes.js';
 import {Obj} from '../object.js';
 import {TemplateError, indexOf} from '../lib.js';
 import {RESERVED_DECLARATION_NAMES} from '../compiler/validation.js';
-import {CHANNEL_TYPE_FACTS} from '../channel-types.js';
+import {CHAIN_TYPE_FACTS} from '../chain-types.js';
 
 class Parser extends Obj {
   init(tokens, opts) {
@@ -137,7 +137,7 @@ class Parser extends Obj {
         this.dropLeadingWhitespace = true;
       }
     } else {
-      const label = (name === 'channel_command' || name === 'command') ? 'command' : name;
+      const label = (name === 'chain_command' || name === 'command') ? 'command' : name;
       this.fail('expected block end in ' + label + ' statement');
     }
 
@@ -935,37 +935,37 @@ class Parser extends Obj {
     return this._parseVarLikeDeclaration('var', 'declaration', 'endvar', 'parseVar');
   }
 
-  parseChannelDeclaration() {
+  parseChainDeclaration() {
     const tag = this.peekToken();
-    const channelType = tag.value;
-    if (!this.skipSymbol(channelType)) {
-      this.fail('parseChannelDeclaration: expected channel declaration', tag.lineno, tag.colno);
+    const chainType = tag.value;
+    if (!this.skipSymbol(chainType)) {
+      this.fail('parseChainDeclaration: expected chain declaration', tag.lineno, tag.colno);
     }
 
     const nameNode = this.parsePrimary();
     if (!(nameNode instanceof nodes.Symbol)) {
-      this.fail('parseChannelDeclaration: channel name expected', tag.lineno, tag.colno);
+      this.fail('parseChainDeclaration: chain name expected', tag.lineno, tag.colno);
     }
 
     let initializer = null;
-    const channelFacts = CHANNEL_TYPE_FACTS[channelType] || null;
-    if (channelFacts && channelFacts.requiresInitializer) {
+    const chainFacts = CHAIN_TYPE_FACTS[chainType] || null;
+    if (chainFacts && chainFacts.requiresInitializer) {
       if (!this.skipValue(lexer.TOKEN_OPERATOR, '=')) {
-        this.fail(`parseChannelDeclaration: ${channelType} channels must have an initializer`, tag.lineno, tag.colno);
+        this.fail(`parseChainDeclaration: ${chainType} chains must have an initializer`, tag.lineno, tag.colno);
       }
       initializer = this.parseExpression();
     } else {
       if (this.skipValue(lexer.TOKEN_OPERATOR, '=')) {
-        if (channelFacts && channelFacts.supportsValueInitializer) {
+        if (chainFacts && chainFacts.supportsValueInitializer) {
           initializer = this.parseExpression();
         } else {
-          this.fail(`parseChannelDeclaration: ${channelType} channels cannot have initializers`, tag.lineno, tag.colno);
+          this.fail(`parseChainDeclaration: ${chainType} chains cannot have initializers`, tag.lineno, tag.colno);
         }
       }
     }
 
     this.advanceAfterBlockEnd(tag.value);
-    return new nodes.ChannelDeclaration(tag.lineno, tag.colno, channelType, nameNode, initializer);
+    return new nodes.ChainDeclaration(tag.lineno, tag.colno, chainType, nameNode, initializer);
   }
 
   parseSharedDeclaration() {
@@ -974,21 +974,21 @@ class Parser extends Obj {
       this.fail('parseSharedDeclaration: expected shared', tag.lineno, tag.colno);
     }
 
-    const channelTypeTok = this.peekToken();
-    if (!channelTypeTok || channelTypeTok.type !== lexer.TOKEN_SYMBOL) {
-      this.fail('parseSharedDeclaration: expected shared channel type', tag.lineno, tag.colno);
+    const chainTypeTok = this.peekToken();
+    if (!chainTypeTok || chainTypeTok.type !== lexer.TOKEN_SYMBOL) {
+      this.fail('parseSharedDeclaration: expected shared chain type', tag.lineno, tag.colno);
     }
 
-    const channelType = channelTypeTok.value;
-    const channelFacts = CHANNEL_TYPE_FACTS[channelType] || null;
-    if (!channelFacts) {
-      this.fail(`parseSharedDeclaration: unsupported shared channel type '${channelType}'`, channelTypeTok.lineno, channelTypeTok.colno);
+    const chainType = chainTypeTok.value;
+    const chainFacts = CHAIN_TYPE_FACTS[chainType] || null;
+    if (!chainFacts) {
+      this.fail(`parseSharedDeclaration: unsupported shared chain type '${chainType}'`, chainTypeTok.lineno, chainTypeTok.colno);
     }
     this.nextToken();
 
     const nameNode = this.parsePrimary();
     if (!(nameNode instanceof nodes.Symbol)) {
-      this.fail('parseSharedDeclaration: channel name expected', tag.lineno, tag.colno);
+      this.fail('parseSharedDeclaration: chain name expected', tag.lineno, tag.colno);
     }
 
     let initializer = null;
@@ -997,7 +997,7 @@ class Parser extends Obj {
     }
 
     this.advanceAfterBlockEnd(tag.value);
-    return new nodes.ChannelDeclaration(tag.lineno, tag.colno, channelType, nameNode, initializer, true);
+    return new nodes.ChainDeclaration(tag.lineno, tag.colno, chainType, nameNode, initializer, true);
   }
 
   parseSwitch() {
@@ -1085,20 +1085,20 @@ class Parser extends Obj {
     return new nodes.Do(doTok.lineno, doTok.colno, exprs);
   }
 
-  parseChannelCommand() {
+  parseChainCommand() {
     const tag = this.peekToken();
-    let channelType = null;
-    if (this.skipSymbol('channel_command')) {
+    let chainType = null;
+    if (this.skipSymbol('chain_command')) {
       if (this.peekToken().type !== lexer.TOKEN_SYMBOL) {
-        this.fail('parseChannelCommand: expected channel type', tag.lineno, tag.colno);
+        this.fail('parseChainCommand: expected chain type', tag.lineno, tag.colno);
       }
-      channelType = this.nextToken().value;
-      const channelFacts = CHANNEL_TYPE_FACTS[channelType] || null;
-      if (!channelFacts) {
-        this.fail(`parseChannelCommand: unsupported channel type '${channelType}'`, tag.lineno, tag.colno);
+      chainType = this.nextToken().value;
+      const chainFacts = CHAIN_TYPE_FACTS[chainType] || null;
+      if (!chainFacts) {
+        this.fail(`parseChainCommand: unsupported chain type '${chainType}'`, tag.lineno, tag.colno);
       }
     } else if (!this.skipSymbol('command')) {
-      this.fail('parseChannelCommand: expected command or channel_command', tag.lineno, tag.colno);
+      this.fail('parseChainCommand: expected command or chain_command', tag.lineno, tag.colno);
     }
 
     // Parse the entire function call expression
@@ -1106,9 +1106,9 @@ class Parser extends Obj {
 
     this.advanceAfterBlockEnd(tag.value);
 
-    const node = new nodes.ChannelCommand(tag.lineno, tag.colno, call);
-    if (channelType) {
-      node.channelType = channelType;
+    const node = new nodes.ChainCommand(tag.lineno, tag.colno, call);
+    if (chainType) {
+      node.chainType = chainType;
     }
     return node;
   }
@@ -1119,7 +1119,7 @@ class Parser extends Obj {
       this.fail('parseGuard: expected guard', tag.lineno, tag.colno);
     }
 
-    const channelTargets = [];
+    const chainTargets = [];
     const typeTargets = [];
     const variableTargets = [];
     const sequenceTargets = [];
@@ -1145,11 +1145,11 @@ class Parser extends Obj {
       } else if (this.skipValue(lexer.TOKEN_OPERATOR, '*')) {
         rawSelector = '*';
         hasStarSelector = true;
-        // '*' expands to all channels, all sequences, and marks that we need all variables
-        channelTargets.push('@');
+        // '*' expands to all chains, all sequences, and marks that we need all variables
+        chainTargets.push('@');
         sequenceTargets.push('!');
       } else if (this.peekToken().type === lexer.TOKEN_SYMBOL) {
-        // Variable, Channel, or Sequence
+        // Variable, Chain, or Sequence
         selectorTok = this.nextToken();
         rawSelector = selectorTok.value;
 
@@ -1180,7 +1180,7 @@ class Parser extends Obj {
       first = false;
     }
 
-    if (hasStarSelector && (channelTargets.length > 1 || typeTargets.length > 0 || hasVarSelector || variableTargets.length > 0 || sequenceTargets.length > 1)) {
+    if (hasStarSelector && (chainTargets.length > 1 || typeTargets.length > 0 || hasVarSelector || variableTargets.length > 0 || sequenceTargets.length > 1)) {
       this.fail('guard: "*" cannot be combined with other selectors', tag.lineno, tag.colno);
     }
 
@@ -1210,8 +1210,8 @@ class Parser extends Obj {
     }
 
     let guardExpandsAllVariables = false;
-    if (channelTargets.length === 0 && typeTargets.length === 0 && !hasVarSelector && variableTargets.length === 0 && sequenceTargets.length === 0) {
-      channelTargets.push('@');
+    if (chainTargets.length === 0 && typeTargets.length === 0 && !hasVarSelector && variableTargets.length === 0 && sequenceTargets.length === 0) {
+      chainTargets.push('@');
       sequenceTargets.push('!');
     }
     if (hasStarSelector) {
@@ -1222,7 +1222,7 @@ class Parser extends Obj {
       tag.lineno,
       tag.colno,
       body,
-      channelTargets.length > 0 ? channelTargets : null,
+      chainTargets.length > 0 ? chainTargets : null,
       typeTargets.length > 0 ? typeTargets : null,
       (guardExpandsAllVariables || hasVarSelector) ? '*' : (variableTargets.length > 0 ? variableTargets : null),
       sequenceTargets.length > 0 ? sequenceTargets : null,
@@ -1268,9 +1268,9 @@ class Parser extends Obj {
       return null;
     }
 
-    const channelFacts = CHANNEL_TYPE_FACTS[tok.value] || null;
-    if (channelFacts && channelFacts.channelDeclarationTag) {
-      return this.parseChannelDeclaration();
+    const chainFacts = CHAIN_TYPE_FACTS[tok.value] || null;
+    if (chainFacts && chainFacts.chainDeclarationTag) {
+      return this.parseChainDeclaration();
     }
 
     switch (tok.value) {
@@ -1320,8 +1320,8 @@ class Parser extends Obj {
       case 'do':
         return this.parseDo();
       case 'command':
-      case 'channel_command':
-        return this.parseChannelCommand();
+      case 'chain_command':
+        return this.parseChainCommand();
       case 'guard':
         return this.parseGuard();
       case 'revert':
@@ -2054,7 +2054,7 @@ class Parser extends Obj {
 
         // Only create Output node if data is non-empty after whitespace stripping
         // This prevents empty TemplateData nodes in the AST that would cause
-        // unnecessary 'text' channel poisoning in script mode
+        // unnecessary 'text' chain poisoning in script mode
         if (data.length > 0) {
           buf.push(new nodes.Output(tok.lineno,
             tok.colno,

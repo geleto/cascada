@@ -1,20 +1,20 @@
 /**
- * CompileBuffer - channel buffer management module
+ * CompileBuffer - chain buffer management module
  *
- * Handles all command-buffer operations for Cascada's deferred channel system.
- * Manages buffer stacks, async buffer operations, and channel command compilation.
+ * Handles all command-buffer operations for Cascada's deferred chain system.
+ * Manages buffer stacks, async buffer operations, and chain command compilation.
  */
 
 import * as nodes from '../language/nodes.js';
 
-import {CHANNEL_TYPE_FACTS} from '../channel-types.js';
-import {validateChannelObservationCall} from './validation.js';
-const DEFAULT_TEMPLATE_TEXT_CHANNEL = '__text__';
+import {CHAIN_TYPE_FACTS} from '../chain-types.js';
+import {validateChainObservationCall} from './validation.js';
+const DEFAULT_TEMPLATE_TEXT_CHAIN = '__text__';
 const BUFFER_STATE_KEYS = [
   'currentBuffer',
-  'currentTextChannelVar',
-  'currentTextChannelName',
-  'currentWaitedChannelName',
+  'currentTextChainVar',
+  'currentTextChainName',
+  'currentWaitedChainName',
   'currentWaitedOwnerBuffer'
 ];
 
@@ -22,9 +22,9 @@ class CompileBuffer {
   constructor(compiler) {
     this.compiler = compiler;
     this.currentBuffer = null;
-    this.currentTextChannelVar = null;
-    this.currentTextChannelName = DEFAULT_TEMPLATE_TEXT_CHANNEL;
-    this.currentWaitedChannelName = null;
+    this.currentTextChainVar = null;
+    this.currentTextChainName = DEFAULT_TEMPLATE_TEXT_CHAIN;
+    this.currentWaitedChainName = null;
     this.currentWaitedOwnerBuffer = null;
     // Temp value ids for split buffer writes (asyncAddToBufferBegin/End), supports nesting.
   }
@@ -36,18 +36,18 @@ class CompileBuffer {
    *
    * @param {string} bufferId
    * @param {string|null} parentBufferId
-   * @param {string} textChannelVar
+   * @param {string} textChainVar
    */
-  initManagedBuffer(bufferId, parentBufferId, textChannelVar, linkedChannels = null) {
+  initManagedBuffer(bufferId, parentBufferId, textChainVar, linkedChains = null) {
     if (this.compiler.asyncMode) {
-      const textId = textChannelVar || `${bufferId}_textChannelVar`;
+      const textId = textChainVar || `${bufferId}_textChainVar`;
       const parentArg = parentBufferId || 'null';
-      const linkedChannelsArg = Array.isArray(linkedChannels) && linkedChannels.length > 0
-        ? JSON.stringify(linkedChannels)
+      const linkedChainsArg = Array.isArray(linkedChains) && linkedChains.length > 0
+        ? JSON.stringify(linkedChains)
         : 'null';
-      this.compiler.emit.line(`let ${bufferId} = new runtime.CommandBuffer(context, ${parentArg}, ${linkedChannelsArg}, ${parentArg});`);
+      this.compiler.emit.line(`let ${bufferId} = new runtime.CommandBuffer(context, ${parentArg}, ${linkedChainsArg}, ${parentArg});`);
       if (!this.compiler.scriptMode) {
-        this.compiler.emit.line(`let ${textId} = runtime.declareBufferChannel(${bufferId}, "${this.currentTextChannelName}", "text", context, null);`);
+        this.compiler.emit.line(`let ${textId} = runtime.declareBufferChain(${bufferId}, "${this.currentTextChainName}", "text", context, null);`);
       }
     } else {
       this.compiler.emit.line(`let ${bufferId} = "";`);
@@ -80,24 +80,24 @@ class CompileBuffer {
     }
   }
 
-  // Scope current waited channel binding for the emitted code region.
-  // Pass null to explicitly compile without an own waited channel.
-  withOwnWaitedChannel(waitedChannelName, emitFunc, ownerBufferExpr = null) {
-    const prevWaitedChannelName = this.currentWaitedChannelName;
+  // Scope current waited chain binding for the emitted code region.
+  // Pass null to explicitly compile without an own waited chain.
+  withOwnWaitedChain(waitedChainName, emitFunc, ownerBufferExpr = null) {
+    const prevWaitedChainName = this.currentWaitedChainName;
     const prevWaitedOwnerBuffer = this.currentWaitedOwnerBuffer;
-    this.currentWaitedChannelName = waitedChannelName;
-    this.currentWaitedOwnerBuffer = waitedChannelName ? (ownerBufferExpr || this.currentBuffer) : null;
+    this.currentWaitedChainName = waitedChainName;
+    this.currentWaitedOwnerBuffer = waitedChainName ? (ownerBufferExpr || this.currentBuffer) : null;
     try {
       return emitFunc();
     } finally {
-      this.currentWaitedChannelName = prevWaitedChannelName;
+      this.currentWaitedChainName = prevWaitedChainName;
       this.currentWaitedOwnerBuffer = prevWaitedOwnerBuffer;
     }
   }
 
-  // Compile a region with no own waited channel binding.
-  skipOwnWaitedChannel(emitFunc) {
-    return this.withOwnWaitedChannel(null, emitFunc);
+  // Compile a region with no own waited chain binding.
+  skipOwnWaitedChain(emitFunc) {
+    return this.withOwnWaitedChain(null, emitFunc);
   }
 
   _getBufferAccess() {
@@ -108,7 +108,7 @@ class CompileBuffer {
   _emitTemplateTextCommandExpression(valueExpression, positionNode, normalizeArgs = false) {
     const lineno = positionNode && positionNode.lineno !== undefined ? positionNode.lineno : 0;
     const colno = positionNode && positionNode.colno !== undefined ? positionNode.colno : 0;
-    return `new runtime.TextCommand({ channelName: "${this.currentTextChannelName}", args: [${valueExpression}], normalizeArgs: ${normalizeArgs}, pos: {lineno: ${lineno}, colno: ${colno}} })`;
+    return `new runtime.TextCommand({ chainName: "${this.currentTextChainName}", args: [${valueExpression}], normalizeArgs: ${normalizeArgs}, pos: {lineno: ${lineno}, colno: ${colno}} })`;
   }
 
   _emitPositionLiteral(positionNode) {
@@ -117,16 +117,16 @@ class CompileBuffer {
     return `{lineno: ${lineno}, colno: ${colno}}`;
   }
 
-  emitFinishedTextBoundaryPromise(bufferExpr, textChannelName, positionNode, transformExpr = null, addToCurrentWaited = false) {
+  emitFinishedTextBoundaryPromise(bufferExpr, textChainName, positionNode, transformExpr = null, addToCurrentWaited = false) {
     const textPromiseId = this.compiler._tmpid();
-    const finalExpr = `${bufferExpr}.getChannel("${textChannelName}").finalSnapshot()`;
+    const finalExpr = `${bufferExpr}.getChain("${textChainName}").finalSnapshot()`;
     const chainedExpr = transformExpr
       ? `Promise.resolve(${finalExpr}).then((value) => ${transformExpr.replace(/__VALUE__/g, 'value')})`
       : finalExpr;
 
     this.compiler.emit.line(`${bufferExpr}.finish();`);
     this.compiler.emit.line(`const ${textPromiseId} = ${chainedExpr};`);
-    if (addToCurrentWaited && this.compiler.asyncMode && this.currentWaitedChannelName) {
+    if (addToCurrentWaited && this.compiler.asyncMode && this.currentWaitedChainName) {
       this.emitLimitedLoopCompletion(textPromiseId, positionNode);
     }
     return textPromiseId;
@@ -137,14 +137,14 @@ class CompileBuffer {
     const staticPath = this.compiler.sequential._extractStaticPath(isCallNode ? node.call.name : node.call);
     if (!staticPath || staticPath.length === 0) {
       this.compiler.fail(
-        'Invalid command syntax. Expected format is channel(...) or channel.command(...) or channel.subpath.command(...).',
+        'Invalid command syntax. Expected format is chain(...) or chain.command(...) or chain.subpath.command(...).',
         node.lineno, node.colno, node
       );
     }
 
-    const channelName = staticPath[0];
-    const channelDecl = this.compiler.analysis.findDeclaration(node._analysis, channelName);
-    const channelType = node.channelType || (channelDecl ? channelDecl.type : null);
+    const chainName = staticPath[0];
+    const chainDecl = this.compiler.analysis.findDeclaration(node._analysis, chainName);
+    const chainType = node.chainType || (chainDecl ? chainDecl.type : null);
     const command = staticPath.length >= 2 ? staticPath[staticPath.length - 1] : null;
     const path = staticPath.length > 1 ? staticPath.slice(1) : null;
     const receiverPath = staticPath.length > 2 ? staticPath.slice(1, -1) : null;
@@ -153,25 +153,25 @@ class CompileBuffer {
       (command === 'snapshot' || command === 'isError' || command === 'getError');
 
     if (isObservationCall) {
-      validateChannelObservationCall(this.compiler, { node, command, channelName, channelType });
+      validateChainObservationCall(this.compiler, { node, command, chainName, chainType });
       if (command === 'snapshot') {
-        this.compiler.emit(`new runtime.SnapshotCommand({ channelName: '${channelName}', pos: ${this._emitPositionLiteral(node)} })`);
+        this.compiler.emit(`new runtime.SnapshotCommand({ chainName: '${chainName}', pos: ${this._emitPositionLiteral(node)} })`);
         return;
       }
       if (command === 'isError') {
-        this.compiler.emit(`new runtime.IsErrorCommand({ channelName: '${channelName}', pos: ${this._emitPositionLiteral(node)} })`);
+        this.compiler.emit(`new runtime.IsErrorCommand({ chainName: '${chainName}', pos: ${this._emitPositionLiteral(node)} })`);
         return;
       }
-      this.compiler.emit(`new runtime.GetErrorCommand({ channelName: '${channelName}', pos: ${this._emitPositionLiteral(node)} })`);
+      this.compiler.emit(`new runtime.GetErrorCommand({ chainName: '${chainName}', pos: ${this._emitPositionLiteral(node)} })`);
       return;
     }
 
-    if (channelType === 'sequence') {
+    if (chainType === 'sequence') {
       if (isCallNode) {
         if (!command) {
-          this.compiler.fail('Invalid sequence command syntax: expected sequenceChannel.method(...)', node.lineno, node.colno, node);
+          this.compiler.fail('Invalid sequence command syntax: expected sequenceChain.method(...)', node.lineno, node.colno, node);
         }
-        this.compiler.emit(`new runtime.SequenceCallCommand({ channelName: '${channelName}', methodName: '${command}', `);
+        this.compiler.emit(`new runtime.SequenceCallCommand({ chainName: '${chainName}', methodName: '${command}', `);
         if (receiverPath && receiverPath.length > 0) {
           this.compiler.emit(`path: ${JSON.stringify(receiverPath)}, `);
         }
@@ -182,9 +182,9 @@ class CompileBuffer {
       }
 
       if (!command) {
-        this.compiler.fail('Invalid sequence read syntax: expected sequenceChannel.path', node.lineno, node.colno, node);
+        this.compiler.fail('Invalid sequence read syntax: expected sequenceChain.path', node.lineno, node.colno, node);
       }
-      this.compiler.emit(`new runtime.SequenceGetCommand({ channelName: '${channelName}', `);
+      this.compiler.emit(`new runtime.SequenceGetCommand({ chainName: '${chainName}', `);
       if (path && path.length > 0) {
         this.compiler.emit(`path: ${JSON.stringify(path)}, `);
       }
@@ -192,25 +192,25 @@ class CompileBuffer {
       return;
     }
 
-    const channelFacts = CHANNEL_TYPE_FACTS[channelType] || null;
-    if (!(channelFacts && channelFacts.commandClass)) {
+    const chainFacts = CHAIN_TYPE_FACTS[chainType] || null;
+    if (!(chainFacts && chainFacts.commandClass)) {
       this.compiler.fail(
-        `Compiler error: analysis did not resolve a declared channel target for '${channelName}'.`,
+        `Compiler error: analysis did not resolve a declared chain target for '${chainName}'.`,
         node.lineno,
         node.colno,
         node
       );
     }
-    this.compiler.emit(`new runtime.${channelFacts.commandClass}({ channelName: '${channelName}', `);
+    this.compiler.emit(`new runtime.${chainFacts.commandClass}({ chainName: '${chainName}', `);
     if (command) {
       this.compiler.emit(`operation: '${command}', `);
     }
-    if (channelType === 'text') {
+    if (chainType === 'text') {
       this.compiler.emit('normalizeArgs: true, ');
     }
     let argList = node.call.args;
-    if (channelType === 'data') {
-      // For data channels, we create a new "virtual" AST for the arguments,
+    if (chainType === 'data') {
+      // For data chains, we create a new "virtual" AST for the arguments,
       // where the first argument is a path like "user.posts[0].title" that
       // needs to be converted into a JavaScript array like ['user', 'posts', 0, 'title'].
       const originalArgs = node.call.args.children;
@@ -234,27 +234,27 @@ class CompileBuffer {
     }
 
     this.compiler.emit('args: ');
-    // Channel commands are constructed with unresolved args; resolution/normalization
+    // Chain commands are constructed with unresolved args; resolution/normalization
     // happens once in runtime right before command.apply().
     this.compiler._compileAggregate(argList, null, '[', ']', false, true);
     this.compiler.emit(`, pos: ${this._emitPositionLiteral(node)} })`);
   }
 
-  emitAddCommand(channelName, valueExpr, positionNode = null, emitTextCommand = false) {
+  emitAddCommand(chainName, valueExpr, positionNode = null, emitTextCommand = false) {
     if (emitTextCommand) {
       this.compiler.emit.line(
-        `${this.currentBuffer}.addCommand(new runtime.TextCommand({ channelName: "${channelName}", args: [${valueExpr}], pos: ${this._emitPositionLiteral(positionNode)} }), "${channelName}")`
+        `${this.currentBuffer}.addCommand(new runtime.TextCommand({ chainName: "${chainName}", args: [${valueExpr}], pos: ${this._emitPositionLiteral(positionNode)} }), "${chainName}")`
       );
       return;
     }
-    this.compiler.emit.line(`${this.currentBuffer}.addCommand(${valueExpr}, "${channelName}");`);
+    this.compiler.emit.line(`${this.currentBuffer}.addCommand(${valueExpr}, "${chainName}");`);
   }
 
-  emitAddChannelCommandByType({
+  emitAddChainCommandByType({
     bufferExpr = this.currentBuffer,
-    channelType,
-    channelName,
-    channelNameExpr = JSON.stringify(channelName),
+    chainType,
+    chainName,
+    chainNameExpr = JSON.stringify(chainName),
     operation = null,
     path = null,
     argsExpr,
@@ -263,30 +263,30 @@ class CompileBuffer {
     normalizeArgs = null,
     initializeIfNotSet = false
   }) {
-    const channelFacts = CHANNEL_TYPE_FACTS[channelType] || null;
-    if (!(channelFacts && channelFacts.commandClass)) {
-      this.compiler.fail(`Unsupported channel command type '${channelType}'.`, 0, 0);
+    const chainFacts = CHAIN_TYPE_FACTS[chainType] || null;
+    if (!(chainFacts && chainFacts.commandClass)) {
+      this.compiler.fail(`Unsupported chain command type '${chainType}'.`, 0, 0);
     }
     if (argsExpr === undefined && valueExpr !== null) {
-      if (!(channelFacts && channelFacts.supportsValueInitializer)) {
-        this.compiler.fail(`Channel command type '${channelType}' does not support value initializer shorthand.`, 0, 0);
+      if (!(chainFacts && chainFacts.supportsValueInitializer)) {
+        this.compiler.fail(`Chain command type '${chainType}' does not support value initializer shorthand.`, 0, 0);
       }
-      if (channelType === 'var') {
+      if (chainType === 'var') {
         argsExpr = `[${valueExpr}]`;
-      } else if (channelType === 'text') {
+      } else if (chainType === 'text') {
         operation = operation || 'set';
         argsExpr = `[${valueExpr}]`;
         normalizeArgs = normalizeArgs === null ? true : normalizeArgs;
-      } else if (channelType === 'data') {
+      } else if (chainType === 'data') {
         operation = operation || 'set';
         argsExpr = `[null, ${valueExpr}]`;
       }
     }
     if (argsExpr === undefined) {
-      this.compiler.fail(`Missing args expression for channel command type '${channelType}'.`, 0, 0);
+      this.compiler.fail(`Missing args expression for chain command type '${chainType}'.`, 0, 0);
     }
     const props = [
-      `channelName: ${channelNameExpr}`,
+      `chainName: ${chainNameExpr}`,
       `args: ${argsExpr}`,
       `pos: ${this._emitPositionLiteral(positionNode)}`
     ];
@@ -303,46 +303,46 @@ class CompileBuffer {
       props.push('initializeIfNotSet: true');
     }
     this.compiler.emit.line(
-      `${bufferExpr}.addCommand(new runtime.${channelFacts.commandClass}({ ${props.join(', ')} }), ${channelNameExpr});`
+      `${bufferExpr}.addCommand(new runtime.${chainFacts.commandClass}({ ${props.join(', ')} }), ${chainNameExpr});`
     );
   }
 
-  // Register produced work with the current waited-loop timing channel.
+  // Register produced work with the current waited-loop timing chain.
   // This records completion of the value created at the current source
   // position, not completion of any command that later consumes that value.
   //
-  // Keep that distinction: output command promises are tied to channel
+  // Keep that distinction: output command promises are tied to chain
   // consumption, and coupling loop-slot release to text/data draining would
   // make limited-concurrency loops stall behind later snapshot/finalSnapshot
   // traversal.
   emitLimitedLoopCompletion(valueExpr, positionNode = null) {
     // In __waited__ scope, root work contributes one timing-only
-    // WaitResolveCommand to the owning iteration buffer's channel.
-    const waitedChannelName = this.currentWaitedChannelName;
+    // WaitResolveCommand to the owning iteration buffer's chain.
+    const waitedChainName = this.currentWaitedChainName;
     const waitedOwnerBuffer = this.currentWaitedOwnerBuffer || this.currentBuffer;
-    if (!this.compiler.asyncMode || !waitedChannelName) {
+    if (!this.compiler.asyncMode || !waitedChainName) {
       return;
     }
-    // Register as usage, not mutation: __waited__ tracks completion, not channel state.
+    // Register as usage, not mutation: __waited__ tracks completion, not chain state.
     this.compiler.emit.line(
-      `${waitedOwnerBuffer}.addCommand(new runtime.WaitResolveCommand({ channelName: "${waitedChannelName}", args: [${valueExpr}], pos: ${this._emitPositionLiteral(positionNode)} }), "${waitedChannelName}");`
+      `${waitedOwnerBuffer}.addCommand(new runtime.WaitResolveCommand({ chainName: "${waitedChainName}", args: [${valueExpr}], pos: ${this._emitPositionLiteral(positionNode)} }), "${waitedChainName}");`
     );
   }
 
-  emitAddSequenceGet(channelName, path, positionNode) {
+  emitAddSequenceGet(chainName, path, positionNode) {
     this.compiler.emit(
-      `${this.currentBuffer}.addCommand(new runtime.SequenceGetCommand({ channelName: "${channelName}", path: ${JSON.stringify(path)}, pos: ${this._emitPositionLiteral(positionNode)} }), "${channelName}")`
+      `${this.currentBuffer}.addCommand(new runtime.SequenceGetCommand({ chainName: "${chainName}", path: ${JSON.stringify(path)}, pos: ${this._emitPositionLiteral(positionNode)} }), "${chainName}")`
     );
   }
 
-  emitAddSequenceCall(channelName, methodName, receiverPath, argsExpr, positionNode) {
+  emitAddSequenceCall(chainName, methodName, receiverPath, argsExpr, positionNode) {
     this.compiler.emit(
-      `${this.currentBuffer}.addCommand(new runtime.SequenceCallCommand({ channelName: "${channelName}", methodName: "${methodName}", path: ${JSON.stringify(receiverPath || [])}, args: ${argsExpr}, pos: ${this._emitPositionLiteral(positionNode)} }), "${channelName}")`
+      `${this.currentBuffer}.addCommand(new runtime.SequenceCallCommand({ chainName: "${chainName}", methodName: "${methodName}", path: ${JSON.stringify(receiverPath || [])}, args: ${argsExpr}, pos: ${this._emitPositionLiteral(positionNode)} }), "${chainName}")`
     );
   }
 
-  emitAddSnapshot(channelName, positionNode, asExpression = false) {
-    const snapshotExpr = `${this.currentBuffer}.addCommand(new runtime.SnapshotCommand({ channelName: "${channelName}", pos: ${this._emitPositionLiteral(positionNode)} }), "${channelName}")`;
+  emitAddSnapshot(chainName, positionNode, asExpression = false) {
+    const snapshotExpr = `${this.currentBuffer}.addCommand(new runtime.SnapshotCommand({ chainName: "${chainName}", pos: ${this._emitPositionLiteral(positionNode)} }), "${chainName}")`;
     if (asExpression) {
       return snapshotExpr;
     }
@@ -350,48 +350,48 @@ class CompileBuffer {
   }
 
   // Emit an ordered raw snapshot command (no nested poison inspection).
-  emitAddRawSnapshot(channelName, positionNode) {
+  emitAddRawSnapshot(chainName, positionNode) {
     this.compiler.emit(
-      `${this.currentBuffer}.addCommand(new runtime.RawSnapshotCommand({ channelName: "${channelName}", pos: ${this._emitPositionLiteral(positionNode)} }), "${channelName}")`
+      `${this.currentBuffer}.addCommand(new runtime.RawSnapshotCommand({ chainName: "${chainName}", pos: ${this._emitPositionLiteral(positionNode)} }), "${chainName}")`
     );
   }
 
-  emitAddIsError(channelName, positionNode) {
+  emitAddIsError(chainName, positionNode) {
     this.compiler.emit(
-      `${this.currentBuffer}.addCommand(new runtime.IsErrorCommand({ channelName: "${channelName}", pos: ${this._emitPositionLiteral(positionNode)} }), "${channelName}")`
+      `${this.currentBuffer}.addCommand(new runtime.IsErrorCommand({ chainName: "${chainName}", pos: ${this._emitPositionLiteral(positionNode)} }), "${chainName}")`
     );
   }
 
-  emitAddGetError(channelName, positionNode) {
+  emitAddGetError(chainName, positionNode) {
     this.compiler.emit(
-      `${this.currentBuffer}.addCommand(new runtime.GetErrorCommand({ channelName: "${channelName}", pos: ${this._emitPositionLiteral(positionNode)} }), "${channelName}")`
+      `${this.currentBuffer}.addCommand(new runtime.GetErrorCommand({ chainName: "${chainName}", pos: ${this._emitPositionLiteral(positionNode)} }), "${chainName}")`
     );
   }
 
   // === HANDLER ANALYSIS ===
 
   /**
-   * Recursively collect all channels written to within a node's subtree.
-   * Used to determine which channels need poison markers when branch is skipped.
+   * Recursively collect all chains written to within a node's subtree.
+   * Used to determine which chains need poison markers when branch is skipped.
    *
    * @param {Node} node - AST node to analyze
-   * @returns {Set<string>} Set of channel names (template text channel, data, etc.)
+   * @returns {Set<string>} Set of chain names (template text chain, data, etc.)
    */
   // === OUTPUT COMMAND COMPILATION ===
 
   /**
-   * Compile channel command: channel.method(args)
-   * Handles declared channels (data/text/value/sequence)
+   * Compile chain command: chain.method(args)
+   * Handles declared chains (data/text/value/sequence)
    */
-  compileChannelCommand(node) {
-    // Preserve channel routing in asyncAddToBuffer; validation remains in _compileCommandConstruction.
+  compileChainCommand(node) {
+    // Preserve chain routing in asyncAddToBuffer; validation remains in _compileCommandConstruction.
     const pathNode = node.call instanceof nodes.FunCall ? node.call.name : node.call;
-    const channelName = this.compiler.sequential._extractStaticPathRoot(pathNode);
+    const chainName = this.compiler.sequential._extractStaticPathRoot(pathNode);
 
     this.asyncAddValueToBuffer((resultVar) => {
       this.compiler.emit(`${resultVar} = `);
       this._compileCommandConstruction(node);
-    }, node, channelName);
+    }, node, chainName);
   }
 
   // === BUFFER EMISSION ===
@@ -399,13 +399,13 @@ class CompileBuffer {
   /**
    * Add value to buffer (sync mode)
    */
-  addToBuffer(node, frame, renderFunction, positionNode = node, channelName, emitTextCommand = false) {
+  addToBuffer(node, frame, renderFunction, positionNode = node, chainName, emitTextCommand = false) {
     if (this.compiler.asyncMode) {
       const valueId = this.compiler._tmpid();
       this.compiler.emit(`let ${valueId} = `);
       renderFunction.call(this.compiler, frame);
       this.compiler.emit.line(';');
-      this.emitAddCommand(channelName, valueId, positionNode, emitTextCommand);
+      this.emitAddCommand(chainName, valueId, positionNode, emitTextCommand);
       return;
     }
     this.compiler.emit(`${this.currentBuffer} += `);
@@ -418,7 +418,7 @@ class CompileBuffer {
    * Use when value construction does not require addAsyncArgsCommand producer semantics.
    * The value is added directly to the current buffer (no extra async block).
    */
-  asyncAddValueToBuffer(renderFunction, positionNode, channelName, emitTextCommand = false) {
+  asyncAddValueToBuffer(renderFunction, positionNode, chainName, emitTextCommand = false) {
     const returnId = this.compiler._tmpid();
     this.compiler.emit.line(`let ${returnId};`);
     renderFunction.call(this.compiler, returnId);
@@ -426,7 +426,7 @@ class CompileBuffer {
     const valueExpr = emitTextCommand
       ? this._emitTemplateTextCommandExpression(returnId, positionNode)
       : returnId;
-    this.emitAddCommand(channelName, valueExpr, positionNode, emitTextCommand);
+    this.emitAddCommand(chainName, valueExpr, positionNode, emitTextCommand);
   }
 
   /**
@@ -454,9 +454,9 @@ class CompileBuffer {
 
 }
 
-CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL = DEFAULT_TEMPLATE_TEXT_CHANNEL;
-CompileBuffer.DEFAULT_TEMPLATE_TEXT_OUTPUT = DEFAULT_TEMPLATE_TEXT_CHANNEL;
+CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHAIN = DEFAULT_TEMPLATE_TEXT_CHAIN;
+CompileBuffer.DEFAULT_TEMPLATE_TEXT_OUTPUT = DEFAULT_TEMPLATE_TEXT_CHAIN;
 export {CompileBuffer};
-export {DEFAULT_TEMPLATE_TEXT_CHANNEL};
-export {DEFAULT_TEMPLATE_TEXT_CHANNEL as DEFAULT_TEMPLATE_TEXT_OUTPUT};
+export {DEFAULT_TEMPLATE_TEXT_CHAIN};
+export {DEFAULT_TEMPLATE_TEXT_CHAIN as DEFAULT_TEMPLATE_TEXT_OUTPUT};
 

@@ -6,10 +6,10 @@ import {
   CaptureGuardStateCommand,
   RestoreGuardStateCommand,
   GetErrorCommand,
-} from './channels/observation.js';
+} from './chains/observation.js';
 import {
   RepairWriteCommand,
-} from './channels/sequential-path.js';
+} from './chains/sequential-path.js';
 
 function init(cb = null) {
   const guardState = {
@@ -21,29 +21,29 @@ function init(cb = null) {
   return guardState;
 }
 
-function initChannelSnapshots(channelNames = null, buffer = null, cb = null) {
+function initChainSnapshots(chainNames = null, buffer = null, cb = null) {
   const state = {
     snapshots: Object.create(null),
     sequenceTransactions: [],
-    sequentialPathChannels: [],
+    sequentialPathChains: [],
     sequenceErrors: [],
     setupPromises: [],
     fatalCb: cb
   };
 
-  const targets = channelNames ?? [];
+  const targets = chainNames ?? [];
 
-  for (const channelName of targets) {
-    const channel = buffer.getChannelIfExists(channelName);
-    if (!channel) {
+  for (const chainName of targets) {
+    const chain = buffer.getChainIfExists(chainName);
+    if (!chain) {
       continue;
     }
-    const channelType = channel._channelType;
-    if (channelType === 'sequence') {
-      const tx = { channelName, channel, active: false, token: undefined, beginPromise: null };
-      if (typeof channel.beginTransaction === 'function') {
+    const chainType = chain._chainType;
+    if (chainType === 'sequence') {
+      const tx = { chainName, chain, active: false, token: undefined, beginPromise: null };
+      if (typeof chain.beginTransaction === 'function') {
         try {
-          tx.beginPromise = Promise.resolve(channel.beginTransaction()).then((result) => {
+          tx.beginPromise = Promise.resolve(chain.beginTransaction()).then((result) => {
             if (result && result.active) {
               tx.active = true;
               tx.token = result.token;
@@ -58,16 +58,16 @@ function initChannelSnapshots(channelNames = null, buffer = null, cb = null) {
       state.sequenceTransactions.push(tx);
       continue;
     }
-    if (channelType === 'sequential_path') {
-      state.sequentialPathChannels.push(channelName);
+    if (chainType === 'sequential_path') {
+      state.sequentialPathChains.push(chainName);
       continue;
     }
     const capturePromise = buffer.addCommand(new CaptureGuardStateCommand({
-      channelName,
+      chainName,
       pos: { lineno: 0, colno: 0 }
-    }), channelName)
+    }), chainName)
       .then((capturedState) => {
-        state.snapshots[channelName] = capturedState;
+        state.snapshots[chainName] = capturedState;
       });
     state.setupPromises.push(capturePromise);
   }
@@ -75,49 +75,49 @@ function initChannelSnapshots(channelNames = null, buffer = null, cb = null) {
   return state;
 }
 
-async function restoreChannels(buffer, channelGuardState) {
-  if (!channelGuardState || !buffer) {
+async function restoreChains(buffer, chainGuardState) {
+  if (!chainGuardState || !buffer) {
     return [];
   }
 
   const errors = [];
 
-  const snapshotNames = Object.keys(channelGuardState.snapshots || {});
+  const snapshotNames = Object.keys(chainGuardState.snapshots || {});
   if (snapshotNames.length > 0) {
-    const restorePromises = snapshotNames.map((channelName) =>
+    const restorePromises = snapshotNames.map((chainName) =>
       buffer.addCommand(new RestoreGuardStateCommand({
-        channelName,
-        target: channelGuardState.snapshots[channelName],
+        chainName,
+        target: chainGuardState.snapshots[chainName],
         pos: { lineno: 0, colno: 0 }
-      }), channelName).catch((err) => reportAndThrow(channelGuardState.fatalCb, err))
+      }), chainName).catch((err) => reportAndThrow(chainGuardState.fatalCb, err))
     );
     await Promise.all(restorePromises);
   }
 
-  const sequentialPathChannels = Array.isArray(channelGuardState.sequentialPathChannels)
-    ? channelGuardState.sequentialPathChannels
+  const sequentialPathChains = Array.isArray(chainGuardState.sequentialPathChains)
+    ? chainGuardState.sequentialPathChains
     : [];
-  if (sequentialPathChannels.length > 0) {
-    const repairPromises = sequentialPathChannels.map((channelName) =>
+  if (sequentialPathChains.length > 0) {
+    const repairPromises = sequentialPathChains.map((chainName) =>
       buffer.addCommand(new RepairWriteCommand({
-        channelName,
-        pathKey: channelName,
+        chainName,
+        pathKey: chainName,
         operation: () => true,
         pos: { lineno: 0, colno: 0 }
-      }), channelName).catch((err) => reportAndThrow(channelGuardState.fatalCb, err))
+      }), chainName).catch((err) => reportAndThrow(chainGuardState.fatalCb, err))
     );
     await Promise.all(repairPromises);
   }
 
-  const txErrors = await settleSequenceTransactions(channelGuardState, 'rollback');
+  const txErrors = await settleSequenceTransactions(chainGuardState, 'rollback');
   if (txErrors.length > 0) {
     errors.push(...txErrors);
   }
   return errors;
 }
 
-async function finalizeGuard(guardState, buffer, allowedChannels, channelGuardState) {
-  const bufferErrors = await collectChannelErrors(buffer, allowedChannels);
+async function finalizeGuard(guardState, buffer, allowedChains, chainGuardState) {
+  const bufferErrors = await collectChainErrors(buffer, allowedChains);
   const sequenceErrors = [];
   if (guardState) {
     if (guardState.detectionPromises && guardState.detectionPromises.length > 0) {
@@ -129,16 +129,16 @@ async function finalizeGuard(guardState, buffer, allowedChannels, channelGuardSt
   }
   const guardErrors = bufferErrors.concat(sequenceErrors);
 
-  if (channelGuardState && guardErrors.length === 0) {
-    const commitErrors = await settleSequenceTransactions(channelGuardState, 'commit');
+  if (chainGuardState && guardErrors.length === 0) {
+    const commitErrors = await settleSequenceTransactions(chainGuardState, 'commit');
     if (commitErrors.length > 0) {
       guardErrors.push(...commitErrors);
     }
   }
 
   if (guardErrors.length > 0) {
-    if (channelGuardState) {
-      const rollbackErrors = await restoreChannels(buffer, channelGuardState);
+    if (chainGuardState) {
+      const rollbackErrors = await restoreChains(buffer, chainGuardState);
       if (rollbackErrors.length > 0) {
         guardErrors.push(...rollbackErrors);
       }
@@ -149,40 +149,40 @@ async function finalizeGuard(guardState, buffer, allowedChannels, channelGuardSt
   return guardErrors;
 }
 
-async function collectChannelErrors(buffer, allowedChannels) {
+async function collectChainErrors(buffer, allowedChains) {
 
-  const names = resolveGuardChannelNames(buffer, allowedChannels);
+  const names = resolveGuardChainNames(buffer, allowedChains);
   const allErrors = [];
 
-  for (const channelName of names) {
-    const channelError = await buffer.addCommand(new GetErrorCommand({
-      channelName,
+  for (const chainName of names) {
+    const chainError = await buffer.addCommand(new GetErrorCommand({
+      chainName,
       pos: { lineno: 0, colno: 0 }
-    }), channelName);
-    if (!channelError) {
+    }), chainName);
+    if (!chainError) {
       continue;
     }
-    if (Array.isArray(channelError.errors) && channelError.errors.length > 0) {
-      allErrors.push(...channelError.errors);
+    if (Array.isArray(chainError.errors) && chainError.errors.length > 0) {
+      allErrors.push(...chainError.errors);
       continue;
     }
-    allErrors.push(channelError);
+    allErrors.push(chainError);
   }
 
   return allErrors;
 }
 
-function resolveGuardChannelNames(buffer, allowedChannels) {
-  if (Array.isArray(allowedChannels)) {
-    if (allowedChannels.length === 0) {
+function resolveGuardChainNames(buffer, allowedChains) {
+  if (Array.isArray(allowedChains)) {
+    if (allowedChains.length === 0) {
       return [];
     }
-    return Array.from(new Set(allowedChannels));
+    return Array.from(new Set(allowedChains));
   }
   return Object.keys(buffer.arrays || Object.create(null));
 }
 
-function repairSequenceChannels(buffer, guardState, lockNames) {
+function repairSequenceChains(buffer, guardState, lockNames) {
   if (!lockNames || lockNames.length === 0) {
     return;
   }
@@ -196,24 +196,24 @@ function repairSequenceChannels(buffer, guardState, lockNames) {
 
   for (const lockName of lockNames) {
     const detectPromise = buffer.addCommand(new GetErrorCommand({
-      channelName: lockName,
+      chainName: lockName,
       pos: { lineno: 0, colno: 0 }
     }), lockName)
-      .then((channelError) => {
-        if (!channelError) {
+      .then((chainError) => {
+        if (!chainError) {
           return true;
         }
-        if (Array.isArray(channelError.errors) && channelError.errors.length > 0) {
-          guardState.sequenceErrors.push(...channelError.errors);
+        if (Array.isArray(chainError.errors) && chainError.errors.length > 0) {
+          guardState.sequenceErrors.push(...chainError.errors);
         } else {
-          guardState.sequenceErrors.push(channelError);
+          guardState.sequenceErrors.push(chainError);
         }
         return true;
       })
       .catch((err) => reportAndThrow(guardState.fatalCb, err));
 
     const repairPromise = buffer.addCommand(new RepairWriteCommand({
-      channelName: lockName,
+      chainName: lockName,
       pathKey: lockName,
       // Repair is unconditional: clear poison and publish a healthy lock state.
       operation: () => true,
@@ -224,45 +224,45 @@ function repairSequenceChannels(buffer, guardState, lockNames) {
   }
 }
 
-async function settleSequenceTransactions(channelGuardState, mode) {
+async function settleSequenceTransactions(chainGuardState, mode) {
   const errors = [];
-  if (!channelGuardState || !Array.isArray(channelGuardState.sequenceTransactions)) {
+  if (!chainGuardState || !Array.isArray(chainGuardState.sequenceTransactions)) {
     return errors;
   }
 
-  if (Array.isArray(channelGuardState.setupPromises) && channelGuardState.setupPromises.length > 0) {
-    const settledSetup = await Promise.allSettled(channelGuardState.setupPromises);
+  if (Array.isArray(chainGuardState.setupPromises) && chainGuardState.setupPromises.length > 0) {
+    const settledSetup = await Promise.allSettled(chainGuardState.setupPromises);
     const failedSetup = settledSetup.find((result) => result && result.status === 'rejected');
     if (failedSetup) {
       const setupErr = failedSetup.reason instanceof Error
         ? failedSetup.reason
         : new Error(String(failedSetup.reason));
-      reportAndThrow(channelGuardState.fatalCb, setupErr);
+      reportAndThrow(chainGuardState.fatalCb, setupErr);
     }
   }
 
-  if (Array.isArray(channelGuardState.sequenceErrors) && channelGuardState.sequenceErrors.length > 0) {
-    errors.push(...channelGuardState.sequenceErrors);
-    channelGuardState.sequenceErrors.length = 0;
+  if (Array.isArray(chainGuardState.sequenceErrors) && chainGuardState.sequenceErrors.length > 0) {
+    errors.push(...chainGuardState.sequenceErrors);
+    chainGuardState.sequenceErrors.length = 0;
   }
 
-  for (let i = channelGuardState.sequenceTransactions.length - 1; i >= 0; i--) {
-    const tx = channelGuardState.sequenceTransactions[i];
+  for (let i = chainGuardState.sequenceTransactions.length - 1; i >= 0; i--) {
+    const tx = chainGuardState.sequenceTransactions[i];
     try {
       if (tx.beginPromise) {
         await tx.beginPromise;
       }
-      if (!tx || !tx.channel) {
+      if (!tx || !tx.chain) {
         continue;
       }
       if (!tx.active) {
         continue;
       }
-      const fn = mode === 'commit' ? tx.channel.commitTransaction : tx.channel.rollbackTransaction;
+      const fn = mode === 'commit' ? tx.chain.commitTransaction : tx.chain.rollbackTransaction;
       if (typeof fn !== 'function') {
         continue;
       }
-      await Promise.resolve(fn.call(tx.channel, tx));
+      await Promise.resolve(fn.call(tx.chain, tx));
     } catch (err) {
       errors.push(err);
     }
@@ -270,7 +270,7 @@ async function settleSequenceTransactions(channelGuardState, mode) {
   return errors;
 }
 
-export { init, initChannelSnapshots, finalizeGuard, repairSequenceChannels, restoreChannels };
+export { init, initChainSnapshots, finalizeGuard, repairSequenceChains, restoreChains };
 
 function reportAndThrow(cb, err) {
   const normalized = err instanceof Error ? err : new Error(String(err));

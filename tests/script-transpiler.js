@@ -215,8 +215,8 @@ describe('Script Transpiler', () => {
 
     describe('processLine', () => {
       it('should correctly process a text statement', () => {
-        scriptTranspiler.channelScopes = [scriptTranspiler._createChannelScope()];
-        scriptTranspiler.declareChannel('outText', 'text');
+        scriptTranspiler.chainScopes = [scriptTranspiler._createChainScope()];
+        scriptTranspiler.declareChain('outText', 'text');
         const line = 'outText(value)';
         const state = { inMultiLineComment: false, stringState: null };
 
@@ -722,7 +722,7 @@ return payload`;
       expect(template.split('\n')).to.have.length(script.split('\n').length);
     });
 
-    it('should preserve channel-shaped expression lines in multi-line expressions', () => {
+    it('should preserve chain-shaped expression lines in multi-line expressions', () => {
       const script = `text output
 output("Done")
 var values = [
@@ -894,15 +894,15 @@ endif`;
     });
   });
 
-  // Channel operation tests
-  describe('Channel Operations', () => {
-    it('should convert data set with explicit channel variable', () => {
+  // Chain operation tests
+  describe('Chain Operations', () => {
+    it('should convert data set with explicit chain variable', () => {
       const script = 'data outData\noutData.user.name = "Alice"';
       const template = scriptTranspiler.scriptToTemplate(script);
       expect(template).to.equal('{%- data outData -%}\n{%- command outData.set(["user", "name"], "Alice") -%}');
     });
 
-    it('should convert data push with explicit channel variable', () => {
+    it('should convert data push with explicit chain variable', () => {
       const script = 'data outData\noutData.user.roles.push("admin")';
       const template = scriptTranspiler.scriptToTemplate(script);
       expect(template).to.equal('{%- data outData -%}\n{%- command outData.push(["user", "roles"],"admin") -%}');
@@ -920,13 +920,13 @@ endif`;
       expect(template).to.equal('{%- text outText -%}\n{%- command outText("Hello, World!") -%}');
     });
 
-    it('should convert text channel assignment syntax to overwrite command', () => {
+    it('should convert text chain assignment syntax to overwrite command', () => {
       const script = 'text outText\noutText = "Hello, World!"';
       const template = scriptTranspiler.scriptToTemplate(script);
       expect(template).to.equal('{%- text outText -%}\n{%- command outText.set("Hello, World!") -%}');
     });
 
-    it('should reject var channel callable assignment syntax', () => {
+    it('should reject var chain callable assignment syntax', () => {
       const script = 'var result\nresult(42)';
       expect(() => scriptTranspiler.scriptToTemplate(script)).to.throwException(/does not support callable assignment/);
     });

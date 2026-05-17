@@ -7,9 +7,9 @@ class CompileComposition {
   }
 
   _emitValueImportBinding(name, sourceVar, node) {
-    this.emit.line(`runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
+    this.emit.line(`runtime.declareBufferChain(${this.compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
     this.emit.line(
-      `${this.compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ channelName: '${name}', args: [${sourceVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${name}');`
+      `${this.compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ chainName: '${name}', args: [${sourceVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${name}');`
     );
     if (this.compiler.analysis.isRootScopeOwner(node._analysis)) {
       this.emit.line(`context.addDeferredExport("${name}", "${name}", ${this.compiler.buffer.currentBuffer});`);
@@ -165,7 +165,7 @@ class CompileComposition {
     node.names.children.forEach((nameNode) => {
       const importedName = nameNode instanceof nodes.Pair
         ? nameNode.key.value
-        : this.compiler.analysis.getBaseChannelName(nameNode.value);
+        : this.compiler.analysis.getBaseChainName(nameNode.value);
       const alias = nameNode instanceof nodes.Pair
         ? nameNode.value.value
         : nameNode.value;
@@ -265,7 +265,7 @@ class CompileComposition {
       this.emit.line(`const ${templateVar}_resolved = await runtime.resolveSingle(${templateVar});`);
       this.emit.line(`${templateVar}_resolved.compile();`);
       this.emit.line(`let ${includeTextValue} = ${templateVar}_resolved._renderIncludeText(${includeContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, ${errorContextJson});`);
-      this.emit.line(`${this.compiler.buffer.currentBuffer}.addCommand(new runtime.TextCommand({ channelName: "${this.compiler.buffer.currentTextChannelName}", args: [${includeTextValue}], pos: {lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0}} }), "${this.compiler.buffer.currentTextChannelName}");`);
+      this.emit.line(`${this.compiler.buffer.currentBuffer}.addCommand(new runtime.TextCommand({ chainName: "${this.compiler.buffer.currentTextChainName}", args: [${includeTextValue}], pos: {lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0}} }), "${this.compiler.buffer.currentTextChainName}");`);
       this.compiler.buffer.emitLimitedLoopCompletion(includeTextValue, node);
     });
   }

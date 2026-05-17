@@ -6,10 +6,10 @@ Detailed reference for writing and debugging tests. See `AGENTS.md` for the shor
 
 ## Development Scenarios
 
-### Add a New Data-Channel Method
+### Add a New Data-Chain Method
 
 1.  **Locate the right file**: Built-in methods live in `src/builtins/data-methods.js`. Custom/user methods are registered via `AsyncEnvironment.addDataMethods` in `src/environment/async-environment.js`.
-2.  **Understand runtime application**: `src/runtime/channels/data.js` applies `DataCommand` instances and dispatches custom methods.
+2.  **Understand runtime application**: `src/runtime/chains/data.js` applies `DataCommand` instances and dispatches custom methods.
 3.  **Implement**: Method receives `(target, ...args)` and returns the new value. `target` is the current value at the path (may be `undefined`); `...args` are the script arguments.
 4.  **Register** (built-in: add to `data-methods.js`; custom: use `env.addDataMethods` in test setup):
     ```javascript
@@ -25,7 +25,7 @@ Detailed reference for writing and debugging tests. See `AGENTS.md` for the shor
 2.  **Identify the pass**: Bug likely lives in:
     -   `compiler-async.js` or `compiler-sync.js` — statements
     -   `compiler-base-async.js` or `compiler-base-sync.js` — expressions
-    -   `analysis.js` — channel metadata
+    -   `analysis.js` — chain metadata
     -   `buffer.js` / `emit.js` — command-buffer wiring
     -   `sequential.js` — `!` logic
 3.  **Trace**: Entry point is `Compiler.compile()`. Follow `compileNodeType` methods (e.g., `compileIf`, `compileFunCall`) to trace the AST → JavaScript conversion.

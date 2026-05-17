@@ -31,10 +31,10 @@ Async caller-capable macros use three levels of buffer ownership.
 The macro body owns an isolated macro-local buffer. This buffer holds:
 
 - macro-local text
-- macro-local channels
+- macro-local chains
 - macro-local return state
 - macro-local control-flow child buffers
-- the internal `__caller__` timing channel when caller support is needed
+- the internal `__caller__` timing chain when caller support is needed
 
 The parent consumes the macro's returned value. The macro buffer is not a
 general child branch that directly writes into the parent command tree.
@@ -43,13 +43,13 @@ general child branch that directly writes into the parent command tree.
 
 A macro invocation that can call `caller()` lazily creates one all-callers
 buffer. This buffer is linked to the parent buffer using the caller body's
-parent-visible used channels.
+parent-visible used chains.
 
 It is deliberately narrow:
 
 - it exists only for caller composition work
-- it is linked only for channels the caller body may observe/use
-- it does not allow the macro body to mutate parent-owned channels directly
+- it is linked only for chains the caller body may observe/use
+- it does not allow the macro body to mutate parent-owned chains directly
 
 ### Per-Invocation Caller Buffers
 
@@ -62,18 +62,18 @@ have independent structural completion.
 
 ## Scheduling Signal
 
-Caller scheduling uses an internal macro-local channel named `__caller__`.
+Caller scheduling uses an internal macro-local chain named `__caller__`.
 
 For each caller invocation, compiler-emitted code:
 
 1. creates a child invocation buffer under the all-callers buffer
 2. obtains `invocationBuffer.getFinishedPromise()`
 3. adds a `WaitResolveCommand` for that promise to the macro buffer's
-   `__caller__` channel
+   `__caller__` chain
 4. invokes the caller body with the invocation buffer
 5. marks the invocation buffer finished when body command emission is complete
 
-Two `WaitResolveCommand` entries are added to the `__caller__` channel per
+Two `WaitResolveCommand` entries are added to the `__caller__` chain per
 invocation: one for `invocationBuffer.getFinishedPromise()` (structural buffer
 completion — when command emission into the child buffer is done) and one for
 the invocation result promise wrapped with `.finally(() => invocationBuffer.finish())` (result settling — when the invoked caller body's
@@ -81,14 +81,14 @@ returned value resolves or rejects). Both signals must be recorded so the macro
 knows that structure is fully committed and the value has settled before it can
 safely close the all-callers buffer.
 
-The `__caller__` channel records structural scheduling completion. It is not the
+The `__caller__` chain records structural scheduling completion. It is not the
 final caller text and is not a general rendering-completion mechanism.
 
 ## Macro Finalization
 
 At macro finalization:
 
-1. the macro snapshots/observes the `__caller__` channel when caller support is
+1. the macro snapshots/observes the `__caller__` chain when caller support is
    present
 2. that ordered observation ensures all earlier caller invocation buffers have
    finished command emission
@@ -106,16 +106,16 @@ Macro analysis:
 
 - detects whether a macro body can call `caller()`
 - emits caller support only for caller-capable macros
-- owns the internal `__caller__` scheduling channel
+- owns the internal `__caller__` scheduling chain
 
 Caller-body analysis:
 
-- propagates parent-visible `usedChannels`
+- propagates parent-visible `usedChains`
 - preserves the read-only parent boundary
-- prevents the caller body from freely mutating parent-owned channels
+- prevents the caller body from freely mutating parent-owned chains
 
-The all-callers buffer uses caller-body `usedChannels` for parent linking. The
-macro-local `__caller__` channel is not part of caller-body ownership; it belongs
+The all-callers buffer uses caller-body `usedChains` for parent linking. The
+macro-local `__caller__` chain is not part of caller-body ownership; it belongs
 to the macro invocation that coordinates all caller calls.
 
 ## Runtime/Compiler Touchpoints
@@ -123,11 +123,11 @@ to the macro invocation that coordinates all caller calls.
 Important current implementation points:
 
 - `src/compiler/macro.js` owns caller scheduling emission
-- `CALLER_SCHED_CHANNEL_NAME` is `__caller__`
+- `CALLER_SCHED_CHAIN_NAME` is `__caller__`
 - `CommandBuffer.getFinishedPromise()` is the structural completion primitive
 - caller invocation buffers are created with `new runtime.CommandBuffer(...)`
 - `WaitResolveCommand` is used only as timing bookkeeping
-- caller-capable macros expose `__callerUsedChannels` metadata for parent
+- caller-capable macros expose `__callerUsedChains` metadata for parent
   linking
 - the compiled macro function receives a `macroParentBuffer` parameter; this is
   how the all-callers buffer obtains its parent buffer reference at call time,

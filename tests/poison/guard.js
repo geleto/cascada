@@ -36,7 +36,7 @@ const {AsyncEnvironment} = cascada;
         {% endguard %}
         after
       `;
-      // The guard fails, so the inner text channel write 'inside' should be reverted.
+      // The guard fails, so the inner text chain write 'inside' should be reverted.
       // 'before' and 'after' should remain.
       const res = await env.renderTemplateString(tpl, {
         error: (msg) => { throw new Error(msg); }
@@ -101,7 +101,7 @@ const {AsyncEnvironment} = cascada;
       expect(res.replace(/\s+/g, ' ').trim()).to.equal('BEFORE keep AFTER');
     });
 
-    it('should revert only specified channels in script mode', async () => {
+    it('should revert only specified chains in script mode', async () => {
       const script = `
         text output
         data result
@@ -127,7 +127,7 @@ const {AsyncEnvironment} = cascada;
       expect(result.data).to.eql({ status: 'ok' });
     });
 
-    it('should allow guard type selectors to revert all channels', async () => {
+    it('should allow guard type selectors to revert all chains', async () => {
       const script = `
         text output
         data result
@@ -153,7 +153,7 @@ const {AsyncEnvironment} = cascada;
       expect(result.data).to.eql({ status: 'ok' });
     });
 
-    it('should allow bare datatype selector to guard matching channel in script mode', async () => {
+    it('should allow bare datatype selector to guard matching chain in script mode', async () => {
       const script = `
         data result
         text output
@@ -218,7 +218,7 @@ const {AsyncEnvironment} = cascada;
       expect(result.final.trim()).to.equal('BEFOREOUTER');
     });
 
-    it('should propagate channel poison when only variables are guarded', async () => {
+    it('should propagate chain poison when only variables are guarded', async () => {
       const script = `
         text output
         var count = 1
@@ -237,7 +237,7 @@ const {AsyncEnvironment} = cascada;
 
       try {
         await env.renderScriptString(script, context);
-        expect().fail('Expected guard to propagate channel poison');
+        expect().fail('Expected guard to propagate chain poison');
       } catch (err) {
         expect(err.message).to.contain('boom');
       }
@@ -284,7 +284,7 @@ const {AsyncEnvironment} = cascada;
       }
     });
 
-    it('should error on duplicate channel selectors', async () => {
+    it('should error on duplicate chain selectors', async () => {
       const script = `
         text output
         guard output, output
@@ -699,7 +699,7 @@ const {AsyncEnvironment} = cascada;
 
     // --- Top Priority Missing Tests ---
 
-    it('should leak unrelated poison when guarding specific channel', async () => {
+    it('should leak unrelated poison when guarding specific chain', async () => {
       // guard result should ignore output poison.
       // E.g. guard result cannot stop output poison properly, so it bubbles up.
       // But side-effects (state="changed") should PERSIST because guard block technically "finished"
@@ -715,7 +715,7 @@ const {AsyncEnvironment} = cascada;
         var state = "initial"
         guard state, result
           state = "changed"
-          // This puts a PoisonedValue into the buffer (default channel behavior)
+          // This puts a PoisonedValue into the buffer (default chain behavior)
           // Since guard result ignores it, this poison remains in buffer.
           output(poison())
         endguard

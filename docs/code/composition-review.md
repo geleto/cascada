@@ -76,5 +76,5 @@ same extern-removal/payload-composition cleanup pass.
   callee-side declarations, which conforms to the current payload architecture.
 - Sync compiler behavior is intentionally unchanged for Nunjucks compatibility.
 - Payload values remain observable context values. They are not materialized as
-  command-buffer channels because composition inputs are not mutable Cascada
+  command-buffer chains because composition inputs are not mutable Cascada
   variables.

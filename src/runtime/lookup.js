@@ -10,7 +10,7 @@ import {
 } from './errors.js';
 
 import {resolveDuo} from './resolve.js';
-import {SnapshotCommand, IsErrorCommand, GetErrorCommand} from './channels/observation.js';
+import {SnapshotCommand, IsErrorCommand, GetErrorCommand} from './chains/observation.js';
 import {getSharedSourceName} from '../inheritance/shared-names.js';
 /**
  * Sync member lookup for templates.
@@ -209,21 +209,21 @@ function _getObservationPosition(errorContext) {
     : { lineno: 0, colno: 0 };
 }
 
-function _addObservationCommand(targetBuffer, channelName, pos, mode) {
+function _addObservationCommand(targetBuffer, chainName, pos, mode) {
   if (mode === 'snapshot') {
-    return targetBuffer.addCommand(new SnapshotCommand({ channelName, pos }), channelName);
+    return targetBuffer.addCommand(new SnapshotCommand({ chainName, pos }), chainName);
   }
   if (mode === 'isError') {
-    return targetBuffer.addCommand(new IsErrorCommand({ channelName, pos }), channelName);
+    return targetBuffer.addCommand(new IsErrorCommand({ chainName, pos }), chainName);
   }
   if (mode === 'getError') {
-    return targetBuffer.addCommand(new GetErrorCommand({ channelName, pos }), channelName);
+    return targetBuffer.addCommand(new GetErrorCommand({ chainName, pos }), chainName);
   }
 
-  throw new Error(`Unsupported shared-channel observation mode '${mode}'`);
+  throw new Error(`Unsupported shared-chain observation mode '${mode}'`);
 }
 
-function observeInheritanceSharedChannel(name, currentBuffer, errorContext = null, inheritanceStateValue = null, mode = 'snapshot', implicitVarRead = false) {
+function observeInheritanceSharedChain(name, currentBuffer, errorContext = null, inheritanceStateValue = null, mode = 'snapshot', implicitVarRead = false) {
   if (!currentBuffer || !inheritanceStateValue) {
     return undefined;
   }
@@ -235,14 +235,14 @@ function observeInheritanceSharedChannel(name, currentBuffer, errorContext = nul
     if (!schemaEntry) {
       const sourceName = getSharedSourceName(name);
       throw new RuntimeFatalError(
-        `unknown inherited shared channel '${sourceName}'`,
+        `unknown inherited shared chain '${sourceName}'`,
         errorContext
       );
     }
     if (implicitVarRead && schemaEntry.type && schemaEntry.type !== 'var') {
       const sourceName = getSharedSourceName(name);
       throw new RuntimeFatalError(
-        `Shared channel 'this.${sourceName}' cannot be used as a bare symbol. Use 'this.${sourceName}.snapshot()' instead.`,
+        `Shared chain 'this.${sourceName}' cannot be used as a bare symbol. Use 'this.${sourceName}.snapshot()' instead.`,
         errorContext
       );
     }
@@ -251,30 +251,30 @@ function observeInheritanceSharedChannel(name, currentBuffer, errorContext = nul
 
   const sourceName = getSharedSourceName(name);
   throw new RuntimeFatalError(
-    `unknown inherited shared channel '${sourceName}'`,
+    `unknown inherited shared chain '${sourceName}'`,
     errorContext
   );
 }
 
 /**
- * Channel-only lookup for known declared var channels.
- * Returns undefined when no channel binding is available.
+ * Chain-only lookup for known declared var chains.
+ * Returns undefined when no chain binding is available.
  *
  * Ordinary lookup never skips to the producer/owner buffer. It issues an
  * ordered snapshot on the current buffer only. CommandBuffer.add owns the
  * local lane assertion so lookup cannot silently create invisible lanes.
  */
-function channelLookup(name, currentBuffer) {
-  const channel = currentBuffer.getChannelIfExists(name);
-  if (!channel) {
+function chainLookup(name, currentBuffer) {
+  const chain = currentBuffer.getChainIfExists(name);
+  if (!chain) {
     return undefined;
   }
   return currentBuffer.addCommand(new SnapshotCommand({
-    channelName: name,
+    chainName: name,
     pos: { lineno: 0, colno: 0 }
   }), name);
 }
 
 const memberLookup = memberLookupImpl;
 
-export { memberLookup, memberLookupScriptRaw, memberLookupAsync, memberLookupScript, observeInheritanceSharedChannel, channelLookup };
+export { memberLookup, memberLookupScriptRaw, memberLookupAsync, memberLookupScript, observeInheritanceSharedChain, chainLookup };

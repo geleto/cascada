@@ -2,30 +2,30 @@
 import expect from 'expect.js';
 import {AsyncEnvironment} from '../../src/environment/environment.js';
 import {createPoison, isPoison, isPoisonError, PoisonError, RuntimeFatalError} from '../../src/runtime/errors.js';
-import {TextCommand} from '../../src/runtime/channels/text.js';
-import {VarCommand} from '../../src/runtime/channels/var.js';
-import {DataCommand} from '../../src/runtime/channels/data.js';
-import {SequenceCallCommand} from '../../src/runtime/channels/sequence.js';
+import {TextCommand} from '../../src/runtime/chains/text.js';
+import {VarCommand} from '../../src/runtime/chains/var.js';
+import {DataCommand} from '../../src/runtime/chains/data.js';
+import {SequenceCallCommand} from '../../src/runtime/chains/sequence.js';
 
 import {
-  Channel,
-  TextChannel,
-  VarChannel,
-  DataChannel,
-  SequenceChannel,
+  Chain,
+  TextChain,
+  VarChain,
+  DataChain,
+  SequenceChain,
   inspectTargetForErrors,
-  createChannel,
-} from '../../src/runtime/channels/index.js';
+  createChain,
+} from '../../src/runtime/chains/index.js';
 
 import {CommandBuffer} from '../../src/runtime/command-buffer.js';
 import {createArray} from '../../src/runtime/resolve.js';
-describe('channel errors', function () {
-  describe('channel commands step2 poison encoding', function () {
+describe('chain errors', function () {
+  describe('chain commands step2 poison encoding', function () {
     it('propagates RuntimeFatalError instead of degrading it into poison during argument resolution', async () => {
-      const output = new TextChannel(null, 'text', { path: 'fatal-output.script' }, 'text');
+      const output = new TextChain(null, 'text', { path: 'fatal-output.script' }, 'text');
       const fatal = new RuntimeFatalError('fatal command failure', 1, 1, null, 'fatal-output.script');
       const cmd = new TextCommand({
-        channelName: 'text',
+        chainName: 'text',
         args: [Promise.reject(fatal)],
         pos: { lineno: 1, colno: 1 }
       });
@@ -40,9 +40,9 @@ describe('channel errors', function () {
     });
 
     it('TextCommand encodes poison into target instead of throwing', () => {
-      const output = new TextChannel(null, 'text', null, 'text');
+      const output = new TextChain(null, 'text', null, 'text');
       const poison = createPoison([new Error('text poison')]);
-      const cmd = new TextCommand({ channelName: 'text', args: ['ok', poison], pos: { lineno: 1, colno: 1 } });
+      const cmd = new TextCommand({ chainName: 'text', args: ['ok', poison], pos: { lineno: 1, colno: 1 } });
 
       cmd.apply(output);
 
@@ -52,8 +52,8 @@ describe('channel errors', function () {
     });
 
     it('VarCommand poisons target on invalid arity', () => {
-      const output = new VarChannel(null, 'value', null, 'value');
-      const cmd = new VarCommand({ channelName: 'value', args: [1, 2], pos: { lineno: 1, colno: 1 } });
+      const output = new VarChain(null, 'value', null, 'value');
+      const cmd = new VarCommand({ chainName: 'value', args: [1, 2], pos: { lineno: 1, colno: 1 } });
 
       cmd.apply(output);
 
@@ -62,16 +62,16 @@ describe('channel errors', function () {
     });
 
     it('DataCommand writes poison to addressed path and allows later repair overwrite', async () => {
-      const output = new DataChannel(null, 'data', null, 'data');
+      const output = new DataChain(null, 'data', null, 'data');
       const poison = createPoison([new Error('data poison')]);
       const bad = new DataCommand({
-        channelName: 'data',
+        chainName: 'data',
         operation: 'set',
         args: [['x'], poison],
         pos: { lineno: 1, colno: 1 }
       });
       const fix = new DataCommand({
-        channelName: 'data',
+        chainName: 'data',
         operation: 'set',
         args: [['x'], 'ok'],
         pos: { lineno: 2, colno: 1 }
@@ -88,9 +88,9 @@ describe('channel errors', function () {
     });
 
     it('DataCommand encodes missing-method failure into addressed path', () => {
-      const output = new DataChannel(null, 'data', null, 'data');
+      const output = new DataChain(null, 'data', null, 'data');
       const cmd = new DataCommand({
-        channelName: 'data',
+        chainName: 'data',
         operation: 'doesNotExist',
         args: [['x'], 1],
         pos: { lineno: 1, colno: 1 }
@@ -107,10 +107,10 @@ describe('channel errors', function () {
           throw new Error('should not run');
         }
       };
-      const output = new SequenceChannel(null, 'seq', null, sequence);
+      const output = new SequenceChain(null, 'seq', null, sequence);
       const poison = createPoison([new Error('arg poison')]);
       const cmd = new SequenceCallCommand({
-        channelName: 'seq',
+        chainName: 'seq',
         methodName: 'exec',
         args: [poison]
       });
@@ -127,8 +127,8 @@ describe('channel errors', function () {
   });
 
   describe('output target inspection internals', function () {
-    it('surfaces RuntimeFatalError through channel inspection without wrapping it as poison', async () => {
-      const output = new VarChannel(null, 'value', { path: 'fatal-inspection.script' }, 'value');
+    it('surfaces RuntimeFatalError through chain inspection without wrapping it as poison', async () => {
+      const output = new VarChain(null, 'value', { path: 'fatal-inspection.script' }, 'value');
       const fatal = new RuntimeFatalError('fatal inspection failure', 2, 3, null, 'fatal-inspection.script');
 
       output._recordError(fatal, { pos: { lineno: 2, colno: 3 } });
@@ -185,7 +185,7 @@ describe('channel errors', function () {
     });
 
     it('caches inspection by state version and invalidates on writes', async () => {
-      const output = new Channel(null, null, 'x', null, 'value', 1, null);
+      const output = new Chain(null, null, 'x', null, 'value', 1, null);
       let inspectCalls = 0;
       output._computeTargetErrorState = async () => {
         inspectCalls += 1;
@@ -205,7 +205,7 @@ describe('channel errors', function () {
   describe('output observation commands step3', function () {
     it('does not expose observation methods on output facades', async () => {
       const buffer = new CommandBuffer(null);
-      const out = createChannel(buffer, 'out', null, 'data');
+      const out = createChain(buffer, 'out', null, 'data');
 
       expect(out.snapshot).to.be(undefined);
       expect(out.isError).to.be(undefined);

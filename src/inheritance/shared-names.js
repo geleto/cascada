@@ -1,8 +1,8 @@
 const SHARED_NAME_PREFIX = '$';
-const TEMPLATE_TEXT_CHANNEL_NAME = '__text__';
+const TEMPLATE_TEXT_CHAIN_NAME = '__text__';
 
 function renameSharedName(name) {
-  if (!name || name === TEMPLATE_TEXT_CHANNEL_NAME) {
+  if (!name || name === TEMPLATE_TEXT_CHAIN_NAME) {
     return name;
   }
   return name.charAt(0) === SHARED_NAME_PREFIX ? name : `${SHARED_NAME_PREFIX}${name}`;
@@ -15,7 +15,7 @@ function getSharedSourceName(name) {
 function isSharedName(name, scriptMode = true) {
   return !!name && (
     name.charAt(0) === SHARED_NAME_PREFIX ||
-    (!scriptMode && name === TEMPLATE_TEXT_CHANNEL_NAME)
+    (!scriptMode && name === TEMPLATE_TEXT_CHAIN_NAME)
   );
 }
 

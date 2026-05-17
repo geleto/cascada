@@ -11,8 +11,8 @@ class AsyncEnvironment extends BaseEnvironment {
 
     // Initialize script configuration properties
     this.customDataMethods = {};
-    this.commandChannelClasses = {};
-    this.commandChannels = {};
+    this.commandChainClasses = {};
+    this.commandChains = {};
 
   }
 
@@ -27,20 +27,20 @@ class AsyncEnvironment extends BaseEnvironment {
   }
 
   /**
-   * Stores a command channel class registration for compatibility.
-   * NOTE: Stored values are currently inert for channel-command execution.
+   * Stores a command chain class registration for compatibility.
+   * NOTE: Stored values are currently inert for chain-command execution.
    */
-  addCommandChannelClass(name, channelClass) {
-    this.commandChannelClasses[name] = channelClass;
+  addCommandChainClass(name, chainClass) {
+    this.commandChainClasses[name] = chainClass;
     return this;
   }
 
   /**
-   * Stores a command channel instance registration for compatibility.
-   * NOTE: Stored values are currently inert for channel-command execution.
+   * Stores a command chain instance registration for compatibility.
+   * NOTE: Stored values are currently inert for chain-command execution.
    */
-  addCommandChannel(name, channelInstance) {
-    this.commandChannels[name] = channelInstance;
+  addCommandChain(name, chainInstance) {
+    this.commandChains[name] = chainInstance;
     return this;
   }
 

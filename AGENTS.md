@@ -18,11 +18,11 @@ Assistance guide for developing the Cascada engine — writing, refactoring, and
 
 ## Project Overview
 
-Cascada is a parallel-first scripting and templating engine. Core model: **Implicitly Parallel, Explicitly Sequential** — code reads like synchronous logic, independent operations run concurrently, and `!` markers or named channels enforce ordering where needed.
+Cascada is a parallel-first scripting and templating engine. Core model: **Implicitly Parallel, Explicitly Sequential** — code reads like synchronous logic, independent operations run concurrently, and `!` markers or named chains enforce ordering where needed.
 
-Scripts use named channels for output. Templates are Nunjucks-compatible. Script variables use `var x = value` (equivalent to `{% set x = value %}` in templates).
+Scripts use named chains for output. Templates are Nunjucks-compatible. Script variables use `var x = value` (equivalent to `{% set x = value %}` in templates).
 
-| Channel | Declaration | Return | Output |
+| Chain | Declaration | Return | Output |
 |---|---|---|---|
 | `data` | `data result` | `return result.snapshot()` | plain object |
 | `text` | `text body` | `return body.snapshot()` | string |
@@ -46,13 +46,13 @@ Language syntax: `docs/cascada/script.md` (authoritative). `docs/cascada/cascada
 
 ## Glossary
 
-**Channel** — Named, typed state lane in a `CommandBuffer`. User-facing: `data` (structured accumulation), `text` (ordered text), `var` (single-value variable, fast `snapshot()`). Commands enqueue in source order and are applied by the buffer iterator.
+**Chain** — Named, typed state lane in a `CommandBuffer`. User-facing: `data` (structured accumulation), `text` (ordered text), `var` (single-value variable, fast `snapshot()`). Commands enqueue in source order and are applied by the buffer iterator.
 
 **Command Buffer (`CommandBuffer`)** — Runtime tree node holding source-ordered commands and child buffers. Compiled async code enqueues into the *current* buffer; the iterator walks depth-first in source order, waiting on unfilled child slots.
 
 **Poison / `PoisonedValue`** — Thenable error container (`.errors[]`). Operations receiving poison are skipped and propagate it. Awaiting throws `PoisonError`. Detect with `isPoison(value)` before `await`; `isPoisonError(err)` in `catch`.
 
-**`snapshot()`** — Materializes channel state. `data`/`text`: assembles source-ordered commands into object/string. `var`: fast direct read. Use `return result.snapshot()` to capture named channel output.
+**`snapshot()`** — Materializes chain state. `data`/`text`: assembles source-ordered commands into object/string. `var`: fast direct read. Use `return result.snapshot()` to capture named chain output.
 
 **Async Boundary** — Compiler-inserted child buffer for code whose command shape is unknown until a value resolves. Parent preserves the source-order slot; child fills later.
 
@@ -73,20 +73,20 @@ Full file map: [`docs/code/file-map.md`](docs/code/file-map.md)
 **Runtime**
 - `src/runtime/errors.js` — `PoisonError`, `isPoison`, `isPoisonError`, `handleError`
 - `src/runtime/resolve.js` — `resolveAll`, `resolveSingle`, sync-first resolution helpers
-- `src/runtime/command-buffer.js` — Buffer creation, channel linking, command routing
-- `src/runtime/channels/data.js` — `DataCommand`, custom data-method dispatch
+- `src/runtime/command-buffer.js` — Buffer creation, chain linking, command routing
+- `src/runtime/chains/data.js` — `DataCommand`, custom data-method dispatch
 
 **Compiler**
 - `src/compiler/compiler.js` — Main entry; chooses sync/async/script mode
 - `src/compiler/compiler-async.js` — Async statement compilation
 - `src/compiler/compiler-base-async.js` — Async expression compilation
-- `src/compiler/analysis.js` — Channel analysis: `usedChannels`, `mutatedChannels`, `sequenceLocks`
+- `src/compiler/analysis.js` — Chain analysis: `usedChains`, `mutatedChains`, `sequenceLocks`
 - `src/compiler/emit.js`, `boundaries.js`, `buffer.js` — Codegen primitives and boundary wiring
 - `src/compiler/sequential.js` — Sequential (`!`) path analysis
 
 **Script**
 - `src/language/script-transpiler.js` — Script-to-template transpiler
-- `src/builtins/data-methods.js` — Built-in data-channel methods: `push`, `merge`, etc.
+- `src/builtins/data-methods.js` — Built-in data-chain methods: `push`, `merge`, etc.
 
 **Tests**
 - `tests/pasync/` — Async/parallelism tests by feature (`loops.js`, `conditional.js`, `macros.js`, `sequential-*.js`, …). Scan before writing new tests.
@@ -121,10 +121,10 @@ Development and tests require Node `>=22`.
 
 *   ✅ **DO:** Use `!` on **static context paths** (e.g., `db.users!.create()`) to enforce strict execution order for side effects.
 *   ✅ **DO:** Use explicit returns (`return result.snapshot()`, `return body.snapshot()`, or direct values) in scripts/functions for clean, predictable return values.
-*   ✅ **DO:** Use named channels (`data result`, `text body`, etc.) with explicit `return result.snapshot()` / `return body.snapshot()` to build complex intermediate outputs with guaranteed source-order assembly.
+*   ✅ **DO:** Use named chains (`data result`, `text body`, etc.) with explicit `return result.snapshot()` / `return body.snapshot()` to build complex intermediate outputs with guaranteed source-order assembly.
 
 *   ❌ **DON'T:** Use `!` on template variables (`{% set x = ... %}{{ x!.method() }}`) or dynamic lookups (`items[i]!.method()`). Compiler only supports static paths from initial context.
-*   ❌ **DON'T:** Manually collect results from parallel loops into temporary arrays if final order matters. Data/text channels handle this, guaranteeing ordered assembly despite concurrent execution.
+*   ❌ **DON'T:** Manually collect results from parallel loops into temporary arrays if final order matters. Data/text chains handle this, guaranteeing ordered assembly despite concurrent execution.
 
 #### **Testing**
 
@@ -144,8 +144,8 @@ Development and tests require Node `>=22`.
 *   ✅ **DO:** Use explicit `if` statements for conditional processing or side effects, such as iterating, pushing, emitting, or mutating optional values. Avoid `(items ?? []).forEach(...)` when `if (items) { ... }` is clearer.
 *   ❌ **DON'T:** Swap `||` and `??` casually: `||` treats `false`, `0`, and `""` as missing; `??` only treats `null`/`undefined` as missing.
 *   ❌ **DON'T:** Hide invariant violations with optional chaining, `||` defaults, `!!`, or repeated `typeof`/array/object/string/number guards. Keep guards that support sync mode, public helpers, synthetic nodes, or pre-child-walk metadata seeding.
-*   ✅ **DO:** Trust the runtime to handle synchronization. Provide correct channel analysis metadata (`declaredChannels`, `usedChannels`, `mutatedChannels`, `sequenceLocks`) and linked-channel information so buffers can observe the right values in source order.
-*   ❌ **DON'T:** Write raw `(async () => { ... })()` blocks. Use the established compiler boundary/buffer helpers in `emit.js`, `boundaries.js`, `buffer.js`, and related compiler modules so channel linking, current-buffer state, and error context stay consistent.
+*   ✅ **DO:** Trust the runtime to handle synchronization. Provide correct chain analysis metadata (`declaredChains`, `usedChains`, `mutatedChains`, `sequenceLocks`) and linked-chain information so buffers can observe the right values in source order.
+*   ❌ **DON'T:** Write raw `(async () => { ... })()` blocks. Use the established compiler boundary/buffer helpers in `emit.js`, `boundaries.js`, `buffer.js`, and related compiler modules so chain linking, current-buffer state, and error context stay consistent.
 *   ❌ **DON'T:** Modify legacy synchronous error handling (top-level `lineno`/`colno` variables). All new error handling targets async model (`errorContext` objects and per-block `try/catch`).
 
 #### **Runtime & Performance**
@@ -163,7 +163,7 @@ Development and tests require Node `>=22`.
     *   Callback-based fire-and-forget runtime boundaries (for example helpers that own async child-buffer cleanup) should still report real errors via `cb(...)` with context, because there may be no awaiting caller on that path.
 *   ✅ **DO:** Treat the current command buffer as the only place where runtime commands are enqueued for an execution point.
     *   Observable commands (`addSnapshot`, waits, error reads, etc.) and mutating commands must both be added to the current buffer.
-    *   If a value/scope is visible, the current buffer must already have the needed linked channel path. Fix the linking or payload transport; do not jump to a parent/root producer buffer.
+    *   If a value/scope is visible, the current buffer must already have the needed linked chain path. Fix the linking or payload transport; do not jump to a parent/root producer buffer.
 *   ✅ **DO:** Keep ordinary lookup, explicit shared observation, and explicit composition payload capture as separate mechanisms.
     *   Ordinary bare-name lookup must use the current buffer hierarchy.
     *   Explicit inheritance/shared observation may use inheritance metadata, but should still enqueue on the current buffer.
@@ -180,7 +180,7 @@ Development and tests require Node `>=22`.
 *   ❌ **DON'T:** "Fix" missing visibility by reading or waiting on the owner/producer buffer directly.
     *   No ordinary lookup fallback to parent/root buffers.
     *   No "current position" wait on parent/root buffers.
-    *   If the current buffer cannot observe a value in source order, the real bug is missing linked channels, wrong `currentBuffer`, or missing explicit payload wiring.
+    *   If the current buffer cannot observe a value in source order, the real bug is missing linked chains, wrong `currentBuffer`, or missing explicit payload wiring.
 
 ---
 
@@ -188,7 +188,7 @@ Development and tests require Node `>=22`.
 
 Full reference: [`docs/code/implementation-architecture.md`](docs/code/implementation-architecture.md)
 
-Read it when modifying compiler internals (`src/compiler/`), adding channel types, changing async boundary mechanics, or debugging unexpected runtime behavior.
+Read it when modifying compiler internals (`src/compiler/`), adding chain types, changing async boundary mechanics, or debugging unexpected runtime behavior.
 
 ---
 
@@ -208,7 +208,7 @@ Test locations: `tests/pasync/` (async/parallel), `tests/poison/` (error system)
 
 ### Common Tasks
 
-**Add data-channel method**: implement in `src/builtins/data-methods.js` (built-in) or via `env.addDataMethods({ method: (target, ...args) => newValue })` (custom). Method receives current value at path as `target` (may be `undefined`). Test in `tests/pasync/output-data-methods.js`.
+**Add data-chain method**: implement in `src/builtins/data-methods.js` (built-in) or via `env.addDataMethods({ method: (target, ...args) => newValue })` (custom). Method receives current value at path as `target` (may be `undefined`). Test in `tests/pasync/output-data-methods.js`.
 
 **Fix compiler bug**: isolate with `it.only()` + `env.renderScriptString`. Inspect generated JS with `script._compileSource()`. Trace `compileNodeType` methods from `Compiler.compile()`. Full walkthrough in [`docs/code/testing-guide.md`](docs/code/testing-guide.md).
 

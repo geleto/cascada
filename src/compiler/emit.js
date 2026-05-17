@@ -1,4 +1,4 @@
-import {DEFAULT_TEMPLATE_TEXT_CHANNEL} from './buffer.js';
+import {DEFAULT_TEMPLATE_TEXT_CHAIN} from './buffer.js';
 
 class CompileEmit {
   constructor(compiler) {
@@ -64,14 +64,14 @@ class CompileEmit {
     this.scopeClosers = _scopeClosers;
   }
 
-  beginEntryFunction(node, name, linkedChannels = null, extraParams = []) {
-    const rootTextChannelName = (!this.compiler.scriptMode && node && node._analysis && node._analysis.textOutput)
+  beginEntryFunction(node, name, linkedChains = null, extraParams = []) {
+    const rootTextChainName = (!this.compiler.scriptMode && node && node._analysis && node._analysis.textOutput)
       ? node._analysis.textOutput
-      : DEFAULT_TEMPLATE_TEXT_CHANNEL;
+      : DEFAULT_TEMPLATE_TEXT_CHAIN;
     this.compiler.buffer.currentBuffer = 'output';
-    this.compiler.buffer.currentTextChannelVar = 'output_textChannelVar';
-    this.compiler.buffer.currentTextChannelName = this.compiler.scriptMode ? null : rootTextChannelName;
-    this.compiler.buffer.currentWaitedChannelName = null;
+    this.compiler.buffer.currentTextChainVar = 'output_textChainVar';
+    this.compiler.buffer.currentTextChainName = this.compiler.scriptMode ? null : rootTextChainName;
+    this.compiler.buffer.currentWaitedChainName = null;
     this.scopeClosers = '';
     if (this.compiler.asyncMode) {
       if (name === 'root') {
@@ -96,16 +96,16 @@ class CompileEmit {
       );
       if (!this.compiler.scriptMode) {
         this.line(
-          `let ${this.compiler.buffer.currentTextChannelVar} = ` +
-          `runtime.declareBufferChannel(${this.compiler.buffer.currentBuffer}, "${this.compiler.buffer.currentTextChannelName}", "text", context, null);`
+          `let ${this.compiler.buffer.currentTextChainVar} = ` +
+          `runtime.declareBufferChain(${this.compiler.buffer.currentBuffer}, "${this.compiler.buffer.currentTextChainName}", "text", context, null);`
         );
       }
     } else {
       this.compiler.buffer.initManagedBuffer(
         this.compiler.buffer.currentBuffer,
         this.compiler.asyncMode ? 'parentBuffer' : null,
-        this.compiler.buffer.currentTextChannelVar,
-        linkedChannels
+        this.compiler.buffer.currentTextChainVar,
+        linkedChains
       );
     }
     this.line('try {');
@@ -139,11 +139,11 @@ class CompileEmit {
     this.line('}');
     this.line('}');
     this.compiler.buffer.currentBuffer = null;
-    this.compiler.buffer.currentTextChannelVar = null;
-    this.compiler.buffer.currentTextChannelName = this.compiler.scriptMode
+    this.compiler.buffer.currentTextChainVar = null;
+    this.compiler.buffer.currentTextChainName = this.compiler.scriptMode
       ? null
       : (((node && node._analysis && node._analysis.textOutput)));
-    this.compiler.buffer.currentWaitedChannelName = null;
+    this.compiler.buffer.currentWaitedChainName = null;
   }
 
   // Managed block for direct scope/frame handling (optionally with a scope-root buffer).
@@ -158,26 +158,26 @@ class CompileEmit {
 
     let parentBufferId = null;
     let bufferId = null;
-    let linkedChannels = null;
+    let linkedChains = null;
     if (createScopeRootBuffer) {
       parentBufferId = parentBufferOverride !== undefined
         ? parentBufferOverride
         : (this.compiler.buffer.currentBuffer || null);
       if (parentBufferId && analysisNode && analysisNode._analysis) {
-        linkedChannels = analysisNode._analysis.createsLinkedChildBuffer
-          ? this.getLinkedChannels(analysisNode)
+        linkedChains = analysisNode._analysis.createsLinkedChildBuffer
+          ? this.getLinkedChains(analysisNode)
           : null;
       }
       bufferId = this.compiler._tmpid();
       this.compiler.buffer.withBufferState({
         currentBuffer: bufferId,
-        currentTextChannelVar: `${bufferId}_textChannelVar`
+        currentTextChainVar: `${bufferId}_textChainVar`
       }, () => {
         this.compiler.buffer.initManagedBuffer(
           bufferId,
           parentBufferId,
           `${bufferId}_textOutputVar`,
-          linkedChannels
+          linkedChains
         );
         if (typeof emitFunc === 'function') {
           emitFunc(nextFrame, bufferId);
@@ -222,14 +222,14 @@ class CompileEmit {
     );
   }
 
-  getLinkedChannelsArg(node) {
-    const linkedChannels = this.getLinkedChannels(node);
-    return linkedChannels.length > 0 ? JSON.stringify(linkedChannels) : 'null';
+  getLinkedChainsArg(node) {
+    const linkedChains = this.getLinkedChains(node);
+    return linkedChains.length > 0 ? JSON.stringify(linkedChains) : 'null';
   }
 
-  getLinkedMutatedChannelsArg(node) {
-    const linkedMutatedChannels = this.getLinkedMutatedChannels(node);
-    return linkedMutatedChannels.length > 0 ? JSON.stringify(linkedMutatedChannels) : 'null';
+  getLinkedMutatedChainsArg(node) {
+    const linkedMutatedChains = this.getLinkedMutatedChains(node);
+    return linkedMutatedChains.length > 0 ? JSON.stringify(linkedMutatedChains) : 'null';
   }
 
   _getAnalysis(node, helperName) {
@@ -240,17 +240,17 @@ class CompileEmit {
     return node._analysis;
   }
 
-  getLinkedChannels(node) {
-    const analysis = this._getAnalysis(node, 'getLinkedChannels');
-    // Do not link currentWaitedChannelName here.
+  getLinkedChains(node) {
+    const analysis = this._getAnalysis(node, 'getLinkedChains');
+    // Do not link currentWaitedChainName here.
     // __waited__ must stay flat: it tracks local WaitResolveCommand leaves, not child buffers.
-    // Nested control-flow buffers are applied through their own channels/iterators.
-    return Array.from(analysis.linkedChannels ?? []);
+    // Nested control-flow buffers are applied through their own chains/iterators.
+    return Array.from(analysis.linkedChains ?? []);
   }
 
-  getLinkedMutatedChannels(node) {
-    const analysis = this._getAnalysis(node, 'getLinkedMutatedChannels');
-    return Array.from(analysis.linkedMutatedChannels ?? []);
+  getLinkedMutatedChains(node) {
+    const analysis = this._getAnalysis(node, 'getLinkedMutatedChains');
+    return Array.from(analysis.linkedMutatedChains ?? []);
   }
 
 };

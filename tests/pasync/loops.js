@@ -2530,7 +2530,7 @@ const {isPoisonError} = runtime;
       expect(result.value).to.be(true);
     });
 
-    it('should poison while channel when while condition is poison', async () => {
+    it('should poison while chain when while condition is poison', async () => {
       const script = `
         data result
         var i = 0

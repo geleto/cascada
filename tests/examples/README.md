@@ -6,7 +6,7 @@ The goal is not to scrape documentation or test every tiny snippet. Very small e
 
 Add examples here when a snippet has enough structure to hide subtle mistakes:
 
-- channel writes and `snapshot()`
+- chain writes and `snapshot()`
 - `guard` / `recover`
 - `!`, `!!`, or `sequence`
 - loops, especially concurrent `for` or template `asyncEach`

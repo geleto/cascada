@@ -8,7 +8,7 @@ const srcDir = path.join(projectRoot, 'src');
 const outDir = path.join(projectRoot, 'dist');
 
 const rootFiles = [
-  'channel-types.js',
+  'chain-types.js',
   'index.js',
   'lib.js',
   'object.js',
@@ -21,6 +21,7 @@ const directories = [
   'builtins',
   'compiler',
   'environment',
+  'inheritance',
   'language',
   'loader',
   'runtime'

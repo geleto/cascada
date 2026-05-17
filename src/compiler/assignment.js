@@ -30,7 +30,7 @@ class CompileAssignment {
     if (node.path && targets.length !== 1) {
       compiler.fail('set_path only supports a single target.', node.lineno, node.colno, node);
     }
-    const thisSharedPath = compiler.channel.getThisSharedSetPathFacts(node, analysisPass);
+    const thisSharedPath = compiler.chain.getThisSharedSetPathFacts(node, analysisPass);
     if (thisSharedPath) {
       uses.push(thisSharedPath.name);
       mutates.push(thisSharedPath.name);
@@ -102,7 +102,7 @@ class CompileAssignment {
     const compiler = this.compiler;
     const thisSharedPath = node._analysis.thisSharedSetPath;
     if (thisSharedPath) {
-      compiler.channel.compileThisSharedSetPath(node, thisSharedPath);
+      compiler.chain.compileThisSharedSetPath(node, thisSharedPath);
       return;
     }
 
@@ -129,7 +129,7 @@ class CompileAssignment {
         };
 
       if (facts.isOwnDeclaration) {
-        this.emit(`runtime.declareBufferChannel(${compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
+        this.emit(`runtime.declareBufferChain(${compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
       } else if (!facts.isVarDeclaration) {
         compiler.fail(
           `Compiler error: analysis did not resolve a visible var declaration for '${name}'.`,
@@ -180,7 +180,7 @@ class CompileAssignment {
       const facts = targetFacts && targetFacts[i] ? targetFacts[i] : null;
 
       if (hasAssignedValue) {
-        this.emit.line(`${compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ channelName: '${name}', args: [${valueId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${name}');`);
+        this.emit.line(`${compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ chainName: '${name}', args: [${valueId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${name}');`);
       }
 
       if (name.charAt(0) !== '_' && hasAssignedValue && facts && facts.exportFromRootScope && !facts.isSharedDeclaration) {

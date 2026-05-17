@@ -158,7 +158,7 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
       }
     });
 
-    it('should allow observing outer var channel inside call blocks', async () => {
+    it('should allow observing outer var chain inside call blocks', async () => {
       const script = `
         var outer = 10
 
@@ -294,7 +294,7 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
       }
     });
 
-    it('should reject outer non-var channel mutation commands inside call blocks with read-only error', async () => {
+    it('should reject outer non-var chain mutation commands inside call blocks with read-only error', async () => {
       const script = `
         data outerData
 
@@ -312,7 +312,7 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
         await env.renderScriptString(script);
         throw new Error('Should have thrown');
       } catch (e) {
-        expect(e.message).to.contain(`Channel 'outerData' is read-only in this scope.`);
+        expect(e.message).to.contain(`Chain 'outerData' is read-only in this scope.`);
       }
     });
   });

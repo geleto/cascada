@@ -1,12 +1,12 @@
 
-import {ChannelMutatingResultCommand, ChannelObservableCommand, runWithResolvedArguments} from './command-base.js';
+import {ChainMutatingResultCommand, ChainObservableCommand, runWithResolvedArguments} from './command-base.js';
 import {PoisonError, isPoison} from '../errors.js';
-import {Channel} from './base.js';
+import {Chain} from './base.js';
 
-class SequenceCallCommand extends ChannelMutatingResultCommand {
-  constructor({ channelName, methodName, args = null, path = null, pos = null }) {
+class SequenceCallCommand extends ChainMutatingResultCommand {
+  constructor({ chainName, methodName, args = null, path = null, pos = null }) {
     super({
-      channelName,
+      chainName,
       args: args || [],
       pos
     });
@@ -14,10 +14,10 @@ class SequenceCallCommand extends ChannelMutatingResultCommand {
     this.path = path || null;
   }
 
-  apply(channel) {
-    super.apply(channel);
-    return runWithResolvedArguments(this.arguments, this, channel, (resolvedArgs) => {
-      if (!channel) return undefined;
+  apply(chain) {
+    super.apply(chain);
+    return runWithResolvedArguments(this.arguments, this, chain, (resolvedArgs) => {
+      if (!chain) return undefined;
       const args = Array.isArray(resolvedArgs) ? resolvedArgs : [];
       const poisonErrors = this.extractPoisonFromArgs(args);
       if (poisonErrors.length > 0) {
@@ -39,7 +39,7 @@ class SequenceCallCommand extends ChannelMutatingResultCommand {
         return this.settleResult(result, { rethrow: true });
       };
 
-      const sequenceTarget = channel._ensureSequenceTargetResolved ? channel._ensureSequenceTargetResolved() : channel._sequenceTarget;
+      const sequenceTarget = chain._ensureSequenceTargetResolved ? chain._ensureSequenceTargetResolved() : chain._sequenceTarget;
       if (sequenceTarget && typeof sequenceTarget.then === 'function') {
         return this.settleResult(Promise.resolve(sequenceTarget).then(execute), { rethrow: true });
       }
@@ -49,25 +49,25 @@ class SequenceCallCommand extends ChannelMutatingResultCommand {
 }
 
 // Reads a property from a sequence target in source order and resolves its result promise with the value. Observable — applied immediately without waiting for pending mutating commands.
-class SequenceGetCommand extends ChannelObservableCommand {
-  constructor({ channelName, path = null, pos = null }) {
+class SequenceGetCommand extends ChainObservableCommand {
+  constructor({ chainName, path = null, pos = null }) {
     super({
-      channelName,
+      chainName,
       args: [],
       pos
     });
     this.path = path || null;
   }
 
-  apply(channel) {
-    if (!channel) return undefined;
+  apply(chain) {
+    if (!chain) return undefined;
 
     const execute = (sequenceTarget) => {
       const value = resolvePath(sequenceTarget, this.path);
       return this.settleResult(value);
     };
 
-    const sequenceTarget = channel._ensureSequenceTargetResolved ? channel._ensureSequenceTargetResolved() : channel._sequenceTarget;
+    const sequenceTarget = chain._ensureSequenceTargetResolved ? chain._ensureSequenceTargetResolved() : chain._sequenceTarget;
     if (sequenceTarget && typeof sequenceTarget.then === 'function') {
       return this.settleResult(Promise.resolve(sequenceTarget).then(execute), { rethrow: true });
     }
@@ -89,9 +89,9 @@ function resolvePath(target, path) {
   return current;
 }
 
-class SequenceObjectChannel extends Channel {
-  constructor(buffer, channelName, context, targetObject) {
-    super(buffer, channelName, context, 'sequence', undefined, null);
+class SequenceObjectChain extends Chain {
+  constructor(buffer, chainName, context, targetObject) {
+    super(buffer, chainName, context, 'sequence', undefined, null);
     this._sequenceTarget = targetObject;
     this._sequenceTargetReady = false;
     this._sequenceTargetReadyPromise = null;
@@ -270,10 +270,10 @@ class SequenceObjectChannel extends Channel {
   }
 }
 
-class SequenceChannel extends SequenceObjectChannel {
-  constructor(buffer, channelName, context, targetObject) {
-    super(buffer, channelName, context, targetObject);
-    this._channelType = 'sequence';
+class SequenceChain extends SequenceObjectChain {
+  constructor(buffer, chainName, context, targetObject) {
+    super(buffer, chainName, context, targetObject);
+    this._chainType = 'sequence';
   }
 
   beginTransaction() {
@@ -344,4 +344,4 @@ class SequenceChannel extends SequenceObjectChannel {
   }
 }
 
-export { SequenceObjectChannel, SequenceChannel, SequenceCallCommand, SequenceGetCommand };
+export { SequenceObjectChain, SequenceChain, SequenceCallCommand, SequenceGetCommand };

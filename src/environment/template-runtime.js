@@ -315,7 +315,7 @@ class AsyncTemplateRuntime extends TemplateRuntime {
         }
       }
     };
-    const output = this.rootRenderFunc(
+    this.rootRenderFunc(
       this.env,
       context,
       globalRuntime,
@@ -334,7 +334,7 @@ class AsyncTemplateRuntime extends TemplateRuntime {
     const context = this._createContext(ctx, renderCtx, ctx || null);
     if (!this.inheritanceSpec) {
       const output = this.rootRenderFunc(this.env, context, globalRuntime, function noopIncludeCallback() {});
-      return output.getChannel('__text__').finalSnapshot();
+      return output.getChain('__text__').finalSnapshot();
     }
 
     const includeText = new Promise((resolve, reject) => {

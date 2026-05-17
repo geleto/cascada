@@ -39,7 +39,7 @@ key.
 ## Render Context
 
 `with context` exposes the original render context at the receiving boundary. It
-does not expose the caller's current local variables, channel declarations, or
+does not expose the caller's current local variables, chain declarations, or
 composition internals. Explicit payload keys win over render-context keys.
 
 Without `with context`, render-context values do not flow through composition

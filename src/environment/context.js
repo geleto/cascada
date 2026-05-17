@@ -23,7 +23,7 @@ class Context extends Obj {
 
     // Preserve the original render context separately from the working context
     // so async composition can expose it explicitly via `with context`
-    // without leaking current local vars/channels.
+    // without leaking current local vars/chains.
     const initialRenderCtx = renderCtx === undefined ? ctx : (renderCtx || {});
     this.renderCtx = extend({}, initialRenderCtx);
     this.ctx = extend({}, ctx);
@@ -160,19 +160,19 @@ class Context extends Obj {
     this.exportedNames.add(name);
   }
 
-  addDeferredExport(name, channelName, buffer) {
+  addDeferredExport(name, chainName, buffer) {
     if (this.exportedNames.has(name)) {
       return;
     }
 
-    const channel = buffer.getOwnChannel(channelName);
-    if (!channel) {
-      throw new Error(`Deferred export "${name}" could not resolve producer channel "${channelName}"${this.path ? ` in ${this.path}` : ''}`);
+    const chain = buffer.getOwnChain(chainName);
+    if (!chain) {
+      throw new Error(`Deferred export "${name}" could not resolve producer chain "${chainName}"${this.path ? ` in ${this.path}` : ''}`);
     }
-    const promise = channel.finalSnapshot();
+    const promise = chain.finalSnapshot();
     // Deferred exports are often internal-only script locals. If such a local
     // resolves to poison and no consumer reads the export promise directly, the
-    // channel still owns the error; the export promise should not become a
+    // chain still owns the error; the export promise should not become a
     // process-level unhandled rejection.
     markPromiseHandled(promise);
     this.exportedNames.add(name);

@@ -1,5 +1,5 @@
 
-const RETURN_CHANNEL_NAME = '__return__';
+const RETURN_CHAIN_NAME = '__return__';
 const RETURN_IS_UNSET_FUNCTION_NAME = '__return_is_unset__';
 const RESERVED_RETURN_SENTINEL_SYMBOL_NAME = '__RETURN_UNSET__';
 
@@ -8,23 +8,23 @@ class CompileReturn {
     this.compiler = compiler;
   }
 
-  createChannelDeclaration() {
+  createChainDeclaration() {
     return {
-      name: RETURN_CHANNEL_NAME,
+      name: RETURN_CHAIN_NAME,
       type: 'var',
       initializer: null,
       internal: true
     };
   }
 
-  isReturnChannelReference(name, declaration = null) {
-    return name === RETURN_CHANNEL_NAME ||
-      !!(declaration && declaration.runtimeName === RETURN_CHANNEL_NAME);
+  isReturnChainReference(name, declaration = null) {
+    return name === RETURN_CHAIN_NAME ||
+      !!(declaration && declaration.runtimeName === RETURN_CHAIN_NAME);
   }
 
   analyzeStatement() {
     return {
-      mutates: [RETURN_CHANNEL_NAME]
+      mutates: [RETURN_CHAIN_NAME]
     };
   }
 
@@ -38,7 +38,7 @@ class CompileReturn {
       compiler.emit('null');
     }
     compiler.emit.line(';');
-    this.emitChannelWrite(node, resultVar);
+    this.emitChainWrite(node, resultVar);
   }
 
   isUnsetCall(node) {
@@ -60,7 +60,7 @@ class CompileReturn {
   analyzeIsUnsetCall(node) {
     this._validateIsUnsetCall(node);
     return {
-      uses: [RETURN_CHANNEL_NAME],
+      uses: [RETURN_CHAIN_NAME],
       mutates: []
     };
   }
@@ -68,9 +68,9 @@ class CompileReturn {
   emitIsUnsetCall(node) {
     const compiler = this.compiler;
     this._validateIsUnsetCall(node);
-    if (!compiler.analysis.findDeclaration(node._analysis, RETURN_CHANNEL_NAME)) {
+    if (!compiler.analysis.findDeclaration(node._analysis, RETURN_CHAIN_NAME)) {
       compiler.fail(
-        'Return-state guard is only valid inside a callable or script body that declares a return channel',
+        'Return-state guard is only valid inside a callable or script body that declares a return chain',
         node.lineno,
         node.colno,
         node
@@ -79,19 +79,19 @@ class CompileReturn {
     // Unlike an ordinary function call or comparison, this internal guard uses
     // ReturnIsUnsetCommand and therefore cannot surface poison stored in the
     // returned value.
-    compiler.emit(`${compiler.buffer.currentBuffer}.addCommand(new runtime.ReturnIsUnsetCommand({ channelName: "${RETURN_CHANNEL_NAME}", pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), "${RETURN_CHANNEL_NAME}")`);
+    compiler.emit(`${compiler.buffer.currentBuffer}.addCommand(new runtime.ReturnIsUnsetCommand({ chainName: "${RETURN_CHAIN_NAME}", pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), "${RETURN_CHAIN_NAME}")`);
   }
 
-  emitDeclareChannel(bufferExpr) {
+  emitDeclareChain(bufferExpr) {
     this.compiler.emit.line(
-      `runtime.declareBufferChannel(${bufferExpr}, "${RETURN_CHANNEL_NAME}", "var", context, runtime.RETURN_UNSET);`
+      `runtime.declareBufferChain(${bufferExpr}, "${RETURN_CHAIN_NAME}", "var", context, runtime.RETURN_UNSET);`
     );
   }
 
-  emitChannelWrite(node, resultVar) {
+  emitChainWrite(node, resultVar) {
     const compiler = this.compiler;
     compiler.emit.line(
-      `${compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ channelName: '${RETURN_CHANNEL_NAME}', args: [${resultVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), "${RETURN_CHANNEL_NAME}");`
+      `${compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ chainName: '${RETURN_CHAIN_NAME}', args: [${resultVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), "${RETURN_CHAIN_NAME}");`
     );
   }
 
@@ -99,30 +99,30 @@ class CompileReturn {
     const compiler = this.compiler;
     compiler.emit.line(`${bufferExpr}.finish();`);
     compiler.emit.line(
-      `const ${resultVar}_snapshot = ${bufferExpr}.getChannel("${RETURN_CHANNEL_NAME}").finalSnapshot();`
+      `const ${resultVar}_snapshot = ${bufferExpr}.getChain("${RETURN_CHAIN_NAME}").finalSnapshot();`
     );
     compiler.emit.line(`let ${resultVar} = ${resultVar}_snapshot.then((value) => value === runtime.RETURN_UNSET ? null : value);`);
   }
 
-  excludeGuardCaptureChannels(channelNames) {
-    const filtered = new Set(channelNames);
+  excludeGuardCaptureChains(chainNames) {
+    const filtered = new Set(chainNames);
     // __return__ is internal return-state infrastructure, not a user variable;
     // guard state capture/restore must not include it because recovery must not undo a return.
-    filtered.delete(RETURN_CHANNEL_NAME);
+    filtered.delete(RETURN_CHAIN_NAME);
     return Array.from(filtered);
   }
 
-  getSequentialLoopAdvanceCheckChannel({ sequentialLoopBody, whileConditionNode, bodyChannels }) {
+  getSequentialLoopAdvanceCheckChain({ sequentialLoopBody, whileConditionNode, bodyChains }) {
     return sequentialLoopBody &&
       !whileConditionNode &&
-      bodyChannels &&
-      bodyChannels.has(RETURN_CHANNEL_NAME)
-      ? RETURN_CHANNEL_NAME
+      bodyChains &&
+      bodyChains.has(RETURN_CHAIN_NAME)
+      ? RETURN_CHAIN_NAME
       : null;
   }
 }
 
 export {CompileReturn};
-export {RETURN_CHANNEL_NAME};
+export {RETURN_CHAIN_NAME};
 export {RESERVED_RETURN_SENTINEL_SYMBOL_NAME};
 export {RETURN_IS_UNSET_FUNCTION_NAME};

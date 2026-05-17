@@ -442,7 +442,7 @@ describe('Inheritance rebuild', function () {
       expect(await localEnv.renderScript('child.script', {})).to.be('child>middle>base(Ada)');
     });
 
-    it('keeps inherited method shared-channel writes ordered at the call site', async function () {
+    it('keeps inherited method shared-chain writes ordered at the call site', async function () {
       const localEnv = createEnvironment({
         'base.script': 'shared text trace\nmethod build(name)\n  this.trace("method|" + name + "|")\n  return "done:" + name\nendmethod',
         'child.script': 'shared text trace\nextends "base.script"\nthis.trace("before|")\nvar result = this.build("Ada")\nthis.trace("after|")\nthis.trace(result)\nreturn this.trace.snapshot()'
@@ -471,7 +471,7 @@ describe('Inheritance rebuild', function () {
       expect(await localEnv.renderScript('child.script', {})).to.be('marked|after:null|');
     });
 
-    it('orders transitive inherited method shared-channel dependencies', async function () {
+    it('orders transitive inherited method shared-chain dependencies', async function () {
       const localEnv = createEnvironment({
         'base.script': [
           'shared text trace',
@@ -498,7 +498,7 @@ describe('Inheritance rebuild', function () {
       expect(await localEnv.renderScript('child.script', {})).to.be('touch|after|');
     });
 
-    it('shares typed text channels across constructors and methods', async function () {
+    it('shares typed text chains across constructors and methods', async function () {
       const localEnv = createEnvironment({
         'base.script': 'shared text log\nthis.log("base|")',
         'child.script': 'shared text log\nextends "base.script"\nsuper()\nthis.log("child|")\nreturn this.log.snapshot()'
@@ -507,7 +507,7 @@ describe('Inheritance rebuild', function () {
       expect(await localEnv.renderScript('child.script', {})).to.be('base|child|');
     });
 
-    it('shares typed data channels across inherited method calls', async function () {
+    it('shares typed data chains across inherited method calls', async function () {
       const localEnv = createEnvironment({
         'base.script': [
           'shared data state',
@@ -527,7 +527,7 @@ describe('Inheritance rebuild', function () {
       expect(await localEnv.renderScript('child.script', {})).to.eql({ items: ['child', 'base'] });
     });
 
-    it('keeps constructor value-consumption failures on the shared channel error path', async function () {
+    it('keeps constructor value-consumption failures on the shared chain error path', async function () {
       const localEnv = createEnvironment({
         'child.script': [
           'extends none',
@@ -547,7 +547,7 @@ describe('Inheritance rebuild', function () {
       expect(result[1]).to.contain('constructor value failed');
     });
 
-    it('keeps inherited method value-consumption failures on the shared channel error path', async function () {
+    it('keeps inherited method value-consumption failures on the shared chain error path', async function () {
       const localEnv = createEnvironment({
         'base.script': [
           'shared var status',
@@ -1037,8 +1037,8 @@ describe('Inheritance rebuild', function () {
         super: !!options.super,
         superOrigin: options.superOrigin || null,
         inheritedMethodDependencies: options.inheritedMethodDependencies || {},
-        ownLinkedChannels: options.ownLinkedChannels || [],
-        ownMutatedChannels: options.ownMutatedChannels || []
+        ownLinkedChains: options.ownLinkedChains || [],
+        ownMutatedChains: options.ownMutatedChains || []
       };
     }
 
@@ -1319,7 +1319,7 @@ describe('Inheritance rebuild', function () {
         expect(error.errors.length).to.be(3);
         expect(String(error)).to.contain('renames an inherited argument');
         expect(String(error)).to.contain('missing inherited method \'missing\'');
-        expect(String(error)).to.contain('shared channel \'theme\' has conflicting types');
+        expect(String(error)).to.contain('shared chain \'theme\' has conflicting types');
       });
     });
 
@@ -1329,7 +1329,7 @@ describe('Inheritance rebuild', function () {
           loadedEntry('child.njk', { sharedSchema: { card: sharedSchemaEntry('var', { origin: { path: 'child.njk', lineno: 1, colno: 1 } }) } }),
           loadedEntry('root.njk', { methodEntries: { card: compiledMethod('card') } })
         ]);
-      }).to.throwException(/shared channel 'card' conflicts with inherited method 'card'/);
+      }).to.throwException(/shared chain 'card' conflicts with inherited method 'card'/);
     });
 
     it('keeps the child-most shared schema declaration and first available default', function () {
@@ -1361,15 +1361,15 @@ describe('Inheritance rebuild', function () {
       expect(state.sharedSchema.theme.defaultOrigin.path).to.be('root.script');
     });
 
-    it('merges channel footprints across overridden entries', function () {
+    it('merges chain footprints across overridden entries', function () {
       const state = finalizeEntries([
         loadedEntry('child.script', {
           scriptMode: true,
           hasExtends: true,
           methodEntries: {
             build: compiledMethod('build', {
-              ownLinkedChannels: ['childRead'],
-              ownMutatedChannels: ['childWrite']
+              ownLinkedChains: ['childRead'],
+              ownMutatedChains: ['childWrite']
             })
           }
         }),
@@ -1377,15 +1377,15 @@ describe('Inheritance rebuild', function () {
           scriptMode: true,
           methodEntries: {
             build: compiledMethod('build', {
-              ownLinkedChannels: ['rootRead'],
-              ownMutatedChannels: ['rootWrite']
+              ownLinkedChains: ['rootRead'],
+              ownMutatedChains: ['rootWrite']
             })
           }
         })
       ]);
 
-      expect(state.methods.build.mergedLinkedChannels.slice().sort()).to.eql(['childRead', 'rootRead']);
-      expect(state.methods.build.mergedMutatedChannels.slice().sort()).to.eql(['childWrite', 'rootWrite']);
+      expect(state.methods.build.mergedLinkedChains.slice().sort()).to.eql(['childRead', 'rootRead']);
+      expect(state.methods.build.mergedMutatedChains.slice().sort()).to.eql(['childWrite', 'rootWrite']);
     });
 
     it('prunes finalization-only method fields and attaches owner entries', function () {
@@ -1394,8 +1394,8 @@ describe('Inheritance rebuild', function () {
           methodEntries: {
             body: compiledMethod('body', {
               inheritedMethodDependencies: {},
-              ownLinkedChannels: ['theme'],
-              ownMutatedChannels: ['theme']
+              ownLinkedChains: ['theme'],
+              ownMutatedChains: ['theme']
             })
           }
         })
@@ -1404,8 +1404,8 @@ describe('Inheritance rebuild', function () {
 
       expect(entry.inheritedMethodDependencies).to.be(undefined);
       expect(entry.superOrigin).to.be(undefined);
-      expect(entry.ownLinkedChannels).to.be(undefined);
-      expect(entry.ownMutatedChannels).to.be(undefined);
+      expect(entry.ownLinkedChains).to.be(undefined);
+      expect(entry.ownMutatedChains).to.be(undefined);
       expect(entry.name).to.be('body');
       expect(entry.fn).to.be.a(Function);
       expect(entry.signature).to.eql({ argNames: [] });
@@ -1431,10 +1431,10 @@ describe('Inheritance rebuild', function () {
       const firstTarget = { name: 'first' };
       const secondTarget = { name: 'second' };
 
-      const channel = runtime.declareInheritanceSharedChannel(buffer, 'db', 'sequence', null, firstTarget);
-      runtime.declareInheritanceSharedChannel(buffer, 'db', 'sequence', null, secondTarget);
+      const chain = runtime.declareInheritanceSharedChain(buffer, 'db', 'sequence', null, firstTarget);
+      runtime.declareInheritanceSharedChain(buffer, 'db', 'sequence', null, secondTarget);
 
-      expect(channel._sequenceTarget).to.be(secondTarget);
+      expect(chain._sequenceTarget).to.be(secondTarget);
     });
 
     it('creates an inheritance instance without invoking constructors', async function () {
@@ -1835,7 +1835,7 @@ describe('Inheritance rebuild', function () {
       expect(await localEnv.renderScript('main.script', {})).to.eql(['dark', 'method', 'method']);
     });
 
-    it('observes component shared text channels through explicit snapshots', async function () {
+    it('observes component shared text chains through explicit snapshots', async function () {
       const loader = new StringLoader();
       const localEnv = new AsyncEnvironment(loader);
       loader.addTemplate('component.script', [
@@ -1854,7 +1854,7 @@ describe('Inheritance rebuild', function () {
       expect(await localEnv.renderScript('main.script', {})).to.be('ready|done|');
     });
 
-    it('rejects bare component reads of non-var shared channels', async function () {
+    it('rejects bare component reads of non-var shared chains', async function () {
       const loader = new StringLoader();
       const localEnv = new AsyncEnvironment(loader);
       loader.addTemplate('component.script', 'shared text log\nthis.log("ready")');
@@ -1862,9 +1862,9 @@ describe('Inheritance rebuild', function () {
 
       try {
         await localEnv.renderScript('main.script', {});
-        expect().fail('Expected bare component text-channel read to fail');
+        expect().fail('Expected bare component text-chain read to fail');
       } catch (error) {
-        expect(String(error)).to.contain('Shared channel');
+        expect(String(error)).to.contain('Shared chain');
         expect(String(error)).to.contain('this.log');
         expect(String(error)).to.contain('snapshot()');
       }
@@ -1886,13 +1886,13 @@ describe('Inheritance rebuild', function () {
           await localEnv.renderScript(name, {});
           throw new Error('expected component observation to fail');
         } catch (error) {
-          expect(String(error)).to.contain('Shared channel');
+          expect(String(error)).to.contain('Shared chain');
           expect(String(error)).to.contain(expectations[name]);
         }
       }
     });
 
-    it('closes component instances through owner side-channel completion and rejects later operations', async function () {
+    it('closes component instances through owner side-chain completion and rejects later operations', async function () {
       const participant = inheritanceParticipant('component.script', {
         scriptMode: true,
         methodEntries: {
@@ -1905,7 +1905,7 @@ describe('Inheritance rebuild', function () {
       });
       const ownerContext = createRuntimeContext({}, 'main.script');
       const ownerBuffer = new runtime.CommandBuffer(ownerContext, null, null, null);
-      runtime.declareBufferChannel(ownerBuffer, 'card', 'var', ownerContext, null);
+      runtime.declareBufferChain(ownerBuffer, 'card', 'var', ownerContext, null);
       const instance = await runtime.createComponentInstance({
         componentScriptOrTemplate: participant,
         payload: {},
@@ -1917,13 +1917,13 @@ describe('Inheritance rebuild', function () {
         errorContext: { path: 'main.script', lineno: 1, colno: 1 }
       });
       ownerBuffer.addCommand(new runtime.VarCommand({
-        channelName: 'card',
+        chainName: 'card',
         args: [instance],
         pos: { lineno: 1, colno: 1 }
       }), 'card');
-      const sideChannelFinished = ownerBuffer.getChannel('card').finalSnapshot();
+      const sideChainFinished = ownerBuffer.getChain('card').finalSnapshot();
       ownerBuffer.finish();
-      await sideChannelFinished;
+      await sideChainFinished;
       await Promise.resolve();
 
       expect(function () {
@@ -2203,7 +2203,7 @@ describe('Inheritance rebuild', function () {
         'return this.outer()'
       ].join('\n'), { scriptMode: true });
 
-      expect(props.inheritanceSpec.methodEntries.outer.ownLinkedChannels).to.eql([]);
+      expect(props.inheritanceSpec.methodEntries.outer.ownLinkedChains).to.eql([]);
     });
 
     it('keeps local vars with shared names out of inherited callable footprints', function () {
@@ -2216,7 +2216,7 @@ describe('Inheritance rebuild', function () {
         'return this.outer()'
       ].join('\n'), { scriptMode: true });
 
-      expect(props.inheritanceSpec.methodEntries.outer.ownLinkedChannels).to.eql([]);
+      expect(props.inheritanceSpec.methodEntries.outer.ownLinkedChains).to.eql([]);
     });
 
     it('records this shared accesses under internal storage names', function () {
@@ -2229,7 +2229,7 @@ describe('Inheritance rebuild', function () {
       ].join('\n'), { scriptMode: true });
 
       expect(props.inheritanceSpec.sharedSchema.$theme.type).to.be('var');
-      expect(props.inheritanceSpec.methodEntries.outer.ownLinkedChannels).to.eql(['$theme']);
+      expect(props.inheritanceSpec.methodEntries.outer.ownLinkedChains).to.eql(['$theme']);
     });
 
     it('uses only ordered argument names for block signatures', function () {
@@ -2294,11 +2294,11 @@ describe('Inheritance rebuild', function () {
       }).to.throwException(/bare inherited-method references are not supported/);
     });
 
-    it('rejects all template channel declarations', function () {
+    it('rejects all template chain declarations', function () {
       ['shared var theme', 'shared text log', 'shared data state', 'shared sequence db', 'data result'].forEach((source) => {
         expect(function () {
           new AsyncTemplate(`{% ${source} %}`, env, `${source.replace(/\s+/g, '-')}.njk`).compile();
-        }).to.throwException(/Channel declarations are only supported in script mode/);
+        }).to.throwException(/Chain declarations are only supported in script mode/);
       });
     });
 
@@ -2423,7 +2423,7 @@ describe('Inheritance rebuild', function () {
     it('rejects template shared and block name collisions', function () {
       expect(function () {
         new AsyncTemplate('{{ this.card }}{% block card %}x{% endblock %}', env, 'template-shared-block-collision.njk').compile();
-      }).to.throwException(/shared channel 'card' conflicts with method 'card'/);
+      }).to.throwException(/shared chain 'card' conflicts with method 'card'/);
     });
 
     it('fails dynamic template extends naturally when context does not provide the target', async function () {

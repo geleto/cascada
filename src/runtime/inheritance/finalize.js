@@ -49,7 +49,7 @@ function hasCompatibleOverrideSignature(childEntry, parentEntry) {
   return true;
 }
 
-function mergeChannelFootprintNames(...nameLists) {
+function mergeChainFootprintNames(...nameLists) {
   return Array.from(new Set(nameLists.flat()));
 }
 
@@ -62,8 +62,8 @@ function createRootNoopConstructorEntry(ownerEntry) {
     isConstructor: true,
     ownerEntry,
     super: null,
-    mergedLinkedChannels: [],
-    mergedMutatedChannels: []
+    mergedLinkedChains: [],
+    mergedMutatedChains: []
   });
 }
 
@@ -88,13 +88,13 @@ function createRuntimeMethodEntry(compiledEntry, ownerEntry, parentEntry, errors
   const superEntry = parentEntry || (compiledEntry.super && compiledEntry.isConstructor
     ? createRootNoopConstructorEntry(ownerEntry)
     : null);
-  const mergedLinkedChannels = mergeChannelFootprintNames(
-    compiledEntry.ownLinkedChannels,
-    superEntry ? superEntry.mergedLinkedChannels : []
+  const mergedLinkedChains = mergeChainFootprintNames(
+    compiledEntry.ownLinkedChains,
+    superEntry ? superEntry.mergedLinkedChains : []
   );
-  const mergedMutatedChannels = mergeChannelFootprintNames(
-    compiledEntry.ownMutatedChannels,
-    superEntry ? superEntry.mergedMutatedChannels : []
+  const mergedMutatedChains = mergeChainFootprintNames(
+    compiledEntry.ownMutatedChains,
+    superEntry ? superEntry.mergedMutatedChains : []
   );
 
   return {
@@ -105,8 +105,8 @@ function createRuntimeMethodEntry(compiledEntry, ownerEntry, parentEntry, errors
     isConstructor: !!compiledEntry.isConstructor,
     ownerEntry,
     super: superEntry,
-    mergedLinkedChannels,
-    mergedMutatedChannels
+    mergedLinkedChains,
+    mergedMutatedChains
   };
 }
 
@@ -120,7 +120,7 @@ function createRuntimeSharedSchema(entries, errors, context) {
       if (existingEntry && existingEntry.type !== runtimeSchemaEntry.type) {
         addFinalizationError(
           errors,
-          `shared channel '${name}' has conflicting types '${existingEntry.type}' and '${runtimeSchemaEntry.type}'`,
+          `shared chain '${name}' has conflicting types '${existingEntry.type}' and '${runtimeSchemaEntry.type}'`,
           runtimeSchemaEntry.origin,
           context
         );
@@ -161,7 +161,7 @@ function validateSharedMethodCollisions(sharedSchema, methodNames, errors, conte
     }
     addFinalizationError(
       errors,
-      `shared channel '${methodName}' conflicts with inherited method '${methodName}'`,
+      `shared chain '${methodName}' conflicts with inherited method '${methodName}'`,
       sharedSchema[name].origin,
       context
     );
@@ -208,8 +208,8 @@ function expandAllMethodDependencyFootprints(runtimeEntries, runtimeMethodsByNam
   }
 
   runtimeEntries.forEach((entry) => {
-    entry.mergedLinkedChannels = Object.freeze(entry.mergedLinkedChannels.slice());
-    entry.mergedMutatedChannels = Object.freeze(entry.mergedMutatedChannels.slice());
+    entry.mergedLinkedChains = Object.freeze(entry.mergedLinkedChains.slice());
+    entry.mergedMutatedChains = Object.freeze(entry.mergedMutatedChains.slice());
     Object.freeze(entry);
   });
 }
@@ -229,20 +229,20 @@ function expandMethodDependencyFootprint(entry, dependencyEntriesByEntry, visiti
   });
 
   if (dependencyEntries.length > 0) {
-    const nextLinkedChannels = mergeChannelFootprintNames(
-      entry.mergedLinkedChannels,
-      ...dependencyEntries.map((dependency) => dependency.mergedLinkedChannels)
+    const nextLinkedChains = mergeChainFootprintNames(
+      entry.mergedLinkedChains,
+      ...dependencyEntries.map((dependency) => dependency.mergedLinkedChains)
     );
-    const nextMutatedChannels = mergeChannelFootprintNames(
-      entry.mergedMutatedChannels,
-      ...dependencyEntries.map((dependency) => dependency.mergedMutatedChannels)
+    const nextMutatedChains = mergeChainFootprintNames(
+      entry.mergedMutatedChains,
+      ...dependencyEntries.map((dependency) => dependency.mergedMutatedChains)
     );
     if (
-      nextLinkedChannels.length !== entry.mergedLinkedChannels.length ||
-      nextMutatedChannels.length !== entry.mergedMutatedChannels.length
+      nextLinkedChains.length !== entry.mergedLinkedChains.length ||
+      nextMutatedChains.length !== entry.mergedMutatedChains.length
     ) {
-      entry.mergedLinkedChannels = nextLinkedChannels;
-      entry.mergedMutatedChannels = nextMutatedChannels;
+      entry.mergedLinkedChains = nextLinkedChains;
+      entry.mergedMutatedChains = nextMutatedChains;
       changed = true;
     }
   }

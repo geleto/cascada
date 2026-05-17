@@ -54,7 +54,7 @@ class CompilerSync extends CompilerBaseSync {
 
             this.emit.withScopedSyntax(() => {
               this.emit._compileSyncCallbackRenderBoundary(node, callFrame, function () {
-                this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
+                this.emit.line(`runtime.markChainBufferScope(${this.buffer.currentBuffer});`);
                 this.compile(arg, frame);
               }, 'cb', arg);
               this.emit.line(';');
@@ -76,7 +76,7 @@ class CompilerSync extends CompilerBaseSync {
         this.emit(`${ext}["${node.prop}"](context`);
         emitCallArgs(frame);
         this.emit(`), ${autoescape} && env.opts.autoescape)`);
-      }, positionNode, this.buffer.currentTextChannelName, false);
+      }, positionNode, this.buffer.currentTextChainName, false);
       return;
     }
 
@@ -249,8 +249,8 @@ class CompilerSync extends CompilerBaseSync {
     this.emit.line('let output = "";');
     this.buffer.withBufferState({
       currentBuffer: 'output',
-      currentTextChannelVar: 'output_textChannelVar',
-      currentTextChannelName: captureTextOutputName
+      currentTextChainVar: 'output_textChainVar',
+      currentTextChainName: captureTextOutputName
     }, () => {
       this.emit.withScopedSyntax(() => {
         this.compile(node.body, frame);
@@ -263,19 +263,19 @@ class CompilerSync extends CompilerBaseSync {
   compileOutput(node, frame) {
     if (this.scriptMode) {
       this.fail(
-        'Script mode does not support template output nodes. Use declared channels and command instead.',
+        'Script mode does not support template output nodes. Use declared chains and command instead.',
         node && node.lineno,
         node && node.colno,
         node || undefined
       );
     }
-    const textChannelName = this.buffer.currentTextChannelName;
+    const textChainName = this.buffer.currentTextChainName;
     node.children.forEach((child) => {
       if (child instanceof nodes.TemplateData) {
         if (child.value) {
           this.buffer.addToBuffer(node, frame, function() {
             this.compileLiteral(child, frame);
-          }, child, textChannelName, false);
+          }, child, textChainName, false);
         }
         return;
       }
@@ -290,7 +290,7 @@ class CompilerSync extends CompilerBaseSync {
           this.emit(`,${child.lineno},${child.colno}, context)`);
         }
         this.emit(', env.opts.autoescape)');
-      }, child, textChannelName, false);
+      }, child, textChainName, false);
     });
   }
 
@@ -304,7 +304,7 @@ class CompilerSync extends CompilerBaseSync {
   }
 
   _compileSyncRootBody(node, frame) {
-    this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
+    this.emit.line(`runtime.markChainBufferScope(${this.buffer.currentBuffer});`);
     this.emit.line('let parentTemplate = null;');
     this._compileChildren(node, frame);
     this._emitSyncRootCompletion();
@@ -465,20 +465,20 @@ class CompilerSync extends CompilerBaseSync {
     this.emit.line('return;');
   }
 
-  compileChannelDeclaration(node) {
-    this.fail('Channel declarations are only supported in async script mode', node.lineno, node.colno, node);
+  compileChainDeclaration(node) {
+    this.fail('Chain declarations are only supported in async script mode', node.lineno, node.colno, node);
   }
 
-  compileChannelCommand(node) {
-    this.fail('Channel commands are only supported in async script mode', node.lineno, node.colno, node);
+  compileChainCommand(node) {
+    this.fail('Chain commands are only supported in async script mode', node.lineno, node.colno, node);
   }
 
   _getRootDeclarations() {
-    return [{ name: CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL, type: 'text', initializer: null }];
+    return [{ name: CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHAIN, type: 'text', initializer: null }];
   }
 
   _getRootTextOutput() {
-    return CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL;
+    return CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHAIN;
   }
 
 }

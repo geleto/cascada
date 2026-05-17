@@ -8,7 +8,7 @@ blocking inheritance-chain bootstrap:
 - the inheritance chain is fully loaded before constructor/root execution starts
 - method metadata is accessed directly, not through pending promise structs
 - `super()` remains special and owner-relative
-- `mergedLinkedChannels` / `mergedMutatedChannels` include all invoked inherited
+- `mergedLinkedChains` / `mergedMutatedChains` include all invoked inherited
   methods, not only the `super()` chain
 
 The central new metadata is `invokedMethods`. It is represented at two levels:
@@ -21,8 +21,8 @@ The central new metadata is `invokedMethods`. It is represented at two levels:
 Compiled metadata will initially store invoked method names. The bootstrap helper
 loads the full inheritance chain, resolves those names to the final overridden
 method metadata, and replaces the names with the resolved data before execution
-starts. The final channel footprint for a method is computed from its own
-channels, its `super()` chain, and its per-callable invoked metadata.
+starts. The final chain footprint for a method is computed from its own
+chains, its `super()` chain, and its per-callable invoked metadata.
 
 Terms:
 
@@ -47,16 +47,16 @@ metadata are still unresolved.
 
 That creates a structural hole:
 
-- a method call may be admitted before its full linked-channel footprint is
+- a method call may be admitted before its full linked-chain footprint is
   known
 - later work may begin based on a narrower partial footprint
 - once the method metadata resolves, we may discover that the earlier call
-  should have blocked later work on additional channels
+  should have blocked later work on additional chains
 
 This is especially problematic when:
 
-- one inherited method mutates a shared channel
-- another inherited or local method reads that channel
+- one inherited method mutates a shared chain
+- another inherited or local method reads that chain
 - the mutating method was admitted before its full metadata footprint was known
 
 This is not just a plain-root problem. It can also appear in:
@@ -135,7 +135,7 @@ Execution is allowed to assume:
 - `inheritanceState.methods[name]` is either a direct resolved method metadata
   object or missing
 - `methodMeta.super` is either a direct resolved metadata object or `null`
-- `methodMeta.mergedLinkedChannels` and `methodMeta.mergedMutatedChannels`
+- `methodMeta.mergedLinkedChains` and `methodMeta.mergedMutatedChains`
   already contain the full transitive callable footprint
 - callable-local `invokedMethods` has already been consumed by finalization and
   is not part of normal execution method data
@@ -157,8 +157,8 @@ Compiled callable metadata should have at least:
 - `fn`
 - `signature`
 - `ownerKey`
-- `ownLinkedChannels`
-- `ownMutatedChannels`
+- `ownLinkedChains`
+- `ownMutatedChains`
 - `super`
 - `superOrigin`
 - `invokedMethods`
@@ -170,8 +170,8 @@ Finalization work metadata temporarily has:
 - `ownerKey`
 - `super`
 - `invokedMethods`
-- `mergedLinkedChannels`
-- `mergedMutatedChannels`
+- `mergedLinkedChains`
+- `mergedMutatedChains`
 
 Pruned execution method metadata has:
 
@@ -179,8 +179,8 @@ Pruned execution method metadata has:
 - `signature`
 - `ownerKey`
 - `super`
-- `mergedLinkedChannels`
-- `mergedMutatedChannels`
+- `mergedLinkedChains`
+- `mergedMutatedChains`
 
 Where:
 
@@ -209,7 +209,7 @@ Where:
   - ordinary calls resolve to the final overridden method, not an owner-relative
     parent entry
   - excludes `super()` because `super()` is already represented by `super`
-  - it is pruned from execution method metadata after the final merged channel
+  - it is pruned from execution method metadata after the final merged chain
     footprint is computed
 
 Compiled callable metadata shape:
@@ -219,8 +219,8 @@ Compiled callable metadata shape:
   fn,
   signature: { argNames: ["name"], withContext: false },
   ownerKey: "C.script",
-  ownLinkedChannels: ["trace"],
-  ownMutatedChannels: ["theme"],
+  ownLinkedChains: ["trace"],
+  ownMutatedChains: ["theme"],
   super: true,
   superOrigin: { path: "C.script", lineno: 3, colno: 2 },
   invokedMethods: {
@@ -242,8 +242,8 @@ Bootstrap/finalization rewrites that to finalization work metadata:
     readTheme: resolvedReadThemeMeta,
     applyTheme: resolvedApplyThemeMeta
   },
-  mergedLinkedChannels: [...],
-  mergedMutatedChannels: [...]
+  mergedLinkedChains: [...],
+  mergedMutatedChains: [...]
 }
 ```
 
@@ -255,8 +255,8 @@ After the fixed-point footprint pass, normal execution retains only:
   signature: { argNames: ["name"], withContext: false },
   ownerKey: "C.script",
   super: parentBuildMeta,
-  mergedLinkedChannels: [...],
-  mergedMutatedChannels: [...]
+  mergedLinkedChains: [...],
+  mergedMutatedChains: [...]
 }
 ```
 
@@ -372,7 +372,7 @@ principle for structural metadata: once the chain is available, missing
 `super()` targets, missing `invokedMethods` targets, and invalid metadata shapes
 should all be surfaced together when possible.
 
-## Meaning of `mergedLinkedChannels` / `mergedMutatedChannels`
+## Meaning of `mergedLinkedChains` / `mergedMutatedChains`
 
 These fields should change meaning slightly.
 
@@ -385,22 +385,22 @@ That is not enough.
 
 In the new model they should describe the full callable footprint:
 
-- current method's own channels
+- current method's own chains
 - plus all owner-relative `super()` dependencies
 - plus all ordinary inherited methods invoked by this method
 
 So:
 
-- `mergedLinkedChannels`
-  - full transitive linked-channel footprint of the callable
-- `mergedMutatedChannels`
-  - full transitive mutated-channel footprint of the callable
+- `mergedLinkedChains`
+  - full transitive linked-chain footprint of the callable
+- `mergedMutatedChains`
+  - full transitive mutated-chain footprint of the callable
 
 This is what caller-side invocation admission actually needs.
 
 ## Bootstrap Merge Passes
 
-Merged-channel calculation happens after the full inheritance chain is loaded
+Merged-chain calculation happens after the full inheritance chain is loaded
 and all method metadata is resolved.
 
 It should be implemented as deterministic bootstrap passes, not as runtime
@@ -408,10 +408,10 @@ recursive metadata resolution:
 
 1. Register parent methods before child methods.
 2. Compute each implementation's inherited/super footprint parent-to-child:
-   - start with the method's own linked/mutated channels
+   - start with the method's own linked/mutated chains
    - if the method has a parent/super implementation, merge the parent's
-     already-computed merged channels
-   - deduplicate channels
+     already-computed merged chains
+   - deduplicate chains
 3. Resolve `invokedMethods` names to final overridden method metadata:
    - each `this.foo()` dependency becomes `invokedMethods.foo = methods.foo`
    - this is ordinary override dispatch, not owner-relative `super()` dispatch
@@ -419,12 +419,12 @@ recursive metadata resolution:
 
 Step 4 should not use runtime promises or lazy resolution. If invoked methods
 can form cycles, use an iterative fixed-point pass until no method's merged
-channel set changes. This avoids recursive call-stack traversal while still
+chain set changes. This avoids recursive call-stack traversal while still
 supporting cycles.
 
 This is distinct from `extends` parent-chain cycles. Parent-chain cycles are
 fatal structural bootstrap errors. Invoked-method cycles are valid call-graph
-metadata and are handled by the fixed-point channel merge.
+metadata and are handled by the fixed-point chain merge.
 
 Cycle examples:
 
@@ -432,13 +432,13 @@ Cycle examples:
 - `render()` invokes `build()`
 
 The fixed-point pass treats the method graph as a directed graph and computes a
-stable union of channels. A method's final merged channels are:
+stable union of chains. A method's final merged chains are:
 
-- its own channels
+- its own chains
 - its inherited/super footprint
-- the final merged channels of every resolved `invokedMethods` target
+- the final merged chains of every resolved `invokedMethods` target
 
-The pass ends when another full scan produces no new channel names.
+The pass ends when another full scan produces no new chain names.
 
 ## Caller-Side Admission / Linking
 
@@ -448,7 +448,7 @@ That means:
 
 - no metadata await
 - no pending resolution helper
-- no partial unresolved linked-channel hint path
+- no partial unresolved linked-chain hint path
 
 The current caller-side logic that only uses the `super()` chain must be
 replaced.
@@ -456,8 +456,8 @@ replaced.
 Caller-side linking should use:
 
 - current method meta
-- full `mergedLinkedChannels`
-- full `mergedMutatedChannels`
+- full `mergedLinkedChains`
+- full `mergedMutatedChains`
 
 That automatically includes:
 
@@ -478,8 +478,8 @@ Instead:
 
 So entry startup can:
 
-- link parent/invocation buffers with the final merged channels
-- use `methodData.mergedLinkedChannels` and `methodData.mergedMutatedChannels`
+- link parent/invocation buffers with the final merged chains
+- use `methodData.mergedLinkedChains` and `methodData.mergedMutatedChains`
   directly
 
 No separate `resolveMethods(...)` helper is needed in the final execution path
@@ -491,23 +491,23 @@ calling a metadata-resolution helper. A small synchronous guard such as
 boundaries, but it should only validate/read direct metadata and throw a runtime
 fatal error for missing or invalid entries.
 
-## Finalized Callable Channel Footprints
+## Finalized Callable Chain Footprints
 
-Each compiled constructor/method/block entry emits only the channels directly
-touched by its local body. It should not emit execution-time channel-list
+Each compiled constructor/method/block entry emits only the chains directly
+touched by its local body. It should not emit execution-time chain-list
 helpers that read `methodData.invokedMethods.*`.
 
 During metadata finalization, the runtime computes the full callable footprint
 from:
 
-- the compiled local `ownLinkedChannels` / `ownMutatedChannels`
+- the compiled local `ownLinkedChains` / `ownMutatedChains`
 - the owner-relative `super()` chain
 - ordinary inherited calls represented by finalization-time `invokedMethods`
 
 The result is stored on the execution method data as:
 
-- `mergedLinkedChannels`
-- `mergedMutatedChannels`
+- `mergedLinkedChains`
+- `mergedMutatedChains`
 
 Caller-side admission and callable body startup read those merged fields
 directly. They do not rediscover invoked methods, call a metadata-resolution
@@ -529,17 +529,17 @@ known before execution begins.
 There should be no ambiguous shared-name probing in the final model. A name is
 shared because the current file contributes it to the schema — either through an
 explicit declaration (scripts) or through compiler inference (templates). It is
-not shared merely because an ancestor declares a channel with the same name.
+not shared merely because an ancestor declares a chain with the same name.
 
 ### Script shared schema
 
 Scripts use explicit, typed per-file declarations:
 
-- every script file that reads or writes a shared channel must contain a
+- every script file that reads or writes a shared chain must contain a
   `shared` declaration for that name
 - the declaration is required for type disambiguation: the compiler must know
-  whether `this.name` is a `var`, `text`, `data`, or `sequence` channel to
-  emit the correct channel command
+  whether `this.name` is a `var`, `text`, `data`, or `sequence` chain to
+  emit the correct chain command
 - bare names (without `this.`) always follow ambient lookup in scripts, even
   when a matching `shared` declaration exists in the same file
 - a bare assignment to a declared shared name is a compile-time error with a
@@ -554,7 +554,7 @@ declarations:
   analysis time and infers each root name as a declaration-only `shared var`
   entry
 - inferred entries are var-type only; templates do not expose typed shared
-  channels (`text`, `data`, `sequence`) through the `this.<name>` surface
+  chains (`text`, `data`, `sequence`) through the `this.<name>` surface
 - these inferred entries participate in the same shared-schema metadata path as
   explicit script declarations: they are registered during bootstrap and merged
   into the chain-level shared schema
@@ -621,7 +621,7 @@ from normal execution:
 - no pending method promise structs during execution
 - no pending shared promise structs during execution
 - no metadata-await helper in the hot path
-- no partial unresolved linked-channel hints as a correctness mechanism
+- no partial unresolved linked-chain hints as a correctness mechanism
 
 Any remaining async work is only:
 
@@ -661,15 +661,15 @@ Work:
   no parent constructor exists
 - rewrite unresolved non-constructor `super: true` to a fatal metadata error
 - keep `super: false` callables compatible with the current parent metadata
-  chain used for signature inheritance and the existing merged-channel behavior
+  chain used for signature inheritance and the existing merged-chain behavior
 - preserve the current callable metadata fields where possible:
   - `fn`
   - `signature`
   - `ownerKey`
-  - own channel arrays
+  - own chain arrays
   - `super`
 - build sync-first method metadata for already-resolved entries
-- finalize/cache merged channel fields for direct entries during metadata
+- finalize/cache merged chain fields for direct entries during metadata
   finalization
 - publish the inheritance startup promise before constructor execution so an
   early constructor-local inherited call that reaches unresolved `super: true`
@@ -718,9 +718,9 @@ Goal:
 - any method can inspect all its directly invoked inherited methods without any
   await or promise resolution
 
-### Step 3 - Redefine `mergedLinkedChannels` / `mergedMutatedChannels`
+### Step 3 - Redefine `mergedLinkedChains` / `mergedMutatedChains`
 
-Change merged-channel semantics from:
+Change merged-chain semantics from:
 
 - own method + `super()` chain
 
@@ -732,9 +732,9 @@ Work:
 
 - compute inherited/super footprints parent-to-child after metadata resolution
 - compute invoked-method footprints with an iterative fixed-point pass
-- deduplicate channels
+- deduplicate chains
 - keep `super()` special and separate
-- compute final merged channel sets during bootstrap
+- compute final merged chain sets during bootstrap
 - report all method/super/invoked-method metadata errors discovered after chain
   loading through the runtime fatal-error path
 - aggregate all structural metadata errors discovered by the Step 3 merge/fixed-
@@ -757,8 +757,8 @@ Work:
   metadata-ready barrier that does not wait for parent output application
 - make pending-placeholder methods participate through direct metadata readiness
   instead of relying on the Step 1 transitional placeholder path
-- remove the startup-window channel-hint gap where an unresolved `super: true`
-  currently creates its invocation buffer before final method channels are known
+- remove the startup-window chain-hint gap where an unresolved `super: true`
+  currently creates its invocation buffer before final method chains are known
 - remove the transitional string-value fallback in invoked-method data resolution
   that exists only for constructor-time startup retry windows
 - keep component constructor startup on the caller-side ordered component startup
@@ -773,15 +773,15 @@ Goal:
 
 ### Step 5 - Use Direct Metadata in Caller-Side Admission
 
-After metadata readiness is explicit, replace current caller-side channel
+After metadata readiness is explicit, replace current caller-side chain
 collection with direct use of the new final metadata.
 
 Work:
 
 - stop using only the `super()` chain for caller-side linking
-- use final direct `methodMeta.mergedLinkedChannels`
-- use final direct `methodMeta.mergedMutatedChannels`
-- remove the partial unresolved-linked-channel correctness path
+- use final direct `methodMeta.mergedLinkedChains`
+- use final direct `methodMeta.mergedMutatedChains`
+- remove the partial unresolved-linked-chain correctness path
 - remove provisional invocation-buffer creation for known direct entries; once
   readiness is explicit, caller-side admission should create/link buffers from
   final direct method metadata only
@@ -807,15 +807,15 @@ compiled constructor/method/block bodies.
 
 Work:
 
-- where callable bodies need channel lists, use direct
-  `methodData.mergedLinkedChannels` and `methodData.mergedMutatedChannels`
+- where callable bodies need chain lists, use direct
+  `methodData.mergedLinkedChains` and `methodData.mergedMutatedChains`
 - treat missing invoked-method metadata as a finalization-time structural error,
-  not as an empty channel list
+  not as an empty chain list
 - keep entry-local code simple because bootstrap already did the hard work
 
 Goal:
 
-- method body/channel logic is consistent with caller-side admission
+- method body/chain logic is consistent with caller-side admission
 - no split between what caller-side thinks a method touches and what method
   startup later discovers
 
@@ -849,18 +849,18 @@ Work:
   helpers when direct metadata construction no longer needs a partial catalog
   construction mode
 - decide whether direct-call admission should cache pre-merged invocation-link
-  channels on resolved method metadata instead of recomputing them per call
+  chains on resolved method metadata instead of recomputing them per call
 - decide whether callable-body linking should cache pre-merged direct body-link
-  channels on resolved method metadata instead of recomputing them per entry
+  chains on resolved method metadata instead of recomputing them per entry
 - consolidate `invokeInheritedCallable(...)` and `invokeSuperCallable(...)` around
   one shared direct-admission helper if the remaining differences stay narrow
 - keep invocation command enqueue/start inline at the call sites; Step 9 removed
   the thin `_enqueueInvocationCommand(...)` wrapper
 - keep command invocation lifecycle behind private functions; Step 9 removed the
   test-only `invocationInternals` export
-- keep merged-channel handling private to the inheritance metadata layer; Step 9
-  removed the public `mergeUniqueChannelNames(...)` runtime export
-- consolidate duplicated linked-channel path helpers in the bootstrap and
+- keep merged-chain handling private to the inheritance metadata layer; Step 9
+  removed the public `mergeUniqueChainNames(...)` runtime export
+- consolidate duplicated linked-chain path helpers in the bootstrap and
   invocation-linking modules into one runtime helper
 - remove the legacy async-block `if (parent) return ""` guard if it remains
   dead after finalization moves fully onto the direct metadata path
@@ -879,7 +879,7 @@ Goal:
 After metadata construction/finalization is consolidated, tighten the language
 contract for shared state:
 
-- every file in an inheritance chain must declare every shared var/channel it
+- every file in an inheritance chain must declare every shared var/chain it
   wants to read, write, snapshot, error-check, or otherwise use as shared state
 - parent-chain visibility alone is no longer enough to authorize shared-state
   access in a child file
@@ -908,7 +908,7 @@ What this simplifies:
 - unresolved bare-name reads in blocks no longer need to be preserved as
   `sharedLookupCandidates` and filtered later against the final chain schema
 - body-local linking logic no longer needs a special decision about whether to
-  include chain-derived `sharedLookupChannels`; the file's own declarations
+  include chain-derived `sharedLookupChains`; the file's own declarations
   become the only authority for what shared names may be linked from that file
 - lookup semantics become clearer because an undeclared identifier is always
   ambient lookup and never a chain-shape-dependent shared fallback
@@ -917,11 +917,11 @@ What this changes:
 
 - shared declarations become a per-file interface, not only a chain-level merge
   input
-- if `child.njk` wants to read or write the shared channel `theme`,
+- if `child.njk` wants to read or write the shared chain `theme`,
   `child.njk` must declare `shared var theme` even if `base.njk` already
   declared it
 - if `child.njk` uses undeclared `theme`, that remains normal ambient lookup
-  rather than shared-channel access
+  rather than shared-chain access
 - the final chain merge still validates compatibility and chooses the effective
   shared entry for execution, but that merged schema no longer retroactively
   authorizes undeclared identifiers as shared access in another file
@@ -939,7 +939,7 @@ Work:
 - remove `sharedLookupCandidates` collection from compiled callable metadata
   once no execution path needs to preserve unresolved "maybe shared" names
 - remove runtime filtering/probing paths such as
-  `_filterSharedLookupChannels(...)` that only exist to rescue undeclared block
+  `_filterSharedLookupChains(...)` that only exist to rescue undeclared block
   reads from the chain-level schema
 - make callable body-linking and caller-side linking rely only on explicit
   per-file shared declarations plus direct method metadata, never on chain-level
@@ -956,7 +956,7 @@ What this removes:
 - ambient chain-level authorization for undeclared shared access
 - the remaining semantic need for `sharedLookupCandidates`
 - the Step 6/7 design question about whether body-local linking should include
-  chain-derived `sharedLookupChannels`; under this rule, undeclared ambient
+  chain-derived `sharedLookupChains`; under this rule, undeclared ambient
   lookup is never shared-name rescue
 
 Goal:
@@ -981,7 +981,7 @@ Completed cleanup:
   promise-entry chains or returns promise-shaped structural metadata
 - `bootstrapInheritanceMetadata(...)` now uses the explicit argument shape:
   `(state, methods, sharedSchema, invokedMethods, currentBuffer, context)`
-- shared-channel metadata lookup is synchronous after bootstrap/finalization
+- shared-chain metadata lookup is synchronous after bootstrap/finalization
 - obsolete pending-entry tests were replaced with invoked-metadata and
   method-in-method integration coverage
 

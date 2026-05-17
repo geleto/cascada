@@ -4,10 +4,10 @@
 
 This document records the current understanding of `CommandBuffer` and the target refactor direction.
 
-The original trigger was the shared `_channels` registry in [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js):
+The original trigger was the shared `_chains` registry in [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js):
 
 ```js
-this._channels = parent ? parent._channels : new Map();
+this._chains = parent ? parent._chains : new Map();
 ```
 
 That line is too broad, but the correct fix is not just deleting it. The deeper issue is that the command-buffer runtime still allows too much ambient visibility and too much lazy structural creation.
@@ -18,9 +18,9 @@ The target architecture should be:
 
 - static lane sets per buffer
 - eager lane creation
-- local-only channel lookup
-- no runtime-dynamic channel names
-- no command-buffer-level special treatment for "special" channels
+- local-only chain lookup
+- no runtime-dynamic chain names
+- no command-buffer-level special treatment for "special" chains
 
 ## Status Refresh
 
@@ -29,34 +29,34 @@ This document is still the right refactor note, but parts of its earlier
 
 The most important current facts are:
 
-- ordinary `findChannel(...)` is already narrower than this document originally
-  described: it walks ancestor `_ownedChannels` only; it does not recurse into
-  child buffers and it does not use `_channels` for normal lookup
-- `_visibleChannels`, `_findLinkedChildOwnedChannel(...)`,
-  `LOOKUP_DYNAMIC_CHANNEL_LINKING`, `ensureReadChannelLink(...)`, and
-  `_readChannelLinks` are not present in the current runtime anymore
-- `_channels` is still present and still too broad, but its concentrated
+- ordinary `findChain(...)` is already narrower than this document originally
+  described: it walks ancestor `_ownedChains` only; it does not recurse into
+  child buffers and it does not use `_chains` for normal lookup
+- `_visibleChains`, `_findLinkedChildOwnedChain(...)`,
+  `LOOKUP_DYNAMIC_CHAIN_LINKING`, `ensureReadChainLink(...)`, and
+  `_readChainLinks` are not present in the current runtime anymore
+- `_chains` is still present and still too broad, but its concentrated
   remaining value is the finished-snapshot fast path and the shared hierarchy
-  registry for channel objects
+  registry for chain objects
 - iterator-driven cleanup has moved forward: processed command entries are set
   to `null`, finished child-buffer slots are set to `null`, whole finished lane
-  arrays are now released with `buffer.arrays[channelName] = null`, and
+  arrays are now released with `buffer.arrays[chainName] = null`, and
   finished iterators dispose their own state
-- `_channelAliases` is now real behavior rather than a speculative future-only
+- `_chainAliases` is now real behavior rather than a speculative future-only
   mechanism; alias/canonical-name handling must therefore be part of the
   refactor plan, not treated as an optional afterthought
 - command taxonomy has also moved since some earlier notes: both
   `WaitResolveCommand` and `WaitCurrentCommand` exist in the runtime
-- `_channelTypes` is not currently dead state: composition payload capture uses
-  it to avoid redeclaring existing channels
-- `_channelRegistry` still appears to be write-only, but it should be audited
-  before deletion rather than removed together with `_channelTypes`
-- `new CommandBuffer(...)` call sites do not all share `_channels` the same
+- `_chainTypes` is not currently dead state: composition payload capture uses
+  it to avoid redeclaring existing chains
+- `_chainRegistry` still appears to be write-only, but it should be audited
+  before deletion rather than removed together with `_chainTypes`
+- `new CommandBuffer(...)` call sites do not all share `_chains` the same
   way: some linked buffers pass `parent = null` and `linkedParent =
   parentBuffer`, so the registry problem is broad but irregular rather than a
   single uniform parent-chain behavior
 - runtime-dynamic declaration paths still exist, especially compatibility paths
-  that emit `declareBufferChannel(..., name, ...)`; these must be removed or
+  that emit `declareBufferChain(..., name, ...)`; these must be removed or
   converted before static/eager lane assertions become unconditional
 
 So the overall direction of this document remains valid, but the migration
@@ -68,11 +68,11 @@ described."
 
 The refactor should move toward these rules:
 
-1. Channel/lane structure must be static for each buffer.
+1. Chain/lane structure must be static for each buffer.
 2. `_add()` must never create missing lanes.
-3. `findChannel()` must be local-only and O(1).
+3. `findChain()` must be local-only and O(1).
 4. The command buffer should not understand lexical scoping beyond what compile-time analysis already encoded.
-5. `usedChannels` is the real source of truth; runtime visibility is just its materialized form.
+5. `usedChains` is the real source of truth; runtime visibility is just its materialized form.
 6. Command-buffer parent/child structure must not be confused with lexical scope ownership.
 7. The refactor must reduce long-lived `CommandBuffer` state overall. Do not
    add new persistent maps, counters, or properties unless the same stage
@@ -82,12 +82,12 @@ The refactor should move toward these rules:
 
 Before changing the runtime, it helps to name the structures that currently overlap:
 
-- `_ownedChannels`: channels declared locally in this buffer
-- `_linkedChannels`: bookkeeping for child buffers structurally linked into this buffer's lanes
-- `_channels`: hierarchy-wide registry shared across parent/child buffers
-- `_channelAliases`: narrow alias/canonical-name mapping used for explicit
-  runtime channel binding
-- `arrays`: per-channel lane payload arrays; still created lazily today, but
+- `_ownedChains`: chains declared locally in this buffer
+- `_linkedChains`: bookkeeping for child buffers structurally linked into this buffer's lanes
+- `_chains`: hierarchy-wide registry shared across parent/child buffers
+- `_chainAliases`: narrow alias/canonical-name mapping used for explicit
+  runtime chain binding
+- `arrays`: per-chain lane payload arrays; still created lazily today, but
   finished iterator cleanup can now set individual entries and whole finished
   lane arrays to `null`
 - `_visitingIterators`: notification/bookkeeping for iterators currently
@@ -105,7 +105,7 @@ reducing the number of overlapping `CommandBuffer` properties:
 
 - one local addressability mechanism for lookup, preferably by repurposing
   existing ownership/registry state during the same stage that removes
-  `_channels`
+  `_chains`
 - `arrays` as the lane structure/finish source, not a parallel lane-name list
   or lane counter
 - optional ownership metadata only if it remains useful for assertions/debugging
@@ -115,30 +115,30 @@ reducing the number of overlapping `CommandBuffer` properties:
 
 ### 1. Ambient visibility
 
-Current `findChannel(...)` in [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js) is already simpler than this document originally assumed:
+Current `findChain(...)` in [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js) is already simpler than this document originally assumed:
 
-- local `_ownedChannels`
-- ancestor `_ownedChannels`
+- local `_ownedChains`
+- ancestor `_ownedChains`
 
 That is much broader than the compiler's explicit linking model.
 
 The compiler already computes:
 
-- `usedChannels`
-- `declaredChannels`
-- linked parent-visible channels for each boundary
+- `usedChains`
+- `declaredChains`
+- linked parent-visible chains for each boundary
 
-So the runtime should not rediscover channels beyond that contract.
+So the runtime should not rediscover chains beyond that contract.
 
-This matters not only for name resolution, but also for ordered traversal semantics. Helpers such as lookup/snapshot logic assume that if a buffer can observe a lane, that lane is structurally part of the buffer's linked hierarchy in source order. Ambient ancestor/descendant discovery breaks that assumption by making a channel appear readable even when the current buffer was never explicitly wired into the lane that owns the ordered command stream.
+This matters not only for name resolution, but also for ordered traversal semantics. Helpers such as lookup/snapshot logic assume that if a buffer can observe a lane, that lane is structurally part of the buffer's linked hierarchy in source order. Ambient ancestor/descendant discovery breaks that assumption by making a chain appear readable even when the current buffer was never explicitly wired into the lane that owns the ordered command stream.
 
 ### 2. Lazy structural creation
 
 Current `_add(...)` still does:
 
 ```js
-if (!this.arrays[resolvedChannelName]) {
-  this.arrays[resolvedChannelName] = [];
+if (!this.arrays[resolvedChainName]) {
+  this.arrays[resolvedChainName] = [];
 }
 ```
 
@@ -154,19 +154,19 @@ In the new model, a missing lane in `_add(...)` must be a hard internal error.
 
 ### 3. Shared/global registry
 
-`_channels` is a hierarchy-wide registry of all channels. It bypasses explicit ownership and visibility and especially leaks into finished-snapshot paths.
+`_chains` is a hierarchy-wide registry of all chains. It bypasses explicit ownership and visibility and especially leaks into finished-snapshot paths.
 
 The regular command path already does not need it. The most problematic use is the finished-snapshot fast path.
 
-More concretely, `_channels` lets the runtime answer "does some channel with this name exist anywhere in the hierarchy?" when what it really needs to answer is "is this buffer explicitly wired to the lane that owns the ordered history for this name?" Those are not equivalent questions. The first one is a global existence test; the second is the compiler/runtime contract the iterator model actually depends on.
+More concretely, `_chains` lets the runtime answer "does some chain with this name exist anywhere in the hierarchy?" when what it really needs to answer is "is this buffer explicitly wired to the lane that owns the ordered history for this name?" Those are not equivalent questions. The first one is a global existence test; the second is the compiler/runtime contract the iterator model actually depends on.
 
-### 4. Runtime-dynamic channel names
+### 4. Runtime-dynamic chain names
 
-There are still places where channel names are declared in runtime loops through compatibility paths.
+There are still places where chain names are declared in runtime loops through compatibility paths.
 
 This should not remain.
 
-The goal of this refactor is that every buffer has a statically known channel/lane set.
+The goal of this refactor is that every buffer has a statically known chain/lane set.
 
 ## Target Runtime Model
 
@@ -176,19 +176,19 @@ Each `CommandBuffer` should be created with a fixed lane set.
 
 That lane set should contain:
 
-- all local declared channels for that buffer
-- all parent-linked used channels for that buffer
+- all local declared chains for that buffer
+- all parent-linked used chains for that buffer
 
 From that moment on:
 
 - `arrays[name]` exists for every lane
 - no new lane names are introduced later
 
-This static lane set is intentionally a structural superset. A declared local variable/channel may still need a lane even if it is never read later, because declarations and writes still need somewhere to land.
+This static lane set is intentionally a structural superset. A declared local variable/chain may still need a lane even if it is never read later, because declarations and writes still need somewhere to land.
 
 So:
 
-- declared-but-unused local channels do not break the model
+- declared-but-unused local chains do not break the model
 - they simply become unused eager lanes
 - pruning such lanes is an optional later optimization, not a correctness requirement
 
@@ -196,8 +196,8 @@ So:
 
 For planning the refactor, it helps to separate the lane names into three populations:
 
-1. parent-linked channels: `usedChannels - declaredChannels`
-2. locally declared channels: `declaredChannels`
+1. parent-linked chains: `usedChains - declaredChains`
+2. locally declared chains: `declaredChains`
 3. remaining runtime-dynamic compatibility names
 
 The first two populations are already compiler-known and should be eagerly materialized.
@@ -206,15 +206,15 @@ The third population is the current blocker to "everything is static", and it sh
 
 ### Local addressability
 
-The runtime should maintain local channel addressability for this buffer without
+The runtime should maintain local chain addressability for this buffer without
 adding another overlapping long-lived registry.
 
 That addressability mechanism should include:
 
-- local channels actually declared in this buffer
-- parent-linked channels that static analysis says this buffer may read/write through
+- local chains actually declared in this buffer
+- parent-linked chains that static analysis says this buffer may read/write through
 
-`findChannel(name)` should just look up the resolved/canonical name through
+`findChain(name)` should just look up the resolved/canonical name through
 that local mechanism.
 
 That means:
@@ -224,7 +224,7 @@ That means:
 - no global fallback registry
 
 Common-case lookup should be O(1). If a new map is temporarily introduced
-during migration, it must replace `_channels` and/or `_ownedChannels` in the
+during migration, it must replace `_chains` and/or `_ownedChains` in the
 same stage rather than becoming another permanent `CommandBuffer` property.
 
 ### Scope ownership vs child buffers
@@ -236,75 +236,75 @@ That means:
 - a truly child-scope-owned declaration must not become visible to the parent just because it lives in a child buffer
 - a parent-scope-owned declaration emitted inside a child buffer still needs an ordered runtime binding strategy
 
-The second case is the real reason the current runtime sometimes reaches across buffer boundaries. The refactor should describe that case narrowly instead of speaking about "child-owned channels" flowing upward.
+The second case is the real reason the current runtime sometimes reaches across buffer boundaries. The refactor should describe that case narrowly instead of speaking about "child-owned chains" flowing upward.
 
 The target rule is:
 
-- no lookup should rediscover channels by scanning child buffers
-- if an outer-scope-owned declaration needs to be addressable across an async boundary, that must come from the normal `usedChannels` / parent-linked-lane wiring computed by analysis
+- no lookup should rediscover chains by scanning child buffers
+- if an outer-scope-owned declaration needs to be addressable across an async boundary, that must come from the normal `usedChains` / parent-linked-lane wiring computed by analysis
 
-This is important: the outer-scope-owned case does not require a new special runtime propagation mechanism. If analysis is correct, the child buffer sees that name as a parent-linked used channel and the parent already owns the lane.
+This is important: the outer-scope-owned case does not require a new special runtime propagation mechanism. If analysis is correct, the child buffer sees that name as a parent-linked used chain and the parent already owns the lane.
 
 ### No runtime lookup recursion
 
 The current runtime has already dropped the older child-buffer discovery path
-from ordinary `findChannel(...)`.
+from ordinary `findChain(...)`.
 
 That is good progress, but it is not the end state.
 
 The remaining work is:
 
-- remove the ancestor walk from ordinary `findChannel(...)`
+- remove the ancestor walk from ordinary `findChain(...)`
 - make finished-snapshot and shared-observation paths use the same explicit
   local addressability model
-- stop treating "an ancestor owns some channel of this name" as sufficient
+- stop treating "an ancestor owns some chain of this name" as sufficient
   runtime evidence that the current buffer may observe that lane
 
 So the target is still "no runtime rediscovery", but the migration point is now
 "finish removing ancestor/global rediscovery", not "stop scanning child
 buffers."
 
-## Used Channels, Visible Channels, Owned Channels
+## Used Chains, Visible Chains, Owned Chains
 
-### `usedChannels` is the real source of truth
+### `usedChains` is the real source of truth
 
-The compiler's static analysis already determines which channels a buffer may access.
+The compiler's static analysis already determines which chains a buffer may access.
 
 That is the important set.
 
-Runtime visibility should be nothing more than the materialized form of compile-time `usedChannels`.
+Runtime visibility should be nothing more than the materialized form of compile-time `usedChains`.
 
 In other words:
 
 - compile time computes names
-- runtime installs concrete channel references for those names
+- runtime installs concrete chain references for those names
 
-This is why "visible channels" only make sense as explicit runtime materialization of static analysis, not as a discovery mechanism.
+This is why "visible chains" only make sense as explicit runtime materialization of static analysis, not as a discovery mechanism.
 
 In the stricter model, local addressability is the runtime form of:
 
-- parent-linked `usedChannels`
+- parent-linked `usedChains`
 - plus local declarations that belong to this buffer's own lane set
 
-### Do we need `_visibleChannels`?
+### Do we need `_visibleChains`?
 
 Not as an existing structure. The current runtime does not have a live
-`_visibleChannels` map anymore.
+`_visibleChains` map anymore.
 
 But it still needs the concept the earlier document was trying to name:
 
 - one local addressability mechanism
 - populated explicitly from compile-time lane/link information
-- used by `findChannel(...)`, finished snapshots, and shared observation
+- used by `findChain(...)`, finished snapshots, and shared observation
 
 So the recommendation remains:
 
 - repurpose existing state for explicit addressability where possible
 - if a new local map is temporarily introduced, remove the state it replaces in
   the same stage
-- do not reintroduce `_visibleChannels` as a second overlapping runtime system
+- do not reintroduce `_visibleChains` as a second overlapping runtime system
 
-### Do we need `_ownedChannels`?
+### Do we need `_ownedChains`?
 
 For lookup, probably not.
 
@@ -312,7 +312,7 @@ The command buffer is not the right layer for lexical scoping. Compile-time anal
 
 So the runtime does not need a deep concept of scoping ownership in order to resolve names.
 
-However, `_ownedChannels` may still be useful as metadata for:
+However, `_ownedChains` may still be useful as metadata for:
 
 - assertions
 - debugging
@@ -321,10 +321,10 @@ However, `_ownedChannels` may still be useful as metadata for:
 
 So the likely target is:
 
-- one local addressability mechanism used by `findChannel(...)`
+- one local addressability mechanism used by `findChain(...)`
 - optional ownership metadata retained only if it still serves a clear purpose
 
-The important point is: `_ownedChannels` should not drive cross-buffer lookup behavior.
+The important point is: `_ownedChains` should not drive cross-buffer lookup behavior.
 
 ## Eager Arrays
 
@@ -334,8 +334,8 @@ Arrays should be eagerly created, not lazily created.
 
 This should apply to:
 
-- all locally declared channels
-- all linked parent-provided channels
+- all locally declared chains
+- all linked parent-provided chains
 
 ### Why eager is better
 
@@ -355,7 +355,7 @@ In other words:
 
 - lane existence should be known at buffer construction time
 - lane arrays should exist before any writes happen
-- channel visibility/addressability should be installed before any lookup happens
+- chain visibility/addressability should be installed before any lookup happens
 
 But values inside those lanes can still remain lazy:
 
@@ -373,9 +373,9 @@ After the refactor:
 - a missing `arrays[name]` should be an internal assertion/error
 - the lazy fallback should be removed
 
-## What Replaces `_collectKnownChannelNames()`
+## What Replaces `_collectKnownChainNames()`
 
-`_collectKnownChannelNames()` is not a global channel store. It is currently a helper for finish accounting.
+`_collectKnownChainNames()` is not a global chain store. It is currently a helper for finish accounting.
 
 It also exists because the current runtime has no single authoritative lane list. It has to reconstruct that list by merging several partial structures.
 
@@ -397,18 +397,18 @@ The practical choice is therefore:
 
 ### `_visitingIterators`
 
-Today `_collectKnownChannelNames()` also includes `_visitingIterators.keys()`.
+Today `_collectKnownChainNames()` also includes `_visitingIterators.keys()`.
 
 Under the target eager model, any lane an iterator can visit must already exist in `arrays`.
 
 So `_visitingIterators` should become redundant as a source of lane names.
 
-That means `_collectKnownChannelNames()` itself should disappear rather than surviving as a merged-name helper.
+That means `_collectKnownChainNames()` itself should disappear rather than surviving as a merged-name helper.
 
 However, `_visitingIterators` itself should remain. It is still needed as the notification mechanism for:
 
 - `_notifyCommandOrBufferAdded(...)`
-- `_notifyChannelFinished(...)`
+- `_notifyChainFinished(...)`
 
 What goes away is only its role in lane enumeration.
 
@@ -432,9 +432,9 @@ It should **not** mean:
 
 The iterator in [src/runtime/buffer-iterator.js](C:\Projects\cascada\src\runtime\buffer-iterator.js) shows the real semantics:
 
-- it walks `buffer.arrays[channelName]`
+- it walks `buffer.arrays[chainName]`
 - when it encounters a child buffer entry, it enters it
-- it leaves that child only when `childBuffer.isChannelFinished(channelName)` is true
+- it leaves that child only when `childBuffer.isChainFinished(chainName)` is true
 
 So there are two separate concerns:
 
@@ -469,9 +469,9 @@ beside it.
 
 Probably yes, once static lane creation is complete.
 
-Today `_finishRequestedChannels` and `_finishKnownChannelIfRequested(...)` exist because finish requests can arrive before a lane or channel has been materialized.
+Today `_finishRequestedChains` and `_finishKnownChainIfRequested(...)` exist because finish requests can arrive before a lane or chain has been materialized.
 
-With eager lane creation, `finishChannel(name)` should be able to:
+With eager lane creation, `finishChain(name)` should be able to:
 
 1. resolve the canonical lane name
 2. assert that the lane exists in the static lane set
@@ -481,8 +481,8 @@ With eager lane creation, `finishChannel(name)` should be able to:
 
 So the likely target is:
 
-- remove `_finishRequestedChannels`
-- remove `_finishKnownChannelIfRequested(...)`
+- remove `_finishRequestedChains`
+- remove `_finishKnownChainIfRequested(...)`
 - keep per-lane finished state and aggregate completion logic
 
 This simplification is valid only once lane existence is guaranteed statically.
@@ -491,7 +491,7 @@ This simplification is valid only once lane existence is guaranteed statically.
 
 One implementation trap here is that eager creation changes *when* lanes become known, but it must not accidentally change the observable finish behavior of the existing runtime while intermediate compatibility code still exists.
 
-Today some finish behavior is coupled to registration paths such as `_registerChannel(...)` and `_registerLinkedChannel(...)`. As long as those hooks still exist, eager lane creation must preserve their effective finish-side effects somewhere equivalent. Only after static lane metadata fully owns finish accounting should those legacy registration-time finish paths be removed.
+Today some finish behavior is coupled to registration paths such as `_registerChain(...)` and `_registerLinkedChain(...)`. As long as those hooks still exist, eager lane creation must preserve their effective finish-side effects somewhere equivalent. Only after static lane metadata fully owns finish accounting should those legacy registration-time finish paths be removed.
 
 ## Linked Lanes
 
@@ -510,16 +510,16 @@ A good model is:
 Then:
 
 - lanes in `allLaneNames` are eagerly created in `arrays`
-- lane names not locally owned are connected to parent-provided channel refs
+- lane names not locally owned are connected to parent-provided chain refs
 
 This is much cleaner than today's lazy "buffer becomes linked when children are inserted" behavior.
 
 The intended constructor-time split is:
 
-- parent-linked channels: statically imported from the effective link target
-- declared/local channels: statically reserved in the lane set and later bound to concrete channel objects by `declareBufferChannel(...)`
+- parent-linked chains: statically imported from the effective link target
+- declared/local chains: statically reserved in the lane set and later bound to concrete chain objects by `declareBufferChain(...)`
 
-That keeps all structural information static while still allowing channel objects themselves to be attached at the normal declaration point.
+That keeps all structural information static while still allowing chain objects themselves to be attached at the normal declaration point.
 
 ## `new CommandBuffer(...)`
 
@@ -529,8 +529,8 @@ It should conceptually receive:
 
 - context
 - static lane names for the new buffer
-- locally declared/owned channel names (or specs)
-- external used channels to import from the link target
+- locally declared/owned chain names (or specs)
+- external used chains to import from the link target
 - alias information if needed
 
 Then it should:
@@ -540,31 +540,31 @@ Then it should:
 3. establish canonical-name/alias resolution
 4. eagerly create all lane arrays
 5. install local addressability without adding an overlapping permanent map
-6. register locally declared channels
-7. install external channel refs for statically used parent channels
+6. register locally declared chains
+7. install external chain refs for statically used parent chains
 
 No later structural discovery should be required.
 
 ### Compiler/API changes needed
 
-Today `new CommandBuffer(...)` is called with linked channels only.
+Today `new CommandBuffer(...)` is called with linked chains only.
 
-To make local lane creation eager, the compiler also needs to pass declared-channel information derived from `node._analysis.declaredChannels`.
+To make local lane creation eager, the compiler also needs to pass declared-chain information derived from `node._analysis.declaredChains`.
 
 That likely means:
 
-- adding a compiler helper analogous to `getLinkedChannelsArg(...)` for declared channels
-- updating async-boundary and macro call sites to pass both linked and declared channel metadata
+- adding a compiler helper analogous to `getLinkedChainsArg(...)` for declared chains
+- updating async-boundary and macro call sites to pass both linked and declared chain metadata
 - treating the lane spec, not ad hoc runtime declaration order, as the source of structural truth
 
-## Channel Registration Cleanup
+## Chain Registration Cleanup
 
-Current channel registration is messy because `Channel` construction registers once and `declareBufferChannel(...)` registers again.
+Current chain registration is messy because `Chain` construction registers once and `declareBufferChain(...)` registers again.
 
 The clean fix is:
 
-- remove `_buffer._registerChannel(...)` from `Channel` construction
-- make `declareBufferChannel(...)` the single canonical registration entry point
+- remove `_buffer._registerChain(...)` from `Chain` construction
+- make `declareBufferChain(...)` the single canonical registration entry point
 
 This applies to:
 
@@ -577,79 +577,79 @@ This applies to:
 
 Related cleanup:
 
-- `targetBuffer._channelRegistry[channelName] = channel` appears to be
+- `targetBuffer._chainRegistry[chainName] = chain` appears to be
   write-only state today and is a good deletion candidate after an audit
-- `targetBuffer._channelTypes[channelName] = channelType` is still used by
+- `targetBuffer._chainTypes[chainName] = chainType` is still used by
   composition payload capture and must not be removed until that consumer has a
   replacement
-- if lane specs become constructor-time metadata, channel type should live
+- if lane specs become constructor-time metadata, chain type should live
   there instead of in a parallel runtime map
-- after composition payload capture no longer reads `_channelTypes`, the map
+- after composition payload capture no longer reads `_chainTypes`, the map
   should be removed rather than surviving as a second unused parallel registry
 
 This section is more urgent now than when the document was first drafted:
 
 - the current runtime still does register in both places
-- `declareBufferChannel(...)` already reassigns `channel._buffer` and
+- `declareBufferChain(...)` already reassigns `chain._buffer` and
   re-registers, so this is a good concrete cleanup target even before the
   larger static-lane refactor lands
 
-## `_channels`
+## `_chains`
 
-The shared `_channels` registry should be removed.
+The shared `_chains` registry should be removed.
 
 It currently leaks into finished-snapshot handling and bypasses explicit structure.
 
-The most concentrated dependency is `_runFinishedSnapshotCommand(...)`, which currently does direct `_channels.get(channelName)` lookup for the finished-buffer snapshot fast path. That method should be converted to use local addressability just like the rest of the runtime.
+The most concentrated dependency is `_runFinishedSnapshotCommand(...)`, which currently does direct `_chains.get(chainName)` lookup for the finished-buffer snapshot fast path. That method should be converted to use local addressability just like the rest of the runtime.
 
-This asymmetry is important. Normal command traversal is already much closer to the intended structural model because it walks buffer lanes and child-buffer entries in order. The finished-snapshot fast path is broader: it can answer from a global registry even when the current buffer was never explicitly linked to that lane. That is why `_channels` removal is not just cleanup; it closes one of the biggest remaining "ambient visibility" loopholes.
+This asymmetry is important. Normal command traversal is already much closer to the intended structural model because it walks buffer lanes and child-buffer entries in order. The finished-snapshot fast path is broader: it can answer from a global registry even when the current buffer was never explicitly linked to that lane. That is why `_chains` removal is not just cleanup; it closes one of the biggest remaining "ambient visibility" loopholes.
 
 Also, while it still exists during transition, the guard:
 
 ```js
-if (!this._channels) {
-  this._channels = new Map();
+if (!this._chains) {
+  this._chains = new Map();
 }
 ```
 
-in `_registerChannel(...)` is dead code because `_channels` is always initialized in the constructor.
+in `_registerChain(...)` is dead code because `_chains` is always initialized in the constructor.
 
 That guard should be deleted even in any intermediate stage.
 
 Current note:
 
-- `_channels` is still load-bearing for finished `SnapshotCommand` /
+- `_chains` is still load-bearing for finished `SnapshotCommand` /
   `RawSnapshotCommand` handling in `addCommand(...)` and
   `_runFinishedSnapshotCommand(...)`
-- ordinary lookup no longer uses `_channels`, which means `_channels` removal is
+- ordinary lookup no longer uses `_chains`, which means `_chains` removal is
   now more concentrated and more realistic than when this document was first
   written
 
-## Channel Aliases
+## Chain Aliases
 
-`_channelAliases` should remain as a separate concern.
+`_chainAliases` should remain as a separate concern.
 
 They are not currently central to macro/caller behavior, but they should be kept for future implementation.
 
 The important rule is:
 
 - alias resolution is orthogonal to ownership/visibility
-- channel maps should store canonical/resolved names
+- chain maps should store canonical/resolved names
 - visibility installation must use the same resolved names that lookups will later use
 
 Canonical runtime names like `name#7` are already treated as resolved and should continue to be.
 
-The important sequencing constraint is that alias/canonical-name setup must happen before eager lane creation is treated as complete. Otherwise the runtime can eagerly create a lane under one name, then later attempt lookup or visibility installation under a different resolved name and falsely conclude that the lane is missing. So alias inheritance and canonical-name resolution belong in construction-time initialization, not as an afterthought once channels start registering.
+The important sequencing constraint is that alias/canonical-name setup must happen before eager lane creation is treated as complete. Otherwise the runtime can eagerly create a lane under one name, then later attempt lookup or visibility installation under a different resolved name and falsely conclude that the lane is missing. So alias inheritance and canonical-name resolution belong in construction-time initialization, not as an afterthought once chains start registering.
 
-## Special Channels
+## Special Chains
 
 There should be no command-buffer-level special treatment for:
 
 - `__return__`
-- text channels
-- sequential path channels
+- text chains
+- sequential path chains
 - `__caller__`
-- waited channels
+- waited chains
 - `__parentTemplate`
 
 These are special at the **compiler/code generation** level, not at the command-buffer structural level.
@@ -664,8 +664,8 @@ The runtime should stay name-agnostic.
 
 Important constraint:
 
-- even if the compiler treats some internal channels specially when assigning ownership or lane membership, runtime add/lookup/snapshot behavior must still stay uniform
-- there must be no runtime shortcut that bypasses the normal command-buffer hierarchy for these channels
+- even if the compiler treats some internal chains specially when assigning ownership or lane membership, runtime add/lookup/snapshot behavior must still stay uniform
+- there must be no runtime shortcut that bypasses the normal command-buffer hierarchy for these chains
 
 ### `__return__` needs scope-unique ownership
 
@@ -673,21 +673,21 @@ Important constraint:
 
 The correct rule is:
 
-- each real return-owning scope gets its own unique runtime return channel name
+- each real return-owning scope gets its own unique runtime return chain name
 - all `return` writes inside that same scope target that same name
-- nested callable/render scopes get a different return channel name
+- nested callable/render scopes get a different return chain name
 
 So a scope-unique runtime name such as `__return__#<scopeId>` is a good model.
 
 What must not happen is:
 
-- generating a fresh unique return channel name per individual `return` statement
+- generating a fresh unique return chain name per individual `return` statement
 
 That would incorrectly split one logical return lane into many lanes.
 
 In practice this means:
 
-- the unique return channel name should be assigned once when the return-owning scope is created
+- the unique return chain name should be assigned once when the return-owning scope is created
 - declaration, writes, snapshots, and analysis/linking should all consistently use that same scope-stable runtime name
 
 This keeps nested return scopes isolated while still allowing structural child buffers inside the same scope to target the correct owning return lane.
@@ -698,9 +698,9 @@ The current compiler/analysis already models return ownership partially, but not
 
 Today:
 
-- script roots declare an internal `__return__` channel
-- macros declare an internal `__return__` channel
-- caller scopes declare an internal `__return__` channel
+- script roots declare an internal `__return__` chain
+- macros declare an internal `__return__` chain
+- caller scopes declare an internal `__return__` chain
 - `return` statements record mutation of `__return__`
 
 So return-owning scopes already exist in the analysis indirectly through normal declaration machinery.
@@ -708,28 +708,28 @@ So return-owning scopes already exist in the analysis indirectly through normal 
 What is still missing is an explicit return-scope identity model:
 
 - there is no dedicated `returnScopeId`
-- there is no dedicated `returnChannelRuntimeName`
+- there is no dedicated `returnChainRuntimeName`
 - there is no rename pass for `__return__` comparable to the current loop renaming
 
 For the refactor, analysis should make return ownership explicit, for example with metadata such as:
 
 - `ownsReturnScope: true`
 - `returnScopeId`
-- `returnChannelRuntimeName`
+- `returnChainRuntimeName`
 
-Then each `return` statement should resolve to the nearest owning return scope and use that scope-stable runtime return channel name consistently for:
+Then each `return` statement should resolve to the nearest owning return scope and use that scope-stable runtime return chain name consistently for:
 
 - declaration
 - writes
 - snapshots
-- `usedChannels` / `declaredChannels`
+- `usedChains` / `declaredChains`
 - parent-linked-lane filtering
 
 From the command-buffer perspective:
 
-- `__return__` is just a normal var channel
-- sequential-path channels are just normal channels of their own type
-- text channels are just channels
+- `__return__` is just a normal var chain
+- sequential-path chains are just normal chains of their own type
+- text chains are just chains
 
 So the runtime rules should be uniform:
 
@@ -744,14 +744,14 @@ If any such bypass still exists, it should be removed early.
 
 If buffer structure becomes fully static, the strongest simplification is:
 
-- compile-time analysis determines the full set of channel names a buffer can address
+- compile-time analysis determines the full set of chain names a buffer can address
 - runtime materializes local addressability for those names
 - optional ownership metadata may survive only for assertions/debugging
 
 So the likely end state is:
 
 - local addressability is the real runtime structure
-- `_ownedChannels` is optional metadata, not a separate visibility system
+- `_ownedChains` is optional metadata, not a separate visibility system
 
 ## `getFinishedPromise()`
 
@@ -768,23 +768,23 @@ What changes is not its existence, but what resolves it:
 
 The refactor should preserve and strengthen invariants such as:
 
-- `findChannel()` is local-only
+- `findChain()` is local-only
 - `_add()` cannot create lanes
 - missing lane in `_add()` is an internal error
-- `_linkedChannels` is removed
+- `_linkedChains` is removed
 - child lexical scope never becomes visible to the parent through buffer traversal
-- no runtime-dynamic channel names remain
-- special channels receive no command-buffer-level shortcut treatment
+- no runtime-dynamic chain names remain
+- special chains receive no command-buffer-level shortcut treatment
 - aggregate finish depends only on this buffer's lane set
 - lookup/snapshot logic cannot observe a lane unless the buffer was explicitly wired to that lane's ordered structure
 - alias-based lookup, lane creation, and visibility installation all agree on the same canonical runtime name
-- removing `_channels` does not change finished-snapshot correctness for explicitly linked lanes
+- removing `_chains` does not change finished-snapshot correctness for explicitly linked lanes
 
 ## Migration Strategy
 
 Because the current runtime still tolerates incomplete analysis in a few places, the refactor should introduce stricter invariants in stages:
 
-1. add debug/development assertions around missing lanes, missing linked parent channels, and unexpected ambient lookup success
+1. add debug/development assertions around missing lanes, missing linked parent chains, and unexpected ambient lookup success
 2. run the focused and full test suites to surface any remaining analysis gaps
 3. remove the old fallback paths once the assertions stop firing
 
@@ -813,17 +813,17 @@ Primary files:
 
 Changes:
 
-- add a compiler helper parallel to `getLinkedChannelsArg(...)` for declared/local lane specs
-- update `getLinkedChannelsArg(...)` filtering so scope-unique return names like `__return__#<scopeId>` are still excluded from parent-linked lanes
+- add a compiler helper parallel to `getLinkedChainsArg(...)` for declared/local lane specs
+- update `getLinkedChainsArg(...)` filtering so scope-unique return names like `__return__#<scopeId>` are still excluded from parent-linked lanes
 - keep declaration ownership and parent-linked usage separate and explicit
 - add explicit return-scope metadata such as:
   - `ownsReturnScope`
   - `returnScopeId`
-  - `returnChannelRuntimeName`
+  - `returnChainRuntimeName`
 - assign a scope-stable runtime return name like `__return__#<scopeId>` once per return-owning scope
 - make `return` analysis resolve to the nearest owning return scope instead of mutating bare `__return__`
 - validate lane-spec assumptions early:
-  - after filtering out local declarations from raw `usedChannels`, the resulting parent-linked set must be disjoint from the local declared set
+  - after filtering out local declarations from raw `usedChains`, the resulting parent-linked set must be disjoint from the local declared set
   - every referenced parent-linked lane must correspond to an analyzable outer declaration
   - every return-owning scope must have exactly one scope-stable return runtime name
 
@@ -847,7 +847,7 @@ Important note:
 
 - same-scope return routing and true early-return control flow are related but not identical. If early-exit semantics remain out of scope for this refactor, only add tests for correct lane targeting, not for "stop executing the rest of the scope."
 - the declared-lane helper is the main prerequisite for Step 2; full `__return__` scope-uniqueness work can proceed in parallel if needed
-- the new declared-lane helper must be threaded through the same boundary creation call sites that currently use `getLinkedChannelsArg(...)`, especially in `boundaries.js`, `loop.js`, and root/macro buffer creation paths
+- the new declared-lane helper must be threaded through the same boundary creation call sites that currently use `getLinkedChainsArg(...)`, especially in `boundaries.js`, `loop.js`, and root/macro buffer creation paths
 - lane-spec validation should begin as warnings or debug assertions during migration and only become hard errors after the remaining runtime-dynamic lane cases have been removed
 
 ### Step 2. Change `new CommandBuffer(...)` to receive static lane specs and build eager arrays
@@ -870,14 +870,14 @@ Changes:
   - parent-linked lane names
   - local declared lane names
 - apply the same static-lane-spec model to root buffers as well as child buffers
-- update the compiler call sites that currently pass only linked channels so they also pass declared-lane specs
+- update the compiler call sites that currently pass only linked chains so they also pass declared-lane specs
 - eagerly create `arrays[name] = []` for the full static lane set
 - move alias inheritance/canonical-name setup into construction-time buffer initialization, before populating any local addressability entries
 - use `arrays` itself as the materialized lane structure; do not store a
   parallel lane-name list or lane-count property
 - keep child/parent structural insertion separate from lane creation
 - assert at construction time that every parent-linked lane resolves on the effective link target (`linkedParent` where present, otherwise `parent`)
-- do not remove `_registerLinkedChannel(...)` calls from `_add()` yet; that compatibility cleanup belongs to Step 9 when finish bookkeeping is collapsed
+- do not remove `_registerLinkedChain(...)` calls from `_add()` yet; that compatibility cleanup belongs to Step 9 when finish bookkeeping is collapsed
 
 Tests for this step:
 
@@ -885,7 +885,7 @@ Tests for this step:
 
 Still-unimplemented tests to add here:
 
-- integration test: declared-but-unused local channels do not prevent buffer completion
+- integration test: declared-but-unused local chains do not prevent buffer completion
 - targeted runtime/integration test: `getFinishedPromise()` still resolves for buffers with unused eager local lanes
 - integration test anchor: loop body buffers still behave correctly under eager lane creation
 - integration test anchor: macro/caller invocation buffers still behave correctly under eager lane creation
@@ -897,34 +897,34 @@ Clarification:
 - Step 5 will use eager `arrays` keys for finish accounting
 - alias setup here is a sequencing change to existing behavior, not a new alias feature
 
-### Step 3. Introduce local addressability and clean up channel registration
+### Step 3. Introduce local addressability and clean up chain registration
 
 Goal:
 
-- make one local mechanism the source of channel resolution
+- make one local mechanism the source of chain resolution
 
 Primary files:
 
 - [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js)
-- [src/runtime/channels/index.js](C:\Projects\cascada\src\runtime\channels\index.js)
+- [src/runtime/chains/index.js](C:\Projects\cascada\src\runtime\chains\index.js)
 
 Changes:
 
-- make `declareBufferChannel(...)` the single canonical registration path
-- remove registration from `Channel` construction
+- make `declareBufferChain(...)` the single canonical registration path
+- remove registration from `Chain` construction
 - establish one unified local addressability mechanism during migration so it
   becomes the single primary runtime lookup structure
-- prefer repurposing existing `_ownedChannels`/registration state over adding a
+- prefer repurposing existing `_ownedChains`/registration state over adding a
   new permanent map
-- install locally declared channel objects into that mechanism
-- install parent-linked channel refs from static analysis into that same mechanism
-- if `_ownedChannels` remains after this step, keep it only as optional
+- install locally declared chain objects into that mechanism
+- install parent-linked chain refs from static analysis into that same mechanism
+- if `_ownedChains` remains after this step, keep it only as optional
   assertions/debug metadata; it must no longer participate in cross-buffer
   lookup
-- remove dead `_channelTypes` state if nothing reads it
-- move iterator binding along with the registration cleanup so channel iterators still bind to the owning buffer correctly
+- remove dead `_chainTypes` state if nothing reads it
+- move iterator binding along with the registration cleanup so chain iterators still bind to the owning buffer correctly
 - establish and enforce the construction-order invariant for parent-linked refs:
-  - parent-linked channel refs must already exist on the effective link target when the child buffer is constructed
+  - parent-linked chain refs must already exist on the effective link target when the child buffer is constructed
   - if that invariant is violated, fail via assertion during migration rather than adding a new deferred-binding fallback
 
 Tests for this step:
@@ -941,7 +941,7 @@ Still-unimplemented tests to add here:
 
 Goal:
 
-- make `findChannel()` local-only
+- make `findChain()` local-only
 
 Primary files:
 
@@ -950,8 +950,8 @@ Primary files:
 
 Changes:
 
-- remove ancestor walk from `findChannel(...)`
-- re-evaluate `channelLookup(...)` routing so it uses the local map semantics directly instead of relying on ambient ancestry assumptions
+- remove ancestor walk from `findChain(...)`
+- re-evaluate `chainLookup(...)` routing so it uses the local map semantics directly instead of relying on ambient ancestry assumptions
 - route shared-observation readability checks through the same explicit local
   addressability mechanism
 - during migration, temporarily convert any remaining unexpected ambient lookup
@@ -969,7 +969,7 @@ Tests for this step:
 - existing passing tests:
   - read outer variable directly inside call block
   - allow reading parent variables in call blocks
-  - allow observing outer var channel inside call blocks
+  - allow observing outer var chain inside call blocks
 
 Still-unimplemented tests to add here:
 
@@ -989,17 +989,17 @@ Primary files:
 
 Changes:
 
-- replace `_collectKnownChannelNames()` with `Object.keys(buffer.arrays)`
+- replace `_collectKnownChainNames()` with `Object.keys(buffer.arrays)`
 - keep `_visitingIterators` only as a notification mechanism
 - do not introduce `_totalLaneCount` or `_finishedLaneCount`
-- do not fully remove `_linkedChannels` / `_finishRequestedChannels` yet if runtime-dynamic lanes or lazy lane creation still exist anywhere
+- do not fully remove `_linkedChains` / `_finishRequestedChains` yet if runtime-dynamic lanes or lazy lane creation still exist anywhere
 - simplify `finish()` to iterate eager `arrays` keys directly
 
 Clarification:
 
-- `_collectKnownChannelNames()` should disappear rather than surviving as
+- `_collectKnownChainNames()` should disappear rather than surviving as
   another lane enumeration helper
-- `_linkedChannels` / `_finishRequestedChannels` survive until static lane completion is fully in place; Step 9 is where they are actually removed
+- `_linkedChains` / `_finishRequestedChains` survive until static lane completion is fully in place; Step 9 is where they are actually removed
 
 Tests for this step:
 
@@ -1027,7 +1027,7 @@ Changes:
 - keep this assertion behind a development/debug gate at first
 - do not make it unconditional until after the remaining runtime-dynamic lane cases are gone; Step 10 is where it should become unconditional
 - acknowledge that `_addCommand(...)` will now fail through the same missing-lane assertion path, which is the desired outcome for an invalid compiled/runtime contract
-- leave `_registerLinkedChannel(...)` calls in `_add()` alone for now if they are still carrying finish-accounting compatibility; that cleanup belongs to Step 9
+- leave `_registerLinkedChain(...)` calls in `_add()` alone for now if they are still carrying finish-accounting compatibility; that cleanup belongs to Step 9
 
 Tests for this step:
 
@@ -1036,7 +1036,7 @@ Tests for this step:
 Still-unimplemented tests to add here:
 
 - targeted runtime test: missing lane in `_add()` throws immediately
-- targeted runtime test: missing linked parent channel at buffer creation throws immediately
+- targeted runtime test: missing linked parent chain at buffer creation throws immediately
 
 ### Step 7. Remove dead transitional runtime state
 
@@ -1051,11 +1051,11 @@ Primary files:
 
 Changes:
 
-- remove dead `_channelTypes`
-- remove dead `_channelRegistry` if no runtime reads remain
-- remove the dead `_channels` initialization guard in `_registerChannel(...)`
+- remove dead `_chainTypes`
+- remove dead `_chainRegistry` if no runtime reads remain
+- remove the dead `_chains` initialization guard in `_registerChain(...)`
 - remove any remaining duplicate registration scaffolding once
-  `declareBufferChannel(...)` becomes canonical
+  `declareBufferChain(...)` becomes canonical
 - if temporary migration assertions were added for ambient lookup success, keep
   this step limited to deleting the dead transitional scaffolding around them,
   not the assertions themselves
@@ -1070,11 +1070,11 @@ Still-unimplemented tests to add here:
 - no new behavior-focused tests are required here beyond confirming the earlier
   steps still pass
 
-### Step 8. Remove `_channels` and fix the finished-snapshot fast path
+### Step 8. Remove `_chains` and fix the finished-snapshot fast path
 
 Goal:
 
-- eliminate the hierarchy-wide channel registry completely
+- eliminate the hierarchy-wide chain registry completely
 
 Primary files:
 
@@ -1082,11 +1082,11 @@ Primary files:
 
 Changes:
 
-- remove `_channels`
-- remove its dead initialization guard in `_registerChannel(...)`
+- remove `_chains`
+- remove its dead initialization guard in `_registerChain(...)`
 - route finished `SnapshotCommand` / `RawSnapshotCommand` handling and especially `_runFinishedSnapshotCommand(...)` through the local addressability mechanism
-- update the finished-buffer fast path in `addCommand(...)` so both channel retrieval and the `output._buffer.isChannelFinished(...)` guard use local addressability instead of `_channels`
-- narrow `_registerChannel(...)` so it no longer manages `_channels`; if `_ownedChannels` remains as debug metadata, its write can stay there
+- update the finished-buffer fast path in `addCommand(...)` so both chain retrieval and the `output._buffer.isChainFinished(...)` guard use local addressability instead of `_chains`
+- narrow `_registerChain(...)` so it no longer manages `_chains`; if `_ownedChains` remains as debug metadata, its write can stay there
 
 Tests for this step:
 
@@ -1094,8 +1094,8 @@ Tests for this step:
 
 Still-unimplemented tests to add here:
 
-- integration test: finished-buffer snapshot still works after `_channels` removal
-- integration test: finished raw snapshot still works after `_channels` removal
+- integration test: finished-buffer snapshot still works after `_chains` removal
+- integration test: finished raw snapshot still works after `_chains` removal
 
 ### Step 9. Collapse finish handling and remove remaining compatibility state
 
@@ -1110,16 +1110,16 @@ Primary files:
 
 Changes:
 
-- remove `_linkedChannels`
-- remove `_registerLinkedChannel(...)`
-- remove the `_registerLinkedChannel(...)` call from `_add()`
-- remove `_finishRequestedChannels`
-- remove `_finishKnownChannelIfRequested(...)`
-- remove the backward-compatibility alias `markChannelFinished(...)` if it no longer serves a purpose
-- make `finishChannel(...)` the direct lane-finish path:
+- remove `_linkedChains`
+- remove `_registerLinkedChain(...)`
+- remove the `_registerLinkedChain(...)` call from `_add()`
+- remove `_finishRequestedChains`
+- remove `_finishKnownChainIfRequested(...)`
+- remove the backward-compatibility alias `markChainFinished(...)` if it no longer serves a purpose
+- make `finishChain(...)` the direct lane-finish path:
   - resolve canonical name
   - assert the lane exists
-  - call `_markChannelFinished(...)`
+  - call `_markChainFinished(...)`
   - notify iterators through the surviving finish path
 - keep aggregate buffer completion gated by `finish(...)`;
   per-lane finish requests must not complete the aggregate buffer by themselves
@@ -1127,15 +1127,15 @@ Changes:
   removes equivalent finish state at the same time it adds counters
 - keep per-lane finished flags
 - keep `_visitingIterators` only for notifications
-- keep `_ownedChannels` as debug/assert metadata only unless Step 10 proves it is no longer useful
+- keep `_ownedChains` as debug/assert metadata only unless Step 10 proves it is no longer useful
 
 Important dependency:
 
-- `_linkedChannels` / `isLinkedChannel(...)` are currently used by
-  `hasLinkedChannelPathToOwner(...)` in [src/runtime/lookup.js](C:\Projects\cascada\src\runtime\lookup.js)
+- `_linkedChains` / `isLinkedChain(...)` are currently used by
+  `hasLinkedChainPathToOwner(...)` in [src/runtime/lookup.js](C:\Projects\cascada\src\runtime\lookup.js)
   for the late-linked-child case where an ancestor lane has already finished
   and the child records the structural link on itself instead
-- Step 9 therefore cannot remove `_linkedChannels` as a `command-buffer.js`
+- Step 9 therefore cannot remove `_linkedChains` as a `command-buffer.js`
   only cleanup; the corresponding late-link readability path in `lookup.js`
   must be replaced or narrowed at the same time
 
@@ -1160,7 +1160,7 @@ Changes:
 
 - delete any temporary debug-only compatibility paths that are no longer needed
 - make the static-lane / local-lookup invariants unconditional
-- finalize the disposition of `_ownedChannels`:
+- finalize the disposition of `_ownedChains`:
   - keep it only as debug/assert metadata if it still provides value
   - otherwise remove it entirely
 - audit `parent` vs `linkedParent` separately:
@@ -1170,7 +1170,7 @@ Changes:
 Final verification for this step:
 
 - run focused suites for:
-  - `tests/pasync/channels-explicit.js`
+  - `tests/pasync/chains-explicit.js`
   - `tests/pasync/calls.js`
   - `tests/pasync/template-command-buffer.js`
 - then run the full relevant test suite
@@ -1179,18 +1179,18 @@ Final verification for this step:
 
 The refactor should proceed with these goals:
 
-1. Remove `_channels`.
+1. Remove `_chains`.
 2. Remove lazy lane creation from `_add()`.
-3. Replace `_collectKnownChannelNames()` with a static per-buffer lane set.
+3. Replace `_collectKnownChainNames()` with a static per-buffer lane set.
 4. Track aggregate finish only for this buffer's own lanes.
-5. Make `findChannel()` local-only and O(1).
-6. Remove descendant/ancestor/global lookup from normal channel resolution.
+5. Make `findChain()` local-only and O(1).
+6. Remove descendant/ancestor/global lookup from normal chain resolution.
 7. Keep lexical scope ownership separate from command-buffer parent/child structure.
-8. Remove `_linkedChannels`.
-9. Make `declareBufferChannel(...)` the single canonical registration path.
+8. Remove `_linkedChains`.
+9. Make `declareBufferChain(...)` the single canonical registration path.
 10. Collapse finish handling once static lane creation guarantees lane existence.
-11. Keep `_channelAliases` as an explicit canonical-name concern integrated into the refactor.
-12. Treat all channels uniformly inside command-buffer/runtime logic.
+11. Keep `_chainAliases` as an explicit canonical-name concern integrated into the refactor.
+12. Treat all chains uniformly inside command-buffer/runtime logic.
 
 In short:
 
@@ -1208,17 +1208,17 @@ architectural refactor above and is meant to keep changes reviewable.
 
 Preflight notes for the current codebase:
 
-- treat `_channelTypes` as live until composition payload capture no longer
+- treat `_chainTypes` as live until composition payload capture no longer
   reads it
-- treat `_channelRegistry` as an audit-first cleanup candidate, not as
+- treat `_chainRegistry` as an audit-first cleanup candidate, not as
   architecturally meaningful state
 - do not make eager/static lane assertions unconditional while runtime-dynamic
-  declaration paths such as `declareBufferChannel(..., name, ...)` still exist
+  declaration paths such as `declareBufferChain(..., name, ...)` still exist
 - account for both buffer creation shapes:
-  - `new CommandBuffer(context, parent, ...)`, where `_channels` is inherited
+  - `new CommandBuffer(context, parent, ...)`, where `_chains` is inherited
     from `parent`
-  - `new CommandBuffer(context, null, linkedChannels, linkedParent)`, where
-    structural linking exists without `_channels` inheritance
+  - `new CommandBuffer(context, null, linkedChains, linkedParent)`, where
+    structural linking exists without `_chains` inheritance
 
 Recommended implementation stages:
 
@@ -1228,8 +1228,8 @@ Recommended implementation stages:
 2. **Stage 2: Static lane metadata and eager structure** combines the old
    Phases 3-5. These changes are tightly coupled because lane metadata, eager
    arrays, and finish accounting all need the same lane source of truth.
-3. **Stage 3: Local addressability and `_channels` removal** combines the old
-   Phases 6-7. Finished snapshots, `findChannel(...)`, and shared observation
+3. **Stage 3: Local addressability and `_chains` removal** combines the old
+   Phases 6-7. Finished snapshots, `findChain(...)`, and shared observation
    should move to the same explicit addressability model in one stage.
 4. **Stage 4: Compatibility cleanup and final invariants** combines the old
    Phases 8-9. This is the final deletion pass after the new model is carrying
@@ -1253,7 +1253,7 @@ Work:
   - finished child-buffer slots become `null`
   - finished lane arrays become `null`
   - finished iterators dispose their own state
-  - channel completion promise state is cleared
+  - chain completion promise state is cleared
   - finished-buffer request bookkeeping is cleared
 - add or keep at least one focused test that proves linkage/readability still
   works after lane-array cleanup
@@ -1272,18 +1272,18 @@ Goal:
 
 Work:
 
-- confirm `_channelRegistry` has no runtime readers, then remove it if the audit
+- confirm `_chainRegistry` has no runtime readers, then remove it if the audit
   stays clean
-- keep `_channelTypes` for now because composition payload capture reads it
-- add a replacement plan for `_channelTypes` before the static lane metadata
-  stage; likely replacement: declared lane/channel-type metadata installed on
+- keep `_chainTypes` for now because composition payload capture reads it
+- add a replacement plan for `_chainTypes` before the static lane metadata
+  stage; likely replacement: declared lane/chain-type metadata installed on
   the buffer
-- remove the dead `if (!this._channels)` initialization guard in
-  `_registerChannel(...)`
+- remove the dead `if (!this._chains)` initialization guard in
+  `_registerChain(...)`
 
 Primary files:
 
-- [src/runtime/channels/index.js](C:\Projects\cascada\src\runtime\channels\index.js)
+- [src/runtime/chains/index.js](C:\Projects\cascada\src\runtime\chains\index.js)
 - [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js)
 
 Validation:
@@ -1296,34 +1296,34 @@ Validation:
 
 Goal:
 
-- make `declareBufferChannel(...)` the only canonical registration path
+- make `declareBufferChain(...)` the only canonical registration path
 
 Work:
 
-- remove `_buffer._registerChannel(...)` from `Channel` construction
-- make `declareBufferChannel(...)` explicitly take over the
+- remove `_buffer._registerChain(...)` from `Chain` construction
+- make `declareBufferChain(...)` explicitly take over the
   `bindToCurrentBuffer()` side effect currently reached through
-  `_registerChannel(...)`, so channel iterators do not silently stop binding to
+  `_registerChain(...)`, so chain iterators do not silently stop binding to
   their owning buffer
-- confirm that `declareBufferChannel(...)` still handles all channel kinds:
+- confirm that `declareBufferChain(...)` still handles all chain kinds:
   - text
   - var
   - data
   - sequence
   - sequential path / `sequential_path`
-- keep `_channelTypes` updates in `declareBufferChannel(...)` during this stage
+- keep `_chainTypes` updates in `declareBufferChain(...)` during this stage
   unless the Stage 1B replacement has already landed
 
 Primary files:
 
-- [src/runtime/channels/index.js](C:\Projects\cascada\src\runtime\channels\index.js)
-- [src/runtime/channels/base.js](C:\Projects\cascada\src\runtime\channels\base.js)
+- [src/runtime/chains/index.js](C:\Projects\cascada\src\runtime\chains\index.js)
+- [src/runtime/chains/base.js](C:\Projects\cascada\src\runtime\chains\base.js)
 - [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js)
 
 Validation:
 
 - run snapshot tests
-- run tests that declare channels through normal environment/render entry points
+- run tests that declare chains through normal environment/render entry points
 
 ### Stage 2A. Thread static lane metadata without adding buffer state
 
@@ -1334,7 +1334,7 @@ Goal:
 
 This stage is mostly plumbing, not new compiler analysis work.
 
-`declaredChannels` already exists on node `_analysis` objects today. The work
+`declaredChains` already exists on node `_analysis` objects today. The work
 here is to thread that existing information into buffer construction, not to
 create a new analysis pass.
 
@@ -1346,7 +1346,7 @@ Work:
   `_finishedLaneCount` properties
 - keep current behavior temporarily, but assert that runtime-discovered lane
   names match the eager `arrays` keys where useful
-- add a helper parallel to `getLinkedChannelsArg(...)` for declared lanes
+- add a helper parallel to `getLinkedChainsArg(...)` for declared lanes
 - thread declared-lane information from compiler analysis into
   `new CommandBuffer(...)`
 - inventory and either eliminate or mark as temporary every runtime-dynamic
@@ -1381,7 +1381,7 @@ Work:
 - eagerly create `arrays[name] = []` for the full static lane set at buffer
   construction
 - keep alias/canonical-name setup ahead of lane creation
-- preserve the current constructor ordering where `_channelAliases` inheritance
+- preserve the current constructor ordering where `_chainAliases` inheritance
   happens before lane setup, so eager arrays use canonical/runtime names from
   the start
 - add assertions for any attempted add/snapshot against a missing lane
@@ -1411,7 +1411,7 @@ Goal:
 
 Work:
 
-- replace `_collectKnownChannelNames()` as the driver of finish accounting
+- replace `_collectKnownChainNames()` as the driver of finish accounting
 - use `Object.keys(buffer.arrays)` as the fixed lane list during the migration
   state
 - do not introduce a separate finished-lane counter while dynamic
@@ -1428,34 +1428,34 @@ Validation:
 - verify `getFinishedPromise()` still resolves correctly
 - verify child buffers still complete correctly under iterator traversal
 
-### Stage 3A. Remove `_channels` by converting finished snapshots to local addressability
+### Stage 3A. Remove `_chains` by converting finished snapshots to local addressability
 
 Goal:
 
-- eliminate the hierarchy-wide channel registry
+- eliminate the hierarchy-wide chain registry
 
 Work:
 
 - establish one explicit local addressability mechanism
-- prefer repurposing `_ownedChannels` during this stage rather than adding a new
+- prefer repurposing `_ownedChains` during this stage rather than adding a new
   permanent map
 - seed that mechanism in two stages:
-  - linked parent channel refs installed during buffer construction
-  - locally declared channel refs installed when `declareBufferChannel(...)`
+  - linked parent chain refs installed during buffer construction
+  - locally declared chain refs installed when `declareBufferChain(...)`
     runs
-- assert when a statically linked parent channel ref cannot be installed, so
+- assert when a statically linked parent chain ref cannot be installed, so
   missing linkage fails at construction time instead of being masked by the
   old ancestor-walk fallback
-- route `findChannel(...)`, finished observation handling in `addCommand(...)`,
+- route `findChain(...)`, finished observation handling in `addCommand(...)`,
   and `_runFinishedSnapshotCommand(...)` through that local mechanism
-- remove `_channels`
+- remove `_chains`
 - keep the net `CommandBuffer` property count flat or lower in this stage
 
 Clarification:
 
 - this stage routes finished snapshots and lookup through the local
   addressability mechanism
-- the remaining ancestor-walk fallback in `findChannel(...)` may stay in place
+- the remaining ancestor-walk fallback in `findChain(...)` may stay in place
   temporarily during this stage for migration safety
 - Stage 3B is where that fallback is removed entirely
 
@@ -1467,7 +1467,7 @@ Primary files:
 Validation:
 
 - keep snapshot suites green
-- add explicit tests for finished snapshot behavior after `_channels` removal
+- add explicit tests for finished snapshot behavior after `_chains` removal
 
 ### Stage 3B. Remove ambient ancestor lookup
 
@@ -1477,7 +1477,7 @@ Goal:
 
 Work:
 
-- remove ancestor walk from `findChannel(...)`
+- remove ancestor walk from `findChain(...)`
 - keep shared observation and readability checks aligned with the same explicit
   addressability model
 
@@ -1497,14 +1497,14 @@ These are known residuals after Stages 1-3. They should not block the Stage 3
 end state, but they must stay visible so the final cleanup does not normalize
 the migration scaffolding into permanent design.
 
-- `_add(...)`, `onEnterBuffer(...)`, `_registerChannel(...)`, and
-  `_installLinkedChannel(...)` still reach `_ensureLane(...)`. This preserves
-  runtime-dynamic compatibility for internal channels such as `__invoke__`,
-  waited-loop channels, alias-linked child buffers, and shared/inheritance
-  runtime-created lanes. The analysis-channel refactor must audit each
+- `_add(...)`, `onEnterBuffer(...)`, `_registerChain(...)`, and
+  `_installLinkedChain(...)` still reach `_ensureLane(...)`. This preserves
+  runtime-dynamic compatibility for internal chains such as `__invoke__`,
+  waited-loop chains, alias-linked child buffers, and shared/inheritance
+  runtime-created lanes. The analysis-chain refactor must audit each
   remaining `_ensureLane(...)` call and either remove it or document the
   explicit dynamic path that still owns it.
-- Missing-lane add/snapshot failures remain analysis-channel/final-invariant
+- Missing-lane add/snapshot failures remain analysis-chain/final-invariant
   validation, because the current compatibility fallback intentionally creates
   several internal runtime lanes before the assertion can fire.
 - Macro/caller, component, and inheritance-created buffers still contain some
@@ -1513,17 +1513,17 @@ the migration scaffolding into permanent design.
   metadata or be replaced by a narrower explicit mechanism.
 - Macro/caller invocation buffer creation in
   [src/compiler/macro.js](C:\Projects\cascada\src\compiler\macro.js) now
-  threads caller-visible linked channels and caller-local declared lanes through
-  `__callerUsedChannels` and `__callerDeclaredChannels`.
+  threads caller-visible linked chains and caller-local declared lanes through
+  `__callerUsedChains` and `__callerDeclaredChains`.
 - Async render-boundary buffer creation in
   [src/compiler/boundaries.js](C:\Projects\cascada\src\compiler\boundaries.js)
   now threads the render text lane into `runRenderBoundary(...)`. Custom
   extension content bodies can still arrive as fragments whose body-local
   declarations are not summarized on the fragment analysis object; this is
-  marked `ANALYSIS-CHANNELS-REFACTOR` in code and should be resolved by the
-  analysis-channel refactor rather than by ad hoc render-boundary filtering.
+  marked `ANALYSIS-CHAINS-REFACTOR` in code and should be resolved by the
+  analysis-chain refactor rather than by ad hoc render-boundary filtering.
 - `uniqueLaneNames(...)` in `CommandBuffer` is marked
-  `ANALYSIS-CHANNELS-REFACTOR`; after analysis-owned linked/declared lane
+  `ANALYSIS-CHAINS-REFACTOR`; after analysis-owned linked/declared lane
   metadata becomes authoritative, duplicate lane names should be treated as an
   assertion failure rather than normalized defensively.
 
@@ -1536,27 +1536,27 @@ Goal:
 
 Work:
 
-- remove `_finishRequestedChannels` (**done**)
-- remove `_finishAllChannelsRequested` (**done**)
-- remove `_finishKnownChannelIfRequested(...)` (**done**)
-- remove `_linkedChannels` (**done**)
-- remove `_registerLinkedChannel(...)` (**done**; replaced by
-  `_installLinkedChannel(...)` writing into the single local addressability map)
-- remove the `_registerLinkedChannel(...)` call from `_add()` (**done**)
-- remove `markChannelFinished(...)` if it is no longer needed (**done**; tests
-  now use `finishChannel(...)` directly)
-- `finishChannel(...)` is now the direct per-lane finish request path
+- remove `_finishRequestedChains` (**done**)
+- remove `_finishAllChainsRequested` (**done**)
+- remove `_finishKnownChainIfRequested(...)` (**done**)
+- remove `_linkedChains` (**done**)
+- remove `_registerLinkedChain(...)` (**done**; replaced by
+  `_installLinkedChain(...)` writing into the single local addressability map)
+- remove the `_registerLinkedChain(...)` call from `_add()` (**done**)
+- remove `markChainFinished(...)` if it is no longer needed (**done**; tests
+  now use `finishChain(...)` directly)
+- `finishChain(...)` is now the direct per-lane finish request path
   (**done**); it does not complete aggregate buffer state by itself. Aggregate
   completion remains gated by `finish(...)`.
 
 Important coordination:
 
-- `hasLinkedBuffer(...)` now derives its answer from concrete channel refs in
-  the local `_channels` map; it no longer relies on separate `_linkedChannels`
+- `hasLinkedBuffer(...)` now derives its answer from concrete chain refs in
+  the local `_chains` map; it no longer relies on separate `_linkedChains`
   storage
-- `isLinkedChannel(...)` was test-only after this refactor and has been removed;
-  tests assert linked addressability through `hasChannel(...)` plus
-  `getOwnChannel(...)`
+- `isLinkedChain(...)` was test-only after this refactor and has been removed;
+  tests assert linked addressability through `hasChain(...)` plus
+  `getOwnChain(...)`
 - before removing `hasLinkedBuffer(...)`, add a focused test that exercises the
   late-linked-child scenario explicitly: a child buffer linked to a parent lane
   created after the ancestor lane is already finished (**done**)
@@ -1574,9 +1574,9 @@ Validation:
 
 - verify late-linked shared/inheritance cases explicitly
 - add one dedicated late-linked-child regression test before deleting
-  `_linkedChannels`
+  `_linkedChains`
 - verify aggregate finish still works for buffers with unused eager lanes
-- verify `finishChannel(...)` rejects unknown lane names instead of
+- verify `finishChain(...)` rejects unknown lane names instead of
   silently creating or finishing them
 
 ### Stage 4B. Final cleanup pass
@@ -1584,44 +1584,44 @@ Validation:
 Goal:
 
 - remove any metadata that no longer provides runtime value
-- collapse the remaining channel-addressability API into one clear surface
-- remove the compiler/runtime split between linked-channel lists and
-  declared-channel lists where a single structured local-addressability payload
+- collapse the remaining chain-addressability API into one clear surface
+- remove the compiler/runtime split between linked-chain lists and
+  declared-chain lists where a single structured local-addressability payload
   can carry the same information more clearly
 
 Work:
 
-- decide whether `_ownedChannels` remains as assertion/debug metadata or is
-  removed entirely (**done**; ownership is derived from `channel._buffer`)
-- if linked channels and owned channels both store concrete channel objects by
-  this point, merge `_ownedChannels` and `_linkedChannels` into a single
-  local addressability map, likely `_channels` (**done**)
-- derive ownership from the channel object itself, for example
-  `channel._buffer === this`, instead of maintaining a second lookup table just
+- decide whether `_ownedChains` remains as assertion/debug metadata or is
+  removed entirely (**done**; ownership is derived from `chain._buffer`)
+- if linked chains and owned chains both store concrete chain objects by
+  this point, merge `_ownedChains` and `_linkedChains` into a single
+  local addressability map, likely `_chains` (**done**)
+- derive ownership from the chain object itself, for example
+  `chain._buffer === this`, instead of maintaining a second lookup table just
   for ownership
-- keep channel access behind `CommandBuffer` methods rather than reading
-  `_channels` directly from other modules (**done**)
-- replace the current `findChannel(...)` name with clearer accessors:
-  - `getChannel(name)` for must-exist lookups that throw
-  - `hasChannel(name)` for boolean local-only existence checks
-  - `getChannelIfExists(name)` for optional local-only lookups that need the
-    channel object and where absence is a valid branch
-  - `getOwnChannel(name)` for local ownership checks
+- keep chain access behind `CommandBuffer` methods rather than reading
+  `_chains` directly from other modules (**done**)
+- replace the current `findChain(...)` name with clearer accessors:
+  - `getChain(name)` for must-exist lookups that throw
+  - `hasChain(name)` for boolean local-only existence checks
+  - `getChainIfExists(name)` for optional local-only lookups that need the
+    chain object and where absence is a valid branch
+  - `getOwnChain(name)` for local ownership checks
   (**done**)
-- keep `getChannelIfExists(...)` rare and auditable; when a missing channel
+- keep `getChainIfExists(...)` rare and auditable; when a missing chain
   would indicate bad linking, declaration ordering, or analysis metadata, call
-  `getChannel(...)` instead so the invariant fails loudly
+  `getChain(...)` instead so the invariant fails loudly
 - preserve the invariant that these accessors are local-only and never walk
   `parent`
-- revisit buffer-construction arguments such as `linkedChannelsArg` and
-  `declaredChannelsArg`; once local addressability has one runtime map, prefer
-  a single structured channel/lane payload over parallel linked/declared
+- revisit buffer-construction arguments such as `linkedChainsArg` and
+  `declaredChainsArg`; once local addressability has one runtime map, prefer
+  a single structured chain/lane payload over parallel linked/declared
   arrays
 - as part of that consolidation, remove capture-boundary glue that manually
-  filters nested capture text outputs out of `linkedChannelsArg`; capture text
+  filters nested capture text outputs out of `linkedChainsArg`; capture text
   outputs should be represented as local declarations/owned lanes in the
-  analysis channel metadata described in
-  [analysis-channels-refactor.md](C:\Projects\cascada\docs\code\analysis-channels-refactor.md)
+  analysis chain metadata described in
+  [analysis-chains-refactor.md](C:\Projects\cascada\docs\code\analysis-chains-refactor.md)
   instead of filtered by custom boundary code
 - delete any temporary migration assertions or debug-only fallback paths
 - re-audit `parent` vs `linkedParent`
@@ -1636,7 +1636,7 @@ Final verification:
 
 - run focused suites:
   - `tests/pasync/snapshots.js`
-  - `tests/pasync/channels-explicit.js`
+  - `tests/pasync/chains-explicit.js`
   - `tests/pasync/calls.js`
   - `tests/pasync/template-command-buffer.js`
 - then run the broader relevant test suite

@@ -18,7 +18,7 @@ It is intentionally example-focused. For the full language contract, see
 - Use `value#message` and related `#` peeks only after checking that the value
   is an error.
 - Functions receive poisoned arguments and can handle them explicitly.
-- Use `guard` when you need transactional rollback of channels, variables, or
+- Use `guard` when you need transactional rollback of chains, variables, or
   sequential paths.
 - Use `!!` to repair a poisoned sequential path before cleanup or retry work.
 
@@ -122,7 +122,7 @@ The important part is `context.api!!` before each retry. Without it, later
 
 ## Transaction With Guard
 
-Use `guard` for transactional workflows where output/channel state and
+Use `guard` for transactional workflows where output/chain state and
 sequential paths should roll back on failure.
 
 ```javascript
@@ -180,7 +180,7 @@ Each guard protects `out` for only its own attempt.
 
 ## Batch Processing With Error Collection
 
-For loops can run iterations in parallel. Use ordered channel assembly for the
+For loops can run iterations in parallel. Use ordered chain assembly for the
 final deterministic result instead of mutating shared JavaScript arrays.
 
 ```javascript
@@ -199,7 +199,7 @@ endfor
 return out.snapshot()
 ```
 
-The `data` channel preserves source-order assembly even though the fetches can
+The `data` chain preserves source-order assembly even though the fetches can
 complete in a different order.
 
 ## Handling Poisoned Function Arguments
@@ -253,7 +253,7 @@ endif
 return out.snapshot()
 ```
 
-Use a guard as well if channel or variable state should be rolled back around
+Use a guard as well if chain or variable state should be rolled back around
 the resource operations.
 
 ## Converting Errors To A Stable Return
@@ -291,7 +291,7 @@ that poison.
 - Do not use `!` on dynamic/template-local paths that the compiler cannot
   statically resolve.
 - Do not manually push loop results into a shared JavaScript array when source
-  order matters. Use `data` channel assembly.
+  order matters. Use `data` chain assembly.
 - Do not rely on `#message` without an `is error` check; non-error values return
   `none` for `#` peeks.
 - Do not use `guard *` around large regions unless you need full rollback; it

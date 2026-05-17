@@ -50,7 +50,7 @@ import {
 
       expect(output).to.contain('function root(env, context, runtime, cb');
       expect(output).to.not.contain('var result = {}\\nresult.x = 1\\nreturn result');
-      expect(output).to.contain('runtime.declareBufferChannel(output, "result", "var"');
+      expect(output).to.contain('runtime.declareBufferChain(output, "result", "var"');
       expect(output).to.contain('new runtime.VarCommand');
     });
 

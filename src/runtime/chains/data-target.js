@@ -1,10 +1,10 @@
 /**
- * DataChannelTarget manages the assembly of the script's data object.
- * It encapsulates all data-assembly logic and path traversal for channel commands.
+ * DataChainTarget manages the assembly of the script's data object.
+ * It encapsulates all data-assembly logic and path traversal for chain commands.
  */
-class DataChannelTarget {
+class DataChainTarget {
   /**
-   * Creates a new DataChannelTarget instance.
+   * Creates a new DataChainTarget instance.
    * @param {Object} _context - The context object containing the script variables
    * @param {AsyncEnvironment} env - The AsyncEnvironment instance containing custom data methods.
    */
@@ -21,7 +21,7 @@ class DataChannelTarget {
   }
 
   /**
-   * Adds a method to the data channel instance.
+   * Adds a method to the data chain instance.
    * @param {string} name - The method name.
    * @param {Function} func - The function to register.
    */
@@ -113,7 +113,7 @@ class DataChannelTarget {
       if (keyType !== 'string' && keyType !== 'number') {
         const pathString = path.slice(0, i).join('.');
         throw new Error(
-          `Invalid path segment for channel command. Expected a string or number but got a ${keyType} ([${key}]) in path '${pathString}[...]'`
+          `Invalid path segment for chain command. Expected a string or number but got a ${keyType} ([${key}]) in path '${pathString}[...]'`
         );
       }
 
@@ -151,7 +151,7 @@ class DataChannelTarget {
 import {defaultMethods} from '../../builtins/data-methods.js';
 
 Object.keys(defaultMethods).forEach((methodName) => {
-  DataChannelTarget.prototype.addMethod(methodName, defaultMethods[methodName]);
+  DataChainTarget.prototype.addMethod(methodName, defaultMethods[methodName]);
 });
 
-export {DataChannelTarget};
+export {DataChainTarget};

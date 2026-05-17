@@ -8,7 +8,7 @@ describe('Script documentation examples', function () {
     env = new AsyncEnvironment();
   });
 
-  it('runs the sequence channel example with ordered reads and nested calls', async function () {
+  it('runs the sequence chain example with ordered reads and nested calls', async function () {
     const script = `
       sequence db = services.db
       var user = db.getUser(1)

@@ -1258,7 +1258,7 @@ const {FileSystemLoader, NodeResolveLoader} = nodeLoaders;
         });
 
         expect(result).to.be.a('string');
-        expect(result).to.contain('runtime.declareBufferChannel(output, "x", "var"');
+        expect(result).to.contain('runtime.declareBufferChain(output, "x", "var"');
       });
     });
 

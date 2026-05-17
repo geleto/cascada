@@ -11,7 +11,7 @@ describe('README examples', function () {
     env = new AsyncEnvironment();
   });
 
-  it('runs the data channel assembly example in source order', async function () {
+  it('runs the data chain assembly example in source order', async function () {
     const script = `
       // Assume fetchProductDetails for ID 205 is the slowest.
       var productIds = [101, 205, 302]
@@ -201,7 +201,7 @@ describe('README examples', function () {
     });
   });
 
-  it('runs the text channel async iterator example', async function () {
+  it('runs the text chain async iterator example', async function () {
     const script = `
       var post = fetchPost(42)
 

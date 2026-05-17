@@ -2,12 +2,12 @@
 import {isPoison, PoisonError, createPoison} from '../errors.js';
 import {isResolvedValue, unwrapResolvedValue, resolveAll} from '../resolve.js';
 import {materializeTemplateTextValue, suppressValue, suppressValueScriptRaw} from '../safe-output.js';
-import {ChannelCommand, runWithResolvedArguments, contextualizeChannelError} from './command-base.js';
-import {Channel} from './base.js';
+import {ChainCommand, runWithResolvedArguments, contextualizeChainError} from './command-base.js';
+import {Chain} from './base.js';
 
-class TextCommand extends ChannelCommand {
+class TextCommand extends ChainCommand {
   constructor({
-    channelName,
+    chainName,
     args = null,
     operation = null,
     pos = null,
@@ -15,7 +15,7 @@ class TextCommand extends ChannelCommand {
     initializeIfNotSet = false
   }) {
     super({
-      channelName,
+      chainName,
       args: args || [],
       pos
     });
@@ -24,68 +24,68 @@ class TextCommand extends ChannelCommand {
     this.initializeIfNotSet = initializeIfNotSet;
   }
 
-  apply(channel) {
-    super.apply(channel);
-    return runWithResolvedArguments(this.arguments, this, channel, (resolvedArgs) => {
-      if (!channel || !Array.isArray(channel._target)) {
-        if (!channel) {
+  apply(chain) {
+    super.apply(chain);
+    return runWithResolvedArguments(this.arguments, this, chain, (resolvedArgs) => {
+      if (!chain || !Array.isArray(chain._target)) {
+        if (!chain) {
           return;
         }
-        channel._setTarget([]);
+        chain._setTarget([]);
       }
       const args = Array.isArray(resolvedArgs) ? resolvedArgs : [];
       const poisonErrors = this.extractPoisonFromArgs(args);
       if (poisonErrors.length > 0) {
-        channel._target.push(this.toPoisonValue(poisonErrors));
-        channel._markStateChanged();
+        chain._target.push(this.toPoisonValue(poisonErrors));
+        chain._markStateChanged();
         return;
       }
       if (this.operation === 'set') {
         if (args.length !== 1) {
-          channel._setTarget(this.toPoisonValue([
-            contextualizeChannelError(channel, this.pos, new Error('text.set() accepts exactly one argument'))
+          chain._setTarget(this.toPoisonValue([
+            contextualizeChainError(chain, this.pos, new Error('text.set() accepts exactly one argument'))
           ]));
           return;
         }
-        if (this.initializeIfNotSet && Array.isArray(channel._target) && channel._target.length > 0) {
+        if (this.initializeIfNotSet && Array.isArray(chain._target) && chain._target.length > 0) {
           return;
         }
-        channel._setTarget([]);
+        chain._setTarget([]);
       } else if (this.operation !== null) {
-        channel._setTarget(this.toPoisonValue([
-          contextualizeChannelError(channel, this.pos, new Error(`Unsupported text channel command '${this.operation}'`))
+        chain._setTarget(this.toPoisonValue([
+          contextualizeChainError(chain, this.pos, new Error(`Unsupported text chain command '${this.operation}'`))
         ]));
         return;
       }
       if (!this.normalizeArgs) {
-        appendTextValues(channel, args, this.pos);
+        appendTextValues(chain, args, this.pos);
         return;
       }
-      const materializedArgs = materializeTextCommandArgs(args, channel, this.pos);
+      const materializedArgs = materializeTextCommandArgs(args, chain, this.pos);
       if (materializedArgs && typeof materializedArgs.then === 'function') {
         return Promise.resolve(materializedArgs).then((finalArgs) => {
-          appendTextValues(channel, finalArgs, this.pos);
+          appendTextValues(chain, finalArgs, this.pos);
         });
       }
-      appendTextValues(channel, materializedArgs, this.pos);
+      appendTextValues(chain, materializedArgs, this.pos);
     });
   }
 }
 
-class TextChannel extends Channel {
-  constructor(buffer, channelName, context, channelType) {
-    super(buffer, channelName, context, channelType, [], null);
+class TextChain extends Chain {
+  constructor(buffer, chainName, context, chainType) {
+    super(buffer, chainName, context, chainType, [], null);
   }
 
   invoke(...args) {
     if (!this._buffer) return;
     if (args.length === 0) return;
     this._buffer.addCommand(new TextCommand({
-      channelName: this._channelName,
+      chainName: this._chainName,
       args,
       normalizeArgs: true,
       pos: { lineno: 0, colno: 0 }
-    }), this._channelName);
+    }), this._chainName);
   }
 
   _getCurrentResult() {
@@ -111,19 +111,19 @@ class TextChannel extends Channel {
   }
 }
 
-function normalizeTextCommandArg(value, channel, pos) {
-  const materialized = materializeTemplateTextValue(value, buildTextErrorContext(channel, pos));
+function normalizeTextCommandArg(value, chain, pos) {
+  const materialized = materializeTemplateTextValue(value, buildTextErrorContext(chain, pos));
   if (materialized && typeof materialized.then === 'function') {
-    return Promise.resolve(materialized).then((resolved) => normalizeMaterializedTextArg(resolved, channel, pos));
+    return Promise.resolve(materialized).then((resolved) => normalizeMaterializedTextArg(resolved, chain, pos));
   }
-  return normalizeMaterializedTextArg(materialized, channel, pos);
+  return normalizeMaterializedTextArg(materialized, chain, pos);
 }
 
 // Text commands have a second consumption boundary after top-level argument
 // resolution: text values may still need snapshot/finalSnapshot materialization
 // before autoescape/suppression turns them into concrete text.
-function materializeTextCommandArgs(values, channel, pos) {
-  const normalizedArgs = values.map((value) => normalizeTextCommandArg(value, channel, pos));
+function materializeTextCommandArgs(values, chain, pos) {
+  const normalizedArgs = values.map((value) => normalizeTextCommandArg(value, chain, pos));
   const resolvedArgs = resolveAll(normalizedArgs);
   if (isResolvedValue(resolvedArgs)) {
     return unwrapResolvedValue(resolvedArgs);
@@ -139,19 +139,19 @@ function materializeTextCommandArgs(values, channel, pos) {
   });
 }
 
-function normalizeMaterializedTextArg(value, channel, pos) {
-  const throwOnUndefined = isThrowOnUndefinedEnabled(channel);
+function normalizeMaterializedTextArg(value, chain, pos) {
+  const throwOnUndefined = isThrowOnUndefinedEnabled(chain);
   if (throwOnUndefined && (value === null || value === undefined)) {
-    throw contextualizeChannelError(channel, pos, new Error('attempted to output null or undefined value'));
+    throw contextualizeChainError(chain, pos, new Error('attempted to output null or undefined value'));
   }
-  const autoescape = isAutoescapeEnabled(channel);
-  if (isScriptOutputMode(channel)) {
+  const autoescape = isAutoescapeEnabled(chain);
+  if (isScriptOutputMode(chain)) {
     return suppressValueScriptRaw(value, autoescape);
   }
   return suppressValue(value, autoescape);
 }
 
-function appendTextValues(channel, values, pos) {
+function appendTextValues(chain, values, pos) {
   const args = Array.isArray(values) ? values : [values];
   const commandPos = pos || { lineno: 0, colno: 0 };
   for (const value of args) {
@@ -160,43 +160,43 @@ function appendTextValues(channel, values, pos) {
     }
     const type = typeof value;
     if (type === 'string' || type === 'number' || type === 'boolean' || type === 'bigint') {
-      channel._target.push(value);
+      chain._target.push(value);
       continue;
     }
     if (type === 'object') {
       const hasCustomToString = value.toString && value.toString !== Object.prototype.toString;
       if (hasCustomToString) {
-        channel._target.push(value);
+        chain._target.push(value);
         continue;
       }
     }
     const argType = Array.isArray(value) ? 'array' : type;
     throw new Error(`Invalid TextCommand argument type '${argType}' at ${commandPos.lineno}:${commandPos.colno}. TextCommand only accepts text-like scalar values.`);
   }
-  channel._markStateChanged();
+  chain._markStateChanged();
 }
 
-function buildTextErrorContext(channel, pos) {
+function buildTextErrorContext(chain, pos) {
   return {
     lineno: pos && typeof pos.lineno === 'number' ? pos.lineno : 0,
     colno: pos && typeof pos.colno === 'number' ? pos.colno : 0,
     errorContextString: null,
-    path: channel && channel._context ? channel._context.path || null : null
+    path: chain && chain._context ? chain._context.path || null : null
   };
 }
 
-function isAutoescapeEnabled(channel) {
-  const opts = channel && channel._context && channel._context.env ? channel._context.env.opts : null;
+function isAutoescapeEnabled(chain) {
+  const opts = chain && chain._context && chain._context.env ? chain._context.env.opts : null;
   return !!(opts && opts.autoescape);
 }
 
-function isThrowOnUndefinedEnabled(channel) {
-  const opts = channel && channel._context && channel._context.env ? channel._context.env.opts : null;
+function isThrowOnUndefinedEnabled(chain) {
+  const opts = chain && chain._context && chain._context.env ? chain._context.env.opts : null;
   return !!(opts && opts.throwOnUndefined);
 }
 
-function isScriptOutputMode(channel) {
-  return !!(channel && channel._context && channel._context.scriptMode);
+function isScriptOutputMode(chain) {
+  return !!(chain && chain._context && chain._context.scriptMode);
 }
 
-export { TextChannel, TextCommand };
+export { TextChain, TextCommand };

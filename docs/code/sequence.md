@@ -1,6 +1,6 @@
-# Sequence Channel
+# Sequence Chain
 
-This document describes the current `sequence` channel implementation.
+This document describes the current `sequence` chain implementation.
 
 ## Declaration
 
@@ -13,8 +13,8 @@ sequence db = makeDb()
 Rules:
 
 - an initializer is required
-- declaration conflicts follow normal explicit-channel rules
-- this is script-mode behavior for initialized, ordered object channels
+- declaration conflicts follow normal explicit-chain rules
+- this is script-mode behavior for initialized, ordered object chains
 
 ## What Sequence Supports
 
@@ -36,7 +36,7 @@ Static subpath routing is supported:
 var id = db.api.client.getId()
 ```
 
-Property assignment through sequence channel syntax is rejected:
+Property assignment through sequence chain syntax is rejected:
 
 ```cascada
 db.connectionState = "x"   // compile error
@@ -44,7 +44,7 @@ db.connectionState = "x"   // compile error
 
 ## Runtime Model
 
-`sequence` is an initialized channel over the command-buffer infrastructure.
+`sequence` is an initialized chain over the command-buffer infrastructure.
 
 Key behavior:
 
@@ -59,7 +59,7 @@ Key behavior:
 
 Relevant files:
 
-- `src/runtime/channels/sequence.js`
+- `src/runtime/chains/sequence.js`
 - `src/runtime/command-buffer.js`
 
 ## Command Types
@@ -76,8 +76,8 @@ target. Reads are observation-like and return a deferred result.
 
 There are two paths:
 
-1. Statement-style channel command path:
-   - emitted through compiler buffer/channel helpers
+1. Statement-style chain command path:
+   - emitted through compiler buffer/chain helpers
    - enqueues a command on the active `currentBuffer`
 
 2. Expression path:
@@ -87,7 +87,7 @@ There are two paths:
 
 Relevant files:
 
-- `src/compiler/channel.js`
+- `src/compiler/chain.js`
 - `src/compiler/buffer.js`
 - `src/compiler/compiler-base-async.js`
 
@@ -95,7 +95,7 @@ Relevant files:
 
 - operations are command-buffer ordered
 - calls/reads happen at apply time, not enqueue time
-- sequence channel commands are separate from `!` sequential-path locks
+- sequence chain commands are separate from `!` sequential-path locks
 
 Use `sequence` when the object itself provides the ordered side-effect surface.
 Use `!` sequential paths for ordinary context paths.
@@ -112,7 +112,7 @@ Optional hook shape:
 
 Behavior:
 
-- on guard entry, targeted sequence channels call `begin()` if available
+- on guard entry, targeted sequence chains call `begin()` if available
 - on guard success, `commit(token?)` runs if available
 - on guard failure, `rollback(token?)` runs if available
 - nested transactions unwind in LIFO order
@@ -128,12 +128,12 @@ Deadlock avoidance:
 Relevant files:
 
 - `src/runtime/guard.js`
-- `src/runtime/channels/sequence.js`
-- `src/runtime/channels/sequential-path.js`
+- `src/runtime/chains/sequence.js`
+- `src/runtime/chains/sequential-path.js`
 
 ## Parser/Transpiler Notes
 
-- `sequence` is recognized as an explicit channel declaration
+- `sequence` is recognized as an explicit chain declaration
 - declarations require an initializer
 - sequence property assignment is rejected in script transpilation/compilation
 
@@ -146,7 +146,7 @@ Relevant files:
 
 Primary suites:
 
-- `tests/pasync/channels-explicit.js`
+- `tests/pasync/chains-explicit.js`
 - `tests/poison/guard.js`
 
 Covered behavior includes:

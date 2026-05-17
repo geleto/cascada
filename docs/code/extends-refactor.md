@@ -19,7 +19,7 @@ mostly implemented:
 - inheritance chains are loaded before constructor/root execution
 - method metadata is direct and synchronous after finalization
 - shared state usage requires explicit per-file declarations
-- normal execution uses `mergedLinkedChannels` / `mergedMutatedChannels`
+- normal execution uses `mergedLinkedChains` / `mergedMutatedChains`
 - bootstrap-only metadata is released after finalization
 
 The remaining opportunity is not another semantic redesign. It is to reduce the
@@ -46,8 +46,8 @@ The most important current facts are:
   - `signature`
   - `ownerKey`
   - `super`
-  - `mergedLinkedChannels`
-  - `mergedMutatedChannels`
+  - `mergedLinkedChains`
+  - `mergedMutatedChains`
 - raw method entries are bootstrap/finalization input only; after successful
   finalization, `state.methods[name]` is direct execution method data
 - state-level `invokedMethods` is a bootstrap catalog only and is cleared after
@@ -71,8 +71,8 @@ The refactor should move toward these rules:
    finalization.
 5. Method invocation, `super()`, and component method calls should share one
    admission/linking core.
-6. Shared-channel observation should remain explicit and current-buffer based.
-7. Composition payloads and shared channels should stay separate.
+6. Shared-chain observation should remain explicit and current-buffer based.
+7. Composition payloads and shared chains should stay separate.
 8. Component lifecycle should use the same metadata barrier as direct extends,
    but without extra calling-convention shims.
 9. Test-only exports and white-box assertions should keep shrinking as behavior
@@ -118,8 +118,8 @@ Raw compiled method entries are still the bootstrap input shape:
 - `fn`
 - `signature`
 - `ownerKey`
-- `ownLinkedChannels`
-- `ownMutatedChannels`
+- `ownLinkedChains`
+- `ownMutatedChains`
 - `super`
 - `superOrigin`
 - `invokedMethods`
@@ -139,11 +139,11 @@ Pruned execution method data is the post-finalization dispatch shape:
 - `signature`
 - `ownerKey`
 - `super`
-- `mergedLinkedChannels`
-- `mergedMutatedChannels`
+- `mergedLinkedChains`
+- `mergedMutatedChains`
 
 During finalization, resolved data temporarily also has callable-local
-`invokedMethods` so the fixed-point channel-footprint pass can run. That field
+`invokedMethods` so the fixed-point chain-footprint pass can run. That field
 is pruned before normal execution.
 
 ### Inheritance State
@@ -181,7 +181,7 @@ The bootstrap layer owns:
 - rendering parent roots for composition
 - starting the local root constructor
 - finalizing metadata
-- linking current buffers to parent/shared channels
+- linking current buffers to parent/shared chains
 
 This module still has a few small helper functions that are called only once or
 only from one public entry point. They are not necessarily harmful, but they
@@ -192,7 +192,7 @@ make the startup path harder to read.
 The call layer owns:
 
 - direct method metadata lookup
-- shared-channel schema lookup
+- shared-chain schema lookup
 - method payload validation
 - invocation command creation
 - method and `super()` admission
@@ -223,7 +223,7 @@ than carrying their own method metadata model.
 ### 1. Documentation shape drift
 
 The architecture documents still describe finalized method metadata as carrying
-`ownLinkedChannels`, `ownMutatedChannels`, and `invokedMethods`.
+`ownLinkedChains`, `ownMutatedChains`, and `invokedMethods`.
 
 That was true during finalization, but it is no longer the post-finalization
 execution shape after pruning.
@@ -281,7 +281,7 @@ shared inherited-call admission primitive.
 ### 5. Shared observation has the right semantics but a wide call surface
 
 Component shared observation currently passes an observation command through a
-side-channel command. That is the right model.
+side-chain command. That is the right model.
 
 The remaining complexity is at the compiler/runtime boundary:
 
@@ -297,7 +297,7 @@ likely be reduced to one "universal observational command" gate.
 
 The test suite has been improved, but a few tests still construct method data
 objects manually with fields that are not part of the final execution shape,
-such as `ownLinkedChannels` or `invokedMethods`.
+such as `ownLinkedChains` or `invokedMethods`.
 
 Those tests are valuable while they cover runtime helpers directly, but they
 should gradually be replaced with behavior-level coverage or with explicitly
@@ -343,7 +343,7 @@ Execution method data contains only what dispatch needs:
 - owner identity
 - signature
 - direct `super`
-- merged channel footprint
+- merged chain footprint
 
 ### Execution table, not raw-entry table
 
@@ -373,14 +373,14 @@ The inherited-call layer should converge on one primitive that does:
 
 1. take direct method data
 2. validate call arguments
-3. create/link the invocation buffer from merged channels
+3. create/link the invocation buffer from merged chains
 4. create/enqueue the invocation command
 5. return the deferred result
 
 `this.method(...)`, `super(...)`, and component method calls can all use this
 primitive after resolving the correct direct method data.
 
-### Shared channel observation remains separate
+### Shared chain observation remains separate
 
 Shared observation should not collapse into ordinary lookup.
 
@@ -452,9 +452,9 @@ Work:
   - async block functions are not public compiled props
   - finalized state-level `invokedMethods` is empty
   - resolved execution method data does not retain `invokedMethods`
-  - resolved execution method data does not retain `ownLinkedChannels`
-  - resolved execution method data does not retain `ownMutatedChannels`
-  - callable body linking uses merged channel footprints
+  - resolved execution method data does not retain `ownLinkedChains`
+  - resolved execution method data does not retain `ownMutatedChains`
+  - callable body linking uses merged chain footprints
 - add or keep at least one behavior test for async imports that confirms
   exported macros are available after composition startup finishes
 - keep explicit coverage for the topmost no-op root constructor case so
@@ -465,8 +465,8 @@ Work:
   `Method Entries`, especially the `Finalized method metadata includes` list
 - update `extends-metadata-architecture.md` section `Method Metadata Shape`
 - rewrite or remove `extends-metadata-architecture.md` section
-  `Per-Method Compiled Channel-List Helpers`; execution no longer reads
-  `methodData.invokedMethods.*` for channel lists because merged footprints are
+  `Per-Method Compiled Chain-List Helpers`; execution no longer reads
+  `methodData.invokedMethods.*` for chain lists because merged footprints are
   precomputed and `invokedMethods` is pruned before normal execution
 - explicitly distinguish:
   - compiled raw method entry
@@ -483,7 +483,7 @@ Work:
 - document that `sharedRootBuffer` remains part of the long-lived shared
   metadata object and is not replaced by the method-table cleanup
 - audit the generated compiled output for obsolete
-  `methodData.invokedMethods.*` channel-helper patterns and update tests/docs
+  `methodData.invokedMethods.*` chain-helper patterns and update tests/docs
   to assert the replacement model
 
 Primary files:
@@ -534,7 +534,7 @@ Validation:
 - Pass A review found one stale `extends-metadata-architecture.md` execution
   assumption that still mentioned execution-time `methodMeta.invokedMethods`;
   fix in Pass A by restating execution assumptions in terms of finalized merged
-  channel footprints.
+  chain footprints.
 
 ### Phase 2. Publish Direct Execution Method Data
 
@@ -743,7 +743,7 @@ Completed work:
 - route all runtime validation through one "universal observational command"
   check
 - ensure missing shared schema still fails as fatal metadata error
-- ensure unsupported mutation-like or channel-incompatible component property
+- ensure unsupported mutation-like or chain-incompatible component property
   operations still fail dynamically with a fatal error
 
 Primary files:

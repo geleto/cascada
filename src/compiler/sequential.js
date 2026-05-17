@@ -339,7 +339,7 @@ class CompileSequential {
 
   /**
    * Extracts a static path from a node for sequential operation analysis.
-   * Update - we now use this to extract path in channel commands as well
+   * Update - we now use this to extract path in chain commands as well
    * @todo - move it to compiler or compiler-base
    * A static path is a chain of property accesses that can be determined at compile time.
    * @param {nodes.LookupVal|nodes.Symbol|nodes.Literal} node - The node to extract path from

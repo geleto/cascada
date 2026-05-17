@@ -1,4 +1,4 @@
-# Expression Channels
+# Expression Chains
 
 This document describes the current async expression model for expressions that
 can enqueue command-buffer work while also producing a value.
@@ -23,10 +23,10 @@ These expression forms can enqueue commands:
 
 - sequential path reads and writes, such as `db!.query()` and `obj!.prop`
 - `caller()` invocation paths
-- sequence-channel calls and reads, such as `data.push(...)` and
-  `data.snapshot()` (script mode only — `compileSpecialChannelFunCall` returns
+- sequence-chain calls and reads, such as `data.push(...)` and
+  `data.snapshot()` (script mode only — `compileSpecialChainFunCall` returns
   `false` in template mode, so these fall through to normal dynamic calls)
-- channel/output observations that produce values through snapshot/error
+- chain/output observations that produce values through snapshot/error
   commands (script mode only, same guard as above)
 - control-flow expressions whose selected branch may contain any of the above
 
@@ -42,9 +42,9 @@ reserved before sibling operands continue.
 
 Current structural expression cases include:
 
-- async inline-if expressions when the selected branch mutates channels
+- async inline-if expressions when the selected branch mutates chains
 - async `and` / `or` short-circuit expressions when the right-hand side can
-  mutate channels
+  mutate chains
 - ambiguous imported-callable calls, where a binding can dispatch to a macro or
   a normal function and the macro path may create command-buffer structure
 
@@ -56,17 +56,17 @@ gone; do not reintroduce a broad wrapper to solve one ordering bug.
 
 Expression boundary decisions use existing compile analysis:
 
-- `node._analysis.usedChannels` decides which parent channels the boundary must
+- `node._analysis.usedChains` decides which parent chains the boundary must
   link into
-- `node._analysis.mutatedChannels` identifies command effects that make a
+- `node._analysis.mutatedChains` identifies command effects that make a
   value-dependent expression structurally significant
-- locally declared channels are excluded from parent linking
+- locally declared chains are excluded from parent linking
 
-The runtime should receive already-resolved linked channel names. It should not
+The runtime should receive already-resolved linked chain names. It should not
 infer lexical ownership or search parent buffers to compensate for missing
 compiler analysis.
 
-See also: `output-scoping.md` for how expression analysis (`mutatedChannels`)
+See also: `output-scoping.md` for how expression analysis (`mutatedChains`)
 drives buffer linking decisions.
 
 ## Value Consumption
@@ -124,7 +124,7 @@ The behavior is covered by focused regressions for:
 - imported-callable shadowing and ambiguous imported macro calls
 - direct and nested `caller()` expression paths
 - call-block assignments where a macro pushes `caller(item)` into a returned
-  channel/value
+  chain/value
 - explicit return ordering around guard commit/rollback
 - async arrays/objects flowing through output, filters, and function arguments
 - unused async variable assignments not delaying template/script completion

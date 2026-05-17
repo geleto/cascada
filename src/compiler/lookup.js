@@ -19,7 +19,7 @@ class CompileLookup {
     facts.inheritedMethodCallName =
       compiler.inheritance.analyzeInheritedMethodCallTarget(node);
     this._collectComponentBindingLookup(node, facts);
-    this._collectScriptSequenceChannelLookup(node, analysisPass, facts);
+    this._collectScriptSequenceChainLookup(node, analysisPass, facts);
 
     return facts;
   }
@@ -35,7 +35,7 @@ class CompileLookup {
     if (this._compileComponentBindingLookup(node)) {
       return;
     }
-    if (this._compileAnalyzedSequenceChannelLookup(node)) {
+    if (this._compileAnalyzedSequenceChainLookup(node)) {
       return;
     }
     if (this._compileSequenceLockedLookup(node)) {
@@ -49,7 +49,7 @@ class CompileLookup {
     return {
       uses: [],
       mutates: [],
-      sequenceChannelLookup: null,
+      sequenceChainLookup: null,
       thisSharedAccessFacts: null,
       componentBindingRoot: null,
       componentBindingFacts: null,
@@ -72,22 +72,22 @@ class CompileLookup {
 
   _collectThisSharedLookup(node, analysisPass, facts) {
     const compiler = this.compiler;
-    const thisSharedFacts = compiler.channel.getThisSharedAccessFacts(node, analysisPass);
+    const thisSharedFacts = compiler.chain.getThisSharedAccessFacts(node, analysisPass);
     if (!thisSharedFacts) {
       return false;
     }
 
     facts.thisSharedAccessFacts = thisSharedFacts;
-    facts.uses.push(thisSharedFacts.channelName);
+    facts.uses.push(thisSharedFacts.chainName);
     if (
       compiler.scriptMode &&
-      thisSharedFacts.channelType === 'sequence' &&
-      thisSharedFacts.channelPath.length >= 2 &&
+      thisSharedFacts.chainType === 'sequence' &&
+      thisSharedFacts.chainPath.length >= 2 &&
       thisSharedFacts.propertyName !== 'snapshot'
     ) {
-      facts.sequenceChannelLookup = {
-        channelName: thisSharedFacts.channelName,
-        path: thisSharedFacts.channelPath.slice(1)
+      facts.sequenceChainLookup = {
+        chainName: thisSharedFacts.chainName,
+        path: thisSharedFacts.chainPath.slice(1)
       };
     }
     return true;
@@ -99,34 +99,34 @@ class CompileLookup {
     facts.componentBindingFacts = compiler.component.getBindingFacts(node);
   }
 
-  _collectScriptSequenceChannelLookup(node, analysisPass, facts) {
+  _collectScriptSequenceChainLookup(node, analysisPass, facts) {
     const compiler = this.compiler;
     if (!compiler.scriptMode) {
       return;
     }
 
-    const lookupFacts = this._analyzeSequenceChannelLookup(node, analysisPass);
+    const lookupFacts = this._analyzeSequenceChainLookup(node, analysisPass);
     if (lookupFacts) {
-      facts.uses.push(lookupFacts.channelName);
-      facts.sequenceChannelLookup = lookupFacts;
+      facts.uses.push(lookupFacts.chainName);
+      facts.sequenceChainLookup = lookupFacts;
     }
   }
 
-  _analyzeSequenceChannelLookup(node, analysisPass) {
+  _analyzeSequenceChainLookup(node, analysisPass) {
     const compiler = this.compiler;
     const sequencePath = compiler.sequential._extractStaticPath(node);
     if (!sequencePath || sequencePath.length < 2) {
       return null;
     }
 
-    const channelName = sequencePath[0];
-    const channelDecl = analysisPass.findDeclaration(node._analysis, channelName);
+    const chainName = sequencePath[0];
+    const chainDecl = analysisPass.findDeclaration(node._analysis, chainName);
     const path = sequencePath.slice(1);
-    if (!channelDecl || channelDecl.shared || channelDecl.type !== 'sequence' || path[path.length - 1] === 'snapshot') {
+    if (!chainDecl || chainDecl.shared || chainDecl.type !== 'sequence' || path[path.length - 1] === 'snapshot') {
       return null;
     }
     return {
-      channelName,
+      chainName,
       path
     };
   }
@@ -154,25 +154,25 @@ class CompileLookup {
     const compiler = this.compiler;
     const thisSharedFacts =
       node._analysis.thisSharedAccessFacts ||
-      compiler.channel.probeThisSharedAccessFacts(node, compiler.analysis);
+      compiler.chain.probeThisSharedAccessFacts(node, compiler.analysis);
     if (!thisSharedFacts) {
       return false;
     }
 
-    if (this._compileAnalyzedSequenceChannelLookup(node)) {
+    if (this._compileAnalyzedSequenceChainLookup(node)) {
       return true;
     }
-    if (thisSharedFacts.channelType !== 'var') {
-      const sourceName = getSharedSourceName(thisSharedFacts.channelName);
+    if (thisSharedFacts.chainType !== 'var') {
+      const sourceName = getSharedSourceName(thisSharedFacts.chainName);
       compiler.fail(
-        `Channel 'this.${sourceName}' cannot be used as a bare symbol. Use 'this.${sourceName}.snapshot()' instead.`,
+        `Chain 'this.${sourceName}' cannot be used as a bare symbol. Use 'this.${sourceName}.snapshot()' instead.`,
         node.lineno,
         node.colno,
         node
       );
     }
-    if (thisSharedFacts.channelPath.length === 1) {
-      compiler.inheritance.emitSharedChannelObservation(thisSharedFacts.channelName, node, 'snapshot', true);
+    if (thisSharedFacts.chainPath.length === 1) {
+      compiler.inheritance.emitSharedChainObservation(thisSharedFacts.chainName, node, 'snapshot', true);
       return true;
     }
     this._emitThisSharedVarNestedLookup(thisSharedFacts, node);
@@ -188,7 +188,7 @@ class CompileLookup {
       node._analysis.componentBindingFacts ||
       compiler.component.getBindingFacts(node);
     if (componentBindingFacts && componentBindingFacts.kind === 'shared-read') {
-      compiler.component.emitChannelObservation(componentBindingFacts, node);
+      compiler.component.emitChainObservation(componentBindingFacts, node);
       return true;
     }
     if (componentBindingRoot && componentBindingRoot.staticPath.length > 2) {
@@ -205,14 +205,14 @@ class CompileLookup {
     return false;
   }
 
-  _compileAnalyzedSequenceChannelLookup(node) {
+  _compileAnalyzedSequenceChainLookup(node) {
     const compiler = this.compiler;
-    const sequenceChannelLookup =
-      node._analysis.sequenceChannelLookup;
-    if (compiler.scriptMode && sequenceChannelLookup) {
+    const sequenceChainLookup =
+      node._analysis.sequenceChainLookup;
+    if (compiler.scriptMode && sequenceChainLookup) {
       compiler.buffer.emitAddSequenceGet(
-        sequenceChannelLookup.channelName,
-        sequenceChannelLookup.path,
+        sequenceChainLookup.chainName,
+        sequenceChainLookup.path,
         node
       );
       return true;
@@ -258,14 +258,14 @@ class CompileLookup {
 
   _emitThisSharedVarNestedLookup(thisSharedFacts, node) {
     const compiler = this.compiler;
-    const nestedPath = thisSharedFacts.channelPath.slice(1);
+    const nestedPath = thisSharedFacts.chainPath.slice(1);
     const errorContextJson = JSON.stringify(compiler._createErrorContext(node));
     const memberLookupHelper = compiler.scriptMode ? 'memberLookupScript' : 'memberLookupAsync';
 
     nestedPath.forEach(() => {
       this.emit(`runtime.${memberLookupHelper}((`);
     });
-    compiler.inheritance.emitSharedChannelObservation(thisSharedFacts.channelName, node, 'snapshot', true);
+    compiler.inheritance.emitSharedChainObservation(thisSharedFacts.chainName, node, 'snapshot', true);
     nestedPath.forEach((propertyName) => {
       this.emit(`), ${JSON.stringify(propertyName)}, ${errorContextJson})`);
     });

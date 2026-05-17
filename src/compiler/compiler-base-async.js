@@ -38,10 +38,10 @@ class CompilerBaseAsync extends CompilerCommon {
     const sequenceLockLookup = this.sequential.getSequenceLockLookup(node);
     node._analysis.sequenceLockLookup = sequenceLockLookup;
     if (sequenceLockLookup) {
-      const thisSharedFacts = this.channel.getThisSharedAccessFacts(node, analysisPass);
+      const thisSharedFacts = this.chain.getThisSharedAccessFacts(node, analysisPass);
       if (thisSharedFacts) {
         this.fail(
-          'Sequence marker (!) is only supported on context paths, not this.<shared> channels.',
+          'Sequence marker (!) is only supported on context paths, not this.<shared> chains.',
           node.lineno,
           node.colno,
           node
@@ -68,36 +68,36 @@ class CompilerBaseAsync extends CompilerCommon {
       this.emit(name);
       return;
     }
-    const declaredChannel = this.analysis.findDeclaration(node._analysis, name);
-    if (declaredChannel && this.scriptMode && declaredChannel.shared) {
+    const declaredChain = this.analysis.findDeclaration(node._analysis, name);
+    if (declaredChain && this.scriptMode && declaredChain.shared) {
       this._compileScriptAmbientOnlySymbolLookup(node, name);
       return;
     }
-    if (declaredChannel) {
-      this._compileDeclaredSymbolLookup(node, name, declaredChannel);
+    if (declaredChain) {
+      this._compileDeclaredSymbolLookup(node, name, declaredChain);
       return;
     }
     this._compileAmbientSymbolLookup(node, name);
   }
 
-  _compileDeclaredSymbolLookup(node, name, declaredChannel) {
+  _compileDeclaredSymbolLookup(node, name, declaredChain) {
     if (node.sequential || node.sequentialRepair) {
-      this._failNonContextSequenceRoot(node, declaredChannel);
+      this._failNonContextSequenceRoot(node, declaredChain);
     }
-    if (declaredChannel.type !== 'var') {
+    if (declaredChain.type !== 'var') {
       this.fail(
-        `Channel '${name}' cannot be used as a bare symbol. Use '${name}.snapshot()' instead.`,
+        `Chain '${name}' cannot be used as a bare symbol. Use '${name}.snapshot()' instead.`,
         node.lineno,
         node.colno,
         node
       );
     }
-    if (declaredChannel.shared) {
-      this.inheritance.emitSharedChannelObservation(name, node, 'snapshot', true);
+    if (declaredChain.shared) {
+      this.inheritance.emitSharedChainObservation(name, node, 'snapshot', true);
       return;
     }
     if (!this.scriptMode && this.inBlock) {
-      this.emit(`runtime.channelLookup("${name}", ${this.buffer.currentBuffer})`);
+      this.emit(`runtime.chainLookup("${name}", ${this.buffer.currentBuffer})`);
       return;
     }
     this.buffer.emitAddSnapshot(name, node);
@@ -128,9 +128,9 @@ class CompilerBaseAsync extends CompilerCommon {
     if (!keyRoot) {
       return;
     }
-    const keyRootChannel = analysisPass.findDeclaration(node._analysis, keyRoot);
-    if (keyRootChannel) {
-      this._failNonContextSequenceRoot(node, keyRootChannel);
+    const keyRootChain = analysisPass.findDeclaration(node._analysis, keyRoot);
+    if (keyRootChain) {
+      this._failNonContextSequenceRoot(node, keyRootChain);
     }
   }
 
@@ -154,8 +154,8 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   compileInlineIf(node) {
-    const hasLinkedMutations = node._analysis.linkedMutatedChannels &&
-      node._analysis.linkedMutatedChannels.size > 0;
+    const hasLinkedMutations = node._analysis.linkedMutatedChains &&
+      node._analysis.linkedMutatedChains.size > 0;
     if (hasLinkedMutations) {
       this.boundaries.compileExpressionControlFlowBoundary(this.buffer, node, function() {
         this.emit('const cond = await runtime.resolveSingle(');
@@ -357,7 +357,7 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   compileExpression(node, _scopeState, positionNode, excludeFromWaitedRootTracking = false) {
-    const shouldEmitOwnWaitedResolve = this.buffer.currentWaitedChannelName &&
+    const shouldEmitOwnWaitedResolve = this.buffer.currentWaitedChainName &&
       !excludeFromWaitedRootTracking;
 
     if (!shouldEmitOwnWaitedResolve) {
@@ -489,8 +489,8 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   _compileAsyncBinOpShortCircuit(node, isOr) {
-    const hasLinkedMutations = node._analysis.linkedMutatedChannels &&
-      node._analysis.linkedMutatedChannels.size > 0;
+    const hasLinkedMutations = node._analysis.linkedMutatedChains &&
+      node._analysis.linkedMutatedChains.size > 0;
     if (hasLinkedMutations) {
       this.boundaries.compileExpressionControlFlowBoundary(this.buffer, node, function() {
         this.emit('const left = await runtime.resolveSingle(');
@@ -562,23 +562,23 @@ class CompilerBaseAsync extends CompilerCommon {
 
   _emitErrorObservation(observationFacts, targetNode, mode) {
     if (observationFacts.kind === 'component') {
-      this.component.emitChannelObservation({
+      this.component.emitChainObservation({
         bindingName: observationFacts.bindingName,
-        channelName: observationFacts.channelName,
+        chainName: observationFacts.chainName,
         mode,
         implicitVarRead: false
       }, targetNode);
       return;
     }
-    if (observationFacts.kind === 'shared-channel') {
-      this.inheritance.emitSharedChannelObservation(observationFacts.channelName, targetNode, mode);
+    if (observationFacts.kind === 'shared-chain') {
+      this.inheritance.emitSharedChainObservation(observationFacts.chainName, targetNode, mode);
       return;
     }
     if (mode === 'isError') {
-      this.buffer.emitAddIsError(observationFacts.channelName, targetNode);
+      this.buffer.emitAddIsError(observationFacts.chainName, targetNode);
       return;
     }
-    this.buffer.emitAddGetError(observationFacts.channelName, targetNode);
+    this.buffer.emitAddGetError(observationFacts.chainName, targetNode);
   }
 
   _getIsTestFacts(node) {
@@ -598,22 +598,22 @@ class CompilerBaseAsync extends CompilerCommon {
       return {
         kind: 'component',
         bindingName: componentBindingRoot.bindingName,
-        channelName: renameSharedName(componentBindingRoot.staticPath[1])
+        chainName: renameSharedName(componentBindingRoot.staticPath[1])
       };
     }
 
-    const channelName = this._getObservedChannelName(targetNode);
-    if (!channelName) {
+    const chainName = this._getObservedChainName(targetNode);
+    if (!chainName) {
       return null;
     }
-    const channelDecl = this.analysis.findDeclaration(targetNode._analysis, channelName);
+    const chainDecl = this.analysis.findDeclaration(targetNode._analysis, chainName);
     return {
-      kind: channelDecl && channelDecl.shared ? 'shared-channel' : 'channel',
-      channelName
+      kind: chainDecl && chainDecl.shared ? 'shared-chain' : 'chain',
+      chainName
     };
   }
 
-  _getObservedChannelName(targetNode) {
+  _getObservedChainName(targetNode) {
     if (!this.scriptMode || !targetNode) {
       return null;
     }
@@ -621,16 +621,16 @@ class CompilerBaseAsync extends CompilerCommon {
       return null;
     }
 
-    const thisSharedFacts = this.channel.getThisSharedAccessFacts(targetNode);
-    if (thisSharedFacts && thisSharedFacts.channelPath.length === 1) {
-      return thisSharedFacts.channelName;
+    const thisSharedFacts = this.chain.getThisSharedAccessFacts(targetNode);
+    if (thisSharedFacts && thisSharedFacts.chainPath.length === 1) {
+      return thisSharedFacts.chainName;
     }
 
     if (targetNode instanceof nodes.Symbol) {
       const name = targetNode.value;
-      const channelDecl = this.analysis.findDeclaration(targetNode._analysis, name);
-      if (channelDecl) {
-        if (this.scriptMode && channelDecl.shared) {
+      const chainDecl = this.analysis.findDeclaration(targetNode._analysis, name);
+      if (chainDecl) {
+        if (this.scriptMode && chainDecl.shared) {
           return null;
         }
         return name;
@@ -641,9 +641,9 @@ class CompilerBaseAsync extends CompilerCommon {
     if (targetNode instanceof nodes.FunCall) {
       const candidate = this.sequential._extractStaticPathRoot(targetNode.name, 2);
       if (candidate) {
-        const channelDecl = this.analysis.findDeclaration(targetNode._analysis, candidate);
-        if (channelDecl) {
-          if (this.scriptMode && channelDecl.shared) {
+        const chainDecl = this.analysis.findDeclaration(targetNode._analysis, candidate);
+        if (chainDecl) {
+          if (this.scriptMode && chainDecl.shared) {
             return null;
           }
           return candidate;

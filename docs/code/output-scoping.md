@@ -1,17 +1,17 @@
-# Channel Scoping And Buffer Access
+# Chain Scoping And Buffer Access
 
-This document describes the current channel scoping model in async Cascada.
+This document describes the current chain scoping model in async Cascada.
 
 ## Ordering Contract
 
-Cascada executes independent work concurrently, but channel-visible effects must
+Cascada executes independent work concurrently, but chain-visible effects must
 match a valid sequential source-order run.
 
 That contract is enforced by the command-buffer tree:
 
 - commands are enqueued into the active `currentBuffer`
 - async/control/composition boundaries reserve child-buffer slots early
-- linked parent channels determine where a child buffer is visible
+- linked parent chains determine where a child buffer is visible
 - the buffer iterator applies commands in source order and waits for unfinished
   child slots when it reaches them
 
@@ -26,23 +26,23 @@ Lexical frames and command buffers are separate concepts.
 - not every frame owns a `CommandBuffer`
 - many lexical scopes can emit into one active command stream
 - the active stream is the compiler/runtime `currentBuffer` binding
-- declarations, mutations, snapshots, and timing commands for a visible channel
+- declarations, mutations, snapshots, and timing commands for a visible chain
   must be enqueued on the current buffer
 
-Runtime channel lookup must not infer lexical ownership by climbing to a parent
-producer buffer. The compiler's channel analysis decides what is visible and
-which parent channels are linked into each child boundary.
+Runtime chain lookup must not infer lexical ownership by climbing to a parent
+producer buffer. The compiler's chain analysis decides what is visible and
+which parent chains are linked into each child boundary.
 
-## Channel Analysis
+## Chain Analysis
 
 The current analysis vocabulary is:
 
-- `declaredChannels` - channels declared by a scope/boundary
-- `usedChannels` - channels a node may need to observe or touch
-- `mutatedChannels` - channels a node may mutate or otherwise affect through
+- `declaredChains` - chains declared by a scope/boundary
+- `usedChains` - chains a node may need to observe or touch
+- `mutatedChains` - chains a node may mutate or otherwise affect through
   command-emitting work
 
-See also: `expression-channels.md` for how expressions contribute to channel
+See also: `expression-chains.md` for how expressions contribute to chain
 analysis through command-emitting expression forms.
 
 These sets drive:
@@ -50,10 +50,10 @@ These sets drive:
 - child-buffer linking
 - control-flow poisoning when a controlling value fails
 - guard target resolution
-- method/block/component channel metadata
+- method/block/component chain metadata
 - expression-boundary decisions
 
-Observation commands count as channel use. Mutating commands count as use and
+Observation commands count as chain use. Mutating commands count as use and
 mutation.
 
 ## Buffer Creation
@@ -80,15 +80,15 @@ child command buffer unless it can enqueue commands or affect visible structure.
 
 ## Linking
 
-Child buffers link only the parent channels they need.
+Child buffers link only the parent chains they need.
 
-The compiler filters `usedChannels` through local declarations before emitting
-linked channel lists. Locally declared channels are owned by the child boundary;
-parent-visible channels are linked into the parent tree.
+The compiler filters `usedChains` through local declarations before emitting
+linked chain lists. Locally declared chains are owned by the child boundary;
+parent-visible chains are linked into the parent tree.
 
-The `__waited__` loop timing channel is intentionally flat and is not linked as
-a normal child channel. Waited-loop control-flow uses child-local waited
-channels and contributes one parent waited unit instead.
+The `__waited__` loop timing chain is intentionally flat and is not linked as
+a normal child chain. Waited-loop control-flow uses child-local waited
+chains and contributes one parent waited unit instead.
 
 ## Observations
 
@@ -107,21 +107,21 @@ state.
 
 ## Poison And Guard Behavior
 
-When an async control value fails, the compiler/runtime poisons the channels
+When an async control value fails, the compiler/runtime poisons the chains
 that the skipped body could have affected.
 
-Current implementation uses analysis-derived channel sets:
+Current implementation uses analysis-derived chain sets:
 
-- `if` / `switch` gather branch `usedChannels` into `poisonChannels`
-- loops pass body/else channel metadata into runtime loop options
-- guards resolve selected channels and sequence paths from guard targets plus
+- `if` / `switch` gather branch `usedChains` into `poisonChains`
+- loops pass body/else chain metadata into runtime loop options
+- guards resolve selected chains and sequence paths from guard targets plus
   body analysis
 
 Guard behavior remains separate from ordinary control-flow poisoning:
 
 - guard targets decide what state is captured/reverted
 - sequence targets use sequential-path guard commands
-- output/channel guard state is captured and restored through ordered commands
+- output/chain guard state is captured and restored through ordered commands
 - unrelated unguarded poison can still escape
 
 Observation-only reads should not be treated as mutations, but they remain
@@ -129,10 +129,10 @@ ordered uses of the current buffer.
 
 ## Dynamic Targets
 
-Channel declarations and ordinary channel operations are statically resolved by
+Chain declarations and ordinary chain operations are statically resolved by
 the compiler/transpiler.
 
-Runtime receives concrete channel names and command payloads. It should not
+Runtime receives concrete chain names and command payloads. It should not
 decide whether a source-level operation was a declaration, assignment,
 observation, or parent-scope write. Those are compiler concerns.
 
@@ -142,24 +142,24 @@ Keep these invariants when changing output or buffer behavior:
 
 1. Every command for an execution point is enqueued on the active
    `currentBuffer`.
-2. A visible parent channel must be linked into a child boundary before child
+2. A visible parent chain must be linked into a child boundary before child
    commands need it.
 3. Snapshots and error reads are ordered observations, not direct state peeks.
-4. Local declarations shadow parent channels through compiler analysis.
+4. Local declarations shadow parent chains through compiler analysis.
 5. Runtime code must not repair missing visibility by falling back to parent or
    root producer buffers.
 6. Guard state and control-flow poison use analysis metadata; they are not
    inferred from runtime buffer contents.
-7. Template set-block/capture boundaries remain isolated text-channel collection
+7. Template set-block/capture boundaries remain isolated text-chain collection
    boundaries and must not be flattened into parent text output.
 
 ## Key Files
 
-- `src/compiler/analysis.js` - channel declaration/use/mutation analysis
+- `src/compiler/analysis.js` - chain declaration/use/mutation analysis
 - `src/compiler/buffer.js` - command-buffer emission helpers
 - `src/compiler/boundaries.js` - control/value/text boundary lowering
 - `src/compiler/compiler-async.js` - async control-flow and guard compilation
 - `src/compiler/loop.js` - loop boundary and waited-loop integration
-- `src/runtime/command-buffer.js` - command-buffer tree and channel access
+- `src/runtime/command-buffer.js` - command-buffer tree and chain access
 - `src/runtime/buffer-iterator.js` - source-order command application
-- `src/runtime/channels/*` - channel command implementations
+- `src/runtime/chains/*` - chain command implementations

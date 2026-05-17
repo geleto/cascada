@@ -1,7 +1,7 @@
 import {RuntimeFatalError} from '../errors.js';
 import {normalizeFinalPromise} from '../resolve.js';
 import {createInheritanceCallableArgumentFrame} from './invoke.js';
-import {declareInheritanceSharedChannel} from './shared.js';
+import {declareInheritanceSharedChain} from './shared.js';
 
 class InheritanceInstance {
   constructor(options) {
@@ -32,7 +32,7 @@ class InheritanceInstance {
     const runtimeState = runtime.finalizeInheritanceChain(chain, context);
 
     Object.entries(runtimeState.sharedSchema).forEach(([name, schemaEntry]) => {
-      declareInheritanceSharedChannel(sharedRootBuffer, name, schemaEntry.type, context);
+      declareInheritanceSharedChain(sharedRootBuffer, name, schemaEntry.type, context);
     });
 
     return new InheritanceInstance({
@@ -101,16 +101,16 @@ class InheritanceInstance {
   }
 
   async _invokeFromMethodData(methodData, args, origin, parentBuffer, context) {
-    const visibleChannels = Array.from(new Set([
-      ...methodData.mergedLinkedChannels,
-      ...methodData.mergedMutatedChannels
+    const visibleChains = Array.from(new Set([
+      ...methodData.mergedLinkedChains,
+      ...methodData.mergedMutatedChains
     ]));
     const invocationBuffer = new this.runtime.CommandBuffer(
       context,
       parentBuffer,
-      visibleChannels,
+      visibleChains,
       parentBuffer,
-      methodData.mergedMutatedChannels
+      methodData.mergedMutatedChains
     );
     const callablePayload = methodData.isConstructor
       ? null

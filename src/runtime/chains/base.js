@@ -11,10 +11,10 @@ import {
 } from '../errors.js';
 import {BufferIterator} from '../buffer-iterator.js';
 
-class Channel {
-  constructor(buffer, channelName, context, channelType = null, target = undefined, base = null) {
-    this._channelName = channelName;
-    this._channelType = channelType || channelName;
+class Chain {
+  constructor(buffer, chainName, context, chainType = null, target = undefined, base = null) {
+    this._chainName = chainName;
+    this._chainType = chainType || chainName;
     this._context = context;
     this._buffer = buffer;
     this._target = target;
@@ -39,8 +39,8 @@ class Channel {
     return this._target;
   }
 
-  get channelType() {
-    return this._channelType;
+  get chainType() {
+    return this._chainType;
   }
 
   _setTarget(nextTarget) {
@@ -110,7 +110,7 @@ class Channel {
   }
 
   _getCurrentResult() {
-    throw new Error(`Channel type '${this._channelType}' must implement _getCurrentResult()`);
+    throw new Error(`Chain type '${this._chainType}' must implement _getCurrentResult()`);
   }
 
   _setFatalError(err, cmd = null) {
@@ -142,7 +142,7 @@ class Channel {
   }
 
   _beforeApplyCommand(cmd) {
-    // Hook for channel types that need copy-on-write before mutations.
+    // Hook for chain types that need copy-on-write before mutations.
   }
 
   _applyCommand(cmd) {
@@ -235,8 +235,8 @@ class Channel {
   }
 }
 
-function createCallableChannelFacade(channel) {
-  const target = (...args) => channel.invoke(...args);
+function createCallableChainFacade(chain) {
+  const target = (...args) => chain.invoke(...args);
   return new Proxy(target, {
     get: (proxyTarget, prop) => {
       if (prop === 'then') {
@@ -245,27 +245,27 @@ function createCallableChannelFacade(channel) {
       if (typeof prop === 'symbol') {
         return proxyTarget[prop];
       }
-      if (prop in channel) {
-        const value = channel[prop];
+      if (prop in chain) {
+        const value = chain[prop];
         if (typeof value === 'function') {
           const cacheName = `_bound_${String(prop)}`;
-          if (!channel[cacheName]) {
-            Object.defineProperty(channel, cacheName, {
+          if (!chain[cacheName]) {
+            Object.defineProperty(chain, cacheName, {
               configurable: true,
               enumerable: false,
               writable: true,
-              value: value.bind(channel)
+              value: value.bind(chain)
             });
           }
-          return channel[cacheName];
+          return chain[cacheName];
         }
         return value;
       }
       return proxyTarget[prop];
     },
     set: (proxyTarget, prop, value) => {
-      if (prop in channel) {
-        channel[prop] = value;
+      if (prop in chain) {
+        chain[prop] = value;
         return true;
       }
       proxyTarget[prop] = value;
@@ -274,7 +274,7 @@ function createCallableChannelFacade(channel) {
   });
 }
 
-export { Channel, createCallableChannelFacade, cloneSnapshotValue, extractPoisonErrors, mergePoisonErrors, inspectTargetForErrors, contextualizeCommandErrors };
+export { Chain, createCallableChainFacade, cloneSnapshotValue, extractPoisonErrors, mergePoisonErrors, inspectTargetForErrors, contextualizeCommandErrors };
 
 function cloneSnapshotValue(value) {
   if (Array.isArray(value)) {
@@ -411,12 +411,12 @@ async function inspectTargetForErrors(target) {
   };
 }
 
-function contextualizeCommandErrors(channel, cmd, errors) {
+function contextualizeCommandErrors(chain, cmd, errors) {
   if (!Array.isArray(errors) || errors.length === 0) {
     return [];
   }
   const lineno = cmd && cmd.pos && typeof cmd.pos.lineno === 'number' ? cmd.pos.lineno : 0;
   const colno = cmd && cmd.pos && typeof cmd.pos.colno === 'number' ? cmd.pos.colno : 0;
-  const path = channel && channel._context && channel._context.path ? channel._context.path : null;
+  const path = chain && chain._context && chain._context.path ? chain._context.path : null;
   return errors.map((err) => handleError(err, lineno, colno, null, path));
 }

@@ -16,7 +16,7 @@ those named methods without creating new implicit placements.
 Template inheritance should lower to the same core model as script
 inheritance:
 
-- template output is an implicit shared text channel, `__text__`
+- template output is an implicit shared text chain, `__text__`
 - template blocks are inherited methods
 - block placement is an inherited method invocation
 - `super(...)` in a block uses the same dispatch rules as script methods
@@ -197,7 +197,7 @@ Therefore the smallest useful migration is to keep the existing block-entry
 compiler and method metadata intact, and replace only inline block placement
 with the same inherited method invocation used by `{{ this.blockName(...) }}`.
 Placement is now an inherited method call; future phases should focus on any
-remaining text/shared-channel unification rather than reintroducing a
+remaining text/shared-chain unification rather than reintroducing a
 block-specific placement path.
 
 Compiler-path behavior for root/no-extends templates:
@@ -216,7 +216,7 @@ Compiler-path behavior for extending templates:
 Shared compiler/analysis changes:
 
 - template output writes should compile as normal `this.__text__`
-  shared-channel writes
+  shared-chain writes
 - inferred template shared declarations are already collected during root
   analysis; that path should recognize `this.__text__` as shared `text` rather
   than inferring the default shared `var`
@@ -224,11 +224,11 @@ Shared compiler/analysis changes:
 The existing inherited method implementation should handle:
 
 - method metadata and admission links, including `__text__` once it appears as
-  a normal shared channel use/mutation
-- implicit shared-channel declaration/registration through the shared-schema
+  a normal shared chain use/mutation
+- implicit shared-chain declaration/registration through the shared-schema
   path, instead of block-specific text output declarations
 - source-order command buffering for writes to `__text__` and other shared
-  channels
+  chains
 - `super(...)` dispatch, argument arity checks, inherited signatures, and
   transitive invoked-method metadata
 - constructor/startup ordering and parent-chain metadata readiness
@@ -237,7 +237,7 @@ As the lowering takes over, remove old async block-specific implementation
 surfaces instead of preserving compatibility layers around them. In particular,
 delete block-only text-placement boundaries, block-only parent-buffer linking,
 and block-only argument payload plumbing once their behavior is expressed by
-method invocation and normal shared-channel metadata.
+method invocation and normal shared-chain metadata.
 
 ## Implementation Phases
 
@@ -356,27 +356,27 @@ for template blocks and script methods.
 
 ### Phase 4: Treat Template Text As Normal Shared Text
 
-Goal: align template text with the inherited method shared-channel model only
+Goal: align template text with the inherited method shared-chain model only
 after the placement path has been simplified.
 
 Phase 4 implementation: keep inference in the existing template shared
 declaration collector. `this.__text__` now infers a shared `text` declaration
 for inheritance metadata, while the root scope keeps its ordinary `__text__`
-text channel declaration instead of adding a duplicate shared `var`
-declaration. Template shared-channel observations can reuse the existing
-`observeInheritanceSharedChannel(...)` path for `this.__text__.snapshot()`.
+text chain declaration instead of adding a duplicate shared `var`
+declaration. Template shared-chain observations can reuse the existing
+`observeInheritanceSharedChain(...)` path for `this.__text__.snapshot()`.
 
 Phase 4 review follow-up: current-phase quality gaps were fixed in place
 (unused call-compiler local removed; runtime coverage added for
 `this.__text__.snapshot()`). No Phase 4 issues are intentionally postponed.
 
 Update inferred shared declaration handling so `this.__text__` is recognized as
-the root template text channel:
+the root template text chain:
 
-- infer channel type `text` for `__text__`
+- infer chain type `text` for `__text__`
 - keep other inferred `this.<name>` declarations as shared `var`
 - avoid declaring a duplicate `var __text__` when the root already has the
-  ordinary template text channel declaration
+  ordinary template text chain declaration
 
 This should remove special text-output assumptions rather than adding a second
 way to model template text.
@@ -416,7 +416,7 @@ future cleanup, not an immediate line-count reduction phase.
 
 Phase 6 implementation: callable signature handling now uses callable-oriented
 helper names, and `compileAsyncCallableEntry()` delegates entry setup to small
-helpers for context forking, parent-channel linking, callable state, and return
+helpers for context forking, parent-chain linking, callable state, and return
 emission. The script-method and template-block semantic differences remain
 explicit at those helper boundaries.
 
@@ -424,9 +424,9 @@ The implementation shares `compileAsyncCallableEntry()` for both template blocks
 and script method definitions. The callable-entry helpers now cover:
 
 - callable signature and argument discovery
-- local argument channel initialization
+- local argument chain initialization
 - context forking
-- parent-channel linking
+- parent-chain linking
 - callable-definition state save/restore
 - script-method versus template-block return emission
 
@@ -451,7 +451,7 @@ The remaining block placement differences are intentional:
   when no parent template is selected
 - inline block placement passes same-named signature values as inherited method
   arguments
-- placement output is enqueued on the current template text channel
+- placement output is enqueued on the current template text chain
 
 Only refactor this phase if it makes `compileAsyncBlock()` smaller or clearer.
 Good candidates:
@@ -466,7 +466,7 @@ us remove more compiler code than they add.
 
 Phase 7 implementation: `compileAsyncBlock()` now keeps the static/dynamic
 block-placement decisions local, while a small `emitAsyncBlockTextPlacement()`
-helper owns the shared inherited-call result assignment, current text-channel
+helper owns the shared inherited-call result assignment, current text-chain
 enqueue, and waited-completion registration for both normal placement and the
 dynamic root fallback path.
 

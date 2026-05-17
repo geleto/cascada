@@ -331,7 +331,7 @@ describe('Phase 6: Loop Poison Integration', () => {
     });
   });
 
-  describe('Test 6.11: Channel commands with poison', () => {
+  describe('Test 6.11: Chain commands with poison', () => {
     it('should handle @data and @text in else block when poisoned', async () => {
       const script = `
         data result

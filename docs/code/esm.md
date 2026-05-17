@@ -530,7 +530,7 @@ The precompiled environment should:
 
 - expose environment/template classes that render `{ type: 'code', obj }` sources from `PrecompiledLoader`;
 - reject string template/script sources with a clear error instead of compiling them;
-- support precompiled template rendering, includes, imports, inheritance, globals, filters, tests, runtime helpers, and output channels;
+- support precompiled template rendering, includes, imports, inheritance, globals, filters, tests, runtime helpers, and output chains;
 - avoid script transpilation and template compilation APIs;
 - keep the public full entry unchanged.
 

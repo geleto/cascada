@@ -13,12 +13,12 @@ import {createPoison, isPoison, isPoisonError, Frame} from '../../src/runtime/ru
   function setupSequentialRuntimeForTests(root) {
     const context = { path: 'test', env: {} };
     const currentBuffer = new runtime.CommandBuffer(context, null);
-    runtime.declareBufferChannel(currentBuffer, '!lockKey', 'sequential_path', context, null);
+    runtime.declareBufferChain(currentBuffer, '!lockKey', 'sequential_path', context, null);
     return currentBuffer;
   }
 
   async function expectLockTrue(lock, root, currentBuffer, lockKey = '!lockKey') {
-    const output = currentBuffer.getChannel(lockKey);
+    const output = currentBuffer.getChain(lockKey);
     const errs = output._getSequentialPathPoisonErrors();
     expect(!errs || errs.length === 0).to.be(true);
   }
@@ -135,7 +135,7 @@ import {createPoison, isPoison, isPoisonError, Frame} from '../../src/runtime/ru
         root = new Frame();
         root.push(false);
         currentBuffer = setupSequentialRuntimeForTests(root);
-        currentBuffer.getChannel('!lockKey')._applySequentialPathPoisonErrors(lockPoison.errors);
+        currentBuffer.getChain('!lockKey')._applySequentialPathPoisonErrors(lockPoison.errors);
 
         try {
           await runtime.sequentialMemberLookupAsyncValue(

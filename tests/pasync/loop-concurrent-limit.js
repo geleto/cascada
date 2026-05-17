@@ -2,7 +2,7 @@
 import expect from 'expect.js';
 import {AsyncEnvironment, AsyncTemplate, Script} from '../../src/environment/environment.js';
 import {StringLoader, delay} from '../util.js';
-import {createPoison, isPoisonError, TextCommand, SnapshotCommand, CommandBuffer, declareBufferChannel} from '../../src/runtime/runtime.js';
+import {createPoison, isPoisonError, TextCommand, SnapshotCommand, CommandBuffer, declareBufferChain} from '../../src/runtime/runtime.js';
 import * as parser from '../../src/language/parser.js';
 import * as nodes from '../../src/language/nodes.js';
 import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
@@ -2394,18 +2394,18 @@ import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
     });
   });
 
-  describe('Compiler waited-channel scaffolding', function () {
+  describe('Compiler waited-chain scaffolding', function () {
     function countWaitResolveCommands(source) {
       const matches = source.match(/new runtime\.WaitResolveCommand/g);
       return matches ? matches.length : 0;
     }
 
-    it('declares internal __waited__ channel for limited loop iterations', function () {
+    it('declares internal __waited__ chain for limited loop iterations', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{{ x }}{% endfor %}', env);
       const source = tmpl.compileSource();
       expect(source).to.contain('__waited__');
-      expect(source).to.contain('runtime.declareBufferChannel(');
+      expect(source).to.contain('runtime.declareBufferChain(');
     });
 
     it('emits canonical loop runtime aliases with loop#<id>', function () {
@@ -2428,21 +2428,21 @@ import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
       });
     });
 
-    it('does not declare internal __waited__ channel for unbounded loops', function () {
+    it('does not declare internal __waited__ chain for unbounded loops', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs %}{{ x }}{% endfor %}', env);
       const source = tmpl.compileSource();
       expect(source).to.not.contain('__waited__');
     });
 
-    it('emits WaitResolveCommand for limited-loop top-level channel expressions', function () {
+    it('emits WaitResolveCommand for limited-loop top-level chain expressions', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{{ x + 1 }}{% endfor %}', env);
       const source = tmpl.compileSource();
       expect(source).to.contain('new runtime.WaitResolveCommand');
     });
 
-    it('does not emit WaitResolveCommand for unbounded loop channel expressions', function () {
+    it('does not emit WaitResolveCommand for unbounded loop chain expressions', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs %}{{ x + 1 }}{% endfor %}', env);
       const source = tmpl.compileSource();
@@ -2491,7 +2491,7 @@ import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
       expect(countWaitResolveCommands(source)).to.be(3);
     });
 
-    it('emits WaitResolveCommand for limited-loop var-channel initializer roots', function () {
+    it('emits WaitResolveCommand for limited-loop var-chain initializer roots', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{% var y = foo(x) %}{% endfor %}', env);
       const source = tmpl.compileSource();
@@ -2660,15 +2660,15 @@ import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
     });
   });
 
-  describe('CommandBuffer channel alias canonicalization', function () {
-    it('maps formal channel names to resolved aliases in addCommand()', function () {
+  describe('CommandBuffer chain alias canonicalization', function () {
+    it('maps formal chain names to resolved aliases in addCommand()', function () {
       const ctx = { path: 'alias-add.njk' };
       const buffer = new CommandBuffer(ctx, null);
-      declareBufferChannel(buffer, 'loop#4', 'text', ctx, null);
-      buffer._setChannelAliases({ loop: 'loop#4' });
+      declareBufferChain(buffer, 'loop#4', 'text', ctx, null);
+      buffer._setChainAliases({ loop: 'loop#4' });
 
       buffer.addCommand(new TextCommand({
-        channelName: 'text',
+        chainName: 'text',
         args: ['x'],
         pos: { lineno: 1, colno: 1 }
       }), 'loop');
@@ -2677,39 +2677,39 @@ import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
       expect(buffer.arrays['loop#4']).to.have.length(1);
     });
 
-    it('resolves SnapshotCommand through channel aliases', async function () {
+    it('resolves SnapshotCommand through chain aliases', async function () {
       const ctx = { path: 'alias-snapshot.njk' };
       const buffer = new CommandBuffer(ctx, null);
-      declareBufferChannel(buffer, 'loop#4', 'text', ctx, null);
-      buffer._setChannelAliases({ loop: 'loop#4' });
+      declareBufferChain(buffer, 'loop#4', 'text', ctx, null);
+      buffer._setChainAliases({ loop: 'loop#4' });
 
       buffer.addCommand(new TextCommand({
-        channelName: 'loop',
+        chainName: 'loop',
         args: ['A'],
         pos: { lineno: 1, colno: 1 }
       }), 'loop');
       buffer.finish();
 
       const snap = await buffer.addCommand(new SnapshotCommand({
-        channelName: 'loop',
+        chainName: 'loop',
         pos: { lineno: 1, colno: 1 }
       }), 'loop');
       expect(snap).to.be('A');
     });
 
-    it('inherits channel aliases for child buffers linked through addBuffer', function () {
+    it('inherits chain aliases for child buffers linked through addBuffer', function () {
       const ctx = { path: 'alias-child.njk' };
       const parent = new CommandBuffer(ctx, null);
       const child = new CommandBuffer(ctx, null);
-      parent._setChannelAliases({ loop: 'loop#4', someVar: 'someVar#9' });
-      declareBufferChannel(parent, 'loop#4', 'text', ctx, null);
+      parent._setChainAliases({ loop: 'loop#4', someVar: 'someVar#9' });
+      declareBufferChain(parent, 'loop#4', 'text', ctx, null);
 
       parent.addBuffer(child, 'loop');
 
-      expect(child._channelAliases.loop).to.be('loop#4');
-      expect(child._channelAliases.someVar).to.be('someVar#9');
+      expect(child._chainAliases.loop).to.be('loop#4');
+      expect(child._chainAliases.someVar).to.be('someVar#9');
       expect(() => child.addCommand(new TextCommand({
-        channelName: 'text',
+        chainName: 'text',
         args: ['x'],
         pos: { lineno: 1, colno: 1 }
       }), 'someVar')).to.throwError(/has no linked lane/);
@@ -2721,38 +2721,38 @@ import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
       const ctx = { path: 'alias-reuse.njk' };
       const parent = new CommandBuffer(ctx, null);
       const child = new CommandBuffer(ctx, null);
-      parent._setChannelAliases({ loop: 'loop#4' });
-      declareBufferChannel(parent, 'loop#4', 'text', ctx, null);
+      parent._setChainAliases({ loop: 'loop#4' });
+      declareBufferChain(parent, 'loop#4', 'text', ctx, null);
 
       parent.addBuffer(child, 'loop');
 
-      expect(child._channelAliases).to.be(parent._channelAliases);
+      expect(child._chainAliases).to.be(parent._chainAliases);
     });
 
     it('merges parent aliases when child already has own aliases', function () {
       const ctx = { path: 'alias-merge.njk' };
       const parent = new CommandBuffer(ctx, null);
       const child = new CommandBuffer(ctx, null);
-      parent._setChannelAliases({ loop: 'loop#4', shared: 'shared#1' });
-      child._setChannelAliases({ own: 'own#7', shared: 'shared#9' });
-      declareBufferChannel(parent, 'loop#4', 'text', ctx, null);
+      parent._setChainAliases({ loop: 'loop#4', shared: 'shared#1' });
+      child._setChainAliases({ own: 'own#7', shared: 'shared#9' });
+      declareBufferChain(parent, 'loop#4', 'text', ctx, null);
 
       parent.addBuffer(child, 'loop');
 
-      expect(child._channelAliases).to.not.be(parent._channelAliases);
-      expect(child._channelAliases.loop).to.be('loop#4');
-      expect(child._channelAliases.own).to.be('own#7');
-      expect(child._channelAliases.shared).to.be('shared#9');
+      expect(child._chainAliases).to.not.be(parent._chainAliases);
+      expect(child._chainAliases.loop).to.be('loop#4');
+      expect(child._chainAliases.own).to.be('own#7');
+      expect(child._chainAliases.shared).to.be('shared#9');
     });
 
     it('keeps canonical input names unchanged', function () {
       const ctx = { path: 'alias-canonical.njk' };
       const buffer = new CommandBuffer(ctx, null);
-      declareBufferChannel(buffer, 'loop#4', 'text', ctx, null);
-      buffer._setChannelAliases({ loop: 'loop#4' });
+      declareBufferChain(buffer, 'loop#4', 'text', ctx, null);
+      buffer._setChainAliases({ loop: 'loop#4' });
 
       buffer.addCommand(new TextCommand({
-        channelName: 'text',
+        chainName: 'text',
         args: ['x'],
         pos: { lineno: 1, colno: 1 }
       }), 'loop#4');

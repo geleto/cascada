@@ -1,13 +1,13 @@
 
 import {createPoison, isPoison, isPoisonError} from '../errors.js';
-import {ChannelCommand, runWithResolvedArguments, contextualizeChannelError} from './command-base.js';
-import {DataChannelTarget} from './data-target.js';
-import {Channel, cloneSnapshotValue, mergePoisonErrors} from './base.js';
+import {ChainCommand, runWithResolvedArguments, contextualizeChainError} from './command-base.js';
+import {DataChainTarget} from './data-target.js';
+import {Chain, cloneSnapshotValue, mergePoisonErrors} from './base.js';
 
-class DataCommand extends ChannelCommand {
-  constructor({ channelName, operation, args = null, pos = null, initializeIfNotSet = false }) {
+class DataCommand extends ChainCommand {
+  constructor({ chainName, operation, args = null, pos = null, initializeIfNotSet = false }) {
     super({
-      channelName,
+      chainName,
       args: args || [],
       pos
     });
@@ -15,34 +15,34 @@ class DataCommand extends ChannelCommand {
     this.initializeIfNotSet = initializeIfNotSet;
   }
 
-  apply(channel) {
-    super.apply(channel);
-    return runWithResolvedArguments(this.arguments, this, channel, (resolvedArgs) => {
-      if (!channel || !channel._base) return;
+  apply(chain) {
+    super.apply(chain);
+    return runWithResolvedArguments(this.arguments, this, chain, (resolvedArgs) => {
+      if (!chain || !chain._base) return;
       const args = Array.isArray(resolvedArgs) ? resolvedArgs : [];
       const rawPath = args.length > 0 ? args[0] : null;
       const dataPath = (Array.isArray(rawPath) || rawPath === null) ? rawPath : null;
       const poisonErrors = this.extractPoisonFromArgs(args);
       if (this.operation !== 'set') {
-        const existing = readDataValueAtPath(channel._base.data, dataPath);
+        const existing = readDataValueAtPath(chain._base.data, dataPath);
         if (isPoison(existing) || isPoisonError(existing)) {
           if (poisonErrors.length > 0) {
-            setDataPoisonAtPath(channel, args, this.toPoisonValue(poisonErrors));
+            setDataPoisonAtPath(chain, args, this.toPoisonValue(poisonErrors));
           }
           return;
         }
       }
       if (poisonErrors.length > 0) {
-        setDataPoisonAtPath(channel, args, this.toPoisonValue(poisonErrors));
+        setDataPoisonAtPath(chain, args, this.toPoisonValue(poisonErrors));
         return;
       }
-      const method = this.operation ? channel._base[this.operation] : channel._base;
+      const method = this.operation ? chain._base[this.operation] : chain._base;
       if (typeof method !== 'function') {
         setDataPoisonAtPath(
-          channel,
+          chain,
           args,
           this.toPoisonValue([
-            contextualizeChannelError(channel, this.pos, new Error(`has no method '${this.operation}'`))
+            contextualizeChainError(chain, this.pos, new Error(`has no method '${this.operation}'`))
           ])
         );
         return;
@@ -51,20 +51,20 @@ class DataCommand extends ChannelCommand {
         if (
           this.initializeIfNotSet &&
           this.operation === 'set' &&
-          channel._getTarget() &&
-          typeof channel._getTarget() === 'object' &&
-          Object.keys(channel._getTarget()).length > 0
+          chain._getTarget() &&
+          typeof chain._getTarget() === 'object' &&
+          Object.keys(chain._getTarget()).length > 0
         ) {
           return;
         }
-        method.apply(channel._base, args);
-        channel._setTarget(channel._base.data);
+        method.apply(chain._base, args);
+        chain._setTarget(chain._base.data);
       } catch (err) {
         setDataPoisonAtPath(
-          channel,
+          chain,
           args,
           this.toPoisonValue([
-            contextualizeChannelError(channel, this.pos, err)
+            contextualizeChainError(chain, this.pos, err)
           ])
         );
       }
@@ -72,23 +72,23 @@ class DataCommand extends ChannelCommand {
   }
 }
 
-class DataChannel extends Channel {
+class DataChain extends Chain {
 
-  constructor(buffer, channelName, context, channelType) {
+  constructor(buffer, chainName, context, chainType) {
 
     const env = context && context.env ? context.env : null;
 
-    const base = new DataChannelTarget(context && context.getVariables ? context.getVariables() : {}, env);
+    const base = new DataChainTarget(context && context.getVariables ? context.getVariables() : {}, env);
 
     super(
 
       buffer,
 
-      channelName,
+      chainName,
 
       context,
 
-      channelType,
+      chainType,
 
       base.data,
 
@@ -150,14 +150,14 @@ class DataChannel extends Channel {
 
           this._buffer.addCommand(new DataCommand({
 
-            channelName: this._channelName,
+            chainName: this._chainName,
             operation: methodName,
 
             args,
 
             pos: { lineno: 0, colno: 0 }
 
-          }), this._channelName);
+          }), this._chainName);
 
         }
 
@@ -279,20 +279,20 @@ class DataChannel extends Channel {
 
 }
 
-function setDataPoisonAtPath(channel, args, poisonValue) {
-  if (!channel || !channel._base) {
+function setDataPoisonAtPath(chain, args, poisonValue) {
+  if (!chain || !chain._base) {
     return;
   }
   const rawPath = Array.isArray(args) && args.length > 0 ? args[0] : null;
   const path = (Array.isArray(rawPath) || rawPath === null) ? rawPath : null;
-  const existingValue = readDataValueAtPath(channel._base.data, path);
+  const existingValue = readDataValueAtPath(chain._base.data, path);
   const existingErrors = extractPoisonErrors(existingValue);
   const newErrors = extractPoisonErrors(poisonValue);
   const mergedPoison = (existingErrors.length > 0 || newErrors.length > 0)
     ? createPoison([...existingErrors, ...newErrors])
     : poisonValue;
-  channel._base.set(path, mergedPoison);
-  channel._setTarget(channel._base.data);
+  chain._base.set(path, mergedPoison);
+  chain._setTarget(chain._base.data);
 }
 
 function readDataValueAtPath(root, path) {
@@ -326,4 +326,4 @@ function extractPoisonErrors(value) {
   return [];
 }
 
-export { DataChannel, DataCommand };
+export { DataChain, DataCommand };

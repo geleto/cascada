@@ -6,10 +6,10 @@ Complete source and documentation file reference. The most critical files for da
 
 ## Source Directories
 
--   `src/compiler/`: Core compiler logic — AST transformation, channel analysis, async boundaries, code generation.
+-   `src/compiler/`: Core compiler logic — AST transformation, chain analysis, async boundaries, code generation.
 -   `src/environment/`: Public API, environment configuration, wrapper classes (`AsyncEnvironment`, `AsyncTemplate`, `Script`).
 -   `src/loader/`: Template loading — FileSystem, Web, precompiled, string helpers.
--   `src/runtime/`: Runtime helpers, command buffers, channels, async boundaries, lookups/calls, error handling (Poison system).
+-   `src/runtime/`: Runtime helpers, command buffers, chains, async boundaries, lookups/calls, error handling (Poison system).
 -   `src/language/`: Template and Cascada Script language frontends — lexer, parser, AST nodes, transformer, script transpiler.
 
 ---
@@ -26,26 +26,26 @@ Complete source and documentation file reference. The most critical files for da
 -   `src/environment/script.js` — Compiled script class (`Script`). Transpiles script syntax to template syntax before compilation.
 
 ### Runtime Core
--   `src/runtime/runtime.js` — Runtime barrel. Re-exports helpers and channel/command classes used by compiled code.
+-   `src/runtime/runtime.js` — Runtime barrel. Re-exports helpers and chain/command classes used by compiled code.
 -   `src/runtime/errors.js` — Poison and error helpers: `PoisonError`, `isPoison`, `isPoisonError`, `handleError`.
 -   `src/runtime/resolve.js` — Promise/poison resolution: `resolveAll`, `resolveSingle`, sync-first helpers.
--   `src/runtime/command-buffer.js` — Command buffer implementation. Creates and links runtime buffers, routes commands to channels.
+-   `src/runtime/command-buffer.js` — Command buffer implementation. Creates and links runtime buffers, routes commands to chains.
 -   `src/runtime/buffer-iterator.js` — Buffer iterator. Walks the command buffer tree depth-first in source order, applies commands, waits on unfilled child slots.
 -   `src/runtime/async-boundaries.js` — Runtime support for compiler-inserted async boundaries.
 -   `src/runtime/markers.js` — `RESOLVE_MARKER` and related value-shape markers.
 -   `src/runtime/guard.js` — Guard snapshot/restore for conditional error-recovery blocks.
 -   `src/runtime/loop.js` — Loop runtime helpers: `asyncAll` (parallel `for`) and `asyncEach` (sequential `each`).
 
-### Runtime Channels
--   `src/runtime/channels/data.js` — `DataCommand`, custom data-method dispatch.
--   `src/runtime/channels/text.js` — Text channel and `TextCommand`.
--   `src/runtime/channels/var.js` — `VarCommand` — single-value variable channel.
--   `src/runtime/channels/sequence.js` — `SequenceCallCommand`, `SequenceGetCommand` — sequential `!` path execution.
--   `src/runtime/channels/sequential-path.js` — `SequentialPathReadCommand`, `SequentialPathWriteCommand`, repair commands.
--   `src/runtime/channels/observation.js` — `SnapshotCommand`, `RawSnapshotCommand`, `IsErrorCommand`, `GetErrorCommand`, `CaptureGuardStateCommand`, `RestoreGuardStateCommand`.
--   `src/runtime/channels/wait-commands.js` — `WaitCurrentCommand`, `WaitResolveCommand` — timing-only sync points.
--   `src/runtime/channels/error.js` — `ErrorCommand` (iterator throws), `TargetPoisonCommand` (writes poison into channel target).
--   `src/runtime/channels/base.js` — `Channel` base class.
+### Runtime Chains
+-   `src/runtime/chains/data.js` — `DataCommand`, custom data-method dispatch.
+-   `src/runtime/chains/text.js` — Text chain and `TextCommand`.
+-   `src/runtime/chains/var.js` — `VarCommand` — single-value variable chain.
+-   `src/runtime/chains/sequence.js` — `SequenceCallCommand`, `SequenceGetCommand` — sequential `!` path execution.
+-   `src/runtime/chains/sequential-path.js` — `SequentialPathReadCommand`, `SequentialPathWriteCommand`, repair commands.
+-   `src/runtime/chains/observation.js` — `SnapshotCommand`, `RawSnapshotCommand`, `IsErrorCommand`, `GetErrorCommand`, `CaptureGuardStateCommand`, `RestoreGuardStateCommand`.
+-   `src/runtime/chains/wait-commands.js` — `WaitCurrentCommand`, `WaitResolveCommand` — timing-only sync points.
+-   `src/runtime/chains/error.js` — `ErrorCommand` (iterator throws), `TargetPoisonCommand` (writes poison into chain target).
+-   `src/runtime/chains/base.js` — `Chain` base class.
 
 ### Compiler
 -   `src/compiler/compiler.js` — Main compiler entry. Chooses sync/async/script mode, orchestrates code generation.
@@ -55,7 +55,7 @@ Complete source and documentation file reference. The most critical files for da
 -   `src/compiler/compiler-base-sync.js` — Sync expression compiler.
 -   `src/compiler/compiler-base.js` — Shared expression compiler base.
 -   `src/compiler/compiler-common.js` — Shared statement compiler base.
--   `src/compiler/analysis.js` — Channel analysis pre-pass. Computes `declaredChannels`, `usedChannels`, `mutatedChannels`, `sequenceLocks`.
+-   `src/compiler/analysis.js` — Chain analysis pre-pass. Computes `declaredChains`, `usedChains`, `mutatedChains`, `sequenceLocks`.
 -   `src/compiler/buffer.js` — Buffer/codegen helpers. Emits command construction and command-buffer interactions.
 -   `src/compiler/emit.js` — Low-level code generation primitives.
 -   `src/compiler/boundaries.js` — Async boundary emission. Emits `runControlFlowBoundary` / `runValueBoundary` wiring.
@@ -66,19 +66,19 @@ Complete source and documentation file reference. The most critical files for da
 -   `src/compiler/inheritance.js` — Template inheritance / `extends` compilation.
 -   `src/compiler/component.js` — Component/composition compilation.
 -   `src/compiler/return.js` — Return statement compilation.
--   `src/compiler/channel.js` — Channel declaration and command emission helpers.
+-   `src/compiler/chain.js` — Chain declaration and command emission helpers.
 -   `docs/code/source-order-declarations.md` — Planned source-order declaration lookup design for compiler symbol resolution.
 
 ### Script
 -   `src/language/script-transpiler.js` — Script-to-template transpiler.
--   `src/builtins/data-methods.js` — Built-in data-channel methods: `push`, `merge`, etc.
+-   `src/builtins/data-methods.js` — Built-in data-chain methods: `push`, `merge`, etc.
 
 ---
 
 ## Test Directories
 
 -   `tests/pasync/` — Async/parallelism tests, organized by feature:
-    `loops.js`, `conditional.js`, `expressions.js`, `macros.js`, `sequential-*.js`, `script.js`, `extends*.js`, `snapshots.js`, `return.js`, `race.js`, `channels-explicit.js`, etc.
+    `loops.js`, `conditional.js`, `expressions.js`, `macros.js`, `sequential-*.js`, `script.js`, `extends*.js`, `snapshots.js`, `return.js`, `race.js`, `chains-explicit.js`, etc.
     Before writing a new test, scan for an existing file covering the relevant feature.
 -   `tests/poison/` — Poison/error system tests.
 -   `tests/script-transpiler.js` — Script transpiler tests.
@@ -102,15 +102,15 @@ Complete source and documentation file reference. The most critical files for da
 
 May not be fully up-to-date. Treat as design context, not authority over live behavior.
 
--   `implementation-architecture.md` — Full compiler/runtime architecture reference: async execution model, channel system, buffer mechanics, value resolution, error propagation, sequential operations.
+-   `implementation-architecture.md` — Full compiler/runtime architecture reference: async execution model, chain system, buffer mechanics, value resolution, error propagation, sequential operations.
 -   `testing-guide.md` — Test assertion examples, advanced testing techniques, development scenario walkthroughs.
 -   `file-map.md` — This file.
 -   `Error Handling Guide.md` — Overview of the Poison error system.
 -   `Error Handling Patterns In Script.md` — Common error-handling patterns in scripts.
 -   `Poisoning - Implementation Principles.md` — Detailed mechanics of error propagation.
 -   `sequence.md` — Notes on `!` sequence behavior.
--   `output.md`, `output-scoping.md` — Output channel and scoping notes.
--   `channels-refactor.md`, `command-buffer-refactor.md`, `expression-channels.md` — Channel and command-buffer implementation notes.
+-   `output.md`, `output-scoping.md` — Output chain and scoping notes.
+-   `chains-refactor.md`, `command-buffer-refactor.md`, `expression-chains.md` — Chain and command-buffer implementation notes.
 -   `waited-loops.md` — Loop/wait behavior notes.
 -   `return.md`, `return-transpile.md` — Return semantics and script transpilation notes.
 -   `Tests.md` — General testing guidelines and philosophy.

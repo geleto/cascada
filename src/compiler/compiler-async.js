@@ -23,9 +23,9 @@ class CompilerAsync extends CompilerBaseAsync {
     if (this.scriptMode) {
       return {};
     }
-    const textChannel = this.analysis.getCurrentTextChannel(node._analysis);
-    return textChannel
-      ? { uses: [textChannel], mutates: [textChannel] }
+    const textChain = this.analysis.getCurrentTextChain(node._analysis);
+    return textChain
+      ? { uses: [textChain], mutates: [textChain] }
       : {};
   }
 
@@ -82,7 +82,7 @@ class CompilerAsync extends CompilerBaseAsync {
             if (!resolveArgs) {
               this.emit('runtime.normalizeFinalPromise(');
               this.emit._compileAsyncRenderBoundary(node, function () {
-                this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
+                this.emit.line(`runtime.markChainBufferScope(${this.buffer.currentBuffer});`);
                 this.compile(arg, null);
               }, arg);
               this.emit(')');
@@ -92,7 +92,7 @@ class CompilerAsync extends CompilerBaseAsync {
 
               this.emit.withScopedSyntax(() => {
                 this.emit._compileAsyncCallbackRenderBoundary(node, function () {
-                  this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
+                  this.emit.line(`runtime.markChainBufferScope(${this.buffer.currentBuffer});`);
                   this.compile(arg, null);
                 }, 'cb', arg);
                 this.emit.line(';');
@@ -128,7 +128,7 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit(')');
     this.emit.line(';');
     const textCmdExpr = this.buffer._emitTemplateTextCommandExpression(returnId, positionNode, true);
-    this.emit.line(`${this.buffer.currentBuffer}.addCommand(${textCmdExpr}, "${this.buffer.currentTextChannelName}");`);
+    this.emit.line(`${this.buffer.currentBuffer}.addCommand(${textCmdExpr}, "${this.buffer.currentTextChainName}");`);
     this.buffer.emitLimitedLoopCompletion(returnId, positionNode);
   }
 
@@ -175,7 +175,7 @@ class CompilerAsync extends CompilerBaseAsync {
     if (node.concurrentLimit) {
       node.body._analysis = {
         ...node.body._analysis,
-        waitedChannelName: node.body._analysis?.waitedChannelName ?? `__waited__${this._tmpid()}`
+        waitedChainName: node.body._analysis?.waitedChainName ?? `__waited__${this._tmpid()}`
       };
     }
     if (declarationsInBody) {
@@ -193,7 +193,7 @@ class CompilerAsync extends CompilerBaseAsync {
     if (node.body) {
       node.body._analysis = {
         ...node.body._analysis,
-        waitedChannelName: node.body._analysis?.waitedChannelName ?? `__waited__${this._tmpid()}`
+        waitedChainName: node.body._analysis?.waitedChainName ?? `__waited__${this._tmpid()}`
       };
     }
     return result;
@@ -216,7 +216,7 @@ class CompilerAsync extends CompilerBaseAsync {
     if (node.body) {
       node.body._analysis = {
         ...node.body._analysis,
-        waitedChannelName: node.body._analysis?.waitedChannelName ?? `__waited__${this._tmpid()}`
+        waitedChainName: node.body._analysis?.waitedChainName ?? `__waited__${this._tmpid()}`
       };
     }
     return result;
@@ -242,15 +242,15 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   postAnalyzeSwitch(node) {
-    const allChannels = new Set();
+    const allChains = new Set();
     node.cases.forEach((c) => {
-      this.analysis.getChannelsUsedFromParent(c.body).forEach(ch => allChannels.add(ch));
+      this.analysis.getChainsUsedFromParent(c.body).forEach(ch => allChains.add(ch));
     });
     if (node.default) {
-      this.analysis.getChannelsUsedFromParent(node.default).forEach(ch => allChannels.add(ch));
+      this.analysis.getChainsUsedFromParent(node.default).forEach(ch => allChains.add(ch));
     }
     return {
-      poisonChannels: Array.from(allChannels)
+      poisonChains: Array.from(allChains)
     };
   }
 
@@ -290,10 +290,10 @@ class CompilerAsync extends CompilerBaseAsync {
       this.emit('');
       this.emit('}');
 
-      for (const channelName of (node._analysis.poisonChannels ?? [])) {
+      for (const chainName of (node._analysis.poisonChains ?? [])) {
         this.emit.insertLine(
           catchPoisonPos,
-          `    ${this.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(Array.isArray(contextualError) ? contextualError : [contextualError]), "${channelName}");`
+          `    ${this.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(Array.isArray(contextualError) ? contextualError : [contextualError]), "${chainName}");`
         );
       }
     });
@@ -328,12 +328,12 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   postAnalyzeIf(node) {
-    const trueBranchChannels = this.analysis.getChannelsUsedFromParent(node.body);
-    const falseBranchChannels = node.else_
-      ? this.analysis.getChannelsUsedFromParent(node.else_)
+    const trueBranchChains = this.analysis.getChainsUsedFromParent(node.body);
+    const falseBranchChains = node.else_
+      ? this.analysis.getChainsUsedFromParent(node.else_)
       : new Set();
     return {
-      poisonChannels: Array.from(new Set([...trueBranchChannels, ...falseBranchChannels]))
+      poisonChains: Array.from(new Set([...trueBranchChains, ...falseBranchChains]))
     };
   }
 
@@ -362,10 +362,10 @@ class CompilerAsync extends CompilerBaseAsync {
       this.emit('');
       this.emit('}');
 
-      for (const channelName of (node._analysis.poisonChannels ?? [])) {
+      for (const chainName of (node._analysis.poisonChains ?? [])) {
         this.emit.insertLine(
           catchPoisonPos,
-          `    ${this.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(Array.isArray(contextualError) ? contextualError : [contextualError]), "${channelName}");`
+          `    ${this.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(Array.isArray(contextualError) ? contextualError : [contextualError]), "${chainName}");`
         );
       }
     });
@@ -375,7 +375,7 @@ class CompilerAsync extends CompilerBaseAsync {
     if (this.scriptMode) {
       this.fail('Capture blocks are only supported in template mode', node.lineno, node.colno, node);
     }
-    const textOutput = `${CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL}${this._tmpid()}`;
+    const textOutput = `${CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHAIN}${this._tmpid()}`;
     return {
       createScope: true,
       scopeBoundary: false,
@@ -399,39 +399,39 @@ class CompilerAsync extends CompilerBaseAsync {
   analyzeOutput(node) {
     if (this.scriptMode) {
       this.fail(
-        'Script mode does not support template output nodes. Use declared channels and command instead.',
+        'Script mode does not support template output nodes. Use declared chains and command instead.',
         node && node.lineno,
         node && node.colno,
         node || undefined
       );
     }
-    const textChannel = !this.scriptMode
-      ? this.analysis.getCurrentTextChannel(node._analysis)
+    const textChain = !this.scriptMode
+      ? this.analysis.getCurrentTextChain(node._analysis)
       : null;
     return this.scriptMode ? {}
       : {
-        uses: [textChannel],
-        mutates: [textChannel],
+        uses: [textChain],
+        mutates: [textChain],
         // Output is analyzed as one source-order text slot even though
         // compileOutput emits per-child text boundaries. The aggregate link set
-        // keeps every child expression attached to the channels needed by the
+        // keeps every child expression attached to the chains needed by the
         // full output slot.
         createsLinkedChildBuffer: true
       };
   }
 
   compileOutput(node) {
-    const textChannelName = this.buffer.currentTextChannelName;
+    const textChainName = this.buffer.currentTextChainName;
     node.children.forEach((child) => {
       if (child instanceof nodes.TemplateData) {
         if (child.value) {
           this.buffer.addToBuffer(node, null, function() {
             this.compileLiteral(child, null);
-          }, child, textChannelName, true);
+          }, child, textChainName, true);
         }
         return;
       }
-      if (child._analysis?.mutatedChannels?.size > 0) {
+      if (child._analysis?.mutatedChains?.size > 0) {
         // The boundary is emitted for this mutating child expression, but the
         // link metadata comes from the parent Output aggregate so all child
         // boundaries participate in the same source-order text slot.
@@ -451,7 +451,7 @@ class CompilerAsync extends CompilerBaseAsync {
         this.compileExpression(child, null, child);
         this.emit.line(';');
         const textCmdExpr = this.buffer._emitTemplateTextCommandExpression(returnId, child, true);
-        this.emit.line(`${this.buffer.currentBuffer}.addCommand(${textCmdExpr}, "${textChannelName}");`);
+        this.emit.line(`${this.buffer.currentBuffer}.addCommand(${textCmdExpr}, "${textChainName}");`);
       }
     });
   }
@@ -540,20 +540,20 @@ class CompilerAsync extends CompilerBaseAsync {
     this.inheritance.analyzeSuper(node);
   }
 
-  analyzeChannelDeclaration(node) {
-    return this.channel.analyzeChannelDeclaration(node);
+  analyzeChainDeclaration(node) {
+    return this.chain.analyzeChainDeclaration(node);
   }
 
-  compileChannelDeclaration(node) {
-    this.channel.compileChannelDeclaration(node);
+  compileChainDeclaration(node) {
+    this.chain.compileChainDeclaration(node);
   }
 
-  analyzeChannelCommand(node) {
-    return this.channel.analyzeChannelCommand(node);
+  analyzeChainCommand(node) {
+    return this.chain.analyzeChainCommand(node);
   }
 
-  compileChannelCommand(node) {
-    this.channel.compileChannelCommand(node);
+  compileChainCommand(node) {
+    this.chain.compileChainCommand(node);
   }
 
   analyzeExtends(node) {
@@ -561,11 +561,11 @@ class CompilerAsync extends CompilerBaseAsync {
     if (this.scriptMode) {
       return inheritanceAnalysis;
     }
-    const textChannel = this.analysis.getCurrentTextChannel(node._analysis);
+    const textChain = this.analysis.getCurrentTextChain(node._analysis);
     return {
       ...inheritanceAnalysis,
-      uses: textChannel ? [textChannel] : [],
-      mutates: textChannel ? [textChannel] : []
+      uses: textChain ? [textChain] : [],
+      mutates: textChain ? [textChain] : []
     };
   }
 
@@ -577,10 +577,10 @@ class CompilerAsync extends CompilerBaseAsync {
     if (this.scriptMode) {
       return {};
     }
-    const textChannel = this.analysis.getCurrentTextChannel(node._analysis);
+    const textChain = this.analysis.getCurrentTextChain(node._analysis);
     return {
-      uses: textChannel ? [textChannel] : [],
-      mutates: textChannel ? [textChannel] : [],
+      uses: textChain ? [textChain] : [],
+      mutates: textChain ? [textChain] : [],
       createsLinkedChildBuffer: true
     };
   }
@@ -628,25 +628,25 @@ class CompilerAsync extends CompilerBaseAsync {
   _getRootDeclarations(node) {
     const declares = [];
     if (this.scriptMode) {
-      declares.push(this.return.createChannelDeclaration());
+      declares.push(this.return.createChainDeclaration());
     } else {
-      declares.push({ name: CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL, type: 'text', initializer: null });
+      declares.push({ name: CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHAIN, type: 'text', initializer: null });
     }
     return declares;
   }
 
   _getRootTextOutput() {
-    return this.scriptMode ? null : CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL;
+    return this.scriptMode ? null : CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHAIN;
   }
 
   _emitRootBufferSetup(node) {
-    this.emit.line(`runtime.markChannelBufferScope(${this.buffer.currentBuffer});`);
+    this.emit.line(`runtime.markChainBufferScope(${this.buffer.currentBuffer});`);
     if (this.scriptMode) {
-      this.return.emitDeclareChannel(this.buffer.currentBuffer);
+      this.return.emitDeclareChain(this.buffer.currentBuffer);
     }
     const sequenceLocks = node._analysis.sequenceLocks ?? [];
     for (const name of sequenceLocks) {
-      this.emit.line(`runtime.declareBufferChannel(${this.buffer.currentBuffer}, "${name}", "sequential_path", context, null);`);
+      this.emit.line(`runtime.declareBufferChain(${this.buffer.currentBuffer}, "${name}", "sequential_path", context, null);`);
     }
     this.inheritance.emitRootSharedDeclarations(node);
   }
@@ -661,7 +661,7 @@ class CompilerAsync extends CompilerBaseAsync {
       this.emit.line(`  cb(null, runtime.normalizeFinalPromise(${returnVar}));`);
     } else {
       this.emit.line(`  ${this.buffer.currentBuffer}.finish();`);
-      this.emit.line(`  const textResult = await ${this.buffer.currentTextChannelVar}.finalSnapshot();`);
+      this.emit.line(`  const textResult = await ${this.buffer.currentTextChainVar}.finalSnapshot();`);
       this.emit.line('  cb(null, textResult);');
     }
     this.emit.line('})().catch(e => {');

@@ -5,14 +5,14 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
 
 (function () {
 
-  describe('Channel Poisoning for Conditional Branches', () => {
+  describe('Chain Poisoning for Conditional Branches', () => {
     let env;
 
     beforeEach(() => {
       env = new AsyncEnvironment();
     });
 
-    it('should poison channels when if condition fails with text channel only', async () => {
+    it('should poison chains when if condition fails with text chain only', async () => {
       const template = `{% if asyncReject() %}yes{% endif %}`;
 
       const context = {
@@ -29,7 +29,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
       }
     });
 
-    it('should poison channels when if condition fails with data channel only, in script', async () => {
+    it('should poison chains when if condition fails with data chain only, in script', async () => {
       const script = `
         data result
         if asyncReject()
@@ -53,7 +53,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
       }
     });
 
-    it('should poison channels when while condition fails with data channel only, in script', async () => {
+    it('should poison chains when while condition fails with data chain only, in script', async () => {
       const script = `
         data result
         while asyncReject()
@@ -77,7 +77,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
       }
     });
 
-    it('should poison channels when if-else both write channels', async () => {
+    it('should poison chains when if-else both write chains', async () => {
       const template = `{% if asyncReject() %}yes{% else %}no{% endif %}`;
 
       const context = {
@@ -94,7 +94,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
       }
     });
 
-    it('should poison channels with mixed variables and channel writes', async () => {
+    it('should poison chains with mixed variables and chain writes', async () => {
       const template = `{% if asyncReject() %}{% set x = 5 %}{{ x }}{% endif %}Result: {{ x }}`;
 
       const context = {
@@ -338,9 +338,9 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
     });
   });
 
-  // Add to existing test file for poison channel tests
+  // Add to existing test file for poison chain tests
 
-  describe('Poison Channel Tests - Scripts with data channel', () => {
+  describe('Poison Chain Tests - Scripts with data chain', () => {
     let env;
     let context;
 
@@ -351,7 +351,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
       };
     });
 
-    it('should poison data channel when condition fails in script', async () => {
+    it('should poison data chain when condition fails in script', async () => {
       const script = `
       data result
       if asyncReject()
@@ -432,7 +432,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
       }
     });
 
-    it('should handle mixed text and data channels in script', async () => {
+    it('should handle mixed text and data chains in script', async () => {
       const script = `
       text output
       data result
@@ -449,11 +449,11 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
         throw new Error('Should have thrown');
       } catch (err) {
         expect(isPoisonError(err)).to.be(true);
-        // Should have markers for both 'text' and 'data' channels
+        // Should have markers for both 'text' and 'data' chains
       }
     });
 
-    it('should work when data channel operations succeed but text channel fails', async () => {
+    it('should work when data chain operations succeed but text chain fails', async () => {
       const script = `
       data result
       text output
@@ -513,10 +513,10 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
     });
   });
 
-  describe('Poison Channel Tests - Custom Sequence Channels in Scripts', () => {
+  describe('Poison Chain Tests - Custom Sequence Chains in Scripts', () => {
     let env;
-    // Simple custom sequence channel target for testing
-    class TestSequenceChannel {
+    // Simple custom sequence chain target for testing
+    class TestSequenceChain {
       constructor(context) {
         this.commands = [];
         this.context = context;
@@ -539,8 +539,8 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
       }
     }
 
-    // Singleton sequence channel target for testing
-    class SingletonSequenceChannel {
+    // Singleton sequence chain target for testing
+    class SingletonSequenceChain {
       constructor() {
         this.allLogs = [];
         this.currentLogs = [];
@@ -572,16 +572,16 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
 
     beforeEach(() => {
       env = new AsyncEnvironment(null, { asyncMode: true, scriptMode: true });
-      singleton = new SingletonSequenceChannel();
+      singleton = new SingletonSequenceChain();
 
       context = {
         asyncReject: async () => { throw new Error('Async rejection'); },
         loggerRef: singleton,
-        makeTest: () => new TestSequenceChannel()
+        makeTest: () => new TestSequenceChain()
       };
     });
 
-    it('should poison custom sequence channel when condition fails', async () => {
+    it('should poison custom sequence chain when condition fails', async () => {
       const script = `
         sequence test = makeTest()
         if asyncReject()
@@ -599,13 +599,13 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
       }
     });
 
-    it('should poison multiple custom sequence channels', async () => {
+    it('should poison multiple custom sequence chains', async () => {
       const script = `
         sequence test = makeTest()
         sequence logger = loggerRef
         if asyncReject()
-          test.log("Channel 1")
-          logger.log("Channel 2")
+          test.log("Chain 1")
+          logger.log("Chain 2")
         endif
         return { test: test.snapshot(), logger: logger.snapshot() }`;
 
@@ -614,11 +614,11 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
         throw new Error('Should have thrown');
       } catch (err) {
         expect(isPoisonError(err)).to.be(true);
-        // Both 'test' and 'logger' channels should have markers
+        // Both 'test' and 'logger' chains should have markers
       }
     });
 
-    it('should poison custom sequence channel in else branch', async () => {
+    it('should poison custom sequence chain in else branch', async () => {
       const script = `
         sequence test = makeTest()
         if asyncReject()
@@ -637,9 +637,9 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
       }
     });
 
-    it('should poison custom sequence channel with method chains', async () => {
-      // Add a sequence channel target that supports subpaths
-      class ChainSequenceChannel {
+    it('should poison custom sequence chain with method chains', async () => {
+      // Add a sequence chain target that supports subpaths
+      class ChainSequenceChain {
         constructor() {
           this.state = { actions: [] };
         }
@@ -670,14 +670,14 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
       `;
 
       try {
-        await env.renderScriptString(script, { ...context, makeChain: () => new ChainSequenceChannel() });
+        await env.renderScriptString(script, { ...context, makeChain: () => new ChainSequenceChain() });
         throw new Error('Should have thrown');
       } catch (err) {
         expect(isPoisonError(err)).to.be(true);
       }
     });
 
-    it('should work with sequence-backed custom channel when no condition poison', async () => {
+    it('should work with sequence-backed custom chain when no condition poison', async () => {
       const script = `
       sequence testSequence = makeTest()
       if true
@@ -689,14 +689,14 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
 
       const result = await env.renderScriptString(script, {
         ...context,
-        makeTest: () => new TestSequenceChannel()
+        makeTest: () => new TestSequenceChain()
       });
       expect(result.test.commands).to.have.length(2);
       expect(result.test.commands[0].type).to.be('log');
       expect(result.test.commands[1].type).to.be('set');
     });
 
-    it('should poison channel in nested blocks with custom channels', async () => {
+    it('should poison chain in nested blocks with custom chains', async () => {
       const script = `
         sequence test = makeTest()
         sequence logger = loggerRef
@@ -719,7 +719,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
       }
     });
 
-    it('should handle sequence-backed singleton channel state correctly on poison', async () => {
+    it('should handle sequence-backed singleton chain state correctly on poison', async () => {
       // First render - should succeed
       const script1 = `
       sequence loggerSequence = loggerRef
@@ -761,7 +761,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
     });
   });
 
-  describe('Poison Channel Tests - Templates with Text Channel', () => {
+  describe('Poison Chain Tests - Templates with Text Chain', () => {
     let env;
     let context;
 
@@ -772,7 +772,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
       };
     });
 
-    it('should poison text channel in template when condition fails', async () => {
+    it('should poison text chain in template when condition fails', async () => {
       const template = `{% if asyncReject() %}Hello World{% endif %}`;
 
       try {
@@ -831,7 +831,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
     });
   });
 
-  describe('Poison Channel Tests - Edge Cases', () => {
+  describe('Poison Chain Tests - Edge Cases', () => {
     let env;
     let context;
 
@@ -842,7 +842,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
       };
     });
 
-    it('should handle deeply nested channel calls in scripts', async () => {
+    it('should handle deeply nested chain calls in scripts', async () => {
       const script = `
       data result
       if true

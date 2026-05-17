@@ -33,7 +33,7 @@ describe('Cascada Script return', function () {
     expect(events).to.eql(['before']);
   });
 
-  it('lets nested control-flow buffers observe the same return channel', async function () {
+  it('lets nested control-flow buffers observe the same return chain', async function () {
     const events = [];
     const script = `
       return "done"
@@ -54,7 +54,7 @@ describe('Cascada Script return', function () {
     expect(events).to.eql([]);
   });
 
-  it('lets loop buffers observe the same return channel', async function () {
+  it('lets loop buffers observe the same return chain', async function () {
     const events = [];
     const script = `
       var i = 0
@@ -129,7 +129,7 @@ return {
     });
   });
 
-  it('evaluates multi-line expressions with reserved keys and channel-shaped lines', async function () {
+  it('evaluates multi-line expressions with reserved keys and chain-shaped lines', async function () {
     const script = `text output
 output("Done")
 var values = [
@@ -1037,7 +1037,7 @@ return made`;
       expect(result).to.be(1);
     });
 
-    it('keeps poison in return-aware while conditions observable through loop body channels', async function () {
+    it('keeps poison in return-aware while conditions observable through loop body chains', async function () {
       const result = await env.renderScriptString([
         'var count = 0',
         'while obj!.method()',
@@ -1548,7 +1548,7 @@ return made`;
     });
   });
 
-  it('keeps function return channels independent from the outer return channel', async function () {
+  it('keeps function return chains independent from the outer return chain', async function () {
     const events = [];
     const script = `
       function pick()

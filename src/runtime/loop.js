@@ -10,9 +10,9 @@ import {
   handleError,
 } from './errors.js';
 
-import {VarCommand} from './channels/var.js';
-import {ErrorCommand} from './channels/error.js';
-import {ReturnIsUnsetCommand} from './channels/observation.js';
+import {VarCommand} from './chains/var.js';
+import {ErrorCommand} from './chains/error.js';
+import {ReturnIsUnsetCommand} from './chains/observation.js';
 
 const arrayFrom = Array.from;
 const supportsIterators = (
@@ -131,9 +131,9 @@ function createLoopBindings(index, len, last) {
   return loopMeta;
 }
 
-function setLoopValueBindings(channelName, index, len, last, pos) {
+function setLoopValueBindings(chainName, index, len, last, pos) {
   return new VarCommand({
-    channelName,
+    chainName,
     args: [createLoopBindings(index, len, last)],
     pos
   });
@@ -647,10 +647,10 @@ async function iterateObject(arr, loopBody, loopVars, errorContext, effectiveSeq
 }
 
 /**
- * Poison body/else channel effects when loop input fails before/during iteration.
+ * Poison body/else chain effects when loop input fails before/during iteration.
  *
  * @param {Object} buffer - The CommandBuffer instance
- * @param {Object} asyncOptions - Options containing write counts and channels
+ * @param {Object} asyncOptions - Options containing write counts and chains
  * @param {Array} errors - Array of error objects to propagate
  * @param {boolean} didIterate - Whether any iterations occurred
  */
@@ -658,10 +658,10 @@ function poisonLoopEffects(buffer, asyncOptions, errors, didIterate) {
   //replace the errors with the handleError'd errors
   errors = errors.map(error => handleError(error, asyncOptions.errorContext.lineno, asyncOptions.errorContext.colno, asyncOptions.errorContext.errorContextString, asyncOptions.errorContext.path));
 
-  // Poison body channel effects.
-  if (asyncOptions.bodyChannels && asyncOptions.bodyChannels.length > 0) {
-    for (const channelName of asyncOptions.bodyChannels) {
-      buffer.addCommand(new ErrorCommand(errors), channelName);
+  // Poison body chain effects.
+  if (asyncOptions.bodyChains && asyncOptions.bodyChains.length > 0) {
+    for (const chainName of asyncOptions.bodyChains) {
+      buffer.addCommand(new ErrorCommand(errors), chainName);
     }
   }
 
@@ -669,10 +669,10 @@ function poisonLoopEffects(buffer, asyncOptions, errors, didIterate) {
     return;// we don't poison the else side-effects if we had at least one iteration
   }
 
-  // Poison else channel effects.
-  if (asyncOptions.elseChannels && asyncOptions.elseChannels.length > 0) {
-    for (const channelName of asyncOptions.elseChannels) {
-      buffer.addCommand(new ErrorCommand(errors), channelName);
+  // Poison else chain effects.
+  if (asyncOptions.elseChains && asyncOptions.elseChains.length > 0) {
+    for (const chainName of asyncOptions.elseChains) {
+      buffer.addCommand(new ErrorCommand(errors), chainName);
     }
   }
 }
@@ -708,13 +708,13 @@ async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOpti
   const errorContext = asyncOptions ? asyncOptions.errorContext : null;
 
   let didIterate = false;
-  // Called between sequential iterations. The ordered channel observation may
+  // Called between sequential iterations. The ordered chain observation may
   // be async because it is enqueued on the loop's command buffer.
-  const returnAdvanceCheck = asyncOptions && asyncOptions.returnCheckChannelName
+  const returnAdvanceCheck = asyncOptions && asyncOptions.returnCheckChainName
     ? (() => buffer.addCommand(new ReturnIsUnsetCommand({
-      channelName: asyncOptions.returnCheckChannelName,
+      chainName: asyncOptions.returnCheckChainName,
       pos: { lineno: errorContext?.lineno || 0, colno: errorContext?.colno || 0 }
-    }), asyncOptions.returnCheckChannelName))
+    }), asyncOptions.returnCheckChainName))
     : null;
 
   if (arr && typeof arr === 'object' && !Array.isArray(arr) && !(isAsync && typeof arr[Symbol.asyncIterator] === 'function')) {

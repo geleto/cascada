@@ -12,7 +12,7 @@ import {CompileLoop} from './loop.js';
 import {CompileBuffer} from './buffer.js';
 import {CompileMacro} from './macro.js';
 import {CompileBoundaries} from './boundaries.js';
-import {CompileChannel} from './channel.js';
+import {CompileChain} from './chain.js';
 import {CompileComponent} from './component.js';
 import {CompileReturn} from './return.js';
 import {CompileComposition} from './composition.js';
@@ -55,7 +55,7 @@ class CompilerCommon extends Obj {
     this.macro = new CompileMacro(this);
     this.return = new CompileReturn(this);
     this.boundaries = new CompileBoundaries(this);
-    this.channel = new CompileChannel(this);
+    this.chain = new CompileChain(this);
     this.component = new CompileComponent(this);
   }
 
@@ -72,8 +72,8 @@ class CompilerCommon extends Obj {
 
   _generateErrorContext(node, positionNode) {
     if (!node) return 'UnknownContext';
-    // Special case for ChannelCommand for more descriptive errors
-    if (node.typename === 'ChannelCommand' && node.call && node.call.name) {
+    // Special case for ChainCommand for more descriptive errors
+    if (node.typename === 'ChainCommand' && node.call && node.call.name) {
       const staticPath = this.sequential._extractStaticPath(node.call.name);
       if (staticPath) {
         return staticPath.join('.');
@@ -206,14 +206,14 @@ class CompilerCommon extends Obj {
         }
         keywordNameNodes.push(pair.key);
         keywordDefaults.push({
-          name: this.analysis ? this.analysis.getBaseChannelName(pair.key.value) : pair.key.value,
+          name: this.analysis ? this.analysis.getBaseChainName(pair.key.value) : pair.key.value,
           valueNode: pair.value
         });
       });
     }
 
     const positionalArgNames = signature.positionalNames.map((name) => (
-      this.analysis ? this.analysis.getBaseChannelName(name) : name
+      this.analysis ? this.analysis.getBaseChainName(name) : name
     ));
 
     return {
@@ -225,7 +225,7 @@ class CompilerCommon extends Obj {
     };
   }
 
-  getCallableArgumentChannelFacts(callableSignature) {
+  getCallableArgumentChainFacts(callableSignature) {
     return {
       argNames: Array.from(new Set(callableSignature.argNames)),
       keywordDefaultsByName: new Map(
@@ -234,8 +234,8 @@ class CompilerCommon extends Obj {
     };
   }
 
-  createCallableArgumentChannelBindings(callableSignature, emitValueExpression, getPositionNode = () => null) {
-    const { argNames, keywordDefaultsByName } = this.getCallableArgumentChannelFacts(callableSignature);
+  createCallableArgumentChainBindings(callableSignature, emitValueExpression, getPositionNode = () => null) {
+    const { argNames, keywordDefaultsByName } = this.getCallableArgumentChainFacts(callableSignature);
     return argNames.map((name) => ({
       name,
       emitValueExpression: () => {

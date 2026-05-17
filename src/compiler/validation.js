@@ -1,19 +1,19 @@
 
 import * as nodes from '../language/nodes.js';
-import {CHANNEL_TYPES, CHANNEL_TYPE_FACTS} from '../channel-types.js';
+import {CHAIN_TYPES, CHAIN_TYPE_FACTS} from '../chain-types.js';
 
 import {
-  RETURN_CHANNEL_NAME,
+  RETURN_CHAIN_NAME,
   RETURN_IS_UNSET_FUNCTION_NAME,
   RESERVED_RETURN_SENTINEL_SYMBOL_NAME,
 } from './return.js';
 
 const RESERVED_DECLARATION_NAMES = new Set([
-  ...CHANNEL_TYPES,
+  ...CHAIN_TYPES,
   'value',
   'component',
   'this',
-  RETURN_CHANNEL_NAME,
+  RETURN_CHAIN_NAME,
   RETURN_IS_UNSET_FUNCTION_NAME,
   RESERVED_RETURN_SENTINEL_SYMBOL_NAME,
   '__constructor__',
@@ -38,58 +38,58 @@ function validateGuardVariablesDeclared(variableTargets, compiler, node) {
 }
 
 /**
- * Validate that write attempts from read-only scopes do not target outer variables/channels.
+ * Validate that write attempts from read-only scopes do not target outer variables/chains.
  * @param {Compiler} compiler - The compiler instance
  * @param {object} options
  * @param {Frame} options.frame - Current frame
  * @param {Node} options.node - Statement node
  * @param {Node} options.target - Assignment target node (for precise position)
- * @param {string} options.name - Variable/channel name
+ * @param {string} options.name - Variable/chain name
  * @param {boolean} options.mutatingOuterRef - True when assignment targets an outer-scope binding
  */
 /**
- * Validate channel declaration statement constraints.
+ * Validate chain declaration statement constraints.
  * @param {Compiler} compiler - The compiler instance
- * @param {Node} node - Channel declaration node
+ * @param {Node} node - Chain declaration node
  */
-function validateChannelDeclarationNode(compiler, node) {
+function validateChainDeclarationNode(compiler, node) {
   const nameNode = node && node.name;
-  const channelType = node && node.channelType;
-  const channelFacts = CHANNEL_TYPE_FACTS[channelType] || null;
+  const chainType = node && node.chainType;
+  const chainFacts = CHAIN_TYPE_FACTS[chainType] || null;
   const hasInitializer = !!(node && node.initializer);
   const isShared = !!(node && node.isShared);
   const isRootScopeOwner = compiler.analysis.isRootScopeOwner(node._analysis);
 
   if (!compiler.asyncMode) {
-    compiler.fail('Channel declarations are only supported in async mode', node.lineno, node.colno, node);
+    compiler.fail('Chain declarations are only supported in async mode', node.lineno, node.colno, node);
   }
   if (!compiler.scriptMode) {
-    compiler.fail('Channel declarations are only supported in script mode', node.lineno, node.colno, node);
+    compiler.fail('Chain declarations are only supported in script mode', node.lineno, node.colno, node);
   }
   if (!(nameNode instanceof nodes.Symbol)) {
-    compiler.fail('Channel declaration name must be a symbol', node.lineno, node.colno, node);
+    compiler.fail('Chain declaration name must be a symbol', node.lineno, node.colno, node);
   }
   if (isShared && !isRootScopeOwner) {
     compiler.fail('shared declarations are only allowed at the root scope', node.lineno, node.colno, node);
   }
-  if (!isShared && channelFacts && channelFacts.requiresInitializer && !hasInitializer) {
-    compiler.fail(`${channelType} channels must have an initializer`, node.lineno, node.colno, node);
+  if (!isShared && chainFacts && chainFacts.requiresInitializer && !hasInitializer) {
+    compiler.fail(`${chainType} chains must have an initializer`, node.lineno, node.colno, node);
   }
 }
 
 /**
- * Validate observation call constraints for channel symbols.
+ * Validate observation call constraints for chain symbols.
  * @param {Compiler} compiler - The compiler instance
  * @param {object} options
- * @param {Node} options.node - ChannelCommand node
+ * @param {Node} options.node - ChainCommand node
  * @param {string} options.command - snapshot|isError|getError
- * @param {string} options.channelName - Channel symbol name
- * @param {string|null} options.channelType - Declared channel type
+ * @param {string} options.chainName - Chain symbol name
+ * @param {string|null} options.chainType - Declared chain type
  */
-function validateChannelObservationCall(compiler, { node, command, channelName, channelType }) {
+function validateChainObservationCall(compiler, { node, command, chainName, chainType }) {
   if (node.call && node.call.args && node.call.args.children && node.call.args.children.length > 0) {
     compiler.fail(
-      `${command}() does not accept arguments on channel '${channelName}'.`,
+      `${command}() does not accept arguments on chain '${chainName}'.`,
       node.lineno,
       node.colno,
       node
@@ -101,7 +101,7 @@ function _isAllowedBeforeScriptExtendsNode(node) {
   if (nodes.isWhitespaceOutputNode(node)) {
     return true;
   }
-  return node instanceof nodes.ChannelDeclaration && node.isShared;
+  return node instanceof nodes.ChainDeclaration && node.isShared;
 }
 
 function _isAllowedBeforeTemplateExtendsNode(node) {
@@ -205,8 +205,8 @@ function _validateTemplateExtendsExpression(compiler, rootNode, extendsNode) {
     return;
   }
   _validateExtendsTargetDoesNotUseThis(compiler, extendsNode);
-  const usedChannels = extendsNode.template._analysis?.usedChannels;
-  if (!usedChannels) {
+  const usedChains = extendsNode.template._analysis?.usedChains;
+  if (!usedChains) {
     return;
   }
   const inferredSharedNames = new Set();
@@ -216,7 +216,7 @@ function _validateTemplateExtendsExpression(compiler, rootNode, extendsNode) {
       inferredSharedNames.add(declaration.name);
     }
   });
-  usedChannels.forEach((name) => {
+  usedChains.forEach((name) => {
     if (!inferredSharedNames.has(name)) {
       return;
     }
@@ -281,4 +281,4 @@ function validateTemplateInheritanceSurface(compiler, rootNode) {
 
 
 
-export { RESERVED_DECLARATION_NAMES, RESERVED_ASYNC_DECLARATION_NAMES, validateGuardVariablesDeclared, validateChannelDeclarationNode, validateChannelObservationCall, getScriptExtendsSourceOrderViolation, validateScriptExtendsSourceOrder, validateScriptExtendsExpression, validateTemplateInheritanceSurface };
+export { RESERVED_DECLARATION_NAMES, RESERVED_ASYNC_DECLARATION_NAMES, validateGuardVariablesDeclared, validateChainDeclarationNode, validateChainObservationCall, getScriptExtendsSourceOrderViolation, validateScriptExtendsSourceOrder, validateScriptExtendsExpression, validateTemplateInheritanceSurface };

@@ -114,13 +114,13 @@ class Frame {
 
 }
 
-function markChannelBufferScope(buffer) {
+function markChainBufferScope(buffer) {
   if (buffer && buffer.arrays) {
-    const channelArrays = Object.keys(buffer.arrays);
-    channelArrays.forEach((name) => {
+    const chainArrays = Object.keys(buffer.arrays);
+    chainArrays.forEach((name) => {
       const target = buffer.arrays[name];
       if (target && typeof target === 'object') {
-        target._channelScopeRoot = true;
+        target._chainScopeRoot = true;
       }
     });
     return;
@@ -130,8 +130,8 @@ function markChannelBufferScope(buffer) {
     buffer = buffer.output;
   }
   if (buffer && typeof buffer === 'object') {
-    buffer._channelScopeRoot = true;
+    buffer._chainScopeRoot = true;
   }
 }
 
-export { Frame, markChannelBufferScope };
+export { Frame, markChainBufferScope };

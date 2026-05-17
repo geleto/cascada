@@ -4,7 +4,7 @@
 
 Script `return` is implemented as a source-to-source rewrite in the script
 transpiler. The compiler and runtime continue to use the existing internal
-`__return__` channel as the return value carrier.
+`__return__` chain as the return value carrier.
 
 The rewrite is line-preserving. Injected return guards are emitted inline on
 existing physical lines as prefixes or suffixes; the pass must not create new
@@ -13,15 +13,15 @@ the original script line numbers.
 
 The core idea is:
 
-1. A script `return` writes to the ordered `__return__` channel.
-2. `__return_is_unset__()` is a valid ordered read of that channel.
+1. A script `return` writes to the ordered `__return__` chain.
+2. `__return_is_unset__()` is a valid ordered read of that chain.
 3. After a return has appeared in a lexical execution path, all following
    statements in that path are guarded by `if __return_is_unset__()`.
 4. The guard propagates outward through enclosing blocks until the current
    function boundary is reached.
 
 This preserves Cascada's model: code can still be compiled as ordinary Cascada
-control flow, and ordered channel reads provide temporal correctness without
+control flow, and ordered chain reads provide temporal correctness without
 turning the language into an imperative stop-the-world execution model.
 
 ## Goals
@@ -29,7 +29,7 @@ turning the language into an imperative stop-the-world execution model.
 - Make `return` behave like a real script/function return: statements after an
   executed return must not execute in the same function body.
 - Preserve Cascada's maximal concurrency and temporal correctness by expressing
-  return state as ordered channel reads.
+  return state as ordered chain reads.
 - Keep the implementation in the script transpiler. The compiler should receive
   normal template tags such as `return`, `if`, `endif`, `while`, and `endwhile`.
 - Preserve physical line numbers after script transpilation: the generated
@@ -54,7 +54,7 @@ name, but it is no longer a compilable script expression. It must make
 __return_is_unset__()
 ```
 
-The function compiles as an ordered read of the current return channel compared
+The function compiles as an ordered read of the current return chain compared
 with `runtime.RETURN_UNSET`, using `ReturnIsUnsetCommand` rather than a normal
 value read.
 
@@ -67,8 +67,8 @@ declare or shadow `__RETURN_UNSET__`. The compiler must treat
 
 The transpiler does not declare or initialize `__return__`.
 
-Return-channel initialization remains the compiler's responsibility. Each
-return-owning scope declares a function/script-local `__return__` var channel
+Return-chain initialization remains the compiler's responsibility. Each
+return-owning scope declares a function/script-local `__return__` var chain
 initialized to `runtime.RETURN_UNSET`.
 
 Return-owning scopes include:
@@ -80,19 +80,19 @@ Return-owning scopes include:
 ### Child Buffer Visibility
 
 Injected guards inside nested control flow and loop bodies must observe the same
-function-local `__return__` channel as the `return` statement writes.
+function-local `__return__` chain as the `return` statement writes.
 
 This is a required invariant. If child buffers cannot currently observe the
-function-local return channel because `__return__` is excluded from linked
-channels, implementation must add a deliberate return-channel observation path
-or adjust linking/lookup for return channels. The guard architecture is only
+function-local return chain because `__return__` is excluded from linked
+chains, implementation must add a deliberate return-chain observation path
+or adjust linking/lookup for return chains. The guard architecture is only
 correct if:
 
 ```cascada
 if __return_is_unset__()
 ```
 
-is an ordered read of the same return channel that later/following `return`
+is an ordered read of the same return chain that later/following `return`
 statements write.
 
 ### Return-State Reads Must Ignore Return-Value Errors
@@ -100,8 +100,8 @@ statements write.
 Injected guards ask only whether a return has happened. They must not consume or
 report the returned value's error state.
 
-This matters when a script returns a poison/error value. A normal channel
-snapshot may inspect the return channel target and surface the poison. That is
+This matters when a script returns a poison/error value. A normal chain
+snapshot may inspect the return chain target and surface the poison. That is
 wrong for guard control flow: later statements should be skipped because return
 happened, and the final return resolution should be responsible for reporting
 the returned error.
@@ -117,14 +117,14 @@ errors.
 
 ### First Visible Return
 
-"First visible return wins" means first according to Cascada's ordered channel
+"First visible return wins" means first according to Cascada's ordered chain
 semantics, not wall-clock completion order.
 
 This depends on the child-buffer visibility invariant above. In a parallel
 `for`, guarding the return statement itself is sufficient only if the guard read
-is ordered against prior writes to the same function-local return channel. If
+is ordered against prior writes to the same function-local return chain. If
 that invariant cannot be satisfied, parallel `for` return needs a stronger
-runtime primitive, such as compare-and-set on the return channel.
+runtime primitive, such as compare-and-set on the return chain.
 
 ### Compile-Time Declarations
 
@@ -148,7 +148,7 @@ Tests should lock down this behavior instead of assuming every line after
 
 ## Return State
 
-The internal return channel starts with a sentinel value:
+The internal return chain starts with a sentinel value:
 
 ```text
 __return__ = __RETURN_UNSET__
@@ -164,8 +164,8 @@ __return_is_unset__()
 
 evaluate to false after the return write is visible in source order.
 
-This is intentionally channel-based rather than a separate JavaScript flag. It
-lets Cascada's existing ordered output/channel machinery decide when the return
+This is intentionally chain-based rather than a separate JavaScript flag. It
+lets Cascada's existing ordered output/chain machinery decide when the return
 has happened relative to other source-ordered effects.
 
 ## Semicolon Logical Lines
@@ -484,7 +484,7 @@ endif
 short-circuit return behavior belongs.
 
 Because `each` advances one iteration at a time, the loop implementation can
-observe the function-local return channel before starting the next iteration.
+observe the function-local return chain before starting the next iteration.
 The guard cascade still handles statements inside the active iteration, but loop
 advancement must also check `__return_is_unset__()` so later iterations
 are not started after return.
@@ -565,7 +565,7 @@ The semantics are:
 - statements after a return in the same source path are guarded
 - statements after the return point in later source-ordered iterations are also
   guarded, so they do not run after the first visible return
-- these guards are ordered return-channel reads; therefore body work and
+- these guards are ordered return-chain reads; therefore body work and
   post-return-path work in later iterations may wait for earlier return-state
   checks, which partially reduces concurrency around return-capable `for` bodies
 - code after `endfor` in the enclosing scope is guarded
@@ -648,7 +648,7 @@ The transpiler should reject or avoid generating malformed guard structure:
   literals, or regexes.
 - `__RETURN_UNSET__` must not be user-declarable or shadowable.
 - Return guards inside child buffers must resolve to the nearest function-local
-  return channel.
+  return chain.
 - Injected return-state reads must not surface poison/error values stored as the
   return value.
 - Raw/verbatim content must remain untouched.
@@ -662,7 +662,7 @@ Keep the implementation aligned with the current script transpiler style.
 - Prefer existing parsed fields such as `firstWord`, `tagName`, `blockType`,
   `codeContent`, and token arrays.
 - Prefer helper methods like `_getFirstWord`, `_getBlockType`,
-  `_processLine`, `_generateOutput`, and the existing channel/block-scope
+  `_processLine`, `_generateOutput`, and the existing chain/block-scope
   helpers.
 - Do not introduce broad regular-expression parsing for return guards,
   semicolon handling, while rewriting, or block matching.
@@ -728,8 +728,8 @@ wrong recovery behavior.
 
 ## Return Value Timing
 
-A return expression may be asynchronous. The return channel becomes observably
-set only when the return write is visible through Cascada's ordered channel
+A return expression may be asynchronous. The return chain becomes observably
+set only when the return write is visible through Cascada's ordered chain
 machinery.
 
 Consequences:
@@ -790,7 +790,7 @@ The detailed steps below should be implemented in dependency order, but several
 steps are best landed as grouped phases so each milestone has a coherent
 behavioral boundary.
 
-#### Phase 1. Return Channel Invariants
+#### Phase 1. Return Chain Invariants
 
 Covers steps 0 and 3.
 
@@ -799,7 +799,7 @@ script lowering pipeline: `__RETURN_UNSET__`, `__return__` visibility from child
 buffers, poison-safe return-state reads, and user-shadowing protection.
 
 Several pieces already exist in the codebase, including `runtime.RETURN_UNSET`,
-the internal `__return__` channel, raw snapshots, and return-channel
+the internal `__return__` chain, raw snapshots, and return-chain
 declaration. Treat this phase as an invariant audit plus any missing narrow
 integration work.
 
@@ -808,9 +808,9 @@ Phase 1 review status:
 - Fixed in Phase 1, later simplified: `__RETURN_UNSET__` remains reserved, but generated guards now use `__return_is_unset__()` instead of compiling the sentinel as a script expression.
 - Fixed in Phase 1: exact return-state comparisons use an ordered,
   poison-inspection-free return-state observation rather than an ordinary
-  return-channel snapshot.
+  return-chain snapshot.
 - Fixed in Phase 1: child control-flow and loop buffers link the current
-  function-local `__return__` channel when they read return state.
+  function-local `__return__` chain when they read return state.
 - Fixed in Phase 1: the inverse internal comparison
   `!__return_is_unset__()` preserves ordinary observable-command
   rejection behavior.
@@ -928,7 +928,7 @@ Phase 4 implementation status:
 Phase 4a regression follow-up: the interaction between rewritten while guards
 and sequential-operation poison propagation is covered. Return-aware while
 conditions preserve normal condition poison behavior, so affected loop body
-channels can still be inspected with `is error`.
+chains can still be inspected with `is error`.
 
 The generic loop-body guard cascade after loop end tags belongs to Phase 3's
 guard stack. Step 9 only owns the additional semantics unique to ordinary
@@ -985,9 +985,9 @@ Phase 6 implementation status:
 - Kept ordinary control-flow and recovery interactions implied rather than
   giving them special user-facing sections.
 
-### 0. Return Sentinel And Channel Visibility
+### 0. Return Sentinel And Chain Visibility
 
-Resolve the blocking return-channel invariants before implementing semicolon
+Resolve the blocking return-chain invariants before implementing semicolon
 logical lines or guard rewriting.
 
 Required behavior:
@@ -995,9 +995,9 @@ Required behavior:
 - `__RETURN_UNSET__` is a reserved legacy/internal name, not a compilable script expression.
 - `__RETURN_UNSET__` cannot be declared or shadowed by user code.
 - The transpiler does not initialize `__return__`; the compiler continues to
-  declare the return channel for each return-owning scope.
+  declare the return chain for each return-owning scope.
 - A guard emitted in a child control-flow/loop buffer observes the same
-  function-local `__return__` channel as a `return` statement writes.
+  function-local `__return__` chain as a `return` statement writes.
 - Injected return guards use a return-state read that does not throw/report
   poison stored as the returned value.
 - Parallel `for` return guarding is only considered correct after the ordered
@@ -1010,11 +1010,11 @@ Integration-first tests for this step:
 - user code cannot declare `__RETURN_UNSET__`
 - user code cannot declare `__return__`
 - guard reads inside `if`, `while`, `each`, and `for` observe the nearest
-  function-local return channel
+  function-local return chain
 - guard reads after `return errorValue` skip later statements without surfacing
   the returned error early
-- a nested function's return channel is independent from the outer return
-  channel
+- a nested function's return chain is independent from the outer return
+  chain
 
 ### 1. Lexer Logical Lines
 
@@ -1100,7 +1100,7 @@ Required behavior:
 
 Sub-steps:
 
-1. Refactor the pipeline so parsing, continuation handling, validation, channel
+1. Refactor the pipeline so parsing, continuation handling, validation, chain
    scope updates, and output generation operate on logical lines.
 2. Add same-physical-line output joining for `isSemicolonLine` entries.
 3. Preserve logical-line metadata so later return passes can add inline prefixes
@@ -1115,7 +1115,7 @@ Integration-first tests for this step:
 - `var a = 1; var b = 2` transpiles to two tags on one physical output line
 - semicolon logical lines do not add `\n` to generated template output
 - a same-line block sequence such as `if a; return 1; endif` renders correctly
-- channel declarations and commands on semicolon logical lines render correctly
+- chain declarations and commands on semicolon logical lines render correctly
 - raw/verbatim blocks containing semicolons and text that looks like `return`
   render unchanged
 
@@ -1125,7 +1125,7 @@ Focused contract tests only if needed:
 - generated logical statements are not emitted inside a trailing `//` comment
 - continuation behavior for non-semicolon multi-line expressions is unchanged
 - block validation still sees semicolon logical lines in the correct order
-- channel scope updates run for each semicolon logical line
+- chain scope updates run for each semicolon logical line
 
 ### 3. Return Guard Expression Integration
 
@@ -1139,19 +1139,19 @@ is valid in every script/function scope where the transpiler may emit it.
 
 Required behavior:
 
-- `__return__` is the current function/script return channel.
+- `__return__` is the current function/script return chain.
 - `__return_is_unset__()` compiles to `ReturnIsUnsetCommand`; it is not a normal function call.
 - Reads of `__return_is_unset__()` are ordered reads and participate in normal
   Cascada temporal correctness.
 - Child control-flow buffers and loop bodies observe the same function-local
-  return channel rather than shadowing it.
+  return chain rather than shadowing it.
 - Returning `none`, `undefined`, or an error value must still count as "a return
   happened"; guard checks must not confuse the returned value with the
   no-return sentinel.
 - Guard checks must use return-state reads, not normal value snapshots that
   inspect returned poison/errors.
 
-This step integrates the Step 0 symbol/channel decisions into the expression
+This step integrates the Step 0 symbol/chain decisions into the expression
 compiler path used by injected guards, before the full guard waterfall is added.
 
 Integration-first tests for this step:
@@ -1159,8 +1159,8 @@ Integration-first tests for this step:
 - top-level guard after return skips later side effects
 - guard expression works inside `if`, `while`, `each`, and `for` by observing
   rendered side effects
-- guard expression inside a function uses the function-local return channel
-- nested control-flow buffers observe the same function-local return channel
+- guard expression inside a function uses the function-local return chain
+- nested control-flow buffers observe the same function-local return chain
 - user declarations cannot shadow `__return__` or `__RETURN_UNSET__`
 - returned poison/error values do not make later injected guards throw before
   final return resolution
@@ -1469,7 +1469,7 @@ Implementation options:
 - add an internal return-aware advancement check to existing sequential `each`
   compilation/runtime
 - or lower to an equivalent sequential construct that performs the same
-  function-local return-channel check before advancing
+  function-local return-chain check before advancing
 
 Do not rely only on guards inside the loop body. Body guards skip the rest of an
 already-started iteration; they do not, by themselves, prevent the loop from
@@ -1526,7 +1526,7 @@ Parallel `for` requirements:
 - For parallel `for` bodies that contain a runtime return in the current
   return-owning scope, wrap the whole loop body in
   `if __return_is_unset__()`.
-- This whole-body guard is an ordered return-channel read. It may reduce
+- This whole-body guard is an ordered return-chain read. It may reduce
   concurrency for return-capable `for` bodies, but it must remain deterministic
   and source-ordered.
 - For parallel `for`, body work for iterations that already passed the ordered
@@ -1541,9 +1541,9 @@ Parallel `for` requirements:
   for earlier ordered return-state checks, so this intentionally introduces a
   partial concurrency reduction after the return point.
 - Define "first visible return" as the first return visible through Cascada's
-  ordered channel semantics, not necessarily the first iteration to finish in
+  ordered chain semantics, not necessarily the first iteration to finish in
   wall-clock time.
-- If ordered observation of the shared function-local return channel cannot be
+- If ordered observation of the shared function-local return chain cannot be
   guaranteed, add a stronger runtime primitive before claiming first-visible
   return semantics.
 - Preserve line numbers for all injected loop guards.
@@ -1551,7 +1551,7 @@ Parallel `for` requirements:
 Integration-first tests for this step:
 
 - multiple matching iterations do not overwrite the first visible return
-- first visible return follows ordered channel semantics, not delay/completion
+- first visible return follows ordered chain semantics, not delay/completion
   order
 - return does not reduce the number of ordinary `for` iterations started or
   visited
@@ -1643,7 +1643,7 @@ This design intentionally keeps return semantics in script syntax lowering:
 - The compiler keeps `__RETURN_UNSET__` reserved, but direct runtime sentinel use happens only in generated JavaScript.
 - The compiler treats `__return_is_unset__()` as an internal return-state guard
   call, not as a user function call.
-- The compiler/runtime must make function-local return channels observable from
+- The compiler/runtime must make function-local return chains observable from
   child control-flow and loop buffers where injected guards run.
 - Ordered `__return_is_unset__()` reads are used for control-flow guards.
 - Physical line numbers are preserved by allowing semicolon-separated logical

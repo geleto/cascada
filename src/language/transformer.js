@@ -508,7 +508,7 @@ function extractAsyncInheritanceMetadata(ast, scriptMode) {
       ));
       return;
     }
-    if (child instanceof nodes.ChannelDeclaration && child.isShared) {
+    if (child instanceof nodes.ChainDeclaration && child.isShared) {
       child.name.value = renameSharedName(child.name.value);
       sharedDeclarations.push(child);
       return;

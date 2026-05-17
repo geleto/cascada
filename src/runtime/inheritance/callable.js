@@ -51,7 +51,7 @@ function createInheritanceCallableContext(context, isScriptMethod, invocationPat
 
   const compositionPayloadContext = context.getCompositionPayloadVariables() || {};
   const payloadContext = Object.assign({}, (blockRenderCtx || {}), compositionPayloadContext);
-  // Callable arguments are local channels, not composition-context variables.
+  // Callable arguments are local chains, not composition-context variables.
   // `blockPayload` only marks an inherited block placement call.
   if (blockPayload !== null || blockRenderCtx !== undefined || Object.keys(payloadContext).length > 0) {
     return context.forkForComposition(invocationPath, payloadContext, blockRenderCtx);

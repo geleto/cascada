@@ -1,9 +1,9 @@
 
 import * as nodes from '../language/nodes.js';
-import {CHANNEL_TYPES} from '../channel-types.js';
+import {CHAIN_TYPES} from '../chain-types.js';
 
 /**
- * Channel analysis pre-pass.
+ * Chain analysis pre-pass.
  *
  * This pass annotates AST nodes with `_analysis` metadata and precomputes
  * declaration/use/mutation sets without changing compile-time behavior yet.
@@ -26,7 +26,7 @@ class CompileAnalysis {
     this._annotateSequenceMetadata(rootNode);
     this._walk(rootNode, null, null);
     this._finalizeDeclarations(rootNode);
-    this._finalizeChannelUsage(rootNode);
+    this._finalizeChainUsage(rootNode);
     return null;
   }
 
@@ -78,7 +78,7 @@ class CompileAnalysis {
       : null;
     // Keep this base shape limited to cross-cutting analysis facts that this
     // pass owns or derives for many node types: scope/declaration ownership,
-    // channel use/mutation/link metadata, and shared boundary state. Node-
+    // chain use/mutation/link metadata, and shared boundary state. Node-
     // specific facts such as declaration targets, sequential lookup details,
     // guard/import/caller/component metadata, etc. should be attached only by
     // the analyzer that owns that feature.
@@ -98,13 +98,13 @@ class CompileAnalysis {
       declaresInParent: [],
       uses: [],
       mutates: [],
-      declaredChannels: null,
-      usedChannels: null,
-      mutatedChannels: null,
-      linkedChannels: null,
-      // Parent-owned linked channels this boundary may mutate. Future command-buffer
+      declaredChains: null,
+      usedChains: null,
+      mutatedChains: null,
+      linkedChains: null,
+      // Parent-owned linked chains this boundary may mutate. Future command-buffer
       // scheduling can use this to distinguish read-only child buffers.
-      linkedMutatedChannels: null,
+      linkedMutatedChains: null,
       createsLinkedChildBuffer: false,
       expressionControlFlowBoundary: false,
       ...existingAnalysis,
@@ -136,15 +136,15 @@ class CompileAnalysis {
     }
   }
 
-  getChannelsUsedFromParent(node) {
+  getChainsUsedFromParent(node) {
     const analysis = node?._analysis;
-    const channels = new Set(analysis?.usedChannels ?? []);
-    if (analysis?.declaredChannels instanceof Map) {
-      for (const name of analysis.declaredChannels.keys()) {
-        channels.delete(name);
+    const chains = new Set(analysis?.usedChains ?? []);
+    if (analysis?.declaredChains instanceof Map) {
+      for (const name of analysis.declaredChains.keys()) {
+        chains.delete(name);
       }
     }
-    return channels;
+    return chains;
   }
 
   extractSymbols(targetNode) {
@@ -166,18 +166,18 @@ class CompileAnalysis {
 
   findDeclaration(analysis, name) {
     const owner = this.findDeclarationOwner(analysis, name);
-    if (!owner || !owner.declaredChannels) {
+    if (!owner || !owner.declaredChains) {
       return null;
     }
-    return owner.declaredChannels.get(name) || null;
+    return owner.declaredChains.get(name) || null;
   }
 
   findRootDeclaration(analysis, name) {
     const owner = this.getRootScopeOwner(analysis);
-    if (!owner || !owner.declaredChannels) {
+    if (!owner || !owner.declaredChains) {
       return null;
     }
-    return owner.declaredChannels.get(name) || null;
+    return owner.declaredChains.get(name) || null;
   }
 
   getRootNode(analysis) {
@@ -193,11 +193,11 @@ class CompileAnalysis {
       if (!decl.declarationOrigin) {
         decl.declarationOrigin = this.getTopmostChildAnalysis(declarationOrigin);
       }
-      owner.declaredChannels.set(decl.name, decl);
+      owner.declaredChains.set(decl.name, decl);
       this.compiler.inheritance.registerRootSharedDeclaration(owner, decl);
       return;
     }
-    owner.declaredChannels.set(decl.name, this._cloneDeclaration({ ...decl, declarationOrigin }));
+    owner.declaredChains.set(decl.name, this._cloneDeclaration({ ...decl, declarationOrigin }));
   }
 
   getRootScopeOwner(analysis) {
@@ -220,7 +220,7 @@ class CompileAnalysis {
     const skipDeclarationOwner = analysis.skipDeclarationOwner || null;
     let current = analysis;
     while (current) {
-      if (current.declaredChannels && current.declaredChannels.has(name) && current !== skipDeclarationOwner) {
+      if (current.declaredChains && current.declaredChains.has(name) && current !== skipDeclarationOwner) {
         return current;
       }
       if (current.scopeBoundary) {
@@ -263,7 +263,7 @@ class CompileAnalysis {
     return false;
   }
 
-  getBaseChannelName(runtimeName) {
+  getBaseChainName(runtimeName) {
     const hashIndex = runtimeName.indexOf('#');
     if (hashIndex === -1) {
       return runtimeName;
@@ -276,7 +276,7 @@ class CompileAnalysis {
     this._collectNodes(rootNode, nodesList);
     for (let i = 0; i < nodesList.length; i++) {
       const analysis = nodesList[i]._analysis;
-      analysis.declaredChannels = null;
+      analysis.declaredChains = null;
     }
 
     for (let i = 0; i < nodesList.length; i++) {
@@ -292,8 +292,8 @@ class CompileAnalysis {
         if (!decl || !decl.name) {
           continue;
         }
-        owner.declaredChannels = owner.declaredChannels || new Map();
-        if (!owner.declaredChannels.has(decl.name)) {
+        owner.declaredChains = owner.declaredChains || new Map();
+        if (!owner.declaredChains.has(decl.name)) {
           this._installDeclaration(owner, decl, analysis);
         }
       }
@@ -311,8 +311,8 @@ class CompileAnalysis {
             if (!decl || !decl.name) {
               continue;
             }
-            parentOwner.declaredChannels = parentOwner.declaredChannels || new Map();
-            if (!parentOwner.declaredChannels.has(decl.name)) {
+            parentOwner.declaredChains = parentOwner.declaredChains || new Map();
+            if (!parentOwner.declaredChains.has(decl.name)) {
               this._installDeclaration(parentOwner, decl, analysis);
             }
           }
@@ -349,14 +349,14 @@ class CompileAnalysis {
       if (declares.length === 0 || !owner) {
         return;
       }
-      owner.declaredChannels = owner.declaredChannels || new Map();
+      owner.declaredChains = owner.declaredChains || new Map();
       for (let i = 0; i < declares.length; i++) {
         const decl = declares[i];
         if (!decl || !decl.name) {
           continue;
         }
         this._validateReservedDeclarationName(analysis, decl);
-        const currentScopeDecl = owner.declaredChannels.get(decl.name) || null;
+        const currentScopeDecl = owner.declaredChains.get(decl.name) || null;
         if (analysis.node.typename === 'Macro') {
           if (decl.parentOwned) {
             if (currentScopeDecl) {
@@ -364,8 +364,8 @@ class CompileAnalysis {
             }
             let current = owner.parent;
             while (current) {
-              if (current.declaredChannels && current.declaredChannels.has(decl.name)) {
-                this._validateDeclarationConflict(analysis, decl, current.declaredChannels.get(decl.name));
+              if (current.declaredChains && current.declaredChains.has(decl.name)) {
+                this._validateDeclarationConflict(analysis, decl, current.declaredChains.get(decl.name));
               }
               if (current.scopeBoundary) {
                 break;
@@ -376,14 +376,14 @@ class CompileAnalysis {
             this._validateDeclarationConflict(analysis, decl, currentScopeDecl);
           }
         } else if (decl.explicit !== false &&
-          (analysis.node.typename === 'Set' || analysis.node.typename === 'ChannelDeclaration')) {
+          (analysis.node.typename === 'Set' || analysis.node.typename === 'ChainDeclaration')) {
           if (currentScopeDecl && currentScopeDecl.declarationOrigin !== declarationOrigin) {
             this._validateDeclarationConflict(analysis, decl, currentScopeDecl);
           }
           let current = owner.parent;
           while (current) {
-            if (current.declaredChannels && current.declaredChannels.has(decl.name)) {
-              this._validateDeclarationConflict(analysis, decl, current.declaredChannels.get(decl.name));
+            if (current.declaredChains && current.declaredChains.has(decl.name)) {
+              this._validateDeclarationConflict(analysis, decl, current.declaredChains.get(decl.name));
             }
             if (current.scopeBoundary) {
               break;
@@ -391,7 +391,7 @@ class CompileAnalysis {
             current = current.parent;
           }
         }
-        if (!owner.declaredChannels.has(decl.name)) {
+        if (!owner.declaredChains.has(decl.name)) {
           this._installDeclaration(owner, decl, declarationOrigin);
         }
       }
@@ -413,14 +413,14 @@ class CompileAnalysis {
     if (decl.type !== 'var') {
       if (conflictingDecl && conflictingDecl.type === 'var') {
         this.compiler.fail(
-          `Cannot declare channel '${decl.name}' because a variable with the same name is already declared`,
+          `Cannot declare chain '${decl.name}' because a variable with the same name is already declared`,
           lineno,
           colno,
           originNode || undefined
         );
       }
       this.compiler.fail(
-        `Cannot declare channel '${decl.name}': already declared`,
+        `Cannot declare chain '${decl.name}': already declared`,
         lineno,
         colno,
         originNode || undefined
@@ -449,7 +449,7 @@ class CompileAnalysis {
     const lineno = originNode && originNode.lineno;
     const colno = originNode && originNode.colno;
     this.compiler.fail(
-      `Identifier '${decl.name}' is reserved and cannot be used as a variable or channel name.`,
+      `Identifier '${decl.name}' is reserved and cannot be used as a variable or chain name.`,
       lineno,
       colno,
       originNode || undefined
@@ -481,7 +481,7 @@ class CompileAnalysis {
 
   _validateMutations(analysis) {
     const scopeOwner = this._getScopeOwner(analysis);
-    const currentTextChannel = this.getCurrentTextChannel(analysis);
+    const currentTextChain = this.getCurrentTextChain(analysis);
     const localMutates = analysis.mutates;
     for (let i = 0; i < localMutates.length; i++) {
       const name = localMutates[i];
@@ -491,7 +491,7 @@ class CompileAnalysis {
       if (name.charAt(0) === '!') {
         continue;
       }
-      if (name === currentTextChannel) {
+      if (name === currentTextChain) {
         continue;
       }
       const declarationOwner = this.findDeclarationOwner(analysis, name);
@@ -518,7 +518,7 @@ class CompileAnalysis {
   }
 
   _validateUses(analysis) {
-    const currentTextChannel = this.getCurrentTextChannel(analysis);
+    const currentTextChain = this.getCurrentTextChain(analysis);
     const localUses = analysis.uses;
     for (let i = 0; i < localUses.length; i++) {
       const name = localUses[i];
@@ -528,7 +528,7 @@ class CompileAnalysis {
       if (name.charAt(0) === '!') {
         continue;
       }
-      if (name === currentTextChannel) {
+      if (name === currentTextChain) {
         continue;
       }
       if (!this.findDeclaration(analysis, name)) {
@@ -546,9 +546,9 @@ class CompileAnalysis {
     const lineno = originNode && originNode.lineno;
     const colno = originNode && originNode.colno;
 
-    if (originNode && originNode.typename === 'ChannelCommand') {
+    if (originNode && originNode.typename === 'ChainCommand') {
       this.compiler.fail(
-        `Unsupported command target '${name}'. Commands must target declared channels (${CHANNEL_TYPES.join('/')}).`,
+        `Unsupported command target '${name}'. Commands must target declared chains (${CHAIN_TYPES.join('/')}).`,
         lineno,
         colno,
         originNode || undefined
@@ -588,153 +588,153 @@ class CompileAnalysis {
       );
     }
     this.compiler.fail(
-      `Channel '${name}' is read-only in this scope.`,
+      `Chain '${name}' is read-only in this scope.`,
       lineno,
       colno,
       originNode || undefined
     );
   }
 
-  _finalizeChannelUsage(node) {
+  _finalizeChainUsage(node) {
     if (!node) {
       return {
-        usedChannels: new Set(),
-        mutatedChannels: new Set()
+        usedChains: new Set(),
+        mutatedChains: new Set()
       };
     }
     if (Array.isArray(node)) {
       const aggregate = {
-        usedChannels: new Set(),
-        mutatedChannels: new Set()
+        usedChains: new Set(),
+        mutatedChains: new Set()
       };
       node.forEach((child) => {
-        const childAggregate = this._finalizeChannelUsage(child);
-        childAggregate.usedChannels.forEach((name) => aggregate.usedChannels.add(name));
-        childAggregate.mutatedChannels.forEach((name) => aggregate.mutatedChannels.add(name));
+        const childAggregate = this._finalizeChainUsage(child);
+        childAggregate.usedChains.forEach((name) => aggregate.usedChains.add(name));
+        childAggregate.mutatedChains.forEach((name) => aggregate.mutatedChains.add(name));
       });
       return aggregate;
     }
     if (!(node instanceof nodes.Node)) {
       return {
-        usedChannels: new Set(),
-        mutatedChannels: new Set()
+        usedChains: new Set(),
+        mutatedChains: new Set()
       };
     }
 
     const analysis = node._analysis;
     const localUses = analysis.uses;
     const localMutates = analysis.mutates;
-    const usedChannels = new Set();
-    const mutatedChannels = new Set();
+    const usedChains = new Set();
+    const mutatedChains = new Set();
 
     localUses.forEach((name) => {
       if (!name) {
         return;
       }
-      usedChannels.add(name);
+      usedChains.add(name);
     });
     localMutates.forEach((name) => {
       if (!name) {
         return;
       }
-      usedChannels.add(name);
-      mutatedChannels.add(name);
+      usedChains.add(name);
+      mutatedChains.add(name);
     });
 
     node.fields.forEach((field) => {
-      const childAggregate = this._finalizeChannelUsage(node[field]);
-      childAggregate.usedChannels.forEach((name) => usedChannels.add(name));
-      childAggregate.mutatedChannels.forEach((name) => mutatedChannels.add(name));
+      const childAggregate = this._finalizeChainUsage(node[field]);
+      childAggregate.usedChains.forEach((name) => usedChains.add(name));
+      childAggregate.mutatedChains.forEach((name) => mutatedChains.add(name));
     });
 
-    analysis.usedChannels = usedChannels.size > 0 ? usedChannels : null;
-    analysis.mutatedChannels = mutatedChannels.size > 0 ? mutatedChannels : null;
-    const declaredHere = analysis.declaredChannels;
-    analysis.linkedChannels = this._deriveBoundaryLinkedChannels(analysis, usedChannels, declaredHere);
-    analysis.linkedMutatedChannels = this._deriveBoundaryLinkedChannels(analysis, mutatedChannels, declaredHere);
+    analysis.usedChains = usedChains.size > 0 ? usedChains : null;
+    analysis.mutatedChains = mutatedChains.size > 0 ? mutatedChains : null;
+    const declaredHere = analysis.declaredChains;
+    analysis.linkedChains = this._deriveBoundaryLinkedChains(analysis, usedChains, declaredHere);
+    analysis.linkedMutatedChains = this._deriveBoundaryLinkedChains(analysis, mutatedChains, declaredHere);
     if (analysis.expressionControlFlowBoundary) {
-      analysis.createsLinkedChildBuffer = analysis.linkedMutatedChannels !== null &&
-        analysis.linkedMutatedChannels.size > 0;
+      analysis.createsLinkedChildBuffer = analysis.linkedMutatedChains !== null &&
+        analysis.linkedMutatedChains.size > 0;
       if (!analysis.createsLinkedChildBuffer) {
-        analysis.linkedChannels = null;
-        analysis.linkedMutatedChannels = null;
+        analysis.linkedChains = null;
+        analysis.linkedMutatedChains = null;
       }
     }
 
     this._postAnalyzeNode(node);
 
-    return this._getParentVisibleChannelUsage(
+    return this._getParentVisibleChainUsage(
       analysis,
       localUses,
       localMutates,
-      usedChannels,
-      mutatedChannels,
+      usedChains,
+      mutatedChains,
       declaredHere
     );
   }
 
-  _getParentVisibleChannelUsage(analysis, localUses, localMutates, usedChannels, mutatedChannels, declaredHere) {
+  _getParentVisibleChainUsage(analysis, localUses, localMutates, usedChains, mutatedChains, declaredHere) {
     let parentUsage;
     if (analysis.scopeBoundary) {
       const nodeType = analysis.node && analysis.node.typename;
       const isMethodOrBlockBoundary = nodeType === 'Block' || nodeType === 'MethodDefinition';
       if (!isMethodOrBlockBoundary) {
         return {
-          usedChannels: new Set(),
-          mutatedChannels: new Set()
+          usedChains: new Set(),
+          mutatedChains: new Set()
         };
       }
       parentUsage = {
-        usedChannels: new Set(),
-        mutatedChannels: new Set()
+        usedChains: new Set(),
+        mutatedChains: new Set()
       };
       localUses.forEach((name) => {
         if (name) {
-          parentUsage.usedChannels.add(name);
+          parentUsage.usedChains.add(name);
         }
       });
       localMutates.forEach((name) => {
         if (name) {
-          parentUsage.usedChannels.add(name);
-          parentUsage.mutatedChannels.add(name);
+          parentUsage.usedChains.add(name);
+          parentUsage.mutatedChains.add(name);
         }
       });
     } else {
       parentUsage = {
-        usedChannels: new Set(usedChannels),
-        mutatedChannels: new Set(mutatedChannels)
+        usedChains: new Set(usedChains),
+        mutatedChains: new Set(mutatedChains)
       };
     }
     if (declaredHere) {
       declaredHere.forEach((_decl, name) => {
         if (name) {
-          parentUsage.usedChannels.delete(name);
-          parentUsage.mutatedChannels.delete(name);
+          parentUsage.usedChains.delete(name);
+          parentUsage.mutatedChains.delete(name);
         }
       });
     }
     return parentUsage;
   }
 
-  _deriveBoundaryLinkedChannels(analysis, usedChannels, declaredChannels) {
+  _deriveBoundaryLinkedChains(analysis, usedChains, declaredChains) {
     if (!analysis.parent || !analysis.createsLinkedChildBuffer) {
       return null;
     }
-    const linkedChannels = new Set();
-    usedChannels.forEach((name) => {
+    const linkedChains = new Set();
+    usedChains.forEach((name) => {
       if (name) {
-        linkedChannels.add(name);
+        linkedChains.add(name);
       }
     });
-    if (declaredChannels) {
-      declaredChannels.forEach((_decl, name) => {
-        linkedChannels.delete(name);
+    if (declaredChains) {
+      declaredChains.forEach((_decl, name) => {
+        linkedChains.delete(name);
       });
     }
-    return linkedChannels.size > 0 ? linkedChannels : null;
+    return linkedChains.size > 0 ? linkedChains : null;
   }
 
-  getCurrentTextChannel(analysis) {
+  getCurrentTextChain(analysis) {
     let current = analysis;
     while (current) {
       if (current.textOutput) {

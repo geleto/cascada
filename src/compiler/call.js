@@ -1,5 +1,5 @@
 import * as nodes from '../language/nodes.js';
-import {CALLER_SCHED_CHANNEL_NAME} from './macro.js';
+import {CALLER_SCHED_CHAIN_NAME} from './macro.js';
 
 class CompileCall {
   constructor(compiler) {
@@ -33,12 +33,12 @@ class CompileCall {
     const importedCallable = this._collectImportedCallableUsage(node, analysisPass, uses);
     const inheritedMethodCallName =
       compiler.inheritance.analyzeInheritedMethodCall(node, analysisPass);
-    const specialChannelCall = this._collectSpecialChannelCallUsage(node, analysisPass, uses, mutates);
+    const specialChainCall = this._collectSpecialChainCallUsage(node, analysisPass, uses, mutates);
 
     return {
       uses,
       mutates,
-      specialChannelCall,
+      specialChainCall,
       importedCallable,
       directCallerCall: false,
       directMacroCall,
@@ -53,7 +53,7 @@ class CompileCall {
   postAnalyzeFunCall(node) {
     const compiler = this.compiler;
     const thisSharedFacts = node.name
-      ? compiler.channel.probeThisSharedAccessFacts(node.name, compiler.analysis, node._analysis)
+      ? compiler.chain.probeThisSharedAccessFacts(node.name, compiler.analysis, node._analysis)
       : null;
     const inheritedMethodCallName =
       compiler.inheritance.postAnalyzeInheritedMethodCall(node, thisSharedFacts);
@@ -78,7 +78,7 @@ class CompileCall {
     if (this._compileComponentCall(node)) {
       return;
     }
-    if (compiler.channel.compileSpecialChannelFunCall(node)) {
+    if (compiler.chain.compileSpecialChainFunCall(node)) {
       return;
     }
     if (this._compileCallerCall(node)) {
@@ -107,14 +107,14 @@ class CompileCall {
     const compiler = this.compiler;
     // Sequence calls always have a callable target; the sequence marker lives
     // on the static call path, not on a nameless expression.
-    const thisSharedFacts = compiler.channel.probeThisSharedAccessFacts(
+    const thisSharedFacts = compiler.chain.probeThisSharedAccessFacts(
       node.name,
       analysisPass,
       node._analysis
     );
     if (thisSharedFacts) {
       compiler.fail(
-        'Sequence marker (!) is only supported on context paths, not this.<shared> channels.',
+        'Sequence marker (!) is only supported on context paths, not this.<shared> chains.',
         node.lineno,
         node.colno,
         node
@@ -158,16 +158,16 @@ class CompileCall {
 
     const uses = [];
     const mutates = [];
-    const textChannel = analysisPass.getCurrentTextChannel(node._analysis);
-    if (textChannel) {
-      uses.push(textChannel);
-      mutates.push(textChannel);
+    const textChain = analysisPass.getCurrentTextChain(node._analysis);
+    if (textChain) {
+      uses.push(textChain);
+      mutates.push(textChain);
     }
     // caller() is a reserved macro call-block binding in async mode. Its
     // invocation scheduling uses the macro-local __caller__ lane, so any
     // nested child boundary containing caller() must link that lane.
-    uses.push(CALLER_SCHED_CHANNEL_NAME);
-    mutates.push(CALLER_SCHED_CHANNEL_NAME);
+    uses.push(CALLER_SCHED_CHAIN_NAME);
+    mutates.push(CALLER_SCHED_CHAIN_NAME);
     return { uses, mutates, directCallerCall: true };
   }
 
@@ -228,13 +228,13 @@ class CompileCall {
       return null;
     }
 
-    const importedChannelName = importedDecl && (importedDecl.runtimeName || importedRoot);
-    if (importedChannelName) {
-      uses.push(importedChannelName);
+    const importedChainName = importedDecl && (importedDecl.runtimeName || importedRoot);
+    if (importedChainName) {
+      uses.push(importedChainName);
     }
-    const textChannel = analysisPass.getCurrentTextChannel(node._analysis);
-    if (textChannel) {
-      uses.push(textChannel);
+    const textChain = analysisPass.getCurrentTextChain(node._analysis);
+    if (textChain) {
+      uses.push(textChain);
     }
     return true;
   }
@@ -251,45 +251,45 @@ class CompileCall {
     return true;
   }
 
-  _collectSpecialChannelCallUsage(node, analysisPass, uses, mutates) {
+  _collectSpecialChainCallUsage(node, analysisPass, uses, mutates) {
     const compiler = this.compiler;
     if (!node.name || node._analysis.sequenceLockLookup) {
       return null;
     }
 
-    const callFacts = this._getSpecialChannelCallFacts(node, analysisPass);
+    const callFacts = this._getSpecialChainCallFacts(node, analysisPass);
     if (!callFacts) {
       return null;
     }
-    if (!compiler.scriptMode && callFacts.channelType === 'var') {
+    if (!compiler.scriptMode && callFacts.chainType === 'var') {
       return null;
     }
-    uses.push(callFacts.channelName);
+    uses.push(callFacts.chainName);
     if (!callFacts.isObservation) {
-      mutates.push(callFacts.channelName);
+      mutates.push(callFacts.chainName);
     }
     return callFacts;
   }
 
-  _getSpecialChannelCallFacts(node, analysisPass) {
+  _getSpecialChainCallFacts(node, analysisPass) {
     const compiler = this.compiler;
-    const thisSharedFacts = compiler.channel.probeThisSharedAccessFacts(
+    const thisSharedFacts = compiler.chain.probeThisSharedAccessFacts(
       node.name,
       analysisPass,
       node._analysis
     );
     if (thisSharedFacts) {
-      const methodName = thisSharedFacts.channelPath.length >= 2
-        ? thisSharedFacts.channelPath[thisSharedFacts.channelPath.length - 1]
+      const methodName = thisSharedFacts.chainPath.length >= 2
+        ? thisSharedFacts.chainPath[thisSharedFacts.chainPath.length - 1]
         : null;
       return {
-        channelName: thisSharedFacts.channelName,
-        channelType: thisSharedFacts.channelType,
+        chainName: thisSharedFacts.chainName,
+        chainType: thisSharedFacts.chainType,
         shared: true,
         methodName,
         pathPrefix: thisSharedFacts.pathPrefix,
         isObservation:
-          thisSharedFacts.channelPath.length === 2 &&
+          thisSharedFacts.chainPath.length === 2 &&
           (methodName === 'snapshot' || methodName === 'isError' || methodName === 'getError')
       };
     }
@@ -303,17 +303,17 @@ class CompileCall {
       return null;
     }
 
-    const channelName = sequencePath[0];
-    const channelDecl = analysisPass.findDeclaration(node._analysis, channelName);
-    if (!channelDecl || channelDecl.shared) {
+    const chainName = sequencePath[0];
+    const chainDecl = analysisPass.findDeclaration(node._analysis, chainName);
+    if (!chainDecl || chainDecl.shared) {
       return null;
     }
 
     const methodName = sequencePath[sequencePath.length - 1];
     return {
-      channelName,
-      channelType: channelDecl.type,
-      shared: channelDecl.shared,
+      chainName,
+      chainType: chainDecl.type,
+      shared: chainDecl.shared,
       methodName,
       pathPrefix: sequencePath.slice(1, -1),
       isObservation:
@@ -337,7 +337,7 @@ class CompileCall {
         return true;
       }
 
-      compiler.component.emitChannelObservation(componentBindingFacts, node);
+      compiler.component.emitChainObservation(componentBindingFacts, node);
       return true;
     }
     if (componentBindingRoot) {

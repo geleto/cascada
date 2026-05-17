@@ -4,26 +4,26 @@ import {isPoisonError, handleError} from '../errors.js';
 import {ObservableCommand, MutatingResultCommand} from './command-base.js';
 
 class SnapshotCommand extends ObservableCommand {
-  constructor({ channelName, pos = null }) {
+  constructor({ chainName, pos = null }) {
     super();
-    this.channelName = channelName;
+    this.chainName = chainName;
     this.pos = pos || { lineno: 0, colno: 0 };
     this.isUniversalObservationCommand = true;
   }
 
-  apply(channel) {
-    const path = channel && channel._context ? channel._context.path : null;
+  apply(chain) {
+    const path = chain && chain._context ? chain._context.path : null;
     const contextualize = (err) => (isPoisonError(err)
       ? err
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
 
-    if (!channel) {
-      this.rejectResult(contextualize(new Error('SnapshotCommand requires a channel')));
+    if (!chain) {
+      this.rejectResult(contextualize(new Error('SnapshotCommand requires a chain')));
       return;
     }
 
     try {
-      return this.settleResult(channel._resolveSnapshotCommandResult(), {
+      return this.settleResult(chain._resolveSnapshotCommandResult(), {
         mapError: contextualize
       });
     } catch (err) {
@@ -32,27 +32,27 @@ class SnapshotCommand extends ObservableCommand {
   }
 }
 
-// Captures the raw channel target without poison inspection. Used for overwrite semantics (e.g., var-channel set_path) where poisoned leaves may be replaced by the write. Observation command.
+// Captures the raw chain target without poison inspection. Used for overwrite semantics (e.g., var-chain set_path) where poisoned leaves may be replaced by the write. Observation command.
 class RawSnapshotCommand extends ObservableCommand {
-  constructor({ channelName, pos = null }) {
+  constructor({ chainName, pos = null }) {
     super();
-    this.channelName = channelName;
+    this.chainName = chainName;
     this.pos = pos || { lineno: 0, colno: 0 };
   }
 
-  apply(channel) {
-    const path = channel && channel._context ? channel._context.path : null;
+  apply(chain) {
+    const path = chain && chain._context ? chain._context.path : null;
     const contextualize = (err) => (isPoisonError(err)
       ? err
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
 
-    if (!channel) {
-      this.rejectResult(contextualize(new Error('RawSnapshotCommand requires a channel')));
+    if (!chain) {
+      this.rejectResult(contextualize(new Error('RawSnapshotCommand requires a chain')));
       return;
     }
 
     try {
-      this.resolveResult(channel._getTarget());
+      this.resolveResult(chain._getTarget());
     } catch (err) {
       this.rejectResult(contextualize(err));
     }
@@ -60,56 +60,56 @@ class RawSnapshotCommand extends ObservableCommand {
 }
 
 // Ordered return-state observation. This deliberately checks only whether the
-// return channel still contains the sentinel; it does not consume or inspect
+// return chain still contains the sentinel; it does not consume or inspect
 // the returned value, which may itself be poison.
 class ReturnIsUnsetCommand extends ObservableCommand {
-  constructor({ channelName, pos = null }) {
+  constructor({ chainName, pos = null }) {
     super();
-    this.channelName = channelName;
+    this.chainName = chainName;
     this.pos = pos || { lineno: 0, colno: 0 };
   }
 
-  apply(channel) {
-    const path = channel && channel._context ? channel._context.path : null;
+  apply(chain) {
+    const path = chain && chain._context ? chain._context.path : null;
     const contextualize = (err) => (isPoisonError(err)
       ? err
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
 
-    if (!channel) {
-      this.rejectResult(contextualize(new Error('ReturnIsUnsetCommand requires a channel')));
+    if (!chain) {
+      this.rejectResult(contextualize(new Error('ReturnIsUnsetCommand requires a chain')));
       return;
     }
 
     try {
-      this.resolveResult(channel._getTarget() === RETURN_UNSET);
+      this.resolveResult(chain._getTarget() === RETURN_UNSET);
     } catch (err) {
       this.rejectResult(contextualize(err));
     }
   }
 }
 
-// Resolves to a boolean indicating whether the channel currently holds a poisoned (error) value. Observation command.
+// Resolves to a boolean indicating whether the chain currently holds a poisoned (error) value. Observation command.
 class IsErrorCommand extends ObservableCommand {
-  constructor({ channelName, pos = null }) {
+  constructor({ chainName, pos = null }) {
     super();
-    this.channelName = channelName;
+    this.chainName = chainName;
     this.pos = pos || { lineno: 0, colno: 0 };
     this.isUniversalObservationCommand = true;
   }
 
-  apply(channel) {
-    const path = channel && channel._context ? channel._context.path : null;
+  apply(chain) {
+    const path = chain && chain._context ? chain._context.path : null;
     const contextualize = (err) => (isPoisonError(err)
       ? err
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
 
-    if (!channel) {
-      this.rejectResult(contextualize(new Error('IsErrorCommand requires a channel')));
+    if (!chain) {
+      this.rejectResult(contextualize(new Error('IsErrorCommand requires a chain')));
       return;
     }
 
     try {
-      const result = channel._isErrorNow();
+      const result = chain._isErrorNow();
       return this.settleResult(result, {
         mapValue: (value) => !!value,
         mapError: contextualize
@@ -120,28 +120,28 @@ class IsErrorCommand extends ObservableCommand {
   }
 }
 
-// Resolves to the current error on the channel (a PoisonError or null). Observation command.
+// Resolves to the current error on the chain (a PoisonError or null). Observation command.
 class GetErrorCommand extends ObservableCommand {
-  constructor({ channelName, pos = null }) {
+  constructor({ chainName, pos = null }) {
     super();
-    this.channelName = channelName;
+    this.chainName = chainName;
     this.pos = pos || { lineno: 0, colno: 0 };
     this.isUniversalObservationCommand = true;
   }
 
-  apply(channel) {
-    const path = channel && channel._context ? channel._context.path : null;
+  apply(chain) {
+    const path = chain && chain._context ? chain._context.path : null;
     const contextualize = (err) => (isPoisonError(err)
       ? err
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
 
-    if (!channel) {
-      this.rejectResult(contextualize(new Error('GetErrorCommand requires a channel')));
+    if (!chain) {
+      this.rejectResult(contextualize(new Error('GetErrorCommand requires a chain')));
       return;
     }
 
     try {
-      const result = channel._getErrorNow();
+      const result = chain._getErrorNow();
       return this.settleResult(result, {
         mapValue: (value) => value || null,
         mapError: contextualize
@@ -152,27 +152,27 @@ class GetErrorCommand extends ObservableCommand {
   }
 }
 
-// Snapshots the current channel state for `try/resume` guard entry. The captured state is passed to a later RestoreGuardStateCommand. Observation command.
+// Snapshots the current chain state for `try/resume` guard entry. The captured state is passed to a later RestoreGuardStateCommand. Observation command.
 class CaptureGuardStateCommand extends ObservableCommand {
-  constructor({ channelName, pos = null }) {
+  constructor({ chainName, pos = null }) {
     super();
-    this.channelName = channelName;
+    this.chainName = chainName;
     this.pos = pos || { lineno: 0, colno: 0 };
   }
 
-  apply(channel) {
-    const path = channel && channel._context ? channel._context.path : null;
+  apply(chain) {
+    const path = chain && chain._context ? chain._context.path : null;
     const contextualize = (err) => (isPoisonError(err)
       ? err
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
 
-    if (!channel) {
-      this.rejectResult(contextualize(new Error('CaptureGuardStateCommand requires a channel')));
+    if (!chain) {
+      this.rejectResult(contextualize(new Error('CaptureGuardStateCommand requires a chain')));
       return;
     }
 
     try {
-      return this.settleResult(channel._captureGuardState(), {
+      return this.settleResult(chain._captureGuardState(), {
         mapError: contextualize
       });
     } catch (err) {
@@ -181,28 +181,28 @@ class CaptureGuardStateCommand extends ObservableCommand {
   }
 }
 
-// Restores a previously captured guard state to the channel, overwriting the current target with the saved snapshot. Carries a result promise.
+// Restores a previously captured guard state to the chain, overwriting the current target with the saved snapshot. Carries a result promise.
 class RestoreGuardStateCommand extends MutatingResultCommand {
-  constructor({ channelName, target, pos = null }) {
+  constructor({ chainName, target, pos = null }) {
     super();
-    this.channelName = channelName;
+    this.chainName = chainName;
     this.target = target;
     this.pos = pos || { lineno: 0, colno: 0 };
   }
 
-  apply(channel) {
-    const path = channel && channel._context ? channel._context.path : null;
+  apply(chain) {
+    const path = chain && chain._context ? chain._context.path : null;
     const contextualize = (err) => (isPoisonError(err)
       ? err
       : handleError(err, this.pos.lineno, this.pos.colno, null, path));
 
-    if (!channel) {
+    if (!chain) {
       this.resolveResult(undefined);
       return;
     }
 
     try {
-      return this.settleResult(channel._restoreGuardState(this.target), {
+      return this.settleResult(chain._restoreGuardState(this.target), {
         mapError: contextualize
       });
     } catch (err) {

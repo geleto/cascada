@@ -40,39 +40,39 @@ function createInheritanceCallableArgumentFrame(
   return argumentFrame;
 }
 
-function linkInheritanceCallableFootprintChannels(parentBuffer, currentBuffer, channelNames, linkedMutatedChannelNames = null) {
+function linkInheritanceCallableFootprintChains(parentBuffer, currentBuffer, chainNames, linkedMutatedChainNames = null) {
   if (parentBuffer === currentBuffer) {
     return currentBuffer;
   }
 
-  const linkedMutatedChannelSet = new Set(linkedMutatedChannelNames || []);
-  for (const channelName of channelNames) {
-    const channel = parentBuffer.getChannel(channelName);
-    if (currentBuffer.getChannelIfExists(channelName) === channel) {
-      if (linkedMutatedChannelSet.has(channelName)) {
-        currentBuffer._markLinkedMutatedChannel(channelName);
+  const linkedMutatedChainSet = new Set(linkedMutatedChainNames || []);
+  for (const chainName of chainNames) {
+    const chain = parentBuffer.getChain(chainName);
+    if (currentBuffer.getChainIfExists(chainName) === chain) {
+      if (linkedMutatedChainSet.has(chainName)) {
+        currentBuffer._markLinkedMutatedChain(chainName);
       }
       continue;
     }
-    if (currentBuffer.hasChannel(channelName)) {
+    if (currentBuffer.hasChain(chainName)) {
       throw new RuntimeFatalError(
-        `Cannot link channel '${channelName}' because the current buffer already has a different channel object`,
+        `Cannot link chain '${chainName}' because the current buffer already has a different chain object`,
         0,
         0,
         null,
         null
       );
     }
-    if (parentBuffer.isChannelFinished(channelName) || parentBuffer.isFinished()) {
-      currentBuffer._installLinkedChannel(channelName, channel);
-      if (linkedMutatedChannelSet.has(channelName)) {
-        currentBuffer._markLinkedMutatedChannel(channelName);
+    if (parentBuffer.isChainFinished(chainName) || parentBuffer.isFinished()) {
+      currentBuffer._installLinkedChain(chainName, chain);
+      if (linkedMutatedChainSet.has(chainName)) {
+        currentBuffer._markLinkedMutatedChain(chainName);
       }
       continue;
     }
-    parentBuffer.addBuffer(currentBuffer, channelName);
-    if (linkedMutatedChannelSet.has(channelName)) {
-      currentBuffer._markLinkedMutatedChannel(channelName);
+    parentBuffer.addBuffer(currentBuffer, chainName);
+    if (linkedMutatedChainSet.has(chainName)) {
+      currentBuffer._markLinkedMutatedChain(chainName);
     }
   }
 
@@ -81,5 +81,5 @@ function linkInheritanceCallableFootprintChannels(parentBuffer, currentBuffer, c
 
 export {
   createInheritanceCallableArgumentFrame,
-  linkInheritanceCallableFootprintChannels
+  linkInheritanceCallableFootprintChains
 };

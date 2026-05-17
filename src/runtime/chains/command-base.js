@@ -10,9 +10,9 @@ import {
 } from '../errors.js';
 
 import {RESOLVE_MARKER, isResolvedValue, unwrapResolvedValue} from '../resolve.js';
-const contextualizedChannelErrorCache = new WeakMap();
+const contextualizedChainErrorCache = new WeakMap();
 
-// Base class for buffered channel work.
+// Base class for buffered chain work.
 class Command {
   constructor() {
     this.resolved = false;
@@ -105,8 +105,8 @@ class MutatingResultCommand extends MutatingCommand {
   }
 }
 
-// Ordered observations read a channel at the current source position and resolve
-// their own result promise without mutating the target channel.
+// Ordered observations read a chain at the current source position and resolve
+// their own result promise without mutating the target chain.
 class ObservableCommand extends Command {
   constructor() {
     super();
@@ -115,13 +115,13 @@ class ObservableCommand extends Command {
   }
 }
 
-// Base class for commands targeting a declared channel (text/var/data/sequence).
-class ChannelCommand extends MutatingCommand {
-  constructor({ channelName, args = null, pos = null }) {
+// Base class for commands targeting a declared chain (text/var/data/sequence).
+class ChainCommand extends MutatingCommand {
+  constructor({ chainName, args = null, pos = null }) {
     super();
-    this.channelName = channelName;
+    this.chainName = chainName;
     this.arguments = args || [];
-    // Channel commands are buffered and applied later by the iterator. Any raw
+    // Chain commands are buffered and applied later by the iterator. Any raw
     // promise/marker-backed value already present in the buffered argument
     // graph can reject before apply-time resolution runs, so command argument
     // staging remains broad here on purpose.
@@ -159,17 +159,17 @@ class ChannelCommand extends MutatingCommand {
   }
 }
 
-class ChannelMutatingResultCommand extends ChannelCommand {
+class ChainMutatingResultCommand extends ChainCommand {
   constructor(spec) {
     super(spec);
     this._createResultPromise();
   }
 }
 
-class ChannelObservableCommand extends ObservableCommand {
+class ChainObservableCommand extends ObservableCommand {
   constructor(spec) {
     super();
-    this.channelName = spec.channelName;
+    this.chainName = spec.chainName;
     this.arguments = spec.args || [];
     if (this.arguments.length > 0) {
       markDeferredThenablesHandled(this.arguments);
@@ -183,22 +183,22 @@ export {
   MutatingCommand,
   MutatingResultCommand,
   ObservableCommand,
-  ChannelCommand,
-  ChannelMutatingResultCommand,
-  ChannelObservableCommand,
-  contextualizeErrorsForChannel,
-  contextualizeChannelError,
+  ChainCommand,
+  ChainMutatingResultCommand,
+  ChainObservableCommand,
+  contextualizeErrorsForChain,
+  contextualizeChainError,
   runWithResolvedArguments,
   markDeferredThenablesHandled
 };
 
-function contextualizeErrorsForChannel(channel, pos, errors) {
+function contextualizeErrorsForChain(chain, pos, errors) {
   if (!Array.isArray(errors) || errors.length === 0) {
     return [];
   }
   const lineno = pos && typeof pos.lineno === 'number' ? pos.lineno : 0;
   const colno = pos && typeof pos.colno === 'number' ? pos.colno : 0;
-  const path = channel && channel._context && channel._context.path ? channel._context.path : null;
+  const path = chain && chain._context && chain._context.path ? chain._context.path : null;
   const contextualized = [];
   for (const err of errors) {
     if (isPoisonError(err) && Array.isArray(err.errors) && err.errors.length > 0) {
@@ -212,13 +212,13 @@ function contextualizeErrorsForChannel(channel, pos, errors) {
   return contextualized;
 }
 
-function contextualizeChannelError(channel, pos, err) {
+function contextualizeChainError(chain, pos, err) {
   const lineno = pos && typeof pos.lineno === 'number' ? pos.lineno : 0;
   const colno = pos && typeof pos.colno === 'number' ? pos.colno : 0;
-  const path = channel && channel._context && channel._context.path ? channel._context.path : null;
+  const path = chain && chain._context && chain._context.path ? chain._context.path : null;
   if (err && (typeof err === 'object' || typeof err === 'function')) {
     const cacheKey = `${lineno}:${colno}:${path || ''}`;
-    const perError = contextualizedChannelErrorCache.get(err);
+    const perError = contextualizedChainErrorCache.get(err);
     if (perError && perError.has(cacheKey)) {
       return perError.get(cacheKey);
     }
@@ -226,7 +226,7 @@ function contextualizeChannelError(channel, pos, err) {
     if (wrapped !== err) {
       const nextPerError = perError || new Map();
       nextPerError.set(cacheKey, wrapped);
-      contextualizedChannelErrorCache.set(err, nextPerError);
+      contextualizedChainErrorCache.set(err, nextPerError);
     }
     return wrapped;
   }
@@ -239,7 +239,7 @@ function contextualizeChannelError(channel, pos, err) {
 // payload so each command can apply its own semantics (for example, poisoning a
 // specific data path or rejecting an observable command result) rather than a
 // generic helper short-circuiting too early.
-function runWithResolvedArguments(value, cmd, channel, applyFn) {
+function runWithResolvedArguments(value, cmd, chain, applyFn) {
   if (Array.isArray(value)) {
     let hasAsync = false;
 
@@ -267,7 +267,7 @@ function runWithResolvedArguments(value, cmd, channel, applyFn) {
 
     // The array has at least one async entry, so resolve each top-level slot and
     // preserve poison as data for the command to handle.
-    return runWithResolvedArgumentsAsync(value, cmd, channel, applyFn);
+    return runWithResolvedArgumentsAsync(value, cmd, chain, applyFn);
   } else {
     //a single non-array argument
     if (value === undefined) {
@@ -284,7 +284,7 @@ function runWithResolvedArguments(value, cmd, channel, applyFn) {
       return Promise.resolve(value[RESOLVE_MARKER]).then(() => {
         return applyFn(value);
       }).catch((err) => {
-        return applyFn(classifyCommandArgumentFailure(channel, cmd, err));
+        return applyFn(classifyCommandArgumentFailure(chain, cmd, err));
       });
     }
 
@@ -294,12 +294,12 @@ function runWithResolvedArguments(value, cmd, channel, applyFn) {
       }
       return applyFn(resolvedValue);
     }).catch((err) => {
-      return applyFn(classifyCommandArgumentFailure(channel, cmd, err));
+      return applyFn(classifyCommandArgumentFailure(chain, cmd, err));
     });
   }
 }
 
-async function runWithResolvedArgumentsAsync (value, cmd, channel, applyFn) {
+async function runWithResolvedArgumentsAsync (value, cmd, chain, applyFn) {
   const resolvedArray = new Array(value.length);
   for (let i = 0; i < value.length; i++) {
     const entry = value[i];
@@ -317,7 +317,7 @@ async function runWithResolvedArgumentsAsync (value, cmd, channel, applyFn) {
         await fastValue[RESOLVE_MARKER];
         resolvedArray[i] = fastValue;
       } catch (err) {
-        resolvedArray[i] = classifyCommandArgumentFailure(channel, cmd, err);
+        resolvedArray[i] = classifyCommandArgumentFailure(chain, cmd, err);
       }
       continue;
     }
@@ -329,23 +329,23 @@ async function runWithResolvedArgumentsAsync (value, cmd, channel, applyFn) {
           await resolvedValue[RESOLVE_MARKER];
           resolvedArray[i] = resolvedValue;
         } catch (err) {
-          resolvedArray[i] = classifyCommandArgumentFailure(channel, cmd, err);
+          resolvedArray[i] = classifyCommandArgumentFailure(chain, cmd, err);
         }
       } else {
         resolvedArray[i] = resolvedValue;
       }
     } catch (err) {
-      resolvedArray[i] = classifyCommandArgumentFailure(channel, cmd, err);
+      resolvedArray[i] = classifyCommandArgumentFailure(chain, cmd, err);
     }
   }
   return applyFn(resolvedArray);
 }
 
-function classifyCommandArgumentFailure(channel, cmd, err) {
+function classifyCommandArgumentFailure(chain, cmd, err) {
   const errors = isPoisonError(err) ? err.errors : [err];
   const lineno = cmd && cmd.pos && typeof cmd.pos.lineno === 'number' ? cmd.pos.lineno : 0;
   const colno = cmd && cmd.pos && typeof cmd.pos.colno === 'number' ? cmd.pos.colno : 0;
-  const path = channel && channel._context && channel._context.path ? channel._context.path : null;
+  const path = chain && chain._context && chain._context.path ? chain._context.path : null;
   const contextualized = errors.map((item) => handleError(item, lineno, colno, null, path));
   const fatalRuntimeError = contextualized.find((item) => isRuntimeFatalError(item));
   if (fatalRuntimeError) {

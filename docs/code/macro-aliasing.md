@@ -18,15 +18,15 @@ myFunc(xCoord, zInfo)
 
 Intended meaning:
 
-- `x` is a local parameter name that refers to the caller-owned var channel
+- `x` is a local parameter name that refers to the caller-owned var chain
   passed as `xCoord`
-- `z` is a local parameter name that refers to the caller-owned data channel
+- `z` is a local parameter name that refers to the caller-owned data chain
   passed as `zInfo`
-- reads and writes inside the macro go to the caller-owned channels
+- reads and writes inside the macro go to the caller-owned chains
 - this is explicit argument binding, not ambient parent-scope visibility
 
 This is similar to aliasing, but it is not the old include/import composition
-model where child code implicitly saw parent channels.
+model where child code implicitly saw parent chains.
 
 The key rule is:
 
@@ -87,7 +87,7 @@ This is not:
 
 It is an explicit call contract:
 
-- the caller chooses which channels are passed by reference
+- the caller chooses which chains are passed by reference
 - the callee sees only the formal names it declared
 - only those names are aliased
 
@@ -111,10 +111,10 @@ Recommended meaning:
 - `var x`
   - a by-reference var parameter
   - may be read and reassigned
-  - assignments target the caller-owned var channel bound to `x`
+  - assignments target the caller-owned var chain bound to `x`
 - `data z`
-  - a by-reference data channel parameter
-  - channel commands target the caller-owned data channel bound to `z`
+  - a by-reference data chain parameter
+  - chain commands target the caller-owned data chain bound to `z`
 
 Ordinary value parameters remain unchanged:
 
@@ -143,7 +143,7 @@ Recommended rules:
 - caller-side renamed runtime names are resolved before invocation
 
 So the call site does not pass snapshots or values for by-reference arguments.
-It passes channel bindings.
+It passes chain bindings.
 
 ---
 
@@ -155,10 +155,10 @@ Recommended validations:
    - valid: `myFunc(xCoord, zInfo)`
    - invalid: `myFunc(user.x, zInfo)`
    - invalid: `myFunc(getX(), zInfo)`
-2. The actual name must resolve to a declared binding/channel.
+2. The actual name must resolve to a declared binding/chain.
 3. The actual type must match the formal parameter kind.
    - `var` formal -> caller var
-   - `data` formal -> caller data channel
+   - `data` formal -> caller data chain
 4. Caller-side runtime renaming must be honored.
 5. Formal by-reference names should behave as non-renamable local aliases inside
    the macro body.
@@ -176,7 +176,7 @@ swap(x, x)
 Recommended initial rule:
 
 - allow it
-- both formals resolve to the same caller-owned runtime channel
+- both formals resolve to the same caller-owned runtime chain
 
 This is simpler and matches normal aliasing semantics.
 
@@ -187,14 +187,14 @@ This is simpler and matches normal aliasing semantics.
 The clean model is:
 
 - ordinary by-value params remain ordinary local bindings
-- by-reference params are aliases to caller-owned channels
+- by-reference params are aliases to caller-owned chains
 
 Conceptually, the caller prepares a reference map:
 
 ```js
 {
-  x: { channelName: "xCoord#7", buffer: callerBuffer, type: "var" },
-  z: { channelName: "zInfo#2", buffer: callerBuffer, type: "data" }
+  x: { chainName: "xCoord#7", buffer: callerBuffer, type: "var" },
+  z: { chainName: "zInfo#2", buffer: callerBuffer, type: "data" }
 }
 ```
 
@@ -204,37 +204,37 @@ The macro body then compiles against the formal names:
 - writes to `x`
 - commands targeting `z`
 
-but runtime resolution redirects those names to the actual caller-owned channel
+but runtime resolution redirects those names to the actual caller-owned chain
 bindings.
 
 The important point is:
 
 - the macro still uses the formal names
-- the runtime/compiler alias layer resolves those names to the actual channels
+- the runtime/compiler alias layer resolves those names to the actual chains
 
 ---
 
 ## Buffer and Linking Implications
 
 Yes, this likely requires command-buffer linking, but only for the explicitly
-bound channels.
+bound chains.
 
 That means:
 
-- if a macro reads or writes aliased var/data channels, the macro buffer must be
-  able to resolve those caller-owned channels correctly
-- if the caller-owned channels live in a parent or sibling-visible scope, the
+- if a macro reads or writes aliased var/data chains, the macro buffer must be
+  able to resolve those caller-owned chains correctly
+- if the caller-owned chains live in a parent or sibling-visible scope, the
   relevant lanes must be linked structurally for ordered reads/writes
 
 But this should be narrow and explicit:
 
-- only channels bound through by-reference params are linked
+- only chains bound through by-reference params are linked
 - there is no generic "all visible parent vars are available here" model
 
 So the design should be:
 
 - explicit alias map
-- explicit linked-channel set derived from that alias map
+- explicit linked-chain set derived from that alias map
 - no ambient child visibility beyond those bindings
 
 ---
@@ -247,16 +247,16 @@ form.
 
 Important details to keep:
 
-1. Formal names must resolve to runtime channel names at buffer ingress.
-   - If the macro writes to `x`, and `x` is bound to caller runtime channel
+1. Formal names must resolve to runtime chain names at buffer ingress.
+   - If the macro writes to `x`, and `x` is bound to caller runtime chain
      `xCoord#7`, command routing must target `xCoord#7`.
    - This applies to:
      - command insertion
      - snapshots
-     - channel-finish requests
+     - chain-finish requests
      - linked-child registration
 2. Runtime names must remain stable once bound.
-   - The alias map should bind to the resolved runtime channel name, not to the
+   - The alias map should bind to the resolved runtime chain name, not to the
      source name.
    - Example:
      - source name: `xCoord`
@@ -292,7 +292,7 @@ Why:
 
 What is worth reusing:
 
-- the idea that a formal name can resolve to a different runtime channel name
+- the idea that a formal name can resolve to a different runtime chain name
 - the idea that linked buffers may need a narrow alias projection for command
   routing
 - the previously tested inheritance behavior for child buffers
@@ -304,17 +304,17 @@ What should change:
 - aliasing must be limited to the declared by-reference formals
 - aliasing must not silently apply to unrelated names
 - aliasing should be documented as argument binding, not composition visibility
-- naming should reflect channel binding, not template-composition boundaries
+- naming should reflect chain binding, not template-composition boundaries
 
 So the best approach is:
 
 1. do not restore the old generic `_boundaryAliases` mechanism wholesale
 2. reintroduce only the low-level alias-resolution pieces we need
-3. rename them so they describe explicit channel binding, not composition
+3. rename them so they describe explicit chain binding, not composition
    visibility
 4. attach comments in code explaining that they exist only for explicit
    argument-by-reference bindings
-5. link only the channels referenced by that map
+5. link only the chains referenced by that map
 
 This keeps the architecture simpler and avoids reintroducing the exact class of
 hidden-scope behavior that async composition just removed.
@@ -322,7 +322,7 @@ hidden-scope behavior that async composition just removed.
 Current implementation note:
 
 - the low-level command-buffer alias primitive is available again under the new
-  channel-binding names
+  chain-binding names
 - it should be treated as runtime substrate only
 - async include/import/extends should not use it as ambient visibility
 
@@ -336,18 +336,18 @@ actually does.
 Recommended renames:
 
 - old `_boundaryAliases`
-  - new `_channelAliases`
+  - new `_chainAliases`
 - old `_setBoundaryAliases(map)`
-  - new `_setChannelAliases(map)`
+  - new `_setChainAliases(map)`
 - old `_inheritBoundaryAliases(parentMap)`
-  - new `_inheritChannelAliases(parentMap)`
-- old `_resolveChannelName(name)`
-  - new `_resolveChannelAlias(name)` or `_resolveAliasedChannelName(name)`
+  - new `_inheritChainAliases(parentMap)`
+- old `_resolveChainName(name)`
+  - new `_resolveChainAlias(name)` or `_resolveAliasedChainName(name)`
 
 Why this naming is better:
 
 - it does not imply template/include composition boundaries
-- it describes aliasing at the command-buffer/channel-routing layer
+- it describes aliasing at the command-buffer/chain-routing layer
 - it leaves room for macro-by-reference to use the feature without implying
   ambient parent visibility
 
@@ -358,7 +358,7 @@ If we want to be even more explicit, macro call sites can refer to the map as:
 
 while the lower-level command-buffer property remains:
 
-- `_channelAliases`
+- `_chainAliases`
 
 That gives a clean split between:
 
@@ -379,7 +379,7 @@ Recommended implementation shape:
    - resolve its declaration kind
    - resolve its runtime name
 3. Build a per-call alias/reference map.
-4. Build the linked-channel set from those actual runtime names.
+4. Build the linked-chain set from those actual runtime names.
 5. Invoke the macro with:
    - ordinary by-value args
    - a by-reference alias map
@@ -400,9 +400,9 @@ macro bodies and source-facing names.
 Recommended runtime shape:
 
 - macro invocation builds `refParamAliases`
-- child macro buffer receives those aliases as `_channelAliases`
-- command-buffer routing resolves formal names through `_resolveAliasedChannelName`
-- child buffers created under the macro inherit `_channelAliases`
+- child macro buffer receives those aliases as `_chainAliases`
+- command-buffer routing resolves formal names through `_resolveAliasedChainName`
+- child buffers created under the macro inherit `_chainAliases`
 
 This reuses the tested mechanics of the old low-level alias implementation,
 while keeping the feature surface explicit and narrow.
@@ -418,7 +418,7 @@ Compiler responsibilities should be:
 - validate call-site actuals
 - resolve caller-side runtime names after renaming
 - emit the alias/reference map for the invocation
-- emit the linked-channel list for the invocation
+- emit the linked-chain list for the invocation
 
 The compiler should not:
 
@@ -432,8 +432,8 @@ The compiler should not:
 Runtime responsibilities should be:
 
 - store the per-call alias/reference map
-- resolve formal by-reference names to actual caller-owned channels
-- route reads/writes/commands to the actual runtime channel names
+- resolve formal by-reference names to actual caller-owned chains
+- route reads/writes/commands to the actual runtime chain names
 - preserve normal ordering through linked buffers
 - inherit alias projections into nested child buffers created under the macro
 - keep direct runtime names stable without double-remapping
@@ -445,10 +445,10 @@ The runtime should not:
 
 The currently available low-level runtime hooks for this are:
 
-- `_setChannelAliases(map)`
-- `_inheritChannelAliases(parentMap)`
-- `_resolveAliasedChannelName(name)`
-- `_channelAliases`
+- `_setChainAliases(map)`
+- `_inheritChainAliases(parentMap)`
+- `_resolveAliasedChainName(name)`
+- `_chainAliases`
 
 ---
 
@@ -459,19 +459,19 @@ This design is independent from `caller()` scheduling.
 It does not require:
 
 - `__caller__`
-- `CALLER_SCHED_CHANNEL_NAME`
+- `CALLER_SCHED_CHAIN_NAME`
 - caller-style all-callers buffers
 
 Those exist because `caller()` schedules parent-visible output subtrees.
 
 By-reference macro params are a different problem:
 
-- explicit channel aliasing and ordered channel access
+- explicit chain aliasing and ordered chain access
 
 So the interaction should be:
 
 - caller scheduling stays as it is
-- by-reference params add explicit alias/channel-binding behavior inside macro
+- by-reference params add explicit alias/chain-binding behavior inside macro
   execution
 
 ---
@@ -493,7 +493,7 @@ Intended result:
 
 - `count` becomes `4`
 
-## By-reference data channel
+## By-reference data chain
 
 ```cascada
 function addItem(data out, value)
@@ -556,16 +556,16 @@ The right model is:
 
 - argument-by-reference aliasing
 - not ambient scope visibility
-- narrow linked-channel usage
+- narrow linked-chain usage
 - no wholesale restoration of the old generic buffer aliasing mechanism
 
 Implementation recommendation:
 
 - do reuse the previously tested low-level alias behavior
 - do reintroduce it only in reduced form
-- do rename the runtime properties/functions to `_channelAliases`,
-  `_setChannelAliases`, `_inheritChannelAliases`, and
-  `_resolveAliasedChannelName`
+- do rename the runtime properties/functions to `_chainAliases`,
+  `_setChainAliases`, `_inheritChainAliases`, and
+  `_resolveAliasedChainName`
 - do document clearly in code that the mechanism exists for explicit by-ref
   binding, not for ambient composition visibility
 
@@ -573,5 +573,5 @@ If old code is reused, it should be reused only in a reduced macro-specific
 form with comments explaining:
 
 - this aliasing exists because by-reference macro params bind formal names to
-  caller-owned runtime channels
+  caller-owned runtime chains
 - it must not be treated as a general composition visibility feature

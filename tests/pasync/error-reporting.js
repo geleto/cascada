@@ -290,7 +290,7 @@ import * as runtime from '../../src/runtime/runtime.js';
 
     // include poisoning not yet supported
     // include imports missing template
-    // For templates this is easy - we know to poison the text channel
+    // For templates this is easy - we know to poison the text chain
     // @todo - make a script version poisoning @data
     // include "missing.njk" modifies @data
     it.skip('should report correct path for error when template loading fails', async () => {
@@ -376,7 +376,7 @@ import * as runtime from '../../src/runtime/runtime.js';
       }
     });
 
-    it('shoukld report correct path when writing unknown variable to a channel in script', async () => {
+    it('shoukld report correct path when writing unknown variable to a chain in script', async () => {
       var scriptName = 'error-script-output-unknown-variable.scr';
       loader.addTemplate(scriptName, 'text output\noutput( nonExistentVar )\nreturn output.snapshot()');
       try {

@@ -16,7 +16,7 @@ class CompileRename {
 
     if (this.compiler.analysis) {
       this.compiler.analysis._finalizeDeclarations(rootNode);
-      this.compiler.analysis._finalizeChannelUsage(rootNode);
+      this.compiler.analysis._finalizeChainUsage(rootNode);
     }
   }
 
@@ -28,27 +28,27 @@ class CompileRename {
     return `loop#${this.loopCounter}`;
   }
 
-  _renameChannelReference(name, binding) {
+  _renameChainReference(name, binding) {
     if (!name || name !== 'loop' || !binding || binding.kind !== 'loop') {
       return name;
     }
     return binding.runtimeName;
   }
 
-  _renameChannelReferences(values, binding) {
+  _renameChainReferences(values, binding) {
     if (!Array.isArray(values) || values.length === 0) {
       return values;
     }
     for (let i = 0; i < values.length; i++) {
-      values[i] = this._renameChannelReference(values[i], binding);
+      values[i] = this._renameChainReference(values[i], binding);
     }
     return values;
   }
 
   _applyLocalRenames(node, binding) {
-    this._renameChannelReferences(node._analysis.uses, binding);
-    this._renameChannelReferences(node._analysis.mutates, binding);
-    this._renameChannelReferences(node._analysis.declaresInParent, binding);
+    this._renameChainReferences(node._analysis.uses, binding);
+    this._renameChainReferences(node._analysis.mutates, binding);
+    this._renameChainReferences(node._analysis.declaresInParent, binding);
   }
 
   _enterScope(node, parentBinding) {

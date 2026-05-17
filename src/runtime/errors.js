@@ -1,7 +1,7 @@
 
 import {POISON_KEY, RESOLVE_MARKER} from './markers.js';
 
-// Internal promises are sometimes observed through an owning command/channel
+// Internal promises are sometimes observed through an owning command/chain
 // instead of by the promise object itself. Mark those promises handled so delayed
 // Cascada-owned consumption does not create process-level rejection warnings.
 function markPromiseHandled(promise) {

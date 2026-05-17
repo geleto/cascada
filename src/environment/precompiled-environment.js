@@ -62,8 +62,8 @@ class AsyncPrecompiledEnvironment extends BaseEnvironment {
     this.AsyncTemplateClass = AsyncPrecompiledTemplate;
     this.ScriptClass = AsyncPrecompiledScript;
     this.customDataMethods = {};
-    this.commandChannelClasses = {};
-    this.commandChannels = {};
+    this.commandChainClasses = {};
+    this.commandChains = {};
   }
 
   async renderTemplate(templateName, ctx) {
@@ -139,13 +139,13 @@ class AsyncPrecompiledEnvironment extends BaseEnvironment {
     return this;
   }
 
-  addCommandChannelClass(name, channelClass) {
-    this.commandChannelClasses[name] = channelClass;
+  addCommandChainClass(name, chainClass) {
+    this.commandChainClasses[name] = chainClass;
     return this;
   }
 
-  addCommandChannel(name, channelInstance) {
-    this.commandChannels[name] = channelInstance;
+  addCommandChain(name, chainInstance) {
+    this.commandChains[name] = chainInstance;
     return this;
   }
 
