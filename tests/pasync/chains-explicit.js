@@ -72,6 +72,70 @@ describe('Cascada Script: Explicit Chain Declarations', function () {
     });
   });
 
+  describe('Source-order lookup resolution', function () {
+    it('keeps a symbol ambient before a later local declaration', async () => {
+      const script = `
+        var before = someVar
+        var someVar = "local"
+        return { before: before, after: someVar }
+      `;
+      const result = await render(script, { someVar: 'ambient' });
+      expect(result).to.eql({ before: 'ambient', after: 'local' });
+    });
+
+    it('keeps template output ambient before a later local declaration', async () => {
+      const result = await env.renderTemplateString('{{ someVar }}{% set someVar = "local" %}{{ someVar }}', {
+        someVar: 'ambient'
+      });
+      expect(result).to.be('ambientlocal');
+    });
+
+    it('keeps a function call ambient before a later same-name function declaration', async () => {
+      const script = `
+        var before = choose("before")
+        function choose(item)
+          return "local:" + item
+        endfunction
+        var after = choose("after")
+        return { before: before, after: after }
+      `;
+      const result = await render(script, {
+        choose(value) {
+          return `ambient:${value}`;
+        }
+      });
+      expect(result).to.eql({ before: 'ambient:before', after: 'local:after' });
+    });
+
+    it('keeps sequential context paths ambient before later same-name locals', async () => {
+      const script = `
+        var before = service!.read()
+        var service = null
+        return before
+      `;
+      const result = await render(script, {
+        service: {
+          read() {
+            return 'ambient';
+          }
+        }
+      });
+      expect(result).to.be('ambient');
+    });
+
+    it('keeps explicit chain initializers ambient before later local declarations', async () => {
+      const script = `
+        data result = seed
+        var seed = { value: "local" }
+        return result.snapshot()
+      `;
+      const result = await render(script, {
+        seed: { value: 'ambient' }
+      });
+      expect(result).to.eql({ value: 'ambient' });
+    });
+  });
+
   describe('Chain Operations', function () {
     it('should support data set operation', async () => {
       const script = `

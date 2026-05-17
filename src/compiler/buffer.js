@@ -143,7 +143,7 @@ class CompileBuffer {
     }
 
     const chainName = staticPath[0];
-    const chainDecl = this.compiler.analysis.findDeclaration(node._analysis, chainName);
+    const chainDecl = node._analysis.lookupDeclaration || null;
     const chainType = node.chainType || (chainDecl ? chainDecl.type : null);
     const command = staticPath.length >= 2 ? staticPath[staticPath.length - 1] : null;
     const path = staticPath.length > 1 ? staticPath.slice(1) : null;

@@ -187,7 +187,7 @@ class CompileCall {
     if (!(node.name instanceof nodes.Symbol) || !analysisPass.findDeclaration) {
       return null;
     }
-    const macroDecl = analysisPass.findDeclaration(node._analysis, node.name.value);
+    const macroDecl = analysisPass.markLookupDeclaration(node.name, node.name.value, node._analysis);
     return macroDecl && macroDecl.isMacro
       ? { binding: macroDecl.declarationOrigin?.compiledMacroFuncId ?? null }
       : null;
@@ -220,7 +220,7 @@ class CompileCall {
     }
 
     const importedRoot = compiler.sequential._extractStaticPathRoot(node.name);
-    const importedDecl = importedRoot ? analysisPass.findDeclaration(node._analysis, importedRoot) : null;
+    const importedDecl = importedRoot ? analysisPass.markLookupDeclaration(node.name, importedRoot, node._analysis) : null;
     const isImportedCallable =
       (importedDecl && importedDecl.imported) ||
       (!importedDecl && importedRoot && compiler.importedBindings && compiler.importedBindings.has(importedRoot));
@@ -304,7 +304,7 @@ class CompileCall {
     }
 
     const chainName = sequencePath[0];
-    const chainDecl = analysisPass.findDeclaration(node._analysis, chainName);
+    const chainDecl = analysisPass.markLookupDeclaration(node.name, chainName, node._analysis);
     if (!chainDecl || chainDecl.shared) {
       return null;
     }

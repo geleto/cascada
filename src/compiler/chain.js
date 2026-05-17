@@ -347,7 +347,7 @@ class CompileChain {
       return {};
     }
     const chainName = path[0];
-    const chainDecl = chainName ? compiler.analysis.findDeclaration(node._analysis, chainName) : null;
+    const chainDecl = chainName ? compiler.analysis.markLookupDeclaration(node, chainName) : null;
     const isSequenceGet = !callNode && chainDecl && chainDecl.type === 'sequence';
     const isObservation = isSequenceGet ||
       (callNode && path.length === 2 &&

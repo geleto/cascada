@@ -172,6 +172,12 @@ class CompileAnalysis {
     return owner.declaredChains.get(name) || null;
   }
 
+  markLookupDeclaration(node, name, analysis = node._analysis) {
+    const declaration = this.findDeclaration(analysis, name);
+    node._analysis = { ...node._analysis, lookupDeclaration: declaration || null };
+    return declaration;
+  }
+
   findRootDeclaration(analysis, name) {
     const owner = this.getRootScopeOwner(analysis);
     if (!owner || !owner.declaredChains) {

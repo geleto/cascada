@@ -54,7 +54,7 @@ class CompilerBaseAsync extends CompilerCommon {
       }
     }
 
-    const declaration = analysisPass.findDeclaration(node._analysis, name);
+    const declaration = analysisPass.markLookupDeclaration(node, name);
     if (declaration && !(this.scriptMode && declaration.shared)) {
       uses.push(name);
     }
@@ -68,7 +68,7 @@ class CompilerBaseAsync extends CompilerCommon {
       this.emit(name);
       return;
     }
-    const declaredChain = this.analysis.findDeclaration(node._analysis, name);
+    const declaredChain = node._analysis.lookupDeclaration || null;
     if (declaredChain && this.scriptMode && declaredChain.shared) {
       this._compileScriptAmbientOnlySymbolLookup(node, name);
       return;
@@ -128,7 +128,9 @@ class CompilerBaseAsync extends CompilerCommon {
     if (!keyRoot) {
       return;
     }
-    const keyRootChain = analysisPass.findDeclaration(node._analysis, keyRoot);
+    const keyRootChain = Object.prototype.hasOwnProperty.call(node._analysis, 'lookupDeclaration')
+      ? node._analysis.lookupDeclaration
+      : analysisPass.findDeclaration(node._analysis, keyRoot);
     if (keyRootChain) {
       this._failNonContextSequenceRoot(node, keyRootChain);
     }
@@ -606,7 +608,7 @@ class CompilerBaseAsync extends CompilerCommon {
     if (!chainName) {
       return null;
     }
-    const chainDecl = this.analysis.findDeclaration(targetNode._analysis, chainName);
+    const chainDecl = targetNode._analysis.lookupDeclaration || null;
     return {
       kind: chainDecl && chainDecl.shared ? 'shared-chain' : 'chain',
       chainName
@@ -628,7 +630,7 @@ class CompilerBaseAsync extends CompilerCommon {
 
     if (targetNode instanceof nodes.Symbol) {
       const name = targetNode.value;
-      const chainDecl = this.analysis.findDeclaration(targetNode._analysis, name);
+      const chainDecl = targetNode._analysis.lookupDeclaration || null;
       if (chainDecl) {
         if (this.scriptMode && chainDecl.shared) {
           return null;
@@ -641,7 +643,7 @@ class CompilerBaseAsync extends CompilerCommon {
     if (targetNode instanceof nodes.FunCall) {
       const candidate = this.sequential._extractStaticPathRoot(targetNode.name, 2);
       if (candidate) {
-        const chainDecl = this.analysis.findDeclaration(targetNode._analysis, candidate);
+        const chainDecl = targetNode.name?._analysis?.lookupDeclaration || null;
         if (chainDecl) {
           if (this.scriptMode && chainDecl.shared) {
             return null;

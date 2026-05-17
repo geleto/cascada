@@ -616,6 +616,29 @@ describe('Inheritance rebuild', function () {
       })).to.be('child');
     });
 
+    it('keeps shared declaration initializers ambient before later local declarations', async function () {
+      const localEnv = createEnvironment({
+        'child.script': 'shared var theme = localTheme\nextends none\nvar localTheme = "local"\nreturn this.theme'
+      });
+
+      expect(await localEnv.renderScript('child.script', {
+        localTheme: 'ambient'
+      })).to.be('ambient');
+    });
+
+    it('fails shared declaration initializers naturally when later locals are not ambient', async function () {
+      const localEnv = createEnvironment({
+        'child.script': 'shared var theme = localTheme\nextends none\nvar localTheme = "local"\nreturn this.theme'
+      });
+
+      try {
+        await localEnv.renderScript('child.script', {});
+        expect().fail('Expected shared initializer to ignore the later local declaration');
+      } catch (error) {
+        expect(String(error)).to.contain('Can not look up unknown variable/function: localTheme');
+      }
+    });
+
     it('propagates constructor errors through public render context', async function () {
       const localEnv = createEnvironment({
         'child.script': 'extends none\nreturn thrower()'
@@ -1023,6 +1046,15 @@ describe('Inheritance rebuild', function () {
       expect(function () {
         new Script('extends "base.script"\nvar parentScript = "local"\nreturn parentScript', env, 'static-local.script').compileSource();
       }).not.to.throwException();
+    });
+
+    it('keeps dynamic script extends ambient before a later local declaration', async function () {
+      const chain = await loadScriptChain({
+        'base.script': 'extends none\nreturn "base"',
+        'child.script': 'extends parentScript\nvar parentScript = "local.script"\nreturn parentScript'
+      }, 'child.script', createContext({ parentScript: 'base.script' }, 'child.script'));
+
+      expect(chain.entries.map((entry) => entry.path)).to.eql(['child.script', 'base.script']);
     });
   });
 
