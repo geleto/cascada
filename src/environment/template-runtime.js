@@ -367,8 +367,26 @@ class AsyncTemplateRuntime extends TemplateRuntime {
     return this.rootRenderFunc(this.env, context, globalRuntime, cb, true);
   }
 
-  _renderForComposition(ctx, cb, renderCtx) {
-    return this.renderForComposition(ctx, cb, renderCtx);
+  renderIncludeText(ctx, renderCtx) {
+    this.compile();
+    const context = this._createContext(ctx, renderCtx, ctx || null);
+    if (!this.inheritanceSpec) {
+      const output = this.rootRenderFunc(this.env, context, globalRuntime, function noopIncludeCallback() {}, true);
+      return output.getChannel('__text__').finalSnapshot();
+    }
+
+    return new Promise((resolve, reject) => {
+      const includeCallback = (err, result) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve(result);
+      };
+      this.rootRenderFunc(this.env, context, globalRuntime, includeCallback, true);
+    }).catch((err) => {
+      throw new Error(err && err.message ? err.message : err, { cause: err });
+    });
   }
 
   _getCompiledBlocks() {

@@ -673,6 +673,7 @@ class CompilerAsync extends CompilerBaseAsync {
     this._emitRootBufferSetup(node);
     this._compileChildren(node, null);
     this._emitRootResult(node);
+    this.emit.line(`return ${this.buffer.currentBuffer};`);
   }
 
   _compileParticipantAsyncRootBody(node) {

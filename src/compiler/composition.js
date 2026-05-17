@@ -1,5 +1,4 @@
 import * as nodes from '../language/nodes.js';
-import {CompileBuffer} from './buffer.js';
 
 class CompileComposition {
   constructor(compiler) {
@@ -251,8 +250,7 @@ class CompileComposition {
       const templateNameVar = this.compiler._tmpid();
       const includeVarsVar = this.compiler._tmpid();
       const includeContextVar = this.compiler._tmpid();
-      const includeTextPromise = this.compiler._tmpid();
-      const includeTextChannelName = CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHANNEL;
+      const includeTextValue = this.compiler._tmpid();
 
       this.emit(`let ${templateNameVar} = `);
       this.compiler.compileExpression(node.template, null, node.template, true);
@@ -265,10 +263,9 @@ class CompileComposition {
 
       this.emit.line(`const ${templateVar}_resolved = await runtime.resolveSingle(${templateVar});`);
       this.emit.line(`${templateVar}_resolved.compile();`);
-      this.emit.line(`const composed = ${templateVar}_resolved.renderForComposition(${includeContextVar}, cb, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'});`);
-      this.emit.line(`let ${includeTextPromise} = composed.getChannel("${includeTextChannelName}").finalSnapshot();`);
-      this.emit.line(`${this.compiler.buffer.currentBuffer}.addCommand(new runtime.TextCommand({ channelName: "${this.compiler.buffer.currentTextChannelName}", args: [${includeTextPromise}], pos: {lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0}} }), "${this.compiler.buffer.currentTextChannelName}");`);
-      this.compiler.buffer.emitLimitedLoopCompletion(includeTextPromise, node);
+      this.emit.line(`let ${includeTextValue} = ${templateVar}_resolved.renderIncludeText(${includeContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'});`);
+      this.emit.line(`${this.compiler.buffer.currentBuffer}.addCommand(new runtime.TextCommand({ channelName: "${this.compiler.buffer.currentTextChannelName}", args: [${includeTextValue}], pos: {lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0}} }), "${this.compiler.buffer.currentTextChannelName}");`);
+      this.compiler.buffer.emitLimitedLoopCompletion(includeTextValue, node);
     });
   }
 

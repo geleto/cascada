@@ -1610,6 +1610,165 @@ describe('Inheritance rebuild', function () {
     });
   });
 
+  describe('include participant render', function () {
+    it('keeps plain template includes on the ordinary include path', async function () {
+      const loader = new StringLoader();
+      const localEnv = new AsyncEnvironment(loader);
+      loader.addTemplate('plain.njk', 'plain');
+      loader.addTemplate('main.njk', 'before [{% include "plain.njk" %}] after');
+
+      expect(await localEnv.renderTemplate('main.njk', { name: 'Ada' })).to.be('before [plain] after');
+    });
+
+    it('renders an included inheritance participant through its constructor chain', async function () {
+      const loader = new StringLoader();
+      const localEnv = new AsyncEnvironment(loader);
+      loader.addTemplate('base.njk', 'base({% block body %}base-body{% endblock %})');
+      loader.addTemplate('child.njk', '{% extends "base.njk" %}{% block body %}child-body{% endblock %}');
+      loader.addTemplate('main.njk', 'before [{% include "child.njk" %}] after');
+
+      expect(await localEnv.renderTemplate('main.njk', {})).to.be('before [base(child-body)] after');
+    });
+
+    it('preserves source-order output around an async included participant', async function () {
+      const loader = new StringLoader();
+      const localEnv = new AsyncEnvironment(loader);
+      localEnv.addGlobal('slow', (value) => new Promise((resolve) => setTimeout(() => resolve(value), 10)));
+      loader.addTemplate('base.njk', 'base({% block body %}base-body{% endblock %})');
+      loader.addTemplate('child.njk', '{% extends "base.njk" %}{% block body %}{{ slow("child-body") }}{% endblock %}');
+      loader.addTemplate('main.njk', 'before [{% include "child.njk" %}] after');
+
+      expect(await localEnv.renderTemplate('main.njk', {})).to.be('before [base(child-body)] after');
+    });
+
+    it('uses include payload rules for dynamic participant parent selection', async function () {
+      const loader = new StringLoader();
+      const localEnv = new AsyncEnvironment(loader);
+      loader.addTemplate('base-a.njk', 'A({% block body %}base{% endblock %})');
+      loader.addTemplate('base-b.njk', 'B({% block body %}base{% endblock %})');
+      loader.addTemplate('child.njk', '{% extends parentName %}{% block body %}child{% endblock %}');
+      loader.addTemplate('main.njk', '{% include "child.njk" with { parentName: "base-b.njk" } %}');
+
+      expect(await localEnv.renderTemplate('main.njk', {})).to.be('B(child)');
+    });
+
+    it('preserves include-site context for participant load failures', async function () {
+      const loader = new StringLoader();
+      const localEnv = new AsyncEnvironment(loader);
+      loader.addTemplate('child.njk', '{% extends "missing-parent.njk" %}{% block body %}child{% endblock %}');
+      loader.addTemplate('main.njk', [
+        'before',
+        '{% include "child.njk" %}'
+      ].join('\n'));
+
+      try {
+        await localEnv.renderTemplate('main.njk', {});
+        expect().fail('Expected include participant load failure');
+      } catch (error) {
+        expect(error.message).to.contain('(main.njk)');
+        expect(error.message).to.contain('missing-parent.njk');
+      }
+    });
+
+    it('preserves include-site context for participant constructor failures', async function () {
+      const loader = new StringLoader();
+      const localEnv = new AsyncEnvironment(loader);
+      const failure = new Error('constructor boom');
+      localEnv.addGlobal('explode', () => Promise.reject(failure));
+      loader.addTemplate('child.njk', '{% set this.value = explode() %}{{ this.value }}');
+      loader.addTemplate('main.njk', [
+        'before',
+        '{% include "child.njk" %}'
+      ].join('\n'));
+
+      try {
+        await localEnv.renderTemplate('main.njk', {});
+        expect().fail('Expected include participant constructor failure');
+      } catch (error) {
+        expect(error.message).to.contain('(main.njk)');
+        expect(error.message).to.contain('constructor boom');
+      }
+    });
+
+    it('waits for participant include completion inside limited loops', async function () {
+      const loader = new StringLoader();
+      const localEnv = new AsyncEnvironment(loader);
+      const tracker = { current: 0, max: 0 };
+      localEnv.addGlobal('mark', (value) => {
+        tracker.current++;
+        tracker.max = Math.max(tracker.max, tracker.current);
+        return new Promise((resolve) => {
+          setTimeout(() => {
+            tracker.current--;
+            resolve(value);
+          }, value === 'A' ? 20 : 5);
+        });
+      });
+      loader.addTemplate('child.njk', '{% set this.value = mark(value) %}{{ this.value }}');
+      loader.addTemplate('main.njk', '{% for value in values of 1 %}[{% include "child.njk" with { value: value } %}]{% endfor %}');
+
+      expect(await localEnv.renderTemplate('main.njk', { values: ['A', 'B'] })).to.be('[A][B]');
+      expect(tracker.max).to.be(1);
+    });
+
+    it('does not share included participant instance state across include sites', async function () {
+      const loader = new StringLoader();
+      const localEnv = new AsyncEnvironment(loader);
+      loader.addTemplate('child.njk', [
+        '{% if this.count %}',
+        '{% set this.count = this.count + 1 %}',
+        '{% else %}',
+        '{% set this.count = 1 %}',
+        '{% endif %}',
+        '{{ this.count }}'
+      ].join(''));
+      loader.addTemplate('main.njk', '{% include "child.njk" %}|{% include "child.njk" %}');
+
+      expect(await localEnv.renderTemplate('main.njk', {})).to.be('1|1');
+    });
+
+    it('does not expose included participants as caller-side component bindings', async function () {
+      const loader = new StringLoader();
+      const localEnv = new AsyncEnvironment(loader);
+      loader.addTemplate('child.njk', '{% set this.theme = "dark" %}{{ this.theme }}');
+      loader.addTemplate('main.njk', '{% include "child.njk" %}|{{ child is defined }}|{{ child.theme }}');
+
+      expect(await localEnv.renderTemplate('main.njk', {})).to.be('dark|false|');
+    });
+
+    it('does not expose included participant methods through a caller-side name', async function () {
+      const loader = new StringLoader();
+      const localEnv = new AsyncEnvironment(loader);
+      loader.addTemplate('child.njk', '{% set this.theme = "dark" %}{{ this.theme }}');
+      loader.addTemplate('main.njk', '{% include "child.njk" %}|{{ child.build() }}');
+
+      try {
+        await localEnv.renderTemplate('main.njk', {});
+        expect().fail('Expected missing include component binding failure');
+      } catch (error) {
+        expect(error.message).to.contain('(main.njk)');
+        expect(error.message).to.contain('child["build"]');
+      }
+    });
+
+    it('does not share nested included participant instance state', async function () {
+      const loader = new StringLoader();
+      const localEnv = new AsyncEnvironment(loader);
+      loader.addTemplate('child.njk', [
+        '{% if this.count %}',
+        '{% set this.count = this.count + 1 %}',
+        '{% else %}',
+        '{% set this.count = 1 %}',
+        '{% endif %}',
+        '{{ this.count }}'
+      ].join(''));
+      loader.addTemplate('wrapper.njk', '[{% include "child.njk" %}]');
+      loader.addTemplate('main.njk', '{% include "wrapper.njk" %}|{% include "wrapper.njk" %}');
+
+      expect(await localEnv.renderTemplate('main.njk', {})).to.be('[1]|[1]');
+    });
+  });
+
   describe('analysis and validation', function () {
     it('lets inherited methods and template blocks read render context by default', function () {
       const scriptEntries = analyzeCallableEntries('method title()\n  return siteName\nendmethod\nreturn this.title()', { scriptMode: true });

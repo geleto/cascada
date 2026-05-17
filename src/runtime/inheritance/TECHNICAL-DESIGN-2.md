@@ -1909,9 +1909,13 @@ Tests:
   selected constructor chain and inserts the final text at the include site
 - include of an extending template preserves source-order output around the
   include tag
+- include of an extending template inside a limited-concurrency loop waits for
+  include completion before the loop slot is released
 - include of a dynamic-extending template resolves parent selection with the
   include context/payload rules
 - include load/finalization failures preserve include-site source context
+- include execution failures from the participant constructor/render path
+  preserve include-site source context
 - included inheritance participants do not expose component bindings, component
   method calls, or caller-side shared observation
 - nested includes of inheritance participants do not share instance state unless
@@ -1958,6 +1962,9 @@ Goal:
 - consider renaming `withComponentInstance` if a clearer name emerges during
   cleanup; the current helper both resolves a promise-backed component
   side-channel target and caches the resolved instance
+- replace the include participant callback-to-promise bridge with a cleaner
+  promise-returning participant include/root API if that can preserve
+  include-site error context without the current message-only bridge error
 - replace constructor-emitted shared default claims with finalized-schema-driven
   default initialization if that can be done without changing source-order
   semantics
