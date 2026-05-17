@@ -1,45 +1,77 @@
 # Cascada Implementation Architecture
 
-Reference guide for compiler internals, runtime mechanics, and chain architecture. Read this when modifying `src/compiler/`, adding chain types, changing async boundary mechanics, or debugging unexpected runtime behavior. For most tasks — adding data methods, writing tests, fixing script-level bugs — the Overview, Glossary, and Golden Rules in `AGENTS.md` are sufficient.
+Reference guide for compiler internals, runtime mechanics, and chain architecture. For most tasks — adding data methods, writing tests, fixing script-level bugs — the Overview, Glossary, and Golden Rules in `AGENTS.md` are sufficient.
+
+| Task | Go to |
+|---|---|
+| New compiler statement or expression | Compile-to-Runtime Pipeline · Async Boundary Rules |
+| New chain type | Chain Types · Commands And Chains · Compile-to-Runtime Pipeline |
+| Linked-chain / chain-visibility bug | Chain Scope And Visibility · Failure Modes |
+| Async boundary type selection | Async Boundary Rules |
+| Value or poison issue | Value Resolution Rules · Error Handling |
+| Output / rendering issue | Final Output Materialization · Value Resolution Rules |
+| `!` serialization bug | Sequential Operations |
+| Unknown symptom | Failure Modes · Debugging |
 
 ---
 
-## Async Execution Model
+## Conceptual Model: Cascading Chain Network
 
-Cascada's async execution has two phases:
+Cascada implements the **Cascading Chain Network** — a concurrency model for imperative programming languages. The core idea: every mutable variable is a chain; all values are immutable and may be promises; and the execution flow orchestrates them synchronously without blocking.
 
-1. **Enqueue phase** — Compiled code runs synchronously. Instead of mutating outputs directly, it creates `CommandBuffer` objects and enqueues command objects in source order. Async boundaries insert reserved child-buffer slots into the parent's command stream before any async work begins.
+-   **Chain** — Each mutable variable is a chain. A chain holds mutable state and its own command iterator (`BufferIterator`). Its commands are stored in command arrays within the command buffer tree. `data`, `text`, and `var` chains are the user-facing types; the runtime can have additional internal chains.
 
-2. **Apply phase** — The buffer iterator (`buffer-iterator.js`) walks the command-buffer tree depth-first in source order. When it reaches an unfilled child-buffer slot, it waits. When the async work completes and fills the slot, the iterator resumes and applies those commands next.
+-   **Command array** (`CommandBuffer.arrays[chainName]`) — The ordered sequence of commands for one chain within a single command buffer. Commands are added synchronously by the execution flow.
 
-The two phases interleave: enqueue work for one boundary may still be running while the iterator is already applying earlier commands. This is safe because each child buffer reserves its slot synchronously before any async work starts.
+-   **Command buffer** (`CommandBuffer`) — Scope container holding one command array per active chain, plus child command buffers for async boundaries. Forms the nodes of the command buffer tree.
+
+-   **Mutation command** (`MutatingCommand`) — Modifies the chain's state. Strictly ordered relative to other mutations on the same chain. Takes input values and may return a value.
+
+-   **Observation command** (`ObservableCommand`) — Queries the chain's state or returns a snapshot. Ordered relative to mutations (cannot cross a mutation boundary), but runs concurrently with other observations that fall between the same two mutations. Always returns a value.
+
+-   **Value** — Cascada value flow treats values as immutable; the exception is runtime-owned lazy containers (`RESOLVE_MARKER` objects/arrays) which resolve and mutate in place internally. Any value can be a promise — this applies everywhere: command inputs, command outputs, pure-function arguments and results. Promises are awaited at semantic consumption boundaries; marker-backed containers start background resolution immediately when created, so consumers await an already-running marker.
+
+-   **Execution flow** — The compiled Cascada program: the imperative orchestration layer. Synchronously adds commands to chains, evaluates pure expressions (values outside chains — no state, no side effects), and drives conditions, loops, and other control flow. Chains run in parallel, interconnected through values that flow as resolved values or promises interchangeably. Because commands are added synchronously, `await` is not used in the main flow — except at async boundaries.
+
+-   **Async boundary** — A point where the execution flow must wait for a value before it can proceed (e.g., `if` conditions, loop iteration, `for` iterables). Handled inside its own async function so the surrounding flow remains unblocked. At each boundary a child `CommandBuffer` is inserted into the parent alongside ordinary commands; the child's command arrays are filled asynchronously once the boundary resolves. Together these form the **command buffer tree**.
+
+-   **Command iterator** (`BufferIterator`) — Each chain has its own command iterator that walks the command buffer tree depth-first, independently of the execution flow. Mutations execute strictly in sequence; observations between the same two mutations run concurrently. When the iterator reaches a child buffer slot, it waits until the child's mutations complete. The execution flow and command iterator run concurrently — the iterator may already be applying earlier commands while the flow is still filling later child buffers. This is safe because each child buffer reserves its slot synchronously before any async work begins.
 
 ---
 
 ## Compile-to-Runtime Pipeline
 
-**Goal:** Prevent race conditions; ensure sequential equivalence when concurrent blocks read/write same outer-scope variables.
-
-**Mechanism:** Compile-time chain analysis + command buffer tree system.
+Prevents race conditions and ensures sequential equivalence when concurrent blocks read/write the same outer-scope variables, via compile-time chain analysis and the command buffer tree.
 
 -   **Compile-time analysis** (`src/compiler/analysis.js`): Annotates AST nodes with declaration/use/mutation metadata. Important fields include `declaredChains`, `usedChains`, `mutatedChains`, and `sequenceLocks`.
 -   **Buffer code generation** (`src/compiler/buffer.js`, `src/compiler/emit.js`): Emits command creation, linked-chain metadata, child buffer creation, and async boundary wiring.
--   **Command Buffer Tree** (`src/runtime/command-buffer.js`): Runtime command buffers hold source-ordered commands and child buffers. Linked chains make values visible where the compiler determined they are used.
--   **Ordered Application via Buffer Iterator** (`src/runtime/buffer-iterator.js`): A depth-first iterator walks the buffer tree and applies commands in source-code order. It waits on unfilled slots (child buffers not yet finished) before advancing.
 -   **Implicit Variable Synchronization**: Chain observations and `resolveAll`/`resolveSingle` await pending values only when consumed. Data dependencies serialize naturally without explicit locks.
--   **Linked chains**: When the compiler creates a child buffer, `analysis.js` computes which parent chains the child body reads or mutates (`usedChains`, `mutatedChains`). `emit.js`/`buffer.js` pass these as `linkedChains` to `new CommandBuffer(...)`. The constructor installs links so the child buffer routes commands to the correct parent chain lanes. If a chain is not linked, fix analysis/emit rather than adding runtime fallbacks.
+-   **Linked chains**: `analysis.js` derives `linkedChains` and `linkedMutatedChains` from the boundary's chain footprint (see Chain Scope And Visibility). `emit.js`/`buffer.js` pass these to `new CommandBuffer(...)` and the boundary functions so the child buffer routes commands to the correct parent lanes. Pure-observation boundaries set `createsLinkedChildBuffer = false` and drop both link sets. If a chain is not linked, fix analysis/emit rather than adding runtime fallbacks.
+
+---
+
+## Chain Scope And Visibility
+
+A chain is visible in a scope only if it is declared there or linked from a parent. Visibility is fixed at compile time — there is no runtime fallback lookup.
+
+-   `declaredChains` — chains introduced at this scope level; not linked to the parent even if the parent has the same name.
+-   `usedChains` / `mutatedChains` — full read and write footprint of a boundary's body, computed by `analysis.js`.
+-   `linkedChains` — parent-visible chains the child can observe: `usedChains` minus locally declared.
+-   `linkedMutatedChains` — parent-visible chains the child can mutate: `mutatedChains` minus locally declared.
+
+If a child cannot see a chain, fix `usedChains`/`mutatedChains` in `analysis.js` or the `linkedChainNames`/`linkedMutatedChainNames` emit path. Do not add runtime lookup fallbacks.
+
+Function, macro, and method bodies create scope boundaries where outer chains are not automatically visible; their linked sets must cover every chain the body touches.
 
 ---
 
 ## Commands And Chains
 
-Commands are split by chain under `src/runtime/chains/`. A command is enqueued in the current `CommandBuffer` and applied in source order. Observation commands return promises; mutating commands change chain state. Look up the relevant chain file instead of adding cross-chain special cases.
+Commands are split by chain under `src/runtime/chains/`. A command is enqueued in the current command buffer's command array and applied in source order. Observation commands return promises; mutation commands change chain state. Look up the relevant chain file instead of adding cross-chain special cases.
 
 Use the right observation primitive. `SnapshotCommand` inspects the chain and turns poison into a rejected observation. `RawSnapshotCommand` captures the raw chain target without poison inspection — used where poisoned leaves may be replaced by an incoming write (e.g., `var`-chain `set_path` overwrites). To wait for a whole chain result, prefer `chain.finalSnapshot()` over enqueueing a snapshot command unless source-position observation is specifically required.
 
 Always add commands through the compiler's active buffer expression: `compiler.buffer.currentBuffer` (often emitted as the runtime variable `currentBuffer` inside boundary callbacks, or `output` at the root). Never skip to a parent/root/producer buffer, and never call a chain directly to "just apply" a command. If the current buffer cannot see the needed chain, fix analysis/linking/current-buffer selection rather than bypassing the buffer tree.
-
-Chains come into existence via `runtime.declareBufferChain(buffer, name, type, context, null)`, emitted at codegen time. This call creates the `Chain` object, registers it in `_chains`, and binds its iterator. Any new chain type or new declaration form must go through this call.
 
 `WaitCurrentCommand` (`src/runtime/chains/wait-commands.js`) is a timing-only sync point: it resolves when the iterator reaches this source-position slot on a specific chain lane, carrying no snapshot or error semantics. Used by concurrency-limited loops to enforce "slot N must finish before N+1 begins" across async iterations.
 
@@ -49,32 +81,49 @@ Two distinct error-injection commands exist in `src/runtime/chains/error.js`:
 
 ---
 
-## Command Buffer Mental Model
+## Chain Types
 
-Command-buffer add helpers return the command's result promise immediately; that promise resolves or rejects only when the buffer iterator reaches and applies the command. This means observation commands (snapshots, error reads) return a pending promise that downstream code can `await` — the actual chain state is read only when the iterator reaches that source position.
+| Type | Class | `snapshot()` | Primary commands | Declared by |
+|---|---|---|---|---|
+| `data` | `DataChain` | Assembled object | `DataCommand` (method dispatch) | `data name` in script; `output` chain in templates |
+| `text` | `TextChain` | Concatenated string | `TextCommand` | `text name` in script; template write chain |
+| `var` | `VarChain` | Current value (sync fast-path) | `VarCommand` | `var x = …` / `{% set x = … %}` |
+| `sequence` | `SequenceChain` | — | `SequenceCallCommand`, `SequenceGetCommand` | `!`-path compile pass |
+| `sequential_path` | `SequentialPathChain` | — | `SequentialPathWriteCommand`, `SequentialPathReadCommand` | `!`-path state / poison tracking |
+
+All chains are created via `runtime.declareBufferChain(buffer, name, type, context, initializer)`. New chain types must subclass `Chain` (`base.js`), register a factory in `createChain` (`index.js`), and implement `_applyCommand` and `finalSnapshot`.
+
+---
+
+## Command Buffer Mechanics
+
+Command-buffer add helpers return `cmd.promise` immediately. For observation commands and result-producing mutation commands this is a promise that resolves or rejects when the command iterator reaches and applies the command — the actual chain state is read only at that source position. Plain mutation commands carry no result promise; their add call returns `undefined`.
 
 "Finished" has three distinct lifecycle stages — be explicit about which you are touching:
 -   **Accept-closed** (`markChainFinished()` / `markFinished()`): the buffer stops accepting new commands on a lane or all lanes.
 -   **Iterator-exited**: the iterator has applied all commands in the relevant lane and moved on.
 -   **Materialized** (`chain.finalSnapshot()`): waits for iterator completion then returns the fully assembled value.
 
-Observable commands are source-ordered reads, not free side chains. The buffer iterator waits for all pending observable command promises before applying later mutating commands on the same lane. `SnapshotCommand` sets `isUniversalObservationCommand = true`, which blocks mutating commands on *any* lane until it resolves; `RawSnapshotCommand` only blocks its own lane.
+Observation commands are source-ordered reads, not free side chains. The command iterator tracks pending observation promises in `_pendingObservables` and waits for them before applying later mutation commands on the same chain. Both `SnapshotCommand` and `RawSnapshotCommand` block their own chain's mutations; `isUniversalObservationCommand` is a marker used by component shared-observation validation, not for global cross-lane blocking.
 
 ---
 
-## Async Boundary Mental Model
+## Async Boundary Rules
 
 Prefer creating the command-buffer shape synchronously. Plain async values usually do not need a child buffer: enqueue the command immediately with promise arguments, and let the target chain resolve those arguments when source order reaches the command.
 
-Child buffers usually represent an async boundary where the future command shape is unknown until a value resolves. Common cases are async conditions (`if`/`switch`), loops whose iterable or continuation is async (`for`/`each`/`while`), includes/imports/extends or composition loading, caller/macro scheduling, and other constructs where resolving a value decides which commands exist or how many commands are produced.
+Child buffers represent an async boundary where the future command shape is unknown until a value resolves. Common cases are async conditions (`if`/`switch`), loops whose iterable or continuation is async (`for`/`each`/`while`), includes/imports/extends or composition loading, caller/macro scheduling, and other constructs where resolving a value decides which commands exist or how many commands are produced. Do not delay adding an ordinary command merely because one of its arguments is a promise — the parent preserves the source-order slot and the iterator waits only when it reaches that slot.
 
-Once a child buffer is inserted into the parent buffer, its contents may arrive later. That is expected: the parent preserves the source-order slot, and the iterator waits only when it reaches that slot. Do not delay adding an ordinary command merely because one of its arguments is a promise.
+Four boundary primitives exist in `src/runtime/async-boundaries.js`. All except `runRenderBoundary` take `(parentBuffer, linkedChainNames, linkedMutatedChainNames, ...)` as their leading arguments.
 
-Two distinct boundary primitives exist in `src/compiler/boundaries.js`:
--   **`runControlFlowBoundary`** — statement-level. Errors report via `cb`; no return value into expression context. Used for `if`, `for`, `each`, includes, macros, and similar statements.
--   **`runValueBoundary`** — expression-level. Returns a value or rejects with `PoisonError` into the expression consumer. Used when an async value must resolve before an expression can proceed.
+| Function | Level | Error path | When to use |
+|---|---|---|---|
+| `runControlFlowBoundary` | Statement | `cb(err)` | `if`, `for`, `each`, includes, macros |
+| `runWaitedControlFlowBoundary` | Statement | `cb(err)` | Concurrency-limited loops; `waitedChainName` enforces slot-N-before-N+1 ordering |
+| `runRenderBoundary` | Statement | `cb(err)` | Render-scope boundaries with no parent chain links |
+| `runValueBoundary` | Expression | Preserves `asyncFn` rejection | Async value must resolve before expression continues; generated code wraps consumption errors as `PoisonError` |
 
-Using the wrong type causes either silently swallowed errors or broken expression evaluation.
+Using the wrong primitive causes silently swallowed errors or broken expression evaluation.
 
 ---
 
@@ -88,22 +137,24 @@ Using the wrong type causes either silently swallowed errors or broken expressio
 
 Everything inside Cascada can be either a plain value or a promise for that value. Runtime code should preserve that shape unless it is at a real consumption boundary.
 
-Common runtime value shapes:
--   **Plain JS values**: strings, numbers, objects, arrays, functions, chain facades, etc.
--   **Promises / `RuntimePromise`**: deferred values that flow through expressions, command arguments, chains, and variables until consumed. `RuntimePromise` wraps a native Promise with source-location context (lineno/colno) so that if the promise rejects after flowing far from its creation site, the error still carries the original source location. It remains promise-like so Cascada's value-shape checks continue to work.
--   **Lazy objects/arrays with `RESOLVE_MARKER`**: `createObject()` / `createArray()` mark containers whose properties/elements may be async — emitted when an object/array literal expression contains async values (e.g., `{ a: asyncFn(), b: other() }`). The object remains usable synchronously; when consumed, its marker promise resolves children, mutates the container in place, and then removes the marker.
--   **PoisonedValue**: a thenable error container. It is cheap to detect synchronously with `isPoison(value)` and rejects as `PoisonError` if awaited.
--   **Resolved-value wrappers**: internal thenable fast-path wrappers from `makeResolvedValue()`. They are cheap to detect synchronously with `isResolvedValue(value)` and signal "already resolved" without forcing a real Promise.
+Runtime value shapes:
+-   **Promises / `RuntimePromise`**: deferred values flowing through expressions, command arguments, chains, and variables until consumed. `RuntimePromise` wraps a native Promise with source-location context so that late rejections still carry the original source position.
+-   **Lazy objects/arrays with `RESOLVE_MARKER`**: `createObject()` / `createArray()` mark containers whose properties/elements may be async. Background resolution starts immediately when the factory is called; consumers await the already-running marker promise. A plain `await value` will not finalize their async properties.
+-   **PoisonedValue**: a thenable error container. Detect synchronously with `isPoison(value)` before `await`; it rejects as `PoisonError` if awaited.
 
-Use the runtime `resolve*` helpers (`resolveAll`, `resolveSingle`, `resolveDuo`, `resolveObjectProperties`, etc.) at consumption boundaries instead of direct `await`. They know all Cascada value shapes and preserve fast paths. This is especially important for `RESOLVE_MARKER` objects/arrays: unlike thenable fast paths such as resolved-value wrappers and `PoisonedValue`, a plain `await value` will not finalize their async properties.
+Use the runtime `resolve*` helpers (`resolveAll`, `resolveSingle`, `resolveDuo`, `resolveObjectProperties`, etc.) at consumption boundaries for arbitrary Cascada values instead of direct `await` — they know all value shapes and preserve fast paths. Direct `await` and `Promise.resolve` are fine for known internal promises, iterator cleanup, and already-classified native promises. Do not use `Promise.resolve` as a reflex on Cascada values; it collapses thenables and breaks the value-shape system.
 
-Avoid normalizing Cascada values with `Promise.resolve(value)` as a reflex. Cascada code is designed to carry direct values, native promises, and custom thenables without collapsing them. Use `Promise.resolve` only when you deliberately need native Promise semantics; otherwise preserve the value shape or use the runtime `resolve*` helpers at the proper consumption boundary.
+Avoid resolving or awaiting values early. Resolution belongs at true async boundaries and final consumption (function calls, condition checks, iteration, output materialization). Command arguments must be enqueued as-is and resolved only by the command/chain apply path.
 
-Avoid resolving or awaiting values early. Resolution is allowed at true async boundaries, and when preparing values for final consumption such as function calls, expression evaluation, condition checks, iteration, or final output materialization.
+---
 
-Command arguments must be resolved only by the command/chain apply path. If a command argument is a promise, enqueue it as-is; the chain applies source-order semantics and resolves arguments when the command is actually applied.
+## Final Output Materialization
 
-When a value depends on prerequisite async work before it can be read, do not `await` that prerequisite in the main execution flow unless you are at a real async boundary. For example, do not write `await compositionReady; return readSharedValue();`. Instead, return a single promise that represents the whole operation, either with `.then(...)` chaining or by wrapping the wait/read sequence in a small async function.
+-   **`chain.finalSnapshot()`** — waits for the command iterator to finish, then assembles and returns the chain value. Call only after the buffer is fully written; calling early will hang.
+-   **`normalizeFinalPromise(value)`** (`resolve.js`) — converts a snapshot to a native Promise; `PoisonedValue` becomes a rejected Promise with `PoisonError`.
+-   **Template rendering** — each written value passes through `safe-output.js`: autoescape, array joining, and poison detection. The final text is assembled from the `text` / `output` chain.
+-   **Script return** — the value of the explicit `return` expression; templates return the fully rendered text string.
+-   **Public APIs** (`renderScriptString`, `renderTemplateString`) — materialize all chains via `finalSnapshot()` and surface chain poison as a rejected render promise.
 
 ---
 
@@ -122,19 +173,19 @@ When a value depends on prerequisite async work before it can be read, do not `a
 
 Cascada treats errors as data ("Poison") flowing through the system.
 
-*   **Native JS Call Suppression:** Native JS/context calls that receive Poison input do not execute; they immediately return new Poison combining input errors. Cascada-level functions, macros, methods, and explicit call constructs may receive poison/error values so they can inspect or repair them.
-*   **Contamination:** Any variable/output that would've been modified by a skipped operation/block is automatically Poisoned.
-*   **Value Consumption Errors Become Poison:** When Cascada consumes a value (via `resolve*`, command apply, function-call argument preparation, expression evaluation, condition checks, iteration, or final materialization), rejections/poison are handled as Cascada poison. If ordinary Cascada control flow throws during normal execution, treat it as a real bug; do not normalize it into poison just to continue.
-*   **Returned Chain Poison:** If a chain returned by a script, function, macro, call, method, or similar Cascada construct contains poison, return that poison through Cascada value flow. Public render APIs such as `renderScriptString` materialize that as a rejected promise.
-*   **Fatal Runtime Errors:** `RuntimeFatalError` and broken runtime contracts are real failures, not poison data. Async callback-style boundaries that have no awaiting caller should report such failures through `cb(err)` with context.
-*   **Context Function Warning:** **DO NOT** pass Poison to context functions (e.g., logging). The function never executes. Use `is error` to check first.
+-   **Native JS Call Suppression:** Native JS/context calls that receive Poison input do not execute; they immediately return new Poison combining input errors. Cascada-level functions, macros, methods, and explicit call constructs may receive poison/error values so they can inspect or repair them.
+-   **Contamination:** Any variable/output that would've been modified by a skipped operation/block is automatically Poisoned.
+-   **Value Consumption Errors Become Poison:** When Cascada consumes a value (via `resolve*`, command apply, function-call argument preparation, expression evaluation, condition checks, iteration, or final materialization), rejections/poison are handled as Cascada poison. If ordinary Cascada control flow throws during normal execution, treat it as a real bug; do not normalize it into poison just to continue.
+-   **Returned Chain Poison:** If a chain returned by a script, function, macro, call, method, or similar Cascada construct contains poison, return that poison through Cascada value flow. Public render APIs such as `renderScriptString` materialize that as a rejected promise.
+-   **Fatal Runtime Errors:** `RuntimeFatalError` and broken runtime contracts are real failures, not poison data. Async callback-style boundaries that have no awaiting caller should report such failures through `cb(err)` with context.
+-   **Context Function Warning:** **DO NOT** pass Poison to context functions (e.g., logging). The function never executes. Use `is error` to check first.
 
 **Propagation Logic by Type:**
-*   **Expressions:** `1 + error` → `error`.
-*   **Function Calls:** `myFunc(error)` → Function body skipped; returns `error`.
-*   **Loops:** `for x in error` → Loop body skipped; all variables modified within poisoned.
-*   **Conditionals:** `if error` → Both branches skipped; all variables modified within poisoned.
-*   **Sequential (`!`):** `db!.fail()` → Subsequent `db!.op()` calls skipped, return error.
+-   **Expressions:** `1 + error` → `error`.
+-   **Function Calls:** `myFunc(error)` → Function body skipped; returns `error`.
+-   **Loops:** `for x in error` → Loop body skipped; all variables modified within poisoned.
+-   **Conditionals:** `if error` → Both branches skipped; all variables modified within poisoned.
+-   **Sequential (`!`):** `db!.fail()` → Subsequent `db!.op()` calls skipped, return error.
 
 ---
 
@@ -142,5 +193,30 @@ Cascada treats errors as data ("Poison") flowing through the system.
 
 -   **Sequence Keys**: Each static `!` path (e.g., `account!.deposit`) maps to a named sequence chain key.
 -   **Compiler Pass** (`src/compiler/sequential.js` + `src/compiler/analysis.js`): `collectSequenceLocks()` identifies `!` markers, validates static paths, and records `sequenceLocks` on analysis metadata.
--   **Runtime Commands**: `SequenceCallCommand` (for `db!.method()` calls) and `SequenceGetCommand` (for `db!.property` reads) each carry a deferred-result promise. The buffer iterator applies them in source order; each awaits the prior result for that sequence chain before executing.
+-   **Runtime Commands**: `SequenceCallCommand` (for `db!.method()` calls) and `SequenceGetCommand` (for `db!.property` reads) each carry a deferred-result promise. The command iterator applies them in source order; each awaits the prior result for that sequence chain before executing.
 -   **Poison propagation**: If a `!`-call fails, `SequentialPathWriteCommand` marks the path poisoned. All subsequent commands on that path see the poison via `_getSequentialPathPoisonErrors()` and skip execution, rejecting their deferred promises.
+
+---
+
+## Failure Modes
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Child can't see parent chain value | Missing `linkedChains` | Fix `usedChains` in `analysis.js` or linked-chain emit |
+| Child mutation not reflected in parent | Missing `linkedMutatedChains` | Fix `mutatedChains` in `analysis.js` or emit |
+| Output order wrong or race condition | Command added to wrong buffer | Always use `currentBuffer`; never jump to parent/root |
+| Unhandled-rejection warning | Promise not handled before deferred consumption | Call `markPromiseHandled()` or stage as command argument immediately |
+| Poison silently swallowed | Wrong boundary primitive | Control-flow errors need `cb`; expression errors need `runValueBoundary` |
+| Final render hangs | Buffer or chain never finished | Ensure `markFinished()` / `markChainFinished()` is called on all paths |
+| `!` path not serializing | Sequence lock not recorded | Check `collectSequenceLocks()` in `sequential.js` |
+| Chain not found at runtime | `declareBufferChain()` not emitted | Emit chain declaration at codegen time |
+
+---
+
+## Debugging
+
+-   **Inspect generated JS** — call `script._compileSource()` or `template._compileSource()` on a compiled object to log or step through the emitted buffer/chain code.
+-   **Check analysis metadata** — `node._analysis.usedChains`, `.linkedChains`, `.mutatedChains`, etc. on a parsed AST node to verify chain footprints before they reach codegen.
+-   **Render hangs** — find the buffer or chain where `finished === false`; trace why `markFinished()` / `markChainFinished()` was not called on all code paths.
+-   **Unhandled rejection** — locate where the promise was created and verify it is either staged as a command argument or has `markPromiseHandled()` called before deferral.
+-   **Wrong output order** — trace which `CommandBuffer` `currentBuffer` points to at the emit site; commands added to the wrong buffer break source-order assembly.
