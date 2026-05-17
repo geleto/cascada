@@ -7,7 +7,7 @@ import {
   RepairReadCommand,
   SequentialPathWriteCommand,
   RepairWriteCommand,
-} from './chains/sequential-path.js';
+} from './commands/sequential-path.js';
 
 function withSequentialPathChain(currentBuffer, pathKey, errorContext, repair, isWrite, operation) {
   if (!currentBuffer) {

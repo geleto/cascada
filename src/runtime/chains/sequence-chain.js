@@ -1,93 +1,5 @@
-
-import {ChainMutatingResultCommand, ChainObservableCommand, runWithResolvedArguments} from './command-base.js';
 import {PoisonError, isPoison} from '../errors.js';
 import {Chain} from './base.js';
-
-class SequenceCallCommand extends ChainMutatingResultCommand {
-  constructor({ chainName, methodName, args = null, path = null, pos = null }) {
-    super({
-      chainName,
-      args: args || [],
-      pos
-    });
-    this.methodName = methodName || null;
-    this.path = path || null;
-  }
-
-  apply(chain) {
-    super.apply(chain);
-    return runWithResolvedArguments(this.arguments, this, chain, (resolvedArgs) => {
-      if (!chain) return undefined;
-      const args = Array.isArray(resolvedArgs) ? resolvedArgs : [];
-      const poisonErrors = this.extractPoisonFromArgs(args);
-      if (poisonErrors.length > 0) {
-        const err = new PoisonError(poisonErrors);
-        this.rejectResult(err);
-        throw err;
-      }
-
-      const execute = (sequenceTarget) => {
-        const target = resolvePath(sequenceTarget, this.path);
-        if (target === null || target === undefined) {
-          return this.settleResult(undefined);
-        }
-        const method = this.methodName ? target[this.methodName] : target;
-        if (typeof method !== 'function') {
-          return this.settleResult(undefined);
-        }
-        const result = method.apply(target, args);
-        return this.settleResult(result, { rethrow: true });
-      };
-
-      const sequenceTarget = chain._ensureSequenceTargetResolved ? chain._ensureSequenceTargetResolved() : chain._sequenceTarget;
-      if (sequenceTarget && typeof sequenceTarget.then === 'function') {
-        return this.settleResult(Promise.resolve(sequenceTarget).then(execute), { rethrow: true });
-      }
-      return execute(sequenceTarget);
-    });
-  }
-}
-
-// Reads a property from a sequence target in source order and resolves its result promise with the value. Observable — applied immediately without waiting for pending mutating commands.
-class SequenceGetCommand extends ChainObservableCommand {
-  constructor({ chainName, path = null, pos = null }) {
-    super({
-      chainName,
-      args: [],
-      pos
-    });
-    this.path = path || null;
-  }
-
-  apply(chain) {
-    if (!chain) return undefined;
-
-    const execute = (sequenceTarget) => {
-      const value = resolvePath(sequenceTarget, this.path);
-      return this.settleResult(value);
-    };
-
-    const sequenceTarget = chain._ensureSequenceTargetResolved ? chain._ensureSequenceTargetResolved() : chain._sequenceTarget;
-    if (sequenceTarget && typeof sequenceTarget.then === 'function') {
-      return this.settleResult(Promise.resolve(sequenceTarget).then(execute), { rethrow: true });
-    }
-    return execute(sequenceTarget);
-  }
-}
-
-function resolvePath(target, path) {
-  if (!Array.isArray(path) || path.length === 0) {
-    return target;
-  }
-  let current = target;
-  for (const segment of path) {
-    if (current === null || current === undefined) {
-      return undefined;
-    }
-    current = current[segment];
-  }
-  return current;
-}
 
 class SequenceObjectChain extends Chain {
   constructor(buffer, chainName, context, targetObject) {
@@ -135,31 +47,20 @@ class SequenceObjectChain extends Chain {
     return this._sequenceTargetReadyPromise;
   }
 
-
   _applyCommand(cmd) {
-
     if (!cmd) return;
 
     try {
-
       cmd.resolved = true;
 
       if (cmd.isObservable) {
-
         const result = cmd.apply(this);
-
         if (result && typeof result.then === 'function') {
-
           return Promise.resolve(result).catch((err) => {
-
             this._recordError(err, cmd);
-
           });
-
         }
-
         return result;
-
       }
 
       const sequenceTarget = this._ensureSequenceTargetResolved();
@@ -168,26 +69,16 @@ class SequenceObjectChain extends Chain {
         ? Promise.resolve(sequenceTarget).then(apply)
         : apply();
       if (result && typeof result.then === 'function') {
-
         return Promise.resolve(result).catch((err) => {
-
           this._recordError(err, cmd);
-
         });
-
       }
 
       return result;
-
     } catch (err) {
-
       this._recordError(err, cmd);
-
     }
-
   }
-
-
 
   _snapshotFromSequenceTarget(sequenceTarget) {
     if (!sequenceTarget) return sequenceTarget;
@@ -209,15 +100,10 @@ class SequenceObjectChain extends Chain {
       });
     }
     const target = this._getTarget();
-
     if (isPoison(target)) {
-
       throw new PoisonError(target.errors.slice());
-
     }
-
     return super._resolveSnapshotCommandResult();
-
   }
 
   _getCurrentResult() {
@@ -233,15 +119,10 @@ class SequenceObjectChain extends Chain {
       return sequenceTarget.snapshot();
     };
     const normalizeCapture = (captured) => {
-
       if (captured && typeof captured.then === 'function') {
-
         return Promise.resolve(captured);
-
       }
-
       return captured;
-
     };
 
     if (targetValue && typeof targetValue.then === 'function') {
@@ -284,13 +165,9 @@ class SequenceChain extends SequenceObjectChain {
       }
       const token = sequenceTarget.begin();
       if (token && typeof token.then === 'function') {
-
         return Promise.resolve(token).then((resolvedToken) => ({ active: true, token: resolvedToken }));
-
       }
-
       return { active: true, token };
-
     };
 
     if (targetValue && typeof targetValue.then === 'function') {
@@ -299,13 +176,9 @@ class SequenceChain extends SequenceObjectChain {
     return begin(targetValue);
   }
 
-
   commitTransaction(tx) {
-
     if (!tx || !tx.active) {
-
       return undefined;
-
     }
 
     const targetValue = this._ensureSequenceTargetResolved();
@@ -321,13 +194,9 @@ class SequenceChain extends SequenceObjectChain {
     return commit(targetValue);
   }
 
-
   rollbackTransaction(tx) {
-
     if (!tx || !tx.active) {
-
       return undefined;
-
     }
 
     const targetValue = this._ensureSequenceTargetResolved();
@@ -344,4 +213,4 @@ class SequenceChain extends SequenceObjectChain {
   }
 }
 
-export { SequenceObjectChain, SequenceChain, SequenceCallCommand, SequenceGetCommand };
+export {SequenceObjectChain, SequenceChain};

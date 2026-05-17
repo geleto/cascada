@@ -206,7 +206,7 @@ All technical claims verified:
 - `runtime.runWaitedControlFlowBoundary(parentBuffer, usedChains, context, cb, asyncFn, waitedChainName)` exists exactly as documented in `src/runtime/async-boundaries.js:51-62` ✓
 - All Key Files exist ✓
 - `finish()`, `getChain()`, `finalSnapshot()` all present ✓
-- `WaitResolveCommand` in `chains/wait-commands.js` ✓
+- `WaitResolveCommand` in `commands/wait.js` ✓
 - While loop `false`/`true` return (no STOP_WHILE sentinel) ✓
 - Nested loop propagation rules ✓
 - Error/poison behavior ✓

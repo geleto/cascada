@@ -1,11 +1,11 @@
 
 import {Chain, inspectTargetForErrors} from './base.js';
 import {applyChainInitializer, createChain} from '../../chain-types.js';
-import {TextChain} from './text.js';
-import {VarChain} from './var.js';
-import {SequentialPathChain} from './sequential-path.js';
-import {DataChain} from './data.js';
-import {SequenceChain} from './sequence.js';
+import {TextChain} from './text-chain.js';
+import {VarChain} from './var-chain.js';
+import {SequentialPathChain} from './sequential-path-chain.js';
+import {DataChain} from './data-chain.js';
+import {SequenceChain} from './sequence-chain.js';
 
 function declareBufferChain(buffer, chainName, chainType, context, initializer) {
   const targetBuffer = buffer;

@@ -37,14 +37,19 @@ Complete source and documentation file reference. The most critical files for da
 -   `src/runtime/loop.js` — Loop runtime helpers: `asyncAll` (parallel `for`) and `asyncEach` (sequential `each`).
 
 ### Runtime Chains
--   `src/runtime/chains/data.js` — `DataCommand`, custom data-method dispatch.
--   `src/runtime/chains/text.js` — Text chain and `TextCommand`.
--   `src/runtime/chains/var.js` — `VarCommand` — single-value variable chain.
--   `src/runtime/chains/sequence.js` — `SequenceCallCommand`, `SequenceGetCommand` — sequential `!` path execution.
--   `src/runtime/chains/sequential-path.js` — `SequentialPathReadCommand`, `SequentialPathWriteCommand`, repair commands.
--   `src/runtime/chains/observation.js` — `SnapshotCommand`, `RawSnapshotCommand`, `IsErrorCommand`, `GetErrorCommand`, `CaptureGuardStateCommand`, `RestoreGuardStateCommand`.
--   `src/runtime/chains/wait-commands.js` — `WaitCurrentCommand`, `WaitResolveCommand` — timing-only sync points.
--   `src/runtime/chains/error.js` — `ErrorCommand` (iterator throws), `TargetPoisonCommand` (writes poison into chain target).
+-   `src/runtime/chains/data-chain.js` — Data chain state and custom data-method dispatch.
+-   `src/runtime/chains/text-chain.js` — Text chain state.
+-   `src/runtime/chains/var-chain.js` — Single-value variable chain state.
+-   `src/runtime/chains/sequence-chain.js` — Sequence chain state for sequential `!` targets.
+-   `src/runtime/chains/sequential-path-chain.js` — Sequential-path poison/repair state.
+-   `src/runtime/commands/data.js` — `DataCommand`.
+-   `src/runtime/commands/text.js` — `TextCommand`.
+-   `src/runtime/commands/var.js` — `VarCommand`.
+-   `src/runtime/commands/sequence.js` — `SequenceCallCommand`, `SequenceGetCommand`.
+-   `src/runtime/commands/sequential-path.js` — `SequentialPathReadCommand`, `SequentialPathWriteCommand`, repair commands.
+-   `src/runtime/commands/observation.js` — `SnapshotCommand`, `RawSnapshotCommand`, `IsErrorCommand`, `GetErrorCommand`, `CaptureGuardStateCommand`, `RestoreGuardStateCommand`.
+-   `src/runtime/commands/wait.js` — `WaitCurrentCommand`, `WaitResolveCommand` — timing-only sync points.
+-   `src/runtime/commands/errors.js` — `ErrorCommand` (iterator throws), `TargetPoisonCommand` (writes poison into chain target).
 -   `src/runtime/chains/base.js` — `Chain` base class.
 
 ### Compiler

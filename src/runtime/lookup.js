@@ -10,7 +10,7 @@ import {
 } from './errors.js';
 
 import {resolveDuo} from './resolve.js';
-import {SnapshotCommand, IsErrorCommand, GetErrorCommand} from './chains/observation.js';
+import {SnapshotCommand, IsErrorCommand, GetErrorCommand} from './commands/observation.js';
 import {getSharedSourceName} from '../inheritance/shared-names.js';
 /**
  * Sync member lookup for templates.

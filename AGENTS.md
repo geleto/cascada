@@ -74,7 +74,7 @@ Full file map: [`docs/code/file-map.md`](docs/code/file-map.md)
 - `src/runtime/errors.js` — `PoisonError`, `isPoison`, `isPoisonError`, `handleError`
 - `src/runtime/resolve.js` — `resolveAll`, `resolveSingle`, sync-first resolution helpers
 - `src/runtime/command-buffer.js` — Buffer creation, chain linking, command routing
-- `src/runtime/chains/data.js` — `DataCommand`, custom data-method dispatch
+- `src/runtime/chains/data-chain.js` / `src/runtime/commands/data.js` — data chain state and `DataCommand` method dispatch
 
 **Compiler**
 - `src/compiler/compiler.js` — Main entry; chooses sync/async/script mode

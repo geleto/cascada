@@ -1,10 +1,10 @@
 
 import {createCallableChainFacade} from './runtime/chains/base.js';
-import {DataChain} from './runtime/chains/data.js';
-import {SequentialPathChain} from './runtime/chains/sequential-path.js';
-import {SequenceChain} from './runtime/chains/sequence.js';
-import {TextChain} from './runtime/chains/text.js';
-import {VarChain} from './runtime/chains/var.js';
+import {DataChain} from './runtime/chains/data-chain.js';
+import {SequentialPathChain} from './runtime/chains/sequential-path-chain.js';
+import {SequenceChain} from './runtime/chains/sequence-chain.js';
+import {TextChain} from './runtime/chains/text-chain.js';
+import {VarChain} from './runtime/chains/var-chain.js';
 
 const CHAIN_TYPE_FACTS = Object.freeze({
   data: Object.freeze({

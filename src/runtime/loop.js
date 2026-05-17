@@ -10,9 +10,9 @@ import {
   handleError,
 } from './errors.js';
 
-import {VarCommand} from './chains/var.js';
-import {ErrorCommand} from './chains/error.js';
-import {ReturnIsUnsetCommand} from './chains/observation.js';
+import {VarCommand} from './commands/var.js';
+import {ErrorCommand} from './commands/errors.js';
+import {ReturnIsUnsetCommand} from './commands/observation.js';
 
 const arrayFrom = Array.from;
 const supportsIterators = (

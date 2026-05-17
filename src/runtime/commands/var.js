@@ -1,6 +1,6 @@
-
-import {ChainCommand, runWithResolvedArguments, contextualizeChainError} from './command-base.js';
-import {Chain} from './base.js';
+import {ChainCommand} from './base.js';
+import {runWithResolvedArguments} from './arguments.js';
+import {contextualizeChainError} from './errors.js';
 
 class VarCommand extends ChainCommand {
   constructor({ chainName, args = null, pos = null, initializeIfNotSet = false }) {
@@ -40,43 +40,4 @@ class VarCommand extends ChainCommand {
   }
 }
 
-class VarChain extends Chain {
-  constructor(buffer, chainName, context, chainType, initialValue = undefined) {
-
-    // Keep declaration-only var chains aligned with `none` semantics unless
-
-    // a caller provides an explicit initializer.
-
-    super(buffer, chainName, context, chainType, initialValue, null);
-
-  }
-
-
-
-  invoke(value) {
-
-    if (!this._buffer) return;
-
-    this._buffer.addCommand(new VarCommand({
-
-      chainName: this._chainName,
-
-      args: [value],
-
-      pos: { lineno: 0, colno: 0 }
-
-    }), this._chainName);
-
-  }
-
-
-
-  _getCurrentResult() {
-
-    return this._target;
-
-  }
-
-}
-
-export { VarChain, VarCommand };
+export {VarCommand};

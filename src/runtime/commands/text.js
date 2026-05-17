@@ -1,9 +1,9 @@
-
-import {isPoison, PoisonError, createPoison} from '../errors.js';
+import {isPoison, PoisonError} from '../errors.js';
 import {isResolvedValue, unwrapResolvedValue, resolveAll} from '../resolve.js';
 import {materializeTemplateTextValue, suppressValue, suppressValueScriptRaw} from '../safe-output.js';
-import {ChainCommand, runWithResolvedArguments, contextualizeChainError} from './command-base.js';
-import {Chain} from './base.js';
+import {ChainCommand} from './base.js';
+import {runWithResolvedArguments} from './arguments.js';
+import {contextualizeChainError} from './errors.js';
 
 class TextCommand extends ChainCommand {
   constructor({
@@ -72,45 +72,6 @@ class TextCommand extends ChainCommand {
   }
 }
 
-class TextChain extends Chain {
-  constructor(buffer, chainName, context, chainType) {
-    super(buffer, chainName, context, chainType, [], null);
-  }
-
-  invoke(...args) {
-    if (!this._buffer) return;
-    if (args.length === 0) return;
-    this._buffer.addCommand(new TextCommand({
-      chainName: this._chainName,
-      args,
-      normalizeArgs: true,
-      pos: { lineno: 0, colno: 0 }
-    }), this._chainName);
-  }
-
-  _getCurrentResult() {
-    if (!Array.isArray(this._target) || this._target.length === 0) {
-      this._setTarget(['']);
-      return '';
-    }
-    const result = this._target.join('');
-    // Compact accumulated fragments so future appends keep O(1)-ish growth.
-    this._setTarget([result]);
-    return result;
-  }
-
-  _applyPoisonErrors(errors) {
-    if (!Array.isArray(errors) || errors.length === 0) {
-      return;
-    }
-    if (!Array.isArray(this._target)) {
-      this._setTarget([]);
-    }
-    this._target.push(createPoison(errors));
-    this._markStateChanged();
-  }
-}
-
 function normalizeTextCommandArg(value, chain, pos) {
   const materialized = materializeTemplateTextValue(value, buildTextErrorContext(chain, pos));
   if (materialized && typeof materialized.then === 'function') {
@@ -119,9 +80,6 @@ function normalizeTextCommandArg(value, chain, pos) {
   return normalizeMaterializedTextArg(materialized, chain, pos);
 }
 
-// Text commands have a second consumption boundary after top-level argument
-// resolution: text values may still need snapshot/finalSnapshot materialization
-// before autoescape/suppression turns them into concrete text.
 function materializeTextCommandArgs(values, chain, pos) {
   const normalizedArgs = values.map((value) => normalizeTextCommandArg(value, chain, pos));
   const resolvedArgs = resolveAll(normalizedArgs);
@@ -199,4 +157,4 @@ function isScriptOutputMode(chain) {
   return !!(chain && chain._context && chain._context.scriptMode);
 }
 
-export { TextChain, TextCommand };
+export {TextCommand};

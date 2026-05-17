@@ -1,4 +1,4 @@
-import {MutatingResultCommand} from '../chains/command-base.js';
+import {MutatingResultCommand} from '../commands/base.js';
 import {CommandBuffer} from '../command-buffer.js';
 import {RuntimeFatalError, markPromiseHandled} from '../errors.js';
 import {resolveSingle} from '../resolve.js';

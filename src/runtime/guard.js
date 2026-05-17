@@ -6,10 +6,10 @@ import {
   CaptureGuardStateCommand,
   RestoreGuardStateCommand,
   GetErrorCommand,
-} from './chains/observation.js';
+} from './commands/observation.js';
 import {
   RepairWriteCommand,
-} from './chains/sequential-path.js';
+} from './commands/sequential-path.js';
 
 function init(cb = null) {
   const guardState = {

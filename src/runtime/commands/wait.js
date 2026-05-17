@@ -1,9 +1,6 @@
-
 import {resolveAll} from '../resolve.js';
-import {ChainCommand, ObservableCommand} from './command-base.js';
+import {ChainCommand, ObservableCommand} from './base.js';
 
-// Timing-only sync point: awaits an iteration value for limited-concurrency
-// loop synchronization. Does not propagate errors.
 class WaitResolveCommand extends ChainCommand {
   constructor({ chainName, args = null, pos = null }) {
     super({
@@ -11,9 +8,6 @@ class WaitResolveCommand extends ChainCommand {
       args: args || [],
       pos
     });
-    // isObservable is intentionally false: routing through _applyMutable ensures
-    // this command waits for all pending observables, which is the sync guarantee
-    // concurrency-limited loops depend on.
   }
 
   async apply(chain) {
@@ -29,16 +23,12 @@ class WaitResolveCommand extends ChainCommand {
       }
       return resolved;
     } catch (err) {
-      // Timing-only command: do not alter functional error flow.
       void err;
       return undefined;
     }
   }
 }
 
-// Ordered timing-only sync point for a specific chain lane. Resolves once the
-// iterator reaches this source position on that lane without coupling the wait
-// to any snapshot/error-read semantics.
 class WaitCurrentCommand extends ObservableCommand {
   constructor({ chainName, pos = null }) {
     super();
@@ -53,4 +43,4 @@ class WaitCurrentCommand extends ObservableCommand {
   }
 }
 
-export { WaitResolveCommand, WaitCurrentCommand };
+export {WaitResolveCommand, WaitCurrentCommand};

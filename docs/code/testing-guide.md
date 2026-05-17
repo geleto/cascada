@@ -9,7 +9,7 @@ Detailed reference for writing and debugging tests. See `AGENTS.md` for the shor
 ### Add a New Data-Chain Method
 
 1.  **Locate the right file**: Built-in methods live in `src/builtins/data-methods.js`. Custom/user methods are registered via `AsyncEnvironment.addDataMethods` in `src/environment/async-environment.js`.
-2.  **Understand runtime application**: `src/runtime/chains/data.js` applies `DataCommand` instances and dispatches custom methods.
+2.  **Understand runtime application**: `src/runtime/commands/data.js` applies `DataCommand` instances; `src/runtime/chains/data-chain.js` owns data chain state and dispatches custom methods.
 3.  **Implement**: Method receives `(target, ...args)` and returns the new value. `target` is the current value at the path (may be `undefined`); `...args` are the script arguments.
 4.  **Register** (built-in: add to `data-methods.js`; custom: use `env.addDataMethods` in test setup):
     ```javascript

@@ -1,7 +1,6 @@
-
 import {RETURN_UNSET} from '../markers.js';
 import {isPoisonError, handleError} from '../errors.js';
-import {ObservableCommand, MutatingResultCommand} from './command-base.js';
+import {ObservableCommand, MutatingResultCommand} from './base.js';
 
 class SnapshotCommand extends ObservableCommand {
   constructor({ chainName, pos = null }) {
@@ -32,7 +31,6 @@ class SnapshotCommand extends ObservableCommand {
   }
 }
 
-// Captures the raw chain target without poison inspection. Used for overwrite semantics (e.g., var-chain set_path) where poisoned leaves may be replaced by the write. Observation command.
 class RawSnapshotCommand extends ObservableCommand {
   constructor({ chainName, pos = null }) {
     super();
@@ -59,9 +57,6 @@ class RawSnapshotCommand extends ObservableCommand {
   }
 }
 
-// Ordered return-state observation. This deliberately checks only whether the
-// return chain still contains the sentinel; it does not consume or inspect
-// the returned value, which may itself be poison.
 class ReturnIsUnsetCommand extends ObservableCommand {
   constructor({ chainName, pos = null }) {
     super();
@@ -88,7 +83,6 @@ class ReturnIsUnsetCommand extends ObservableCommand {
   }
 }
 
-// Resolves to a boolean indicating whether the chain currently holds a poisoned (error) value. Observation command.
 class IsErrorCommand extends ObservableCommand {
   constructor({ chainName, pos = null }) {
     super();
@@ -120,7 +114,6 @@ class IsErrorCommand extends ObservableCommand {
   }
 }
 
-// Resolves to the current error on the chain (a PoisonError or null). Observation command.
 class GetErrorCommand extends ObservableCommand {
   constructor({ chainName, pos = null }) {
     super();
@@ -152,7 +145,6 @@ class GetErrorCommand extends ObservableCommand {
   }
 }
 
-// Snapshots the current chain state for `try/resume` guard entry. The captured state is passed to a later RestoreGuardStateCommand. Observation command.
 class CaptureGuardStateCommand extends ObservableCommand {
   constructor({ chainName, pos = null }) {
     super();
@@ -181,7 +173,6 @@ class CaptureGuardStateCommand extends ObservableCommand {
   }
 }
 
-// Restores a previously captured guard state to the chain, overwriting the current target with the saved snapshot. Carries a result promise.
 class RestoreGuardStateCommand extends MutatingResultCommand {
   constructor({ chainName, target, pos = null }) {
     super();
@@ -211,4 +202,12 @@ class RestoreGuardStateCommand extends MutatingResultCommand {
   }
 }
 
-export { SnapshotCommand, RawSnapshotCommand, ReturnIsUnsetCommand, IsErrorCommand, GetErrorCommand, CaptureGuardStateCommand, RestoreGuardStateCommand };
+export {
+  SnapshotCommand,
+  RawSnapshotCommand,
+  ReturnIsUnsetCommand,
+  IsErrorCommand,
+  GetErrorCommand,
+  CaptureGuardStateCommand,
+  RestoreGuardStateCommand
+};

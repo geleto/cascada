@@ -59,7 +59,8 @@ Key behavior:
 
 Relevant files:
 
-- `src/runtime/chains/sequence.js`
+- `src/runtime/chains/sequence-chain.js`
+- `src/runtime/commands/sequence.js`
 - `src/runtime/command-buffer.js`
 
 ## Command Types
@@ -128,8 +129,10 @@ Deadlock avoidance:
 Relevant files:
 
 - `src/runtime/guard.js`
-- `src/runtime/chains/sequence.js`
-- `src/runtime/chains/sequential-path.js`
+- `src/runtime/chains/sequence-chain.js`
+- `src/runtime/chains/sequential-path-chain.js`
+- `src/runtime/commands/sequence.js`
+- `src/runtime/commands/sequential-path.js`
 
 ## Parser/Transpiler Notes
 

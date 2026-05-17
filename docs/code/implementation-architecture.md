@@ -73,9 +73,9 @@ Use the right observation primitive. `SnapshotCommand` inspects the chain and tu
 
 Always add commands through the compiler's active buffer expression: `compiler.buffer.currentBuffer` (often emitted as the runtime variable `currentBuffer` inside boundary callbacks, or `output` at the root). Never skip to a parent/root/producer buffer, and never call a chain directly to "just apply" a command. If the current buffer cannot see the needed chain, fix analysis/linking/current-buffer selection rather than bypassing the buffer tree.
 
-`WaitCurrentCommand` (`src/runtime/chains/wait-commands.js`) is a timing-only sync point: it resolves when the iterator reaches this source-position slot on a specific chain lane, carrying no snapshot or error semantics. Used by concurrency-limited loops to enforce "slot N must finish before N+1 begins" across async iterations.
+`WaitCurrentCommand` (`src/runtime/commands/wait.js`) is a timing-only sync point: it resolves when the iterator reaches this source-position slot on a specific chain lane, carrying no snapshot or error semantics. Used by concurrency-limited loops to enforce "slot N must finish before N+1 begins" across async iterations.
 
-Two distinct error-injection commands exist in `src/runtime/chains/error.js`:
+Two distinct error-injection commands exist in `src/runtime/commands/errors.js`:
 -   **`ErrorCommand`** — placed in the buffer command stream; the iterator throws immediately when it reaches this entry. Used when an entire async boundary has failed and no chain mutation will occur.
 -   **`TargetPoisonCommand`** — writes `PoisonedValue` directly into a specific chain's target. Used to contaminate a chain's output mid-stream when a value-consumption failure occurs without aborting the whole boundary.
 

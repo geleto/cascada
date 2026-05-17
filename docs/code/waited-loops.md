@@ -198,4 +198,4 @@ correct gating and source-order output application.
 - `src/compiler/boundaries.js` - waited control-flow boundary lowering
 - `src/compiler/compiler-base-async.js` - root expression waited emission
 - `src/runtime/async-boundaries.js` - waited boundary runtime helpers
-- `src/runtime/chains/wait-commands.js` - `WaitResolveCommand`
+- `src/runtime/commands/wait.js` - `WaitResolveCommand`
