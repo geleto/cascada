@@ -308,7 +308,9 @@ So the recommendation remains:
 
 For lookup, probably not.
 
-The command buffer is not the right layer for lexical scoping. Compile-time analysis and variable renaming already solve that problem.
+The command buffer is not the right layer for lexical scoping. Compile-time
+analysis owns lexical visibility, with narrowly targeted variable renaming only
+where two source scopes can declare into the same runtime buffer.
 
 So the runtime does not need a deep concept of scoping ownership in order to resolve names.
 

@@ -33,6 +33,25 @@ Runtime chain lookup must not infer lexical ownership by climbing to a parent
 producer buffer. The compiler's chain analysis decides what is visible and
 which parent chains are linked into each child boundary.
 
+## Runtime-Name Renaming
+
+Most lexical scopes do not need renamed runtime chain names. A duplicate local
+name can keep its source name when it executes in a different `CommandBuffer`
+or when the duplicated scopes are mutually exclusive control-flow paths.
+
+The async transformer only renames user variables for a real same-buffer
+collision. The current case is `guard` / `recover`: the guarded body and
+recovery body execute in the same guard buffer, and recovery can run after the
+guarded body has already declared local chains. If the recovery body declares a
+name already declared in the guarded body, or if `recover err` collides with a
+guard-body local named `err`, the recovery-side binding is renamed and all
+recovery-scope uses are rewritten to that runtime name.
+
+Do not add broad lexical duplicate-name renaming for cases such as `if` /
+`else`, `switch` cases, loop bodies, set-block captures, or assigned call
+blocks. Those either run in separate buffers, collect into their own boundary,
+or are mutually exclusive at runtime.
+
 ## Chain Analysis
 
 The current analysis vocabulary is:
