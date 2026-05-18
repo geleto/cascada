@@ -31,18 +31,30 @@ Compiled code stores error contexts in a compact internal table named `__ec`.
 Each entry is an array:
 
 ```js
-const __ec = runtime.prepareErrorContexts(context.path, cb, [
-  'For.Iterator(Symbol)', 'For.Limit(FunCall)'
-], [
-  [1, 0, 'Root'], [3, 7, 'If.Condition(FunCall)'], [4, 12, 0]
-]);
+function root(env, context, runtime, cb) {
+  const __ec = getErrorContexts(runtime, context.path, cb);
+  // ...
+  b_body(env, context, runtime, cb, parentBuffer, __ec);
+}
+
+function b_body(env, context, runtime, cb, parentBuffer, __ec) {
+  runtime.memberLookupScript(target, key, __ec[5], currentBuffer);
+}
+
+function getErrorContexts(runtime, path, cb) {
+  return runtime.prepareErrorContexts(path, cb, [
+    'For.Iterator(Symbol)', 'For.Limit(FunCall)'
+  ], [
+    [1, 0, 'Root'], [3, 7, 'If.Condition(FunCall)'], [4, 12, 0]
+  ]);
+}
 ```
 
 The label dictionary passed as the third argument contains labels used more
 than once. The context specs passed as the fourth argument are collected once
 per compiled script/template artifact, not once per function, macro, block, or
-method. The analysis pass must collect contexts for the whole compiled artifact
-and allocate stable context indices across all compiled callables.
+method. Analysis provides the semantic facts used by context creation; codegen
+may assemble and register the final compact contexts from those facts.
 
 Each compact context spec is either:
 
@@ -51,25 +63,36 @@ Each compact context spec is either:
 [lineno, colno, labelString]
 ```
 
-Use a numeric label index when the label is present in the repeated-label
-dictionary. Use an inline string when the label is used only once. For example:
+The compiler can collect contexts internally as uncompressed
+`[lineno, colno, labelString]` entries. During final output it counts label
+usage, places repeated labels in the dictionary, rewrites those repeated labels
+to numeric indexes, and leaves single-use labels inline. For example:
 
 ```js
-const __ec = runtime.prepareErrorContexts(context.path, cb,
-  ['For.Iterator(Symbol)', 'For.Limit(FunCall)'],
+return runtime.prepareErrorContexts(path, cb,
+  ['For.Iterator(Symbol)'],
   [[7, 11, 0], [7, 15, 'If.Condition(LookupVal)']]
 );
 ```
 
-`runtime.prepareErrorContexts(context.path, cb, labels, specs)` returns the
-per-invocation prepared table named `__ec`, with render-time `path` and `cb`
-attached and label indexes resolved. It must not mutate shared label/spec data.
-Cached precompiled templates and concurrent renders must never share mutable
-prepared context entries.
+`getErrorContexts(runtime, path, cb)` should be emitted once per compiled
+script/template artifact, preferably near the end of the generated source so
+the large table is out of the way. It returns the per-invocation prepared table
+named `__ec`, with render-time `path` and `cb` attached and label indexes
+resolved. It must not mutate shared label/spec data. Cached precompiled
+templates and concurrent renders must never share mutable prepared context
+entries.
 
-All compiled callables in the artifact must use the prepared table for the
-current invocation. Pass or close over `__ec` wherever root, macro, block,
-method, caller, or other compiled functions need to emit runtime helper calls.
+The root callable prepares `__ec` once for the render invocation. All sibling
+compiled callables in the artifact, such as blocks, methods, constructors,
+macros, and caller bodies, must receive that prepared table explicitly or close
+over it. Do not create a file-scope mutable prepared `__ec`.
+
+When inheritance or composition invokes a callable owned by another compiled
+artifact, runtime should prepare that owner artifact's table through its emitted
+`getErrorContexts(runtime, ownerPath, cb)` helper and pass the prepared table to
+the owner callable. This keeps the source path tied to the artifact that owns
+the node while preserving the current render callback for fatal reporting.
 
 Generated code passes entries directly. Runtime helpers should receive both the
 source context entry and the current command buffer:
@@ -130,6 +153,7 @@ Recommended labels:
 - `LookupVal`
 - `If.Condition(FunCall)`
 - `Switch.Expression(Symbol)`
+- `Switch.Case(Literal)`
 - `For.Iterator(LookupVal)`
 - `For.Limit(FunCall)`
 - `While.Condition(FunCall)`
@@ -176,7 +200,7 @@ part when useful.
 So labels such as `If.Condition(LookupVal)` are generated from:
 
 1. Parent-provided owner label - for example `If.Condition`,
-   `Switch.Expression`, `For.Iterator`, or `For.Limit`.
+   `Switch.Expression`, `Switch.Case`, `For.Iterator`, or `For.Limit`.
 2. Current position-node type - for example `LookupVal`, `FunCall`, or
    `Symbol`.
 
@@ -186,7 +210,7 @@ Exact rule:
 const owner = parentProvidedOwnerLabel || node.typename;
 const posType = positionNode.typename;
 
-if (node === positionNode || (!parentProvidedOwnerLabel && owner === posType)) {
+if (!parentProvidedOwnerLabel && (node === positionNode || owner === posType)) {
   return owner;
 }
 return `${owner}(${posType})`;
@@ -234,14 +258,17 @@ the origin label before creation; it does not mutate an existing context later.
 
 ## Context Creation
 
-Analysis should assign an error context index to every compiler node. The
-compiler should expose one artifact-wide context collector with a canonical
-helper for registering or retrieving that index. The useful abstraction is the
-collector, not an individual `ErrorContext` class per node.
+Analysis should assign the semantic context facts for compiler nodes, such as
+parent-provided labels and position-node choices. Codegen may assemble the
+final error context in `compileXXX` methods as long as it does so simply from
+analysis-owned properties. The compiler should expose one artifact-wide context
+table with a canonical helper for registering or retrieving indices. The useful
+abstraction is the table, not an individual `ErrorContext` class per node.
 
 Per-node compiler context data should stay as plain info: source position,
-final label, and assigned index. The collector owns conversion to compact
-runtime specs, repeated-label compression, and table emission in one place.
+semantic label facts, and assigned index where one has already been registered.
+The table helper owns conversion to compact runtime specs, repeated-label
+compression, and table emission in one place.
 Do not add a compiler-side `new ErrorContext(...)` layer unless the collector
 itself needs private implementation objects.
 
@@ -268,7 +295,8 @@ Rules:
 - the third spec element is either an inline label string or an index into the
   repeated-label dictionary
 - emitted runtime calls refer to prepared contexts as `__ec[index]`; compiler
-  analysis allocates indices into the artifact-wide specs array
+  codegen registers indices into the artifact-wide specs array from analysis
+  properties
 - compile-time error decoration, if needed, should use a small helper that
   consumes the same plain context info rather than an `ErrorContext` instance
 
@@ -405,8 +433,10 @@ optional execution metadata owned by the buffer.
 
 Useful optional fields:
 
-- `boundaryName` - callable or named boundary identifier, such as
-  macro/function/method name, block name, component binding name, or `root`
+- `boundaryName` - compiler/runtime boundary identifier, such as `root`,
+  `caller`, or a generated block/method boundary. This is execution metadata,
+  not a replacement for the compact `ec` label. User-visible callable names can
+  be added in Phase 4 when the compiler has stable AST names at the call site.
 - `loadName` - external or resolved thing being loaded/rendered, such as
   `template.casc`, `base.casc`, or a script/module name. If the loaded value is
   dynamic, use an `@(line,col)` fallback such as `include source@(1,2)`.
@@ -675,26 +705,33 @@ Before implementation, audit:
 
 ### Phase 3 - Compiler Context Table
 
-1. Add the artifact-wide compiler context collector after transform/analysis
-   has produced the final AST shape, plus the helper for retrieving context
-   indices. The collector allocates context indices shared by root, blocks,
-   macros, methods, and other compiled callables; builds the repeated-label
-   dictionary; creates already-adjusted one-based line numbers; applies the
-   Label Generation algorithm; and returns indices into the artifact-wide specs
-   array. Keep per-node compiler contexts as plain info owned by the collector,
-   not individual `ErrorContext` instances.
+1. Add the artifact-wide compiler context table plus the helper for retrieving
+   context indices. Codegen may register contexts from `compileXXX` methods,
+   provided the final context is assembled from analysis-owned properties. The
+   table allocates context indices shared by root, blocks, macros, methods, and
+   other compiled callables; builds the repeated-label dictionary; creates
+   already-adjusted one-based line numbers; applies the Label Generation
+   algorithm; and returns indices into the artifact-wide specs array. Keep
+   per-node compiler contexts as plain info, not individual `ErrorContext`
+   instances.
 2. Add semantic labels from analysis for important child expressions:
-   `If.Condition`, `Switch.Expression`, `For.Iterator`, `For.Limit`,
+   `If.Condition`, `Switch.Expression`, `Switch.Case`, `For.Iterator`, `For.Limit`,
    `While.Condition`, include/extends targets, and other high-value sites. This
    is an analysis-phase change, not just code generation: parent nodes should
-   assign the parent-provided owner labels before context indices are collected.
+   assign the parent-provided owner labels before context indices are registered.
    The compiler helper should work before this step by falling back to current
    `node`/`positionNode` labels; this step upgrades selected labels.
-3. Emit artifact-wide label/spec arrays once per compiled script/template, and
-   emit `const __ec = runtime.prepareErrorContexts(context.path, cb, labels,
-   specs)` inside every compiled callable invocation that has its own
-   `context`/`cb`. This includes root, macros/caller bodies, blocks, methods,
-   constructors, and other callable render paths.
+3. Emit one artifact helper, `getErrorContexts(runtime, path, cb)`, preferably
+   near the end of the generated file. This helper owns the final compressed
+   label/spec arrays and calls `runtime.prepareErrorContexts(...)`.
+4. Emit `const __ec = getErrorContexts(runtime, context.path, cb)` once inside
+   `root(...)`. Thread that prepared table into sibling compiled callables that
+   need it, including blocks, methods, constructors, macros, and caller bodies.
+   Do not use a file-scope mutable prepared `__ec`; it would race across
+   concurrent renders.
+5. Export `getErrorContexts` from inheritance/composition participants and let
+   runtime prepare owner-artifact tables lazily when invoking methods, blocks,
+   constructors, or other loaded callables from another compiled artifact.
 
 ### Phase 4 - Compiler Call-Site Migration
 
@@ -708,6 +745,8 @@ Before implementation, audit:
 3. Coverage checklist:
    script symbol lookup, template lookup, composition, inheritance,
    macro/caller, loop, guard, output, return, and boundary codegen paths.
+   Include legacy inheritance catch paths that still call
+   `handleError(e, lineno, colno, errorContextString, path)`.
    Fill in command-buffer optional fields such as `loadName`,
    `targetIdentifier`, and `branch` at these call sites when the compiler can
    provide stable AST information. Pass `traceParent` to emitted
@@ -715,6 +754,9 @@ Before implementation, audit:
    caller buffer. Ensure macro, caller, method, block, and other callable
    invocation paths require a current buffer/trace parent rather than
    supporting untraceable calls.
+   Verify `Script` and precompiled script/template instances expose
+   `getErrorContexts` through the same runtime surface while updating
+   precompile/browser fixtures.
 4. Move command constructors toward accepting `errorContext` instead of raw
    `pos` as the compiler call sites are migrated. During transition, commands
    that still expose `.pos` should derive it mechanically as
