@@ -83,16 +83,10 @@ class CompileBuffer {
   // Scope current waited chain binding for the emitted code region.
   // Pass null to explicitly compile without an own waited chain.
   withOwnWaitedChain(waitedChainName, emitFunc, ownerBufferExpr = null) {
-    const prevWaitedChainName = this.currentWaitedChainName;
-    const prevWaitedOwnerBuffer = this.currentWaitedOwnerBuffer;
-    this.currentWaitedChainName = waitedChainName;
-    this.currentWaitedOwnerBuffer = waitedChainName ? (ownerBufferExpr || this.currentBuffer) : null;
-    try {
-      return emitFunc();
-    } finally {
-      this.currentWaitedChainName = prevWaitedChainName;
-      this.currentWaitedOwnerBuffer = prevWaitedOwnerBuffer;
-    }
+    return this.withBufferState({
+      currentWaitedChainName: waitedChainName,
+      currentWaitedOwnerBuffer: waitedChainName ? (ownerBufferExpr || this.currentBuffer) : null
+    }, emitFunc);
   }
 
   // Compile a region with no own waited chain binding.

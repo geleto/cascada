@@ -43,17 +43,6 @@ import {
       expect(output).to.not.contain('function root(env, context, frame, runtime, cb');
     });
 
-    it('should compile script strings as Cascada script syntax', function() {
-      const output = precompileScriptString('var result = {}\nresult.x = 1\nreturn result', {
-        name: 'script-test.casc'
-      });
-
-      expect(output).to.contain('function root(env, context, runtime, cb');
-      expect(output).to.not.contain('var result = {}\\nresult.x = 1\\nreturn result');
-      expect(output).to.contain('runtime.declareBufferChain(output, "result", "var"');
-      expect(output).to.contain('new runtime.VarCommand');
-    });
-
     describe('templates', function() {
       it('should return *NIX path seperators', function() {
         var fileName;

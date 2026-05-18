@@ -1,3 +1,4 @@
+import * as nodes from '../language/nodes.js';
 import {DEFAULT_TEMPLATE_TEXT_CHAIN} from './buffer.js';
 
 class CompileEmit {
@@ -64,14 +65,28 @@ class CompileEmit {
     this.scopeClosers = _scopeClosers;
   }
 
-  beginEntryFunction(node, name, linkedChains = null, extraParams = []) {
+  entryFunction(node, name, emitFunc, {
+    linkedChains = null,
+    extraParams = [],
+    noReturn = false
+  } = {}) {
     const rootTextChainName = (!this.compiler.scriptMode && node && node._analysis && node._analysis.textOutput)
       ? node._analysis.textOutput
       : DEFAULT_TEMPLATE_TEXT_CHAIN;
-    this.compiler.buffer.currentBuffer = 'output';
-    this.compiler.buffer.currentTextChainVar = 'output_textChainVar';
-    this.compiler.buffer.currentTextChainName = this.compiler.scriptMode ? null : rootTextChainName;
-    this.compiler.buffer.currentWaitedChainName = null;
+    this.compiler.buffer.withBufferState({
+      currentBuffer: 'output',
+      currentTextChainVar: 'output_textChainVar',
+      currentTextChainName: this.compiler.scriptMode ? null : rootTextChainName,
+      currentWaitedChainName: null,
+      currentWaitedOwnerBuffer: null
+    }, () => {
+      this._beginEntryFunction(node, name, linkedChains, extraParams);
+      emitFunc.call(this.compiler);
+      this._endEntryFunction(node, noReturn);
+    });
+  }
+
+  _beginEntryFunction(node, name, linkedChains = null, extraParams = []) {
     this.scopeClosers = '';
     if (this.compiler.asyncMode) {
       if (name === 'root') {
@@ -108,10 +123,12 @@ class CompileEmit {
         linkedChains
       );
     }
-    this.line('try {');
+    if (!this.compiler.asyncMode) {
+      this.line('try {');
+    }
   }
 
-  endEntryFunction(node, noReturn) { // Added node parameter
+  _endEntryFunction(node, noReturn) {
     if (!noReturn) {
       if (this.compiler.asyncMode) {
         // In async mode, blocks return output directly (not via callback)
@@ -125,6 +142,10 @@ class CompileEmit {
     }
 
     this.closeScopeLevels();
+    if (this.compiler.asyncMode) {
+      this.line('}');
+      return;
+    }
     this.line('} catch (e) {');
     if (this.compiler.asyncMode) {
       // In async mode, use the static position from the node and handlePromise for internal errors
@@ -138,12 +159,6 @@ class CompileEmit {
     //this.Line('  throw e;');//the returned promise should not resolve
     this.line('}');
     this.line('}');
-    this.compiler.buffer.currentBuffer = null;
-    this.compiler.buffer.currentTextChainVar = null;
-    this.compiler.buffer.currentTextChainName = this.compiler.scriptMode
-      ? null
-      : (((node && node._analysis && node._analysis.textOutput)));
-    this.compiler.buffer.currentWaitedChainName = null;
   }
 
   // Managed block for direct scope/frame handling (optionally with a scope-root buffer).

@@ -652,29 +652,20 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   _emitRootResult(node) {
-    this.emit.line(';(async () => {');
     if (this.scriptMode) {
       const returnVar = this._tmpid();
       this.return.emitFinalSnapshot(this.buffer.currentBuffer, returnVar);
-      this.emit.line(`  ${this.buffer.currentBuffer}.finish();`);
-      this.emit.line(`  await ${this.buffer.currentBuffer}.getFinishedPromise();`);
-      this.emit.line(`  cb(null, runtime.normalizeFinalPromise(${returnVar}));`);
+      this.emit.line(`return ${returnVar};`);
     } else {
       this.emit.line(`  ${this.buffer.currentBuffer}.finish();`);
-      this.emit.line(`  const textResult = await ${this.buffer.currentTextChainVar}.finalSnapshot();`);
-      this.emit.line('  cb(null, textResult);');
+      this.emit.line(`return ${this.buffer.currentTextChainVar}.finalSnapshot();`);
     }
-    this.emit.line('})().catch(e => {');
-    this.emit.line(`  var err = runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this._generateErrorContext(node)}", context.path);`);
-    this.emit.line('  cb(err);');
-    this.emit.line('});');
   }
 
   _compilePlainAsyncRootBody(node) {
     this._emitRootBufferSetup(node);
     this._compileChildren(node, null);
     this._emitRootResult(node);
-    this.emit.line(`return ${this.buffer.currentBuffer};`);
   }
 
   _compileParticipantAsyncRootBody(node) {
@@ -683,13 +674,13 @@ class CompilerAsync extends CompilerBaseAsync {
 
   _compileAsyncRoot(node) {
     const inheritanceParticipates = node._analysis.inheritance.participates;
-    this.emit.beginEntryFunction(node, 'root');
-    if (inheritanceParticipates) {
-      this._compileParticipantAsyncRootBody(node);
-    } else {
-      this._compilePlainAsyncRootBody(node);
-    }
-    this.emit.endEntryFunction(node, true);
+    this.emit.entryFunction(node, 'root', () => {
+      if (inheritanceParticipates) {
+        this._compileParticipantAsyncRootBody(node);
+      } else {
+        this._compilePlainAsyncRootBody(node);
+      }
+    }, { noReturn: true });
     if (!inheritanceParticipates) {
       return { blocks: [], constructorEntry: null };
     }

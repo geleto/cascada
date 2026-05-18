@@ -202,7 +202,7 @@ class CompileInheritance {
   compileParticipantRootBody(node) {
     this._compileParticipantRootDeclarations(node);
     const originJson = JSON.stringify(this.compiler._createErrorContext(node));
-    this.emit.line('runtime.renderInheritanceParticipantRoot({');
+    this.emit.line('return runtime.renderInheritanceParticipantRoot({');
     this.emit.line('    entryTemplateOrScript: this,');
     this.emit.line('    env,');
     this.emit.line('    context,');
@@ -210,12 +210,10 @@ class CompileInheritance {
     this.emit.line('    cb,');
     this.emit.line('    rootBuffer: output,');
     this.emit.line(`    origin: ${originJson}`);
-    this.emit.line('}).then((result) => {');
-    this.emit.line('  cb(null, result);');
-    this.emit.line('}, (e) => {');
+    this.emit.line('}).catch((e) => {');
     this.emit.line(`  cb(runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this.compiler._generateErrorContext(node)}", context.path));`);
+    this.emit.line('  throw e;');
     this.emit.line('});');
-    this.emit.line('return output;');
   }
 
   compileParticipantRootExport(node, rootCompileResult) {
@@ -742,7 +740,7 @@ class CompileInheritance {
       // The invocation command waits on the per-call invocation buffer after
       // this local buffer closes, so caller-visible completion still covers the
       // full inherited call.
-      this.emit.line(`return runtime.normalizeFinalPromise(${resultVar});`);
+      this.emit.line(`return ${resultVar};`);
       return;
     }
 
@@ -764,34 +762,32 @@ class CompileInheritance {
     // This only wires the entry-local command buffer to its immediate parent
     // invocation buffer. Caller-side inherited invocation linking is resolved
     // separately from helper-resolved method metadata at runtime.
-    this.emit.beginEntryFunction(
-      callableNode,
-      functionName,
-      null,
-      INHERITED_CALLABLE_EXTRA_PARAMS
-    );
-    if (isScriptMethod) {
-      this.compiler.return.emitDeclareChain(this.compiler.buffer.currentBuffer);
-    }
-    const payloadOriginalArgsVar = this.compiler._tmpid();
-    this.emit.line(`const ${payloadOriginalArgsVar} = runtime.getInheritanceCallableOriginalArgs(blockPayload);`);
-    this._emitCallableContextSetup(callableNode, isScriptMethod, invocationPath);
-    this._emitCallableEntryParentLinks(callableNode, isScriptMethod);
-    this._emitCallableArgumentChains(callableNode, callableSignature, payloadOriginalArgsVar);
-    if (constructorRootNode) {
-      this.emitRootSharedDeclarations(constructorRootNode);
-    }
-    this._withCallableBodyCompile(callableNode, () => {
-      this.compiler.compile(callableNode.body, null);
+    this.emit.entryFunction(callableNode, functionName, () => {
+      if (isScriptMethod) {
+        this.compiler.return.emitDeclareChain(this.compiler.buffer.currentBuffer);
+      }
+      const payloadOriginalArgsVar = this.compiler._tmpid();
+      this.emit.line(`const ${payloadOriginalArgsVar} = runtime.getInheritanceCallableOriginalArgs(blockPayload);`);
+      this._emitCallableContextSetup(callableNode, isScriptMethod, invocationPath);
+      this._emitCallableEntryParentLinks(callableNode, isScriptMethod);
+      this._emitCallableArgumentChains(callableNode, callableSignature, payloadOriginalArgsVar);
+      if (constructorRootNode) {
+        this.emitRootSharedDeclarations(constructorRootNode);
+      }
+      this._withCallableBodyCompile(callableNode, () => {
+        this.compiler.compile(callableNode.body, null);
+      });
+      if (constructorRootNode && !isScriptMethod) {
+        this._emitTemplateConstructorEntryReturn(constructorRootNode._analysis.inheritance.hasExtends, callableNode);
+      } else if (constructorRootNode && callableNode.isSharedDefaultOnlyConstructor) {
+        this._emitScriptSharedDefaultConstructorEntryReturn(constructorRootNode._analysis.inheritance.hasExtends, callableNode);
+      } else {
+        this._emitCallableEntryReturn(isScriptMethod);
+      }
+    }, {
+      extraParams: INHERITED_CALLABLE_EXTRA_PARAMS,
+      noReturn: true
     });
-    if (constructorRootNode && !isScriptMethod) {
-      this._emitTemplateConstructorEntryReturn(constructorRootNode._analysis.inheritance.hasExtends, callableNode);
-    } else if (constructorRootNode && callableNode.isSharedDefaultOnlyConstructor) {
-      this._emitScriptSharedDefaultConstructorEntryReturn(constructorRootNode._analysis.inheritance.hasExtends, callableNode);
-    } else {
-      this._emitCallableEntryReturn(isScriptMethod);
-    }
-    this.emit.endEntryFunction(callableNode, true);
   }
 
   _compileInheritedCallableEntry(callableNode) {

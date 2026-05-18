@@ -1,5 +1,4 @@
 import {RuntimeFatalError} from '../errors.js';
-import {normalizeFinalPromise} from '../resolve.js';
 import {createInheritanceCallableArgumentFrame} from './invoke.js';
 import {declareInheritanceSharedChain} from './shared.js';
 
@@ -123,20 +122,22 @@ class InheritanceInstance {
       };
     const renderContext = methodData.isConstructor ? undefined : context.getRenderContextVariables();
 
-    const result = await methodData.fn(
-      this.env,
-      context,
-      this.runtime,
-      this.cb,
-      invocationBuffer,
-      callablePayload,
-      renderContext,
-      methodData,
-      this
-    );
-    invocationBuffer.finish();
-    await invocationBuffer.getFinishedPromise();
-    return result;
+    try {
+      return await methodData.fn(
+        this.env,
+        context,
+        this.runtime,
+        this.cb,
+        invocationBuffer,
+        callablePayload,
+        renderContext,
+        methodData,
+        this
+      );
+    } finally {
+      invocationBuffer.finish();
+      await invocationBuffer.getFinishedPromise();
+    }
   }
 
   finishRender(entryResult) {
@@ -168,7 +169,7 @@ async function renderInheritanceParticipantRoot({ entryTemplateOrScript, env, co
   let entryResult;
   try {
     entryResult = await instance.invokeConstructor(origin);
-    return normalizeFinalPromise(instance.finishRender(entryResult));
+    return instance.finishRender(entryResult);
   } catch (error) {
     instance.close(error);
     throw error;

@@ -88,11 +88,7 @@ const noopTmplSrcAsync = {
   obj: {
     root(env, context, runtime, cb) {
       try {
-        const output = new runtime.CommandBuffer(context, null);
-        runtime.declareBufferChain(output, '__text__', 'text', context, null);
-        output.finish();
-        cb(null, '');
-        return output;
+        return '';
       } catch (e) {
         const err = handleError(e, null, null, null, context ? context.path : null);
         cb(err);

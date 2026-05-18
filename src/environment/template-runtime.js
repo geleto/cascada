@@ -68,14 +68,14 @@ class TemplateRuntime extends Obj {
     }
 
     const context = this._createContext(ctx);
-    let syncResult = null;
-    let callbackCalled = false;
+    let syncResult;
+    let reported = false;
 
-    const callback = (err, res) => {
-      if (callbackCalled) {
+    const report = (err, res) => {
+      if (reported) {
         return;
       }
-      callbackCalled = true;
+      reported = true;
 
       if (err) {
         err = _prettifyError(this.path, this.env.opts.dev, err);
@@ -91,7 +91,28 @@ class TemplateRuntime extends Obj {
       }
     };
 
-    this.rootRenderFunc(this.env, context, globalRuntime, callback);
+    let rootResult;
+    try {
+      rootResult = this.rootRenderFunc(this.env, context, globalRuntime, (err) => {
+        if (err) {
+          report(err);
+        }
+      });
+    } catch (err) {
+      report(globalRuntime.handleError(err, 0, 0, 'Root(PosNode)', context.path));
+      return syncResult;
+    }
+
+    const normalized = globalRuntime.normalizeFinalPromise(rootResult);
+    if (normalized && typeof normalized.then === 'function') {
+      normalized.then(
+        (res) => report(null, res),
+        (err) => report(err)
+      );
+      return syncResult;
+    }
+
+    report(null, normalized);
     return syncResult;
   }
 
@@ -208,6 +229,43 @@ class TemplateRuntime extends Obj {
     return boundExported;
   }
 
+  _invokeRootWithFatalCallback(context, cb = null) {
+    let reported = false;
+    let rejectFatal;
+    const fatalPromise = new Promise((resolve, reject) => {
+      rejectFatal = reject;
+    });
+    globalRuntime.markPromiseHandled(fatalPromise);
+
+    const reportFatal = (err) => {
+      if (!err || reported) {
+        return;
+      }
+      reported = true;
+      if (typeof cb === 'function') {
+        cb(err);
+      }
+      rejectFatal(err);
+    };
+
+    let rootResult;
+    try {
+      rootResult = this.rootRenderFunc(this.env, context, globalRuntime, reportFatal, true);
+    } catch (err) {
+      const handled = globalRuntime.handleError(err, 0, 0, 'Root(PosNode)', context.path);
+      reportFatal(handled);
+      return Promise.reject(handled);
+    }
+
+    if (rootResult && typeof rootResult.then === 'function') {
+      const raced = Promise.race([rootResult, fatalPromise]);
+      raced.catch(reportFatal);
+      return raced;
+    }
+
+    return rootResult;
+  }
+
   compile() {
     if (!this.compiled) {
       this._compile();
@@ -306,48 +364,18 @@ class AsyncTemplateRuntime extends TemplateRuntime {
     this.compile();
 
     const context = this._createContext(ctx, renderCtx, ctx || null);
-    let rootError = null;
-    const renderCallback = (err) => {
-      if (err) {
-        rootError = err;
-        if (typeof cb === 'function') {
-          cb(err);
-        }
-      }
-    };
-    this.rootRenderFunc(
-      this.env,
-      context,
-      globalRuntime,
-      renderCallback,
-      true
-    );
-    if (rootError) {
-      throw rootError;
+    const rootResult = this._invokeRootWithFatalCallback(context, cb);
+    if (rootResult && typeof rootResult.then === 'function') {
+      globalRuntime.markPromiseHandled(rootResult);
     }
-
-    return context.getExported();
+    const exported = context.getExported();
+    return exported;
   }
 
   _renderIncludeText(ctx, renderCtx) {
     this.compile();
     const context = this._createContext(ctx, renderCtx, ctx || null);
-    if (!this.inheritanceSpec) {
-      const output = this.rootRenderFunc(this.env, context, globalRuntime, function noopIncludeCallback() {});
-      return output.getChain('__text__').finalSnapshot();
-    }
-
-    const includeText = new Promise((resolve, reject) => {
-      const includeCallback = (err, result) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-        resolve(result);
-      };
-      this.rootRenderFunc(this.env, context, globalRuntime, includeCallback);
-    });
-    return includeText;
+    return this._invokeRootWithFatalCallback(context, null);
   }
 
   _getCompiledBlocks() {

@@ -313,10 +313,10 @@ class CompilerSync extends CompilerBaseSync {
   _compileSyncBlockEntry(block, frame) {
     const name = block.name.value;
     const blockFrame = frame.new();
-    this.emit.beginEntryFunction(block, `b_${name}`);
-    this.emit.line('var frame = frame.push(true);');
-    this.compile(block.body, blockFrame);
-    this.emit.endEntryFunction(block);
+    this.emit.entryFunction(block, `b_${name}`, () => {
+      this.emit.line('var frame = frame.push(true);');
+      this.compile(block.body, blockFrame);
+    });
   }
 
   _compileSyncBlockEntries(node, frame) {
@@ -337,9 +337,9 @@ class CompilerSync extends CompilerBaseSync {
   }
 
   _compileSyncRoot(node, frame) {
-    this.emit.beginEntryFunction(node, 'root');
-    this._compileSyncRootBody(node, frame);
-    this.emit.endEntryFunction(node, true);
+    this.emit.entryFunction(node, 'root', () => {
+      this._compileSyncRootBody(node, frame);
+    }, { noReturn: true });
     this.inBlock = true;
     return this._compileSyncBlockEntries(node, frame);
   }
