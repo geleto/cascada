@@ -11,6 +11,95 @@ function markPromiseHandled(promise) {
   return promise;
 }
 
+function prepareErrorContexts(path, cb, labels, specs) {
+  return specs.map(([lineno, colno, label]) => [
+    lineno,
+    colno,
+    typeof label === 'number' ? labels[label] : label,
+    path ?? null,
+    cb ?? null
+  ]);
+}
+
+function normalizeErrorContext(ec) {
+  if (Array.isArray(ec)) {
+    return {
+      lineno: ec[0] ?? null,
+      colno: ec[1] ?? null,
+      label: ec[2] ?? null,
+      path: ec[3] ?? null,
+      cb: ec[4] ?? null
+    };
+  }
+
+  if (ec && typeof ec === 'object') {
+    // TODO(error-context-cleanup): remove legacy object-context support once
+    // generated code passes only prepared compact __ec entries.
+    return {
+      lineno: ec.lineno ?? null,
+      colno: ec.colno ?? null,
+      label: (ec.label ?? ec.errorContextString) ?? null,
+      path: ec.path ?? null,
+      cb: ec.cb ?? null
+    };
+  }
+
+  return {
+    lineno: null,
+    colno: null,
+    label: null,
+    path: null,
+    cb: null
+  };
+}
+
+// TODO(error-context-cleanup): remove this compatibility converter once runtime
+// APIs no longer accept legacy object or positional error-context arguments.
+function compactErrorContext(ec) {
+  if (Array.isArray(ec)) {
+    return ec;
+  }
+
+  const context = normalizeErrorContext(ec);
+  if (
+    context.lineno === null &&
+    context.colno === null &&
+    context.label === null &&
+    context.path === null &&
+    context.cb === null
+  ) {
+    return null;
+  }
+
+  return [
+    context.lineno ?? 0,
+    context.colno ?? 0,
+    context.label,
+    context.path,
+    context.cb
+  ];
+}
+
+// Keep source-origin assignment at the constructor/wrapper boundary. This
+// helper is only for idempotently annotating an already-wrapped error that
+// should not be replaced with a new RuntimeError.
+function attachErrorContextIfMissing(error, ec) {
+  const compact = compactErrorContext(ec);
+  if (compact && error && typeof error === 'object' && !error.errorContext) {
+    error.errorContext = compact;
+  }
+  return error;
+}
+
+function resolveEffectiveErrorContext(error, fallback = null) {
+  if (error && typeof error === 'object' && error.errorContext) {
+    return compactErrorContext(error.errorContext);
+  }
+  // TODO(error-context-cleanup): once helper fallbacks are always compact
+  // prepared __ec entries, return fallback directly instead of converting.
+  return compactErrorContext(fallback);
+}
+
 /**
  * PoisonedValue: An inspectable error container that can be detected synchronously
  * and automatically rejects when awaited.
@@ -75,8 +164,7 @@ class PoisonError extends Error {
     if (errors instanceof PoisonError) {
       // Preserve the original error's properties, ignore new errorContext
       super(errors.message);
-      this.errors = errors.errors;
-      this.errorContext = errorContext;
+      this.errors = normalizeErrorsWithContext(errors.errors, errorContext);
       this.stack = errors.stack;
       return;
     }
@@ -115,21 +203,31 @@ class PoisonError extends Error {
  * Runtime error with position and context information.
  */
 class RuntimeError extends Error {
-  constructor(message, lineno, colno, errorContextString = null, path = null) {
+  // TODO(error-context-cleanup): collapse this constructor to
+  // RuntimeError(message, ec) and remove positional/errorContextString support.
+  constructor(message, ecOrLineno, currentBufferOrColno, errorContextString = null, path = null) {
+    const fallbackContext = Array.isArray(ecOrLineno) || (ecOrLineno && typeof ecOrLineno === 'object')
+      ? compactErrorContext(ecOrLineno)
+      : compactErrorContext({ lineno: ecOrLineno, colno: currentBufferOrColno, label: errorContextString, path });
+    const cause = message instanceof Error ? message : null;
+    const errorContext = resolveEffectiveErrorContext(cause, fallbackContext);
+    const context = normalizeErrorContext(errorContext);
+    const lineno = context.lineno;
+    const colno = context.colno;
+    errorContextString = context.label;
+    path = context.path;
+
     let err;
-    let cause;
     if (message instanceof Error) {
       err = message;
       message = err.message;
-      cause = err;
     } else {
       err = new Error(message);
-      cause = null;
     }
 
     // Build formatted message with path and position info
     let messageMetadata = '';
-    if (lineno !== undefined || colno !== undefined || errorContextString !== null || path !== null) {
+    if (lineno != null || colno != null || errorContextString !== null || path !== null) {
       messageMetadata = '(' + (path || 'unknown path') + ')';
 
       if (lineno && colno) {
@@ -153,8 +251,12 @@ class RuntimeError extends Error {
     }
     this.lineno = lineno;
     this.colno = colno;
+    // TODO(error-context-cleanup): remove errorContextString after all callers
+    // and tests use label/errorContext instead.
     this.errorContextString = errorContextString;
+    this.label = errorContextString;
     this.path = path;
+    this.errorContext = errorContext;
     this.cause = cause;
 
     // Capture stack trace for contextual portion
@@ -184,25 +286,19 @@ class RuntimeError extends Error {
 /**
  * Fatal runtime error that should be reported to the callback even for async blocks.
  * Used for critical failures like broken sequential loop contracts.
- * @todo - switch to errorConextObject only
+ * TODO(error-context-cleanup): collapse to RuntimeFatalError(message, ec,
+ * currentBuffer) after legacy positional call sites are migrated.
  */
 class RuntimeFatalError extends RuntimeError {
   /**
    * @param {string|Error} message
-   * @param {number|ErrorContext|object} lineno - Line number, or an error-context object.
-   * @param {number} colno
+   * @param {number|Array|ErrorContext|object} ecOrLineno - Line number, compact context, or legacy context object.
+   * @param {number|object|null} currentBufferOrColno - Current buffer for compact context calls, or column number for legacy calls.
    * @param {string|null} errorContextString
    * @param {string|null} path
    */
-  constructor(message, lineno = 0, colno = 0, errorContextString = null, path = null) {
-    if (lineno && typeof lineno === 'object') {
-      const errorContext = lineno;
-      lineno = errorContext.lineno ?? 0;
-      colno = errorContext.colno ?? 0;
-      errorContextString = errorContext.errorContextString ?? null;
-      path = errorContext.path ?? null;
-    }
-    super(message, lineno, colno, errorContextString, path);
+  constructor(message, ecOrLineno = 0, currentBufferOrColno = 0, errorContextString = null, path = null) {
+    super(message, ecOrLineno, currentBufferOrColno, errorContextString, path);
     this.name = 'RuntimeFatalError';
   }
 }
@@ -228,13 +324,7 @@ class RuntimePromise {
 
   then(onFulfilled, onRejected) {
     const wrappedOnRejected = onRejected && (err =>
-      onRejected(handleError(
-        err,
-        this.errorContext.lineno,
-        this.errorContext.colno,
-        this.errorContext.errorContextString,
-        this.errorContext.path
-      ))
+      onRejected(handleError(err, this.errorContext))
     );
 
     const p = this.promise.then(onFulfilled, wrappedOnRejected);
@@ -243,13 +333,7 @@ class RuntimePromise {
 
   catch(onRejected) {
     const p = this.promise.catch(err =>
-      onRejected(handleError(
-        err,
-        this.errorContext.lineno,
-        this.errorContext.colno,
-        this.errorContext.errorContextString,
-        this.errorContext.path
-      ))
+      onRejected(handleError(err, this.errorContext))
     );
     return new RuntimePromise(p, this.errorContext);
   }
@@ -275,6 +359,8 @@ class RuntimePromise {
 /**
  * Execution context for error reporting.
  */
+// TODO(error-context-cleanup): delete this legacy object wrapper once compact
+// prepared __ec entries are the only runtime context shape.
 class ErrorContext {
   constructor(lineno, colno, path, errorContextString) {
     this.lineno = lineno;
@@ -320,24 +406,20 @@ function deduplicateAndFlattenErrors(errors) {
  * Only adds position/path to errors that don't already have it.
  *
  * @param {Error|Error[]} errors - Single error or array of errors
- * @param {number|ErrorContext} lineno - Line number where error occurred (optional) or ErrorContext object
- * @param {number} colno - Column number where error occurred (optional)
+ * @param {Array|number|object|null} ecOrLineno - Compact context, legacy context object, or line number
+ * @param {object|number|null} currentBufferOrColno - Current buffer for compact context calls, or column number for legacy calls
  * @param {string} errorContextString - Context string for error message (optional)
  * @param {string} path - Template path (optional)
  * @returns {PoisonedValue} Poison value containing the error(s)
  */
+// TODO(error-context-cleanup): remove this legacy positional/object adapter once
+// createPoison/handleError callers pass compact prepared __ec entries.
 function resolveErrorContextArgs(lineno = null, colno = null, errorContextString = null, path = null) {
-  if (lineno && typeof lineno === 'object' && !Array.isArray(lineno)) {
-    const ctx = lineno;
-    return {
-      lineno: ctx.lineno ?? null,
-      colno: ctx.colno ?? null,
-      errorContextString: ctx.errorContextString ?? null,
-      path: (ctx.path ?? ctx.errorContextString) ?? null
-    };
+  if (Array.isArray(lineno) || (lineno && typeof lineno === 'object')) {
+    return compactErrorContext(lineno);
   }
 
-  return { lineno, colno, errorContextString, path };
+  return compactErrorContext({ lineno, colno, label: errorContextString, path });
 }
 
 /**
@@ -347,20 +429,23 @@ function resolveErrorContextArgs(lineno = null, colno = null, errorContextString
  * - a PoisonError that may have many errors in it
  * - an array of Errors or strings
  */
-function normalizeErrorsWithContext(errors, lineno = null, colno = null, errorContextString = null, path = null) {
-  const context = resolveErrorContextArgs(lineno, colno, errorContextString, path);
+// TODO(error-context-cleanup): collapse this to normalize only the error list
+// after createPoison(...) no longer accepts legacy positional/object contexts.
+function normalizeErrorsWithContext(errors, ecOrLineno = null, currentBufferOrColno = null, errorContextString = null, path = null) {
+  const errorContext = resolveErrorContextArgs(ecOrLineno, currentBufferOrColno, errorContextString, path);
+  const context = normalizeErrorContext(errorContext);
   let normalized = errors;
 
   if (!Array.isArray(normalized)) {
     if (typeof normalized === 'string') {
-      normalized = [new RuntimeError(normalized, context.lineno, context.colno, context.errorContextString, context.path)];
+      normalized = [new RuntimeError(normalized, errorContext)];
     }
     normalized = isPoisonError(normalized) ? normalized.errors : [normalized];
   } else {
     //convert any strings to RuntimeError
     normalized = normalized.map(err => {
       if (typeof err === 'string') {
-        return new RuntimeError(err, context.lineno, context.colno, context.errorContextString, context.path);
+        return new RuntimeError(err, errorContext);
       }
       return err;
     });
@@ -368,7 +453,7 @@ function normalizeErrorsWithContext(errors, lineno = null, colno = null, errorCo
 
   const hasContext = context.lineno !== null ||
     context.colno !== null ||
-    context.errorContextString !== null ||
+    context.label !== null ||
     context.path !== null;
 
   if (!hasContext) {
@@ -380,8 +465,8 @@ function normalizeErrorsWithContext(errors, lineno = null, colno = null, errorCo
 
     if (isPoisonError(err)) {
       return err.errors.map(e => {
-        if (!e.lineno) {
-          e = handleError(e, context.lineno || 0, context.colno || 0, context.errorContextString, context.path);
+        if (!e.errorContext && e.lineno == null) {
+          e = handleError(e, errorContext);
         }
         if (didIterate) {
           e.didIterate = didIterate;
@@ -390,8 +475,8 @@ function normalizeErrorsWithContext(errors, lineno = null, colno = null, errorCo
       });
     }
 
-    if (!err.lineno) {
-      err = handleError(err, context.lineno || 0, context.colno || 0, context.errorContextString, context.path);
+    if (!err.errorContext && err.lineno == null) {
+      err = handleError(err, errorContext);
     }
 
     if (didIterate) {
@@ -402,8 +487,10 @@ function normalizeErrorsWithContext(errors, lineno = null, colno = null, errorCo
   }).flat();
 }
 
-function createPoison(errors/* or 1 error */, lineno = null, colno = null, errorContextString = null, path = null) {
-  const normalizedErrors = normalizeErrorsWithContext(errors, lineno, colno, errorContextString, path);
+// TODO(error-context-cleanup): change this public signature to
+// createPoison(errors, ec, currentBuffer) after legacy overloads are gone.
+function createPoison(errors/* or 1 error */, ecOrLineno = null, currentBufferOrColno = null, errorContextString = null, path = null) {
+  const normalizedErrors = normalizeErrorsWithContext(errors, ecOrLineno, currentBufferOrColno, errorContextString, path);
   return new PoisonedValue(normalizedErrors);
 }
 
@@ -502,41 +589,83 @@ async function collectErrors(values) {
  * Preserves PoisonError with multiple errors, adding path to each contained error.
  *
  * @param {Error} error - The error to handle
- * @param {number} lineno - Line number where error occurred
- * @param {number} colno - Column number where error occurred
+ * @param {Array|number|object|null} ecOrLineno - Compact context, legacy context object, or line number
+ * @param {object|number|null} currentBufferOrColno - Current buffer for compact context calls, or column number for legacy calls
  * @param {string} errorContextString - Context string for error message
  * @param {string} path - Template path (e.g., 'template.njk')
  * @returns {Error} Processed error with position and path information
  * @todo - merge TemplateError and PoisonError
+ * TODO(error-context-cleanup): remove positional arguments after compiler and
+ * runtime call sites pass compact prepared __ec entries.
  */
-function handleError(error, lineno, colno, errorContextString = null, path = null) {
+function handleError(error, ecOrLineno, currentBufferOrColno = null, errorContextString = null, path = null) {
+  const fallbackContext = Array.isArray(ecOrLineno) || (ecOrLineno && typeof ecOrLineno === 'object')
+    ? compactErrorContext(ecOrLineno)
+    : compactErrorContext({ lineno: ecOrLineno, colno: currentBufferOrColno, label: errorContextString, path });
+
   // Special handling for PoisonError - preserve multiple errors
   if (isPoisonError(error)) {
-    // Add path information to each contained error
-    if (lineno || path) {
-      // @todo - we probably shall not do this if there are multiple errors
-      error.errors = error.errors.map(err => {
-        return handleError(err, lineno, colno, errorContextString, path);
-      });
-    }
+    error.errors = error.errors.map(err => {
+      const errorContext = resolveEffectiveErrorContext(err, fallbackContext);
+      return errorContext ? handleError(err, errorContext) : err;
+    });
     return error; // Return PoisonError with updated errors
   }
 
+  const errorContext = resolveEffectiveErrorContext(error, fallbackContext);
+  const context = normalizeErrorContext(errorContext);
+
   // Regular error handling
-  if ('lineno' in error && error.lineno !== undefined) {
+  if (error && typeof error === 'object' && 'lineno' in error && error.lineno !== undefined) {
     // Already wrapped with position info, just add path and errorContextString if missing
-    if (!error.path && path) {
-      error.path = path;
+    if (!error.path && context.path) {
+      error.path = context.path;
     }
-    if (!error.errorContextString && errorContextString) {
-      error.errorContextString = errorContextString;
+    if (!error.errorContextString && context.label) {
+      error.errorContextString = context.label;
+      error.label = context.label;
     }
+    attachErrorContextIfMissing(error, errorContext);
     return error;
   } else {
     // Wrap in RuntimeError
-    const wrappedError = new RuntimeError(error, lineno, colno, errorContextString, path);
+    const wrappedError = new RuntimeError(error, errorContext);
     return wrappedError;
   }
+}
+
+function handleFatal(error, ec, currentBuffer = null) {
+  const wrapped = handleError(error, ec, currentBuffer);
+  const context = normalizeErrorContext(resolveEffectiveErrorContext(wrapped, ec));
+
+  if (context.cb) {
+    context.cb(wrapped);
+    return wrapped;
+  }
+
+  throw wrapped;
+}
+
+function getErrorInfo(error, ec = null, currentBuffer = null, includeStack = false) {
+  const context = normalizeErrorContext(resolveEffectiveErrorContext(error, ec));
+  const info = {
+    lineno: context.lineno,
+    colno: context.colno,
+    path: context.path,
+    label: context.label,
+    errorContextString: context.label,
+    cb: context.cb
+  };
+
+  if (currentBuffer && currentBuffer.errorContext) {
+    info.buffer = currentBuffer.errorContext;
+  }
+
+  if (includeStack) {
+    info.stack = [];
+  }
+
+  return info;
 }
 
 /**
@@ -564,4 +693,4 @@ function peekError(value) {
   return null;
 }
 
-export { PoisonedValue, PoisonError, RuntimeError, RuntimeFatalError, RuntimePromise, ErrorContext, createPoison, isPoison, isPoisonError, isRuntimeFatalError, isError, collectErrors, handleError, peekError, markPromiseHandled };
+export { PoisonedValue, PoisonError, RuntimeError, RuntimeFatalError, RuntimePromise, ErrorContext, prepareErrorContexts, normalizeErrorContext, getErrorInfo, createPoison, isPoison, isPoisonError, isRuntimeFatalError, isError, collectErrors, handleError, handleFatal, peekError, markPromiseHandled };

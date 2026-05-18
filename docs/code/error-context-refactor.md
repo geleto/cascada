@@ -235,8 +235,17 @@ the origin label before creation; it does not mutate an existing context later.
 ## Context Creation
 
 Analysis should assign an error context index to every compiler node. The
-compiler should expose one canonical helper for registering or retrieving that
-index. The exact API can evolve, but the behavior should be:
+compiler should expose one artifact-wide context collector with a canonical
+helper for registering or retrieving that index. The useful abstraction is the
+collector, not an individual `ErrorContext` class per node.
+
+Per-node compiler context data should stay as plain info: source position,
+final label, and assigned index. The collector owns conversion to compact
+runtime specs, repeated-label compression, and table emission in one place.
+Do not add a compiler-side `new ErrorContext(...)` layer unless the collector
+itself needs private implementation objects.
+
+The exact API can evolve, but the behavior should be:
 
 ```js
 getErrorContextIndex(node, {
@@ -260,6 +269,8 @@ Rules:
   repeated-label dictionary
 - emitted runtime calls refer to prepared contexts as `__ec[index]`; compiler
   analysis allocates indices into the artifact-wide specs array
+- compile-time error decoration, if needed, should use a small helper that
+  consumes the same plain context info rather than an `ErrorContext` instance
 
 The helper should replace ad hoc object literals like:
 
@@ -439,6 +450,7 @@ Canonical APIs should accept compact error context entries:
 handleError(error, ec, currentBuffer)
 createPoison(errors, ec, currentBuffer)
 new RuntimeFatalError(error, ec, currentBuffer)
+handleFatal(error, ec, currentBuffer)
 ```
 
 During migration, legacy overloads may remain:
@@ -484,11 +496,23 @@ for boundary-owned fatal failures that must be reported asynchronously. Value
 consumption errors should be wrapped or poisoned, not reported directly through
 `cb`. If no callback is present, fatal reporting paths throw the wrapped error.
 
+`handleFatal(error, ec, currentBuffer)` owns that call-or-throw behavior. It
+wraps through `handleError(...)`, reads the effective context's `cb`, calls
+`cb(wrappedError)` when present, and throws the wrapped error when no callback
+is available. Boundary code should prefer this helper over open-coding fatal
+reporting.
+
 Wrapped errors should store their originating compact error context. If
 `handleError(...)`, `createPoison(...)`, or another helper receives both an
 error that already has an error context and a helper argument `ec`, the error's
 existing context wins. The helper argument is only the fallback origin for new
 errors that do not already carry context.
+
+Prefer passing `errorContext` directly into error constructors and wrapping
+helpers. Internal attachment helpers such as `attachErrorContextIfMissing(...)`
+should stay narrow and private: use them only when an error is already wrapped
+and should be annotated idempotently instead of replaced by a new `RuntimeError`.
+Do not let runtime helpers call such mutators casually after the fact.
 
 This precedence preserves the original source of the error as it crosses later
 consumption points. Later helpers may add command-buffer trace information, but
@@ -598,17 +622,18 @@ Before implementation, audit:
 2. Add canonical runtime error paths:
    `handleError(error, ec, currentBuffer)`,
    `createPoison(errors, ec, currentBuffer)`, and
-   `RuntimeFatalError(error, ec, currentBuffer)`. Preserve plural
-   `createPoison(...)` normalization.
+   `RuntimeFatalError(error, ec, currentBuffer)`. Add
+   `handleFatal(error, ec, currentBuffer)` for callback-or-throw fatal
+   reporting. Preserve plural `createPoison(...)` normalization.
 3. Store originating compact error context on wrapped errors and enforce the
    precedence rule. For `PoisonError`, apply this per contained error, not to
    the `PoisonError` wrapper as a whole.
 4. Add `getErrorInfo(error, ec, currentBuffer, includeStack)`. Initially it may
    format only source context; command-buffer fields and stack output can be
    filled in incrementally.
-5. Add the dedicated `tests/pasync/error-context-tracing.js` file with focused
+5. Add the dedicated `tests/pasync/error-context.js` file with focused
    tests for compact context preparation, wrapped-error precedence, and basic
-   `handleError/createPoison/getErrorInfo` behavior.
+   `handleError/createPoison/handleFatal/getErrorInfo` behavior.
 
 ### Phase 2 - Runtime Storage And Trace
 
@@ -620,17 +645,19 @@ Before implementation, audit:
 3. Add optional command-buffer fields only where useful and cheap:
    `name`, `target`, `source`, `loop`, and `branch`. Keep complex expressions
    on `@(line,col)` fallbacks.
-4. Expand `tests/pasync/error-context-tracing.js` for buffer context,
+4. Expand `tests/pasync/error-context.js` for buffer context,
    `traceParent`, optional fields, and stack output.
 
 ### Phase 3 - Compiler Context Table
 
-1. Add compiler-side context collection after transform/analysis has produced
-   the final AST shape, plus the helper for retrieving context indices. This
-   pass allocates artifact-wide context indices shared by root, blocks, macros,
-   methods, and other compiled callables; builds the repeated-label dictionary;
-   creates already-adjusted one-based line numbers; applies the Label
-   Generation algorithm; and returns indices into the artifact-wide specs array.
+1. Add the artifact-wide compiler context collector after transform/analysis
+   has produced the final AST shape, plus the helper for retrieving context
+   indices. The collector allocates context indices shared by root, blocks,
+   macros, methods, and other compiled callables; builds the repeated-label
+   dictionary; creates already-adjusted one-based line numbers; applies the
+   Label Generation algorithm; and returns indices into the artifact-wide specs
+   array. Keep per-node compiler contexts as plain info owned by the collector,
+   not individual `ErrorContext` instances.
 2. Add semantic labels from analysis for important child expressions:
    `If.Condition`, `Switch.Expression`, `For.Iterator`, `For.Limit`,
    `While.Condition`, include/extends targets, and other high-value sites. This
@@ -661,7 +688,7 @@ Before implementation, audit:
    that still expose `.pos` should derive it mechanically as
    `{ lineno: ec[0], colno: ec[1] }` from their stored `errorContext`; no call
    site should provide both independently.
-5. Expand `tests/pasync/error-context-tracing.js` for command-stored context
+5. Expand `tests/pasync/error-context.js` for command-stored context
    and migrated compiler output.
 
 ### Phase 5 - Cleanup And Fixtures
@@ -670,6 +697,27 @@ Before implementation, audit:
 this refactor except where `RuntimePromise` consumes/reports errors. Do not
 rely on `RuntimePromise` as a long-term context storage target; preserve
 promise-origin context in a later refactor.
+
+Code constructs marked with `TODO(error-context-cleanup)` are temporary
+compatibility or legacy bridges introduced during this migration. Phase 5 owns
+removing those markers and the constructs they describe.
+
+Deletion checklist for `TODO(error-context-cleanup)`:
+
+- legacy object-context support inside `normalizeErrorContext(...)`
+- `compactErrorContext(...)` as an object/positional compatibility converter
+- fallback conversion inside `resolveEffectiveErrorContext(...)`; the stable helper should
+  eventually choose between `error.errorContext` and an already-compact fallback
+- positional `RuntimeError(...)`, `RuntimeFatalError(...)`,
+  `createPoison(...)`, and `handleError(...)` context overloads
+- `errorContextString` storage and message plumbing after `label` is the only
+  field used by callers/tests
+- the legacy `ErrorContext` object wrapper
+- `resolveErrorContextArgs(...)`, `normalizeErrorsWithContext(...)` context
+  handling, and all old positional/object adapter paths
+- `compactErrorContext(...)` `lineno ?? 0` / `colno ?? 0` defaults if compact
+  contexts no longer need `0` as an absent-position sentinel
+- in-place `PoisonError.errors` mutation inside `handleError(...)`
 
 1. Replace `resolveErrorContextArgs(...)` with compact-context normalization
    and remove the current `path: ctx.path ?? ctx.errorContextString` fallback
@@ -682,18 +730,22 @@ promise-origin context in a later refactor.
    labels become `ChainCommand`, with path/method details coming from command
    payload diagnostics when needed.
 4. Update precompile/browser fixtures and finish
-   `tests/pasync/error-context-tracing.js` coverage as generated output
+   `tests/pasync/error-context.js` coverage as generated output
    changes.
 5. Remove `errorContextString`, expanded object contexts, and temporary legacy
    compatibility adapters once generated code, runtime APIs, tests, and
    precompile fixtures are updated.
+6. Re-check `attachErrorContextIfMissing(...)` usage after all wrappers accept
+   compact contexts directly. It should either remain a private helper used only
+   by `handleError(...)` for already-wrapped errors, or be removed if no longer
+   needed.
 
 ## Tests
 
 Add a dedicated test file for this refactor, for example:
 
 ```text
-tests/pasync/error-context-tracing.js
+tests/pasync/error-context.js
 ```
 
 This file should focus only on error context and trace behavior, not on broad
