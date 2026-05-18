@@ -1,6 +1,8 @@
 
 import {POISON_KEY, RESOLVE_MARKER} from './markers.js';
 
+const BUFFER_CONTEXT_OPTIONAL_KEYS = ['boundaryName', 'loadName', 'targetIdentifier', 'loop', 'branch'];
+
 // Internal promises are sometimes observed through an owning command/chain
 // instead of by the promise object itself. Mark those promises handled so delayed
 // Cascada-owned consumption does not create process-level rejection warnings.
@@ -646,6 +648,51 @@ function handleFatal(error, ec, currentBuffer = null) {
   throw wrapped;
 }
 
+function getBufferErrorInfo(buffer) {
+  if (!buffer || !buffer.errorContext) {
+    return null;
+  }
+
+  const bufferContext = buffer.errorContext;
+  const context = normalizeErrorContext(bufferContext.ec || bufferContext);
+  const info = {
+    lineno: context.lineno,
+    colno: context.colno,
+    path: context.path,
+    label: context.label,
+    // TODO(error-context-cleanup): remove this alias when diagnostics consume
+    // label directly everywhere.
+    errorContextString: context.label
+  };
+
+  for (const key of BUFFER_CONTEXT_OPTIONAL_KEYS) {
+    if (bufferContext[key] !== undefined) {
+      info[key] = bufferContext[key];
+    }
+  }
+
+  return info;
+}
+
+function getBufferErrorStack(currentBuffer) {
+  const stack = [];
+  const seen = new Set();
+  let buffer = currentBuffer || null;
+
+  while (buffer && !seen.has(buffer)) {
+    seen.add(buffer);
+    const info = getBufferErrorInfo(buffer);
+    if (info) {
+      stack.push(info);
+    }
+    // Buffers without errorContext are omitted from output, but they do not
+    // stop the walk; earlier migration phases may leave intentional gaps.
+    buffer = buffer.traceParent || buffer.parent || null;
+  }
+
+  return stack;
+}
+
 function getErrorInfo(error, ec = null, currentBuffer = null, includeStack = false) {
   const context = normalizeErrorContext(resolveEffectiveErrorContext(error, ec));
   const info = {
@@ -657,12 +704,13 @@ function getErrorInfo(error, ec = null, currentBuffer = null, includeStack = fal
     cb: context.cb
   };
 
-  if (currentBuffer && currentBuffer.errorContext) {
-    info.buffer = currentBuffer.errorContext;
+  const bufferInfo = getBufferErrorInfo(currentBuffer);
+  if (bufferInfo) {
+    info.buffer = bufferInfo;
   }
 
   if (includeStack) {
-    info.stack = [];
+    info.stack = getBufferErrorStack(currentBuffer);
   }
 
   return info;

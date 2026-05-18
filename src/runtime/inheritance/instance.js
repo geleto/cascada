@@ -1,6 +1,7 @@
 import {RuntimeFatalError} from '../errors.js';
 import {createInheritanceCallableArgumentFrame} from './invoke.js';
 import {declareInheritanceSharedChain} from './shared.js';
+import {createBufferErrorContext} from './error-context.js';
 
 class InheritanceInstance {
   constructor(options) {
@@ -11,6 +12,7 @@ class InheritanceInstance {
     this.cb = options.cb;
     this.rootBuffer = options.rootBuffer;
     this.sharedRootBuffer = options.sharedRootBuffer;
+    this.traceParent = options.traceParent || null;
     this.context = options.context;
     this.failure = null;
     this.closed = false;
@@ -19,7 +21,16 @@ class InheritanceInstance {
   static async create(options) {
     const runtime = options.runtime;
     const context = options.context;
-    const rootBuffer = options.rootBuffer || new runtime.CommandBuffer(context, null, null, null);
+    const traceParent = options.traceParent || null;
+    const rootBuffer = options.rootBuffer || new runtime.CommandBuffer(
+      context,
+      null,
+      null,
+      null,
+      null,
+      createBufferErrorContext(options.origin, 'inheritance'),
+      traceParent
+    );
     const sharedRootBuffer = options.sharedRootBuffer || rootBuffer;
     const chain = await runtime.loadInheritanceChain({
       templateOrScript: options.entryTemplateOrScript,
@@ -42,18 +53,19 @@ class InheritanceInstance {
       cb: options.cb ?? function noopCallback() {},
       rootBuffer,
       sharedRootBuffer,
+      traceParent,
       context
     });
   }
 
   invoke(methodName, args = [], origin = null) {
     this.assertOpen(origin);
-    return this._invokeFromMethodData(this.getMethod(methodName, origin), args, origin, this.sharedRootBuffer, this.context);
+    return this._invokeFromMethodData(this.getMethod(methodName, origin), args, origin, this.sharedRootBuffer, this.context, this.traceParent);
   }
 
   invokeFromCurrentBuffer(methodName, args, context, currentBuffer, origin = null) {
     this.assertOpen(origin);
-    return this._invokeFromMethodData(this.getMethod(methodName, origin), args, origin, currentBuffer, context);
+    return this._invokeFromMethodData(this.getMethod(methodName, origin), args, origin, currentBuffer, context, currentBuffer);
   }
 
   invokeSuper(methodData, args, context, currentBuffer, origin = null) {
@@ -64,7 +76,7 @@ class InheritanceInstance {
         origin
       );
     }
-    return this._invokeFromMethodData(methodData.super, args, origin, currentBuffer, context);
+    return this._invokeFromMethodData(methodData.super, args, origin, currentBuffer, context, currentBuffer);
   }
 
   invokeConstructor(origin = null) {
@@ -73,7 +85,7 @@ class InheritanceInstance {
     if (!constructorEntry) {
       return undefined;
     }
-    return this._invokeFromMethodData(constructorEntry, [], origin, this.sharedRootBuffer, this.context);
+    return this._invokeFromMethodData(constructorEntry, [], origin, this.sharedRootBuffer, this.context, this.traceParent);
   }
 
   assertOpen(origin = null) {
@@ -99,7 +111,7 @@ class InheritanceInstance {
     return methodData;
   }
 
-  async _invokeFromMethodData(methodData, args, origin, parentBuffer, context) {
+  async _invokeFromMethodData(methodData, args, origin, parentBuffer, context, traceParent = null) {
     const visibleChains = Array.from(new Set([
       ...methodData.mergedLinkedChains,
       ...methodData.mergedMutatedChains
@@ -109,7 +121,9 @@ class InheritanceInstance {
       parentBuffer,
       visibleChains,
       parentBuffer,
-      methodData.mergedMutatedChains
+      methodData.mergedMutatedChains,
+      createBufferErrorContext(origin ?? methodData.origin, methodData.name),
+      traceParent
     );
     const callablePayload = methodData.isConstructor
       ? null

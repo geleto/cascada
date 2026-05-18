@@ -210,13 +210,20 @@ class CompileLoop {
     const loopIndex = this.compiler._tmpid();
     const loopLength = this.compiler._tmpid();
     const isLast = this.compiler._tmpid();
-    const errorContext = this.compiler._tmpid();
-    this.compiler.emit(`, ${loopIndex}, ${loopLength}, ${isLast}, ${errorContext}) {`);
+    const errorContextVar = this.compiler._tmpid();
+    this.compiler.emit(`, ${loopIndex}, ${loopLength}, ${isLast}, ${errorContextVar}) {`);
+    const loopMetaVar = this.compiler._tmpid();
+    // Create the single per-iteration runtime loop object. The tmpid variable
+    // is reused both for diagnostics and for the exposed loop binding.
+    this.compiler.emit.line(`const ${loopMetaVar} = runtime.createLoopBindings(${loopIndex}, ${loopLength}, ${isLast});`);
 
     const shouldAwaitLoopBody = sequentialLoopBody || hasConcurrencyLimit;
     const parentBufferArg = this.compiler.buffer.currentBuffer;
     const linkedChainsArg = this.compiler.emit.getLinkedChainsArg(node);
     const linkedMutatedChainsArg = this.compiler.emit.getLinkedMutatedChainsArg(node);
+    // TODO(error-context-cleanup): replace the legacy loop errorContext argument
+    // with __ec[index] after the compiler context table lands.
+    const loopInfoArg = `{ ec: ${errorContextVar}, loop: ${loopMetaVar} }`;
     this.compiler.emit(
       `return runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, cb, async (currentBuffer) => {`
     );
@@ -240,7 +247,7 @@ class CompileLoop {
         });
         if (node.loopRuntimeName) {
           this.compiler.emit.line(`runtime.declareBufferChain(${buffer}, "${node.loopRuntimeName}", "var", context, null);`);
-          this._emitLoopMetadataValueBinding(node, loopIndex, loopLength, isLast);
+          this._emitLoopMetadataValueBinding(node, loopMetaVar);
         }
         this._emitLoopIterationBindings(node, loopVars, loopVarNames, (varName, valueExpr) => {
           this._emitLoopValueAssignment(node, varName, valueExpr);
@@ -308,7 +315,7 @@ class CompileLoop {
 
     });
     this.compiler.emit.asyncClosureDepth--;
-    this.compiler.emit.line('});');
+    this.compiler.emit.line(`}, ${loopInfoArg});`);
     this.compiler.emit.line('}).bind(context);');
 
     return null;
@@ -403,9 +410,9 @@ class CompileLoop {
     );
   }
 
-  _emitLoopMetadataValueBinding(node, loopIndex, loopLength, isLast) {
+  _emitLoopMetadataValueBinding(node, loopValueExpr) {
     this.compiler.emit.line(
-      `${this.compiler.buffer.currentBuffer}.addCommand(runtime.setLoopValueBindings('${node.loopRuntimeName}', ${loopIndex}, ${loopLength}, ${isLast}, {lineno: ${node.lineno}, colno: ${node.colno}}), '${node.loopRuntimeName}');`
+      `${this.compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ chainName: '${node.loopRuntimeName}', args: [${loopValueExpr}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${node.loopRuntimeName}');`
     );
   }
 

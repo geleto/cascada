@@ -3,12 +3,14 @@ import {assertChainLaneAvailable, checkFinishedBuffer} from './checks.js';
 import {handleError, RuntimeFatalError} from './errors.js';
 
 class CommandBuffer {
-  constructor(context, parent = null, linkedChains = null, linkedParent = null, linkedMutatedChains = null) {
+  constructor(context, parent = null, linkedChains = null, linkedParent = null, linkedMutatedChains = null, errorContext = null, traceParent = null) {
     const linkedLaneNames = validateLaneNames(linkedChains, 'linkedChains', context);
     const linkedMutatedLaneNames = validateLaneNames(linkedMutatedChains, 'linkedMutatedChains', context);
 
     this._context = context;
     this.parent = parent;
+    this.traceParent = traceParent || null;
+    this.errorContext = normalizeBufferErrorContext(errorContext);
     this.finished = false;
     this._finishedChains = Object.create(null);
     // Local addressability map. Entries may be owned by this buffer or linked
@@ -32,6 +34,9 @@ class CommandBuffer {
       this._inheritChainAliases(parent._chainAliases);
     }
 
+    // TODO(error-context-cleanup): rename/reframe linkedParent as linkTarget.
+    // It is a chain registration target, not a stored parent link; the
+    // persistent hierarchy links are parent and traceParent.
     const linkTarget = linkedParent || parent;
     if (linkTarget && linkedLaneNames) {
       for (let i = 0; i < linkedLaneNames.length; i++) {
@@ -376,6 +381,21 @@ class CommandBuffer {
     return resolvedChainName;
   }
 
+}
+
+function normalizeBufferErrorContext(errorContext) {
+  if (!errorContext) {
+    return null;
+  }
+  if (errorContext.ec) {
+    return errorContext;
+  }
+  // TODO(error-context-cleanup): remove this compact-context convenience once
+  // compiler-created buffers always pass { ec: __ec[index], ...fields }.
+  if (Array.isArray(errorContext)) {
+    return { ec: errorContext };
+  }
+  return errorContext;
 }
 
 function validateLaneNames(laneNames, label, context = null) {

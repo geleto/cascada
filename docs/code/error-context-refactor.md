@@ -345,6 +345,8 @@ execution hierarchy:
 - normal child buffers use their command-buffer parent
 - buffers that intentionally start with a clear scope should still keep a trace
   parent so stack construction can cross that boundary
+- when both `parent` and `traceParent` are present, diagnostic stack walking
+  uses `traceParent`; `parent` remains the runtime hierarchy/visibility link
 
 Clear-scope buffers are any execution boundary that intentionally does not use
 the normal command-buffer parent for visibility or scope but still belongs in
@@ -352,9 +354,22 @@ the diagnostic stack. Audit and cover at least callable and composition
 boundaries: macros/caller bodies, blocks, methods/constructors, includes,
 imports/from-imports, components, and extends/parent rendering paths.
 
+Callable and caller execution must always have a diagnostic trace parent.
+Compiled calls should pass the current buffer into the callable invocation path
+so macro/caller/method/block buffers can trace back to the call site. Direct
+runtime calls that cannot provide a trace parent should be made unsupported or
+should fail loudly after the migration, rather than silently creating
+untraceable buffers.
+
 `traceParent` is a reasonable name for that extra link because it describes the
 purpose directly: it is not visibility, ownership, or command routing; it is
 only for diagnostic trace construction.
+
+Command buffers should be described as having only two persistent parent links:
+`parent` and `traceParent`. The current `linkedParent` constructor argument is
+not a parent relationship; it is only the chain registration target used while
+creating linked chain lanes. Rename or reframe it as `linkTarget` in a later
+cleanup.
 
 Buffer diagnostics may include extra execution information in addition to the
 boundary context:
@@ -362,13 +377,13 @@ boundary context:
 - loop variable/current item for loops
 - case label or case line for `switch`
 - branch line for `if`
-- function, macro, method, or block name
+- function, macro, method, or block boundary name
 - include/extends target when useful
 
 Even when a full stack trace is not printed, the regular error message should
 be able to include current-buffer execution info such as loop basics or the
-current function/macro/method name. The root buffer may have no extra execution
-info.
+current function/macro/method boundary name. The root buffer may have no extra
+execution info.
 
 ### Command Buffer Error Context Fields
 
@@ -390,22 +405,24 @@ optional execution metadata owned by the buffer.
 
 Useful optional fields:
 
-- `name` - callable or named boundary identifier, such as macro/function/method
-  name, block name, or component/import target name
-- `target` - composition target identifier, such as `import x`, `component X`,
-  or the target binding for a composition payload; if the target is dynamic,
-  use an `@(line,col)` fallback such as `target@(1,2)`
-- `source` - external source identifier, such as `include 'template.casc'`,
-  `extends 'base.casc'`, or a script/module name; if the source is dynamic,
-  use an `@(line,col)` fallback such as `include source@(1,2)`
-- `loop` - small loop-info object, not an arbitrary runtime loop object. Use a
-  stable shape such as `{ vars, index, length, first, last, value }`, where
-  `vars` is an array of loop variable names and `value` is omitted or a bounded
-  preview.
+- `boundaryName` - callable or named boundary identifier, such as
+  macro/function/method name, block name, component binding name, or `root`
+- `loadName` - external or resolved thing being loaded/rendered, such as
+  `template.casc`, `base.casc`, or a script/module name. If the loaded value is
+  dynamic, use an `@(line,col)` fallback such as `include source@(1,2)`.
+- `targetIdentifier` - local source identifier receiving or naming the loaded
+  thing, such as an import alias, component binding name, or composition target.
+  If the target is dynamic, use an `@(line,col)` fallback such as
+  `target@(1,2)`.
+- `loop` - the existing immutable runtime loop object for that iteration, as
+  created by `runtime.createLoopBindings(...)`. Do not create a separate
+  diagnostic loop summary and do not add extra fields such as loop variable
+  names.
 - `branch` - branch display string, such as `then`, `else`, `default`,
   `case 'active'`, or `case@(7,14)`
 
-Do not stringify complex expressions for `branch`, `source`, or `target`.
+Do not stringify complex expressions for `branch`, `loadName`, or
+`targetIdentifier`.
 Use static strings for compile-time-known branches and literal values, such as
 `then`, `else`, `default`, or `case 'active'`. For dynamic or complex
 expressions, use a compact source-position fallback such as `case@(7,14)` or
@@ -639,12 +656,20 @@ Before implementation, audit:
 
 1. Add the command-buffer error-context shape `{ ec: __ec[index], ...fields }`
    and store boundary contexts without optional fields first.
+   Until Phase 3 emits prepared `__ec[index]` entries, compiler-created
+   buffers may use the temporary bridge `{ ec: legacyObjectContext }`. Mark
+   that bridge with `TODO(error-context-cleanup)` wherever the legacy context is
+   generated.
 2. Add `traceParent` for clear-scope buffers. Audit at least macros/caller
    bodies, blocks, methods/constructors, includes, imports/from-imports,
-   components, and extends/parent rendering paths.
-3. Add optional command-buffer fields only where useful and cheap:
-   `name`, `target`, `source`, `loop`, and `branch`. Keep complex expressions
-   on `@(line,col)` fallbacks.
+   components, and extends/parent rendering paths. Stack walking should prefer
+   `traceParent` over `parent` when both are present.
+3. Add runtime support for optional command-buffer fields and emit the cheap
+   compiler fields available during this phase, especially `boundaryName` and
+   `loop`.
+   Later compiler call-site migration should fill in additional `loadName`,
+   `targetIdentifier`, and `branch` fields where the compiler already has
+   stable AST information. Keep complex expressions on `@(line,col)` fallbacks.
 4. Expand `tests/pasync/error-context.js` for buffer context,
    `traceParent`, optional fields, and stack output.
 
@@ -683,6 +708,13 @@ Before implementation, audit:
 3. Coverage checklist:
    script symbol lookup, template lookup, composition, inheritance,
    macro/caller, loop, guard, output, return, and boundary codegen paths.
+   Fill in command-buffer optional fields such as `loadName`,
+   `targetIdentifier`, and `branch` at these call sites when the compiler can
+   provide stable AST information. Pass `traceParent` to emitted
+   `runRenderBoundary(...)` calls where the render boundary has a diagnostic
+   caller buffer. Ensure macro, caller, method, block, and other callable
+   invocation paths require a current buffer/trace parent rather than
+   supporting untraceable calls.
 4. Move command constructors toward accepting `errorContext` instead of raw
    `pos` as the compiler call sites are migrated. During transition, commands
    that still expose `.pos` should derive it mechanically as
@@ -713,6 +745,19 @@ Deletion checklist for `TODO(error-context-cleanup)`:
 - `errorContextString` storage and message plumbing after `label` is the only
   field used by callers/tests
 - the legacy `ErrorContext` object wrapper
+- `normalizeBufferErrorContext(...)` compact/context-shape convenience once
+  compiler-created buffers always pass `{ ec: __ec[index], ...fields }`
+- legacy compiler buffer-context emit helpers in boundaries, entry/managed
+  buffers, macro/caller buffers, and loop body buffers once they use
+  `__ec[index]`, including `_emitBoundaryErrorContext(...)` and
+  `_emitManagedBufferErrorContext(...)`
+- the temporary runtime inheritance `createBufferErrorContext(...)` helper and
+  `src/runtime/inheritance/error-context.js` bridge file if no final ownership
+  case remains
+- the `linkedParent` constructor naming/concept; it should become a chain
+  `linkTarget`, not a third parent relationship
+- the long positional `managedBlock(...)` signature after the temporary
+  error-context and trace-parent parameters are no longer changing
 - `resolveErrorContextArgs(...)`, `normalizeErrorsWithContext(...)` context
   handling, and all old positional/object adapter paths
 - `compactErrorContext(...)` `lineno ?? 0` / `colno ?? 0` defaults if compact
@@ -732,13 +777,25 @@ Deletion checklist for `TODO(error-context-cleanup)`:
 4. Update precompile/browser fixtures and finish
    `tests/pasync/error-context.js` coverage as generated output
    changes.
-5. Remove `errorContextString`, expanded object contexts, and temporary legacy
+5. Review `tests/pasync/error-context.js` and replace internal unit-style
+   scaffolding tests with integration tests wherever compiled scripts/templates
+   can now exercise the same behavior. Delete unit tests that only existed to
+   cover incomplete migration internals and no longer prove a live contract.
+6. Remove `errorContextString`, expanded object contexts, and temporary legacy
    compatibility adapters once generated code, runtime APIs, tests, and
    precompile fixtures are updated.
-6. Re-check `attachErrorContextIfMissing(...)` usage after all wrappers accept
+7. Re-check `attachErrorContextIfMissing(...)` usage after all wrappers accept
    compact contexts directly. It should either remain a private helper used only
    by `handleError(...)` for already-wrapped errors, or be removed if no longer
    needed.
+8. Review all helpers, methods, and small bridge functions added during this
+   refactor for final ownership. Move them to the file/class that owns the
+   concept, inline one-off helpers where clearer, and remove migration-only
+   helpers instead of leaving them in incidental locations.
+9. Normalize identifier names for error-context values. Parameters and fields
+   that carry an `ErrorContext` should be named `errorContext`, `ec`, or another
+   explicit context name. Rename ambiguous historical names such as `origin`
+   where they actually mean an originating error context.
 
 ## Tests
 
@@ -749,7 +806,15 @@ tests/pasync/error-context.js
 ```
 
 This file should focus only on error context and trace behavior, not on broad
-feature correctness. Cover:
+feature correctness. Prefer integration tests that render compiled
+scripts/templates and observe the resulting diagnostics. Unit tests are
+acceptable during early phases when the compiler cannot yet emit the target
+shape, but they should be treated as temporary scaffolding unless they cover a
+stable public runtime contract. During final cleanup, rewrite unit tests as
+integration tests where possible and remove unit tests that only exercised
+transitional internals.
+
+Cover:
 
 - generated context labels for ordinary expressions and parent-labeled child
   expressions, such as `If.Condition(LookupVal)` and

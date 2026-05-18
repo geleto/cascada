@@ -1,4 +1,3 @@
-import * as nodes from '../language/nodes.js';
 import {DEFAULT_TEMPLATE_TEXT_CHAIN} from './buffer.js';
 
 class CompileEmit {
@@ -105,9 +104,10 @@ class CompileEmit {
     }
     // this.Line(`let ${this.compiler.buffer.currentBuffer} = "";`);
     if (this.compiler.asyncMode && name === 'root') {
+      const rootErrorContextArg = this._emitManagedBufferErrorContext(node, { boundaryName: name });
       this.line(
         `let ${this.compiler.buffer.currentBuffer} = ` +
-        `new runtime.CommandBuffer(context, null, null, null);`
+        `new runtime.CommandBuffer(context, null, null, null, null, ${rootErrorContextArg});`
       );
       if (!this.compiler.scriptMode) {
         this.line(
@@ -120,12 +120,29 @@ class CompileEmit {
         this.compiler.buffer.currentBuffer,
         this.compiler.asyncMode ? 'parentBuffer' : null,
         this.compiler.buffer.currentTextChainVar,
-        linkedChains
+        linkedChains,
+        this._emitManagedBufferErrorContext(node, { boundaryName: name }),
+        this.compiler.asyncMode ? 'parentBuffer' : 'null'
       );
     }
     if (!this.compiler.asyncMode) {
       this.line('try {');
     }
+  }
+
+  _emitManagedBufferErrorContext(node, fields = {}) {
+    if (!node) {
+      return 'null';
+    }
+    // TODO(error-context-cleanup): replace legacy _createErrorContext(...) output
+    // with { ec: __ec[index], ...fields } after the compiler context table lands.
+    const parts = [`ec: ${JSON.stringify(this.compiler._createErrorContext(node))}`];
+    Object.entries(fields).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        parts.push(`${key}: ${JSON.stringify(value)}`);
+      }
+    });
+    return `{ ${parts.join(', ')} }`;
   }
 
   _endEntryFunction(node, noReturn) {
@@ -164,7 +181,7 @@ class CompileEmit {
   // Managed block for direct scope/frame handling (optionally with a scope-root buffer).
   // If createScopeRootBuffer=true, this is a sanctioned scope-root buffer creation
   // site. The callback body is compiled between initialization and caller-managed finalization.
-  managedBlock(frame, createScope = false, createScopeRootBuffer = false, emitFunc = null, parentBufferOverride = undefined, analysisNode = null) {
+  managedBlock(frame, createScope = false, createScopeRootBuffer = false, emitFunc = null, parentBufferOverride = undefined, analysisNode = null, errorContextNode = analysisNode, traceParentOverride = undefined) {
     let nextFrame = frame;
     if (createScope) {
       nextFrame = frame.push();
@@ -188,11 +205,16 @@ class CompileEmit {
         currentBuffer: bufferId,
         currentTextChainVar: `${bufferId}_textChainVar`
       }, () => {
+        const traceParentArg = traceParentOverride !== undefined
+          ? traceParentOverride
+          : (parentBufferId || 'null');
         this.compiler.buffer.initManagedBuffer(
           bufferId,
           parentBufferId,
           `${bufferId}_textOutputVar`,
-          linkedChains
+          linkedChains,
+          this._emitManagedBufferErrorContext(errorContextNode),
+          traceParentArg
         );
         if (typeof emitFunc === 'function') {
           emitFunc(nextFrame, bufferId);

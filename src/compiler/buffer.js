@@ -38,14 +38,14 @@ class CompileBuffer {
    * @param {string|null} parentBufferId
    * @param {string} textChainVar
    */
-  initManagedBuffer(bufferId, parentBufferId, textChainVar, linkedChains = null) {
+  initManagedBuffer(bufferId, parentBufferId, textChainVar, linkedChains = null, errorContextArg = 'null', traceParentArg = 'null') {
     if (this.compiler.asyncMode) {
       const textId = textChainVar || `${bufferId}_textChainVar`;
       const parentArg = parentBufferId || 'null';
       const linkedChainsArg = Array.isArray(linkedChains) && linkedChains.length > 0
         ? JSON.stringify(linkedChains)
         : 'null';
-      this.compiler.emit.line(`let ${bufferId} = new runtime.CommandBuffer(context, ${parentArg}, ${linkedChainsArg}, ${parentArg});`);
+      this.compiler.emit.line(`let ${bufferId} = new runtime.CommandBuffer(context, ${parentArg}, ${linkedChainsArg}, ${parentArg}, null, ${errorContextArg}, ${traceParentArg});`);
       if (!this.compiler.scriptMode) {
         this.compiler.emit.line(`let ${textId} = runtime.declareBufferChain(${bufferId}, "${this.currentTextChainName}", "text", context, null);`);
       }

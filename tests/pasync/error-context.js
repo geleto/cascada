@@ -1,5 +1,6 @@
 import expect from 'expect.js';
 import {
+  CommandBuffer,
   PoisonError,
   RuntimeError,
   RuntimeFatalError,
@@ -9,7 +10,9 @@ import {
   handleFatal,
   isPoison,
   normalizeErrorContext,
-  prepareErrorContexts
+  prepareErrorContexts,
+  runControlFlowBoundary,
+  runValueBoundary
 } from '../../src/runtime/runtime.js';
 
 describe('error context tracing runtime foundation', () => {
@@ -48,7 +51,7 @@ describe('error context tracing runtime foundation', () => {
     const wrapped = handleError(new Error('bad condition'), ec, {});
 
     expect(wrapped.message).to.contain('(script.casc) [Line 3, Column 7]');
-    expect(wrapped.message).to.contain("doing 'If.Condition(LookupVal)'");
+    expect(wrapped.message).to.contain('doing \'If.Condition(LookupVal)\'');
     expect(wrapped.errorContext).to.eql(ec);
     expect(wrapped.label).to.be('If.Condition(LookupVal)');
     expect(wrapped.errorContextString).to.be('If.Condition(LookupVal)');
@@ -122,7 +125,7 @@ describe('error context tracing runtime foundation', () => {
 
     expect(wrapped.errorContext).to.eql(origin);
     expect(wrapped.message).to.contain('origin.casc');
-    expect(wrapped.message).to.contain("doing 'FunCall'");
+    expect(wrapped.message).to.contain('doing \'FunCall\'');
   });
 
   it('stores context on PoisonError contents rather than the wrapper', () => {
@@ -179,7 +182,7 @@ describe('error context tracing runtime foundation', () => {
     expect(err.name).to.be('RuntimeFatalError');
     expect(err.errorContext).to.eql(ec);
     expect(err.message).to.contain('(include.casc) [Line 6, Column 10]');
-    expect(err.message).to.contain("doing 'Include.Template'");
+    expect(err.message).to.contain('doing \'Include.Template\'');
   });
 
   it('handleFatal reports through context callback when present', () => {
@@ -202,6 +205,142 @@ describe('error context tracing runtime foundation', () => {
     expect(() => handleFatal(new Error('fatal failure'), ec, {})).to.throwException(err => {
       expect(err.errorContext).to.eql(ec);
       expect(err.message).to.contain('fatal.casc');
+    });
+  });
+
+  it('includes command-buffer error context in error info', () => {
+    const opEc = [9, 1, 'Output', 'consumer.casc', null];
+    const bufferEc = [3, 4, 'If.Condition(FunCall)', 'script.casc', null];
+    const buffer = new CommandBuffer({ path: 'script.casc' }, null, null, null, null, {
+      ec: bufferEc,
+      branch: 'then',
+      boundaryName: 'if-block'
+    });
+
+    const info = getErrorInfo(new Error('failure'), opEc, buffer, false);
+
+    expect(info.buffer).to.eql({
+      lineno: 3,
+      colno: 4,
+      path: 'script.casc',
+      label: 'If.Condition(FunCall)',
+      errorContextString: 'If.Condition(FunCall)',
+      branch: 'then',
+      boundaryName: 'if-block'
+    });
+  });
+
+  it('builds command-buffer stack through parent links', () => {
+    const rootEc = [1, 0, 'Root', 'script.casc', null];
+    const childEc = [5, 2, 'For.Iterator(Symbol)', 'script.casc', null];
+    const root = new CommandBuffer({ path: 'script.casc' }, null, null, null, null, {
+      ec: rootEc,
+      boundaryName: 'root'
+    });
+    const loop = {
+      index: 2,
+      index0: 1,
+      length: 3,
+      first: false,
+      last: false,
+      revindex: 2,
+      revindex0: 1
+    };
+    const child = new CommandBuffer({ path: 'script.casc' }, root, null, null, null, {
+      ec: childEc,
+      loop
+    });
+
+    const info = getErrorInfo(new Error('failure'), childEc, child, true);
+
+    expect(info.stack).to.eql([
+      {
+        lineno: 5,
+        colno: 2,
+        path: 'script.casc',
+        label: 'For.Iterator(Symbol)',
+        errorContextString: 'For.Iterator(Symbol)',
+        loop
+      },
+      {
+        lineno: 1,
+        colno: 0,
+        path: 'script.casc',
+        label: 'Root',
+        errorContextString: 'Root',
+        boundaryName: 'root'
+      }
+    ]);
+  });
+
+  it('builds command-buffer stack through traceParent for clear-scope buffers', () => {
+    const rootEc = [1, 0, 'Root', 'script.casc', null];
+    const macroEc = [7, 2, 'Macro', 'script.casc', null];
+    const root = new CommandBuffer({ path: 'script.casc' }, null, null, null, null, {
+      ec: rootEc,
+      boundaryName: 'root'
+    });
+    const macro = new CommandBuffer({ path: 'script.casc' }, null, null, null, null, {
+      ec: macroEc,
+      boundaryName: 'renderCard'
+    }, root);
+
+    const info = getErrorInfo(new Error('failure'), macroEc, macro, true);
+
+    expect(info.stack.map(frame => frame.boundaryName)).to.eql(['renderCard', 'root']);
+  });
+
+  it('prefers traceParent over parent when building command-buffer stack', () => {
+    const sharedEc = [2, 0, 'SharedRoot', 'script.casc', null];
+    const callerEc = [4, 0, 'CallerSite', 'script.casc', null];
+    const methodEc = [9, 0, 'Method', 'script.casc', null];
+    const shared = new CommandBuffer({ path: 'script.casc' }, null, null, null, null, {
+      ec: sharedEc,
+      boundaryName: 'shared'
+    });
+    const caller = new CommandBuffer({ path: 'script.casc' }, null, null, null, null, {
+      ec: callerEc,
+      boundaryName: 'caller'
+    });
+    const method = new CommandBuffer({ path: 'script.casc' }, shared, null, null, null, {
+      ec: methodEc,
+      boundaryName: 'method'
+    }, caller);
+
+    const info = getErrorInfo(new Error('failure'), methodEc, method, true);
+
+    expect(info.stack.map(frame => frame.boundaryName)).to.eql(['method', 'caller']);
+  });
+
+  it('stores boundary error context on runtime value boundaries', async () => {
+    const root = new CommandBuffer({ path: 'script.casc' });
+    const boundaryEc = [11, 6, 'FunCall', 'script.casc', null];
+    let child = null;
+
+    await runValueBoundary(root, null, null, async (currentBuffer) => {
+      child = currentBuffer;
+    }, { ec: boundaryEc, loadName: 'include source@(11,6)' });
+
+    expect(child.traceParent).to.be(root);
+    expect(child.errorContext).to.eql({
+      ec: boundaryEc,
+      loadName: 'include source@(11,6)'
+    });
+  });
+
+  it('stores boundary error context on runtime control-flow boundaries', async () => {
+    const root = new CommandBuffer({ path: 'script.casc' });
+    const boundaryEc = [12, 3, 'If.Condition(Symbol)', 'script.casc', null];
+    let child = null;
+
+    await runControlFlowBoundary(root, null, null, { path: 'script.casc' }, null, async (currentBuffer) => {
+      child = currentBuffer;
+    }, { ec: boundaryEc, branch: 'then' });
+
+    expect(child.traceParent).to.be(root);
+    expect(child.errorContext).to.eql({
+      ec: boundaryEc,
+      branch: 'then'
     });
   });
 });
