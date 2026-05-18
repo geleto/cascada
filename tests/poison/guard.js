@@ -816,6 +816,57 @@ const {AsyncEnvironment} = cascada;
       }
     });
 
+    it('should handle same local variable name in guard and recover blocks', async () => {
+      const script = `
+        data result
+        guard result
+          var local = "guard"
+          result.phase = local
+          var failed = fail()
+        recover err
+          var local = "recover"
+          result.phase = local
+          result.recovered = true
+        endguard
+
+        return result.snapshot()`;
+
+      const context = {
+        fail: () => new PoisonedValue([new Error('guard boom')])
+      };
+
+      const result = await env.renderScriptString(script, context);
+      expect(result).to.eql({
+        phase: 'recover',
+        recovered: true
+      });
+    });
+
+    it('should handle recover error variable colliding with a guard local variable', async () => {
+      const script = `
+        data result
+        guard result
+          var err = "guard-local"
+          result.before = err
+          var failed = fail()
+        recover err
+          result.errorSeen = err is error
+          result.after = "recover"
+        endguard
+
+        return result.snapshot()`;
+
+      const context = {
+        fail: () => new PoisonedValue([new Error('guard boom')])
+      };
+
+      const result = await env.renderScriptString(script, context);
+      expect(result).to.eql({
+        errorSeen: false,
+        after: 'recover'
+      });
+    });
+
     it('should recover in template mode (reverting output)', async () => {
       // guard text implies guarding text output. "Start " should be reverted.
       // Use {% set %} instead of {% var %} in template mode.

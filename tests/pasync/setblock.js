@@ -91,6 +91,20 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
         expect(result.trim().replace(/\s+/g, ' ')).to.equal('Welcome Goodbye');
       });
 
+      it('should handle same local variable name inside and after a set block', async () => {
+        const template = `
+          {% set captured %}
+            {% var local = "captured" %}
+            {{ local }}
+          {% endset %}
+          {% var local = "outer" %}
+          {{ captured }}|{{ local }}
+        `;
+
+        const result = await env.renderTemplateString(template, {});
+        expect(result.trim().replace(/\s+/g, ' ')).to.equal('captured |outer');
+      });
+
       // Set block with control structures
       it('should handle set block with async values in control structures', async () => {
         const context = {

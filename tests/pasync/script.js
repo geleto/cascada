@@ -268,7 +268,7 @@ describe('Cascada Script: Variables', function () {
       expect(fallback.selection).to.be('fallback');
     });
 
-    it('should emit canonical runtime aliases for duplicated branch declarations', function () {
+    it('should not emit runtime aliases for mutually exclusive duplicated branch declarations', function () {
       const script = `
         var result = {}
         if flag
@@ -281,7 +281,7 @@ describe('Cascada Script: Variables', function () {
         return result`;
 
       const compiled = new Script(script, env, 'dup-branch-script.casc').compileSource();
-      expect(/scopedValue#\d+/.test(compiled)).to.be(true);
+      expect(/scopedValue#\d+/.test(compiled)).to.be(false);
     });
 
     it('should timeout with branch-local var assigned into outer object path (minimal repro)', async function () {
@@ -364,7 +364,7 @@ describe('Cascada Script: Variables', function () {
       expect(defaultResult.value).to.be('DEFAULT');
     });
 
-    it('should emit canonical runtime aliases for duplicated switch declarations', function () {
+    it('should not emit runtime aliases for mutually exclusive duplicated switch declarations', function () {
       const script = `
         var result = {}
         switch mode
@@ -381,7 +381,7 @@ describe('Cascada Script: Variables', function () {
         return result`;
 
       const compiled = new Script(script, env, 'dup-switch-script.casc').compileSource();
-      expect(/branchScoped#\d+/.test(compiled)).to.be(true);
+      expect(/branchScoped#\d+/.test(compiled)).to.be(false);
     });
 
     it('should not leak vars declared in switch cases', async function () {

@@ -327,7 +327,8 @@ function createConstructorPlacementNode(node) {
 // use the analysis data for scoping, etc...!!!
 function renameConflictingDeclarations(ast, idPool) {
   const scopeStack = [new Map()];
-  const declarationCounts = new Map();
+  const collisionStack = [new Set()];
+  let renameCounter = 0;
   const scopeRules = scopeBoundaries;
   function getNonBoundaryTraversalFields(node, boundarySet) {
     const fields = node.fields.filter((field) => !boundarySet.has(field));
@@ -349,6 +350,10 @@ function renameConflictingDeclarations(ast, idPool) {
     return scopeStack[scopeStack.length - 1];
   }
 
+  function currentCollisions() {
+    return collisionStack[collisionStack.length - 1];
+  }
+
   function lookupRenamed(name) {
     for (let i = scopeStack.length - 1; i >= 0; i--) {
       const mapped = scopeStack[i].get(name);
@@ -360,16 +365,12 @@ function renameConflictingDeclarations(ast, idPool) {
   }
 
   function nextRenamed(name) {
-    const nextCount = (declarationCounts.get(name) || 0) + 1;
-    declarationCounts.set(name, nextCount);
-    if (nextCount === 1) {
-      return name;
-    }
     if (idPool && typeof idPool.next === 'function') {
       // Share compiler/transformer id space for deterministic, collision-free aliases.
       return `${name}#${idPool.next()}`;
     }
-    return `${name}#${nextCount - 1}`;
+    renameCounter += 1;
+    return `${name}#${renameCounter}`;
   }
 
   function registerDeclarations(symbols, scopeMap) {
@@ -378,6 +379,9 @@ function renameConflictingDeclarations(ast, idPool) {
         return;
       }
       const sourceName = symbol.value;
+      if (!currentCollisions().has(sourceName)) {
+        return;
+      }
       const renamed = nextRenamed(sourceName);
       // Rewrite declaration target in-place and remember source->runtime mapping
       // for subsequent reads inside the active lexical scope chain.
@@ -386,10 +390,76 @@ function renameConflictingDeclarations(ast, idPool) {
     });
   }
 
-  function withScope(fn) {
+  function withScope(fn, collisionNames = null, initialRenames = null) {
     scopeStack.push(new Map());
+    if (initialRenames) {
+      const scope = currentScope();
+      initialRenames.forEach((renamed, sourceName) => {
+        scope.set(sourceName, renamed);
+      });
+    }
+    collisionStack.push(collisionNames || new Set());
     fn();
+    collisionStack.pop();
     scopeStack.pop();
+  }
+
+  function collectCurrentScopeDeclarationNames(node, out = new Set()) {
+    if (Array.isArray(node)) {
+      node.forEach((child) => collectCurrentScopeDeclarationNames(child, out));
+      return out;
+    }
+
+    if (!(node instanceof nodes.Node)) {
+      return out;
+    }
+
+    const declarationContexts = [
+      {},
+      { inImportTarget: true },
+      { inFromImportTarget: true }
+    ];
+    for (let i = 0; i < declarationContexts.length; i++) {
+      const ctx = declarationContexts[i];
+      if (!scopeRules.isDeclarationSite(node, ctx)) {
+        continue;
+      }
+      scopeRules.extractDeclaredSymbols(node, ctx).forEach((symbol) => {
+        if (symbol instanceof nodes.Symbol && !symbol.isCompilerInternal) {
+          out.add(symbol.value);
+        }
+      });
+      break;
+    }
+
+    const boundarySet = new Set(scopeRules.getScopeBoundaryFields(node));
+    getNonBoundaryTraversalFields(node, boundarySet).forEach((field) => {
+      collectCurrentScopeDeclarationNames(node[field], out);
+    });
+    return out;
+  }
+
+  function rewriteGuard(node) {
+    const guardBodyDeclarations = collectCurrentScopeDeclarationNames(node.body);
+
+    withScope(() => {
+      rewrite(node.body);
+    });
+
+    if (!node.recoveryBody) {
+      return;
+    }
+
+    const recoveryCollisions = new Set(guardBodyDeclarations);
+    const initialRecoveryRenames = new Map();
+    if (typeof node.errorVar === 'string' && recoveryCollisions.has(node.errorVar)) {
+      initialRecoveryRenames.set(node.errorVar, nextRenamed(node.errorVar));
+      node.errorVar = initialRecoveryRenames.get(node.errorVar);
+    }
+
+    withScope(() => {
+      rewrite(node.recoveryBody);
+    }, recoveryCollisions, initialRecoveryRenames);
   }
 
   function rewrite(node) {
@@ -408,6 +478,11 @@ function renameConflictingDeclarations(ast, idPool) {
         // Symbol reads/writes resolve to the nearest active declaration mapping.
         node.value = mapped;
       }
+      return;
+    }
+
+    if (node instanceof nodes.Guard) {
+      rewriteGuard(node);
       return;
     }
 

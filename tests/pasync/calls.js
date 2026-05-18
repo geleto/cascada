@@ -64,6 +64,26 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
       expect(result).to.eql({ result: [2, 4, 6] });
     });
 
+    it('should handle same local variable name inside and after an assigned call block', async () => {
+      const script = `
+        function runner()
+          return caller()
+        endfunction
+
+        var callResult = call runner()
+          var local = "call-block"
+          return local
+        endcall
+
+        var local = "outer"
+        return { callResult: callResult, outerLocal: local }`;
+
+      const result = await env.renderScriptString(script);
+      expect(result).to.eql({
+        callResult: 'call-block',
+        outerLocal: 'outer'
+      });
+    });
 
     it('should read outer variable directly inside call block (minimal failing case)', async () => {
       const script = `
