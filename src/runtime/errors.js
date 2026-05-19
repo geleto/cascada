@@ -1,6 +1,9 @@
 
 import {POISON_KEY, RESOLVE_MARKER} from './markers.js';
 
+// Command-buffer execution metadata copied into getErrorInfo output. Keep this
+// list narrow: `boundaryName` is the compiler/runtime boundary label, while
+// source-operation identity still comes from the compact `ec` label.
 const BUFFER_CONTEXT_OPTIONAL_KEYS = ['boundaryName', 'loadName', 'targetIdentifier', 'loop', 'branch'];
 
 // Internal promises are sometimes observed through an owning command/chain

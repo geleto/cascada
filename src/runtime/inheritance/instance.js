@@ -14,6 +14,12 @@ class InheritanceInstance {
     this.sharedRootBuffer = options.sharedRootBuffer;
     this.traceParent = options.traceParent || null;
     this.context = options.context;
+    // The error context tables are reused by all loads of a given template or script,
+    // And are thus each time initialized with a different cb
+    // We need to know the error context table for each template or script in the inheritance
+    // chain in order to provide correct error contexts (cb) on method invocation.
+    this.entryErrorContextTable = options.entryErrorContextTable || null;
+    this.errorContextTablesByOwner = new Map();
     this.failure = null;
     this.closed = false;
   }
@@ -54,7 +60,8 @@ class InheritanceInstance {
       rootBuffer,
       sharedRootBuffer,
       traceParent,
-      context
+      context,
+      entryErrorContextTable: options.entryErrorContextTable || null
     });
   }
 
@@ -111,6 +118,31 @@ class InheritanceInstance {
     return methodData;
   }
 
+  getErrorContextTableForMethod(methodData, context) {
+    const ownerEntry = methodData.ownerEntry || null;
+    if (!ownerEntry) {
+      return this.entryErrorContextTable;
+    }
+    if (ownerEntry.templateOrScript === this.entryTemplateOrScript && this.entryErrorContextTable) {
+      return this.entryErrorContextTable;
+    }
+    if (this.errorContextTablesByOwner.has(ownerEntry)) {
+      return this.errorContextTablesByOwner.get(ownerEntry);
+    }
+
+    // Create and cache the error context table for this owner entry
+    const ownerTemplateOrScript = ownerEntry.templateOrScript || null;
+    // ownerEntry.path is the source artifact path for parent-owned methods and
+    // blocks. The context path fallback is defensive for synthetic/no-path
+    // owners and should not be used for normal loaded inheritance entries.
+    const ownerPath = ownerEntry.path ?? context.path;
+    const prepared = ownerTemplateOrScript && typeof ownerTemplateOrScript.getErrorContexts === 'function'
+      ? ownerTemplateOrScript.getErrorContexts(this.runtime, ownerPath, this.cb)
+      : null;
+    this.errorContextTablesByOwner.set(ownerEntry, prepared);
+    return prepared;
+  }
+
   async _invokeFromMethodData(methodData, args, origin, parentBuffer, context, traceParent = null) {
     const visibleChains = Array.from(new Set([
       ...methodData.mergedLinkedChains,
@@ -146,7 +178,8 @@ class InheritanceInstance {
         callablePayload,
         renderContext,
         methodData,
-        this
+        this,
+        this.getErrorContextTableForMethod(methodData, context)
       );
     } finally {
       invocationBuffer.finish();
@@ -170,7 +203,7 @@ class InheritanceInstance {
   }
 }
 
-async function renderInheritanceParticipantRoot({ entryTemplateOrScript, env, context, runtime, cb, rootBuffer, origin = null }) {
+async function renderInheritanceParticipantRoot({ entryTemplateOrScript, env, context, runtime, cb, rootBuffer, entryErrorContextTable = null, origin = null }) {
   const instance = await InheritanceInstance.create({
     entryTemplateOrScript,
     env,
@@ -178,6 +211,7 @@ async function renderInheritanceParticipantRoot({ entryTemplateOrScript, env, co
     runtime,
     cb,
     rootBuffer,
+    entryErrorContextTable,
     origin
   });
   let entryResult;

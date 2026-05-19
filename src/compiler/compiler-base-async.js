@@ -529,7 +529,7 @@ class CompilerBaseAsync extends CompilerCommon {
 
   _emitAsyncDynamicCall(node, currentBufferExpr) {
     const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
-    const errorContextJson = JSON.stringify(this._createErrorContext(node));
+    const errorContextJson = JSON.stringify(this._createLegacyErrorContext(node));
     this.emit('runtime.callWrapAsync(');
     this.compile(node.name, null);
     this.emit(`, "${funcName}", context, `);

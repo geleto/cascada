@@ -34,7 +34,7 @@ class CompileComponent {
     const componentScriptOrTemplateVar = this.compiler.composition.compileAsyncResolveTargetFile(node, true, false);
     const componentVarsVar = this.compiler._tmpid();
     const rootContextVar = this.compiler._tmpid();
-    const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
+    const errorContextJson = JSON.stringify(this.compiler._createLegacyErrorContext(node));
 
     this.emit.line(`runtime.declareBufferChain(${this.compiler.buffer.currentBuffer}, "${targetName}", "var", context, null);`);
     this.emit.line(`const ${componentVarsVar} = {};`);
@@ -131,7 +131,7 @@ class CompileComponent {
   }
 
   compileMethodCall(componentBindingFacts, node) {
-    const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
+    const errorContextJson = JSON.stringify(this.compiler._createLegacyErrorContext(node));
     this.emit('runtime.callComponentMethod({ ');
     this.emit(`bindingName: ${JSON.stringify(componentBindingFacts.bindingName)}, `);
     this.emit(`currentBuffer: ${this.compiler.buffer.currentBuffer}, `);
@@ -159,7 +159,7 @@ class CompileComponent {
   }
 
   emitChainObservation(componentBindingFacts, node) {
-    const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
+    const errorContextJson = JSON.stringify(this.compiler._createLegacyErrorContext(node));
     this.emit('runtime.observeComponentChain({ ');
     this.emit(`bindingName: ${JSON.stringify(componentBindingFacts.bindingName)}, `);
     this.emit(`currentBuffer: ${this.compiler.buffer.currentBuffer}, observationCommand: `);
@@ -170,7 +170,7 @@ class CompileComponent {
   emitSharedVarNestedLookup(componentBindingRoot, node) {
     const staticPath = componentBindingRoot.staticPath;
     const nestedPath = staticPath.slice(2);
-    const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
+    const errorContextJson = JSON.stringify(this.compiler._createLegacyErrorContext(node));
 
     nestedPath.forEach(() => {
       this.emit('runtime.memberLookupScript((');

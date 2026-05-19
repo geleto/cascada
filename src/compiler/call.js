@@ -136,7 +136,7 @@ class CompileCall {
 
     const compiler = this.compiler;
     const funcName = compiler._getNodeName(node.name).replace(/"/g, '\\"');
-    const errorContextJson = JSON.stringify(compiler._createErrorContext(node));
+    const errorContextJson = JSON.stringify(compiler._createLegacyErrorContext(node));
     compiler.emit('runtime.sequentialCallWrapValue(');
     compiler.compile(node.name, null);
     compiler.emit(`, "${funcName}", context, `);

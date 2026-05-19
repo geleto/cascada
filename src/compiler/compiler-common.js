@@ -43,7 +43,9 @@ class CompilerCommon extends Obj {
     this.guardDepth = 0;
     this.importedBindings = new Set();
     this.templateName = typeof options.templateName === 'string' ? options.templateName : undefined;
+    this.errorContextEntries = [];
     this.inBlock = false;
+    
     this.sequential = new CompileSequential(this);
     this.emit = new CompileEmit(this);
     this.async = null;
@@ -70,31 +72,100 @@ class CompilerCommon extends Obj {
 
   // --- Core Utilities (Needed by Expressions) ---
 
-  _generateErrorContext(node, positionNode) {
+  _generateErrorContext(node, positionNode = node, label = null) {
     if (!node) return 'UnknownContext';
-    // Special case for ChainCommand for more descriptive errors
-    if (node.typename === 'ChainCommand' && node.call && node.call.name) {
+    positionNode = positionNode || node;
+    if (positionNode === node && node._analysis?.errorContextPositionNode) {
+      positionNode = node._analysis.errorContextPositionNode;
+    }
+    const parentProvidedOwnerLabel = label || node._analysis?.errorContextLabel || null;
+
+    // TODO(error-context-cleanup): remove this ChainCommand payload label
+    // special case; final labels should use stable source-operation names.
+    let finalLabel;
+    if (!parentProvidedOwnerLabel && node.typename === 'ChainCommand' && node.call && node.call.name) {
       const staticPath = this.sequential._extractStaticPath(node.call.name);
       if (staticPath) {
-        return staticPath.join('.');
+        finalLabel = staticPath.join('.');
       }
     }
-    const nodeType = node.typename || 'Node';
-    const posType = (positionNode && positionNode.typename) || 'PosNode';
-    if (node === positionNode || nodeType === posType) {
-      return nodeType;
+
+    if (!finalLabel) {
+      const nodeType = parentProvidedOwnerLabel || node.typename || 'Node';
+      const posType = (positionNode && positionNode.typename) || 'PosNode';
+      finalLabel = (!parentProvidedOwnerLabel && (node === positionNode || nodeType === posType))
+        ? nodeType
+        : `${nodeType}(${posType})`;
     }
-    return `${nodeType}(${posType})`;
+
+    if (positionNode === node && label === null && node._analysis && node._analysis.errorContextIndex === undefined) {
+      const lineno = node.lineno !== undefined ? node.lineno + 1 : 0;
+      const colno = node.colno !== undefined ? node.colno : 0;
+      node._analysis.errorContextIndex = this.errorContextEntries.length;
+      this.errorContextEntries.push({ lineno, colno, label: finalLabel });
+    }
+    return finalLabel;
   }
 
-
-  _createErrorContext(node, positionNode) {
+  // TODO(error-context-cleanup): remove this legacy ErrorContext object wrapper
+  // after compiler output uses compact __ec entries everywhere.
+  _createLegacyErrorContext(node, positionNode) {
     positionNode = positionNode || node;
     return new ErrorContext(
       positionNode.lineno + 1,
       positionNode.colno,
       this.templateName, // At runtime, context.path will be used
       this._generateErrorContext(node, positionNode)
+    );
+  }
+
+  emitErrorContextRef(node) {
+    return `__ec[${node._analysis.errorContextIndex}]`;
+  }
+
+  emitErrorContext(node, fields = {}) {
+    if (!node) {
+      return 'null';
+    }
+    const parts = [`ec: ${this.emitErrorContextRef(node)}`];
+    for (const [key, value] of Object.entries(fields)) {
+      if (value !== undefined && value !== null) {
+        parts.push(`${key}: ${JSON.stringify(value)}`);
+      }
+    }
+    return `{ ${parts.join(', ')} }`;
+  }
+
+  _buildErrorContextTable() {
+    const labelCounts = new Map();
+    this.errorContextEntries.forEach((entry) => {
+      labelCounts.set(entry.label, (labelCounts.get(entry.label) || 0) + 1);
+    });
+
+    const labels = [];
+    const labelIndexes = new Map();
+    labelCounts.forEach((count, label) => {
+      if (count > 1) {
+        labelIndexes.set(label, labels.length);
+        labels.push(label);
+      }
+    });
+
+    const specs = this.errorContextEntries.map((entry) => [
+      entry.lineno,
+      entry.colno,
+      labelIndexes.has(entry.label) ? labelIndexes.get(entry.label) : entry.label
+    ]);
+
+    return { labels, specs };
+  }
+
+  emitErrorContextHelper() {
+    const { labels, specs } = this._buildErrorContextTable();
+    this.emit(
+      `function getErrorContexts(runtime, path, cb) {\n` +
+      `  return runtime.prepareErrorContexts(path, cb, ${JSON.stringify(labels)}, ${JSON.stringify(specs)});\n` +
+      `}\n`
     );
   }
 

@@ -14,6 +14,10 @@ import {
   runControlFlowBoundary,
   runValueBoundary
 } from '../../src/runtime/runtime.js';
+import {AsyncEnvironment} from '../../src/environment/async-environment.js';
+import {Script} from '../../src/environment/script.js';
+import {AsyncTemplate} from '../../src/environment/template.js';
+import {StringLoader} from '../util.js';
 
 describe('error context tracing runtime foundation', () => {
   it('prepares compact contexts without mutating shared specs', () => {
@@ -342,5 +346,107 @@ describe('error context tracing runtime foundation', () => {
       ec: boundaryEc,
       branch: 'then'
     });
+  });
+});
+
+describe('error context compiler table', () => {
+  it('emits prepared context tables with repeated labels compressed inline', () => {
+    const env = new AsyncEnvironment();
+    const source = new Script([
+      'data result',
+      'var x = true',
+      'if x',
+      '  result.a.set(1)',
+      'endif',
+      'if x',
+      '  result.b.set(2)',
+      'endif',
+      'return result.snapshot()'
+    ].join('\n'), env, 'context-table.casc').compileSource();
+
+    expect(source).to.contain('const __ec = getErrorContexts(runtime, context.path, cb);');
+    expect(source).to.contain('function getErrorContexts(runtime, path, cb) {');
+    expect(source).to.contain('return runtime.prepareErrorContexts(path, cb,');
+    expect(source).to.contain('"If.Condition(Symbol)"');
+    expect(source).to.match(/\[3,7,\d+\]/);
+    expect(source).to.match(/\[6,7,\d+\]/);
+    expect(source).to.match(/\[\d+,\d+,"[^"]+"\]/);
+    expect(source).to.match(/new runtime\.CommandBuffer\(context, null, null, null, null, \{ ec: __ec\[\d+\], boundaryName: "root" \}\);/);
+  });
+
+  it('uses parent-provided semantic labels in generated diagnostics', () => {
+    const env = new AsyncEnvironment();
+    const source = new Script([
+      'data result',
+      'var x = true',
+      'if x',
+      '  result.a.set(1)',
+      'endif',
+      'return result.snapshot()'
+    ].join('\n'), env, 'semantic-label.casc').compileSource();
+
+    expect(source).to.contain('If.Condition(Symbol)');
+  });
+
+  it('uses semantic labels for switch case expressions', () => {
+    const env = new AsyncEnvironment();
+    const source = new AsyncTemplate([
+      '{% switch status %}',
+      '{% case "active" %}yes',
+      '{% default %}no',
+      '{% endswitch %}'
+    ].join('\n'), env, 'switch-label.njk').compileSource();
+
+    expect(source).to.contain('Switch.Expression(Symbol)');
+    expect(source).to.contain('Switch.Case(Literal)');
+  });
+
+  it('prepares contexts once in the root and threads them into sibling callables', () => {
+    const env = new AsyncEnvironment();
+    const source = new AsyncTemplate([
+      '{% block body %}',
+      '  {{ name }}',
+      '{% endblock %}'
+    ].join('\n'), env, 'block-context.njk').compileSource();
+
+    expect(source.match(/runtime\.prepareErrorContexts/g)).to.have.length(1);
+    expect(source).to.contain('const __ec = getErrorContexts(runtime, context.path, cb);');
+    expect(source).to.match(/function b_body\(env, context, runtime, cb, parentBuffer = null.*__ec = null\)/);
+  });
+
+  it('uses script labels for script-mode load targets', () => {
+    const env = new AsyncEnvironment();
+    const source = new Script([
+      'extends "base.script"',
+      'import "lib.script" as lib',
+      'from "more.script" import importedValue',
+      'component "card.script" as card',
+      'return lib'
+    ].join('\n'), env, 'script-load-labels.casc').compileSource();
+
+    expect(source).to.contain('Import.Script(Literal)');
+    expect(source).to.contain('FromImport.Script(Literal)');
+    expect(source).to.contain('Component.Script(Literal)');
+    expect(source).to.contain('Extends.Script(Literal)');
+  });
+
+  it('prepares parent artifact contexts when invoking inherited template blocks', async () => {
+    const loader = new StringLoader();
+    loader.addTemplate('parent.njk', '{% block body %}Parent {{ name }}{% endblock %}');
+    loader.addTemplate('child.njk', '{% extends "parent.njk" %}');
+    const env = new AsyncEnvironment(loader);
+    const parent = await env.getTemplate('parent.njk', true, null, false);
+    const parentContextPaths = [];
+    const getParentErrorContexts = parent.getErrorContexts;
+
+    parent.getErrorContexts = function getObservedErrorContexts(runtime, path, cb) {
+      parentContextPaths.push(path);
+      return getParentErrorContexts.call(this, runtime, path, cb);
+    };
+
+    const result = await env.renderTemplate('child.njk', { name: 'Ada' });
+
+    expect(result.trim()).to.be('Parent Ada');
+    expect(parentContextPaths).to.contain('parent.njk');
   });
 });

@@ -87,7 +87,7 @@ describe('Inheritance rebuild', function () {
       });
       const parent = await props.resolveInheritanceParent(null, null, runtime, null);
 
-      expect(Object.keys(props).sort()).to.eql(['inheritanceSpec', 'resolveInheritanceParent', 'root']);
+      expect(Object.keys(props).sort()).to.eql(['getErrorContexts', 'inheritanceSpec', 'resolveInheritanceParent', 'root']);
       expect(parent).to.eql({ parentTemplateOrScript: null, origin: null });
     });
 
@@ -144,7 +144,7 @@ describe('Inheritance rebuild', function () {
         name: 'shape.script'
       });
 
-      expect(Object.keys(props).sort()).to.eql(['inheritanceSpec', 'resolveInheritanceParent', 'root']);
+      expect(Object.keys(props).sort()).to.eql(['getErrorContexts', 'inheritanceSpec', 'resolveInheritanceParent', 'root']);
       expect(Object.keys(props.inheritanceSpec).sort()).to.eql(['hasExtends', 'methodEntries', 'sharedSchema']);
       expect(props.inheritanceSpec.setup).to.be(undefined);
       expect(props.inheritanceSpec.inheritedMethodDependencies).to.be(undefined);
@@ -164,7 +164,7 @@ describe('Inheritance rebuild', function () {
         ['method body()\n  return super()\nendmethod\nreturn this.body()', { scriptMode: true }]
       ].forEach(([source, options]) => {
         const props = compileProps(source, options);
-        expect(Object.keys(props).sort()).to.eql(['inheritanceSpec', 'resolveInheritanceParent', 'root']);
+        expect(Object.keys(props).sort()).to.eql(['getErrorContexts', 'inheritanceSpec', 'resolveInheritanceParent', 'root']);
       });
     });
 

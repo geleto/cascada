@@ -251,7 +251,7 @@ class CompileComposition {
       const includeVarsVar = this.compiler._tmpid();
       const includeContextVar = this.compiler._tmpid();
       const includeTextValue = this.compiler._tmpid();
-      const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
+      const errorContextJson = JSON.stringify(this.compiler._createLegacyErrorContext(node));
 
       this.emit(`let ${templateNameVar} = `);
       this.compiler.compileExpression(node.template, null, node.template, true);

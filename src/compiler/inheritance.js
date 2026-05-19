@@ -201,7 +201,7 @@ class CompileInheritance {
 
   compileParticipantRootBody(node) {
     this._compileParticipantRootDeclarations(node);
-    const originJson = JSON.stringify(this.compiler._createErrorContext(node));
+    const originJson = JSON.stringify(this.compiler._createLegacyErrorContext(node));
     this.emit.line('return runtime.renderInheritanceParticipantRoot({');
     this.emit.line('    entryTemplateOrScript: this,');
     this.emit.line('    env,');
@@ -209,6 +209,7 @@ class CompileInheritance {
     this.emit.line('    runtime,');
     this.emit.line('    cb,');
     this.emit.line('    rootBuffer: output,');
+    this.emit.line('    entryErrorContextTable: __ec,');
     this.emit.line(`    origin: ${originJson}`);
     this.emit.line('}).catch((e) => {');
     this.emit.line(`  cb(runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this.compiler._generateErrorContext(node)}", context.path));`);
@@ -221,6 +222,7 @@ class CompileInheritance {
     this.emit.line(`const ${COMPILED_METHOD_ENTRIES_VAR} = ${methodEntries};`);
     this.emit.line(`const ${COMPILED_SHARED_SCHEMA_VAR} = ${this._compileSharedSchemaLiteral(node)};`);
     this._compileExtendsParentResolver(node);
+    this.compiler.emitErrorContextHelper();
     this.emit.line('return {');
     this.emit.line('root,');
     this.emit.line('inheritanceSpec: {');
@@ -228,7 +230,8 @@ class CompileInheritance {
     this.emit.line(`  sharedSchema: ${COMPILED_SHARED_SCHEMA_VAR},`);
     this.emit.line(`  hasExtends: ${node._analysis.inheritance.hasExtends ? 'true' : 'false'}`);
     this.emit.line('},');
-    this.emit.line('resolveInheritanceParent');
+    this.emit.line('resolveInheritanceParent,');
+    this.emit.line('getErrorContexts');
     this.emit.line('};');
   }
 
@@ -331,13 +334,13 @@ class CompileInheritance {
     if (callableAnalysis) {
       callableAnalysis.callableUsesSuper = true;
       if (!callableAnalysis.callableSuperOrigin) {
-        callableAnalysis.callableSuperOrigin = this.compiler._createErrorContext(node);
+        callableAnalysis.callableSuperOrigin = this.compiler._createLegacyErrorContext(node);
       }
       return;
     }
     rootAnalysis.callableUsesSuper = true;
     if (!rootAnalysis.callableSuperOrigin) {
-      rootAnalysis.callableSuperOrigin = this.compiler._createErrorContext(node);
+      rootAnalysis.callableSuperOrigin = this.compiler._createLegacyErrorContext(node);
     }
   }
 
@@ -359,7 +362,7 @@ class CompileInheritance {
     if (!analysis[fieldName][methodName]) {
       analysis[fieldName][methodName] = {
         name: methodName,
-        origin: this.compiler._createErrorContext(originNode)
+        origin: this.compiler._createLegacyErrorContext(originNode)
       };
     }
   }
@@ -403,7 +406,7 @@ class CompileInheritance {
     if (!methodName) {
       return false;
     }
-    const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
+    const errorContextJson = JSON.stringify(this.compiler._createLegacyErrorContext(node));
     this._emitInheritedMethodInvocation(methodName, node.args, errorContextJson);
     return true;
   }
@@ -535,7 +538,7 @@ class CompileInheritance {
     }
 
     const id = this.compiler._tmpid();
-    const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
+    const errorContextJson = JSON.stringify(this.compiler._createLegacyErrorContext(node));
     const explicitBlockArgNodes = this._getCallableSignature(node).placementArgNodes;
     const explicitBlockArgsNode = new nodes.NodeList(node.lineno, node.colno, explicitBlockArgNodes);
     this.emit.line(`let ${id};`);
@@ -597,7 +600,7 @@ class CompileInheritance {
     }
 
     const extendsNode = inheritanceFacts.localExtendsNode;
-    const originJson = JSON.stringify(this.compiler._createErrorContext(extendsNode));
+    const originJson = JSON.stringify(this.compiler._createLegacyErrorContext(extendsNode));
     const runtimeErrorContextJson = JSON.stringify({
       lineno: extendsNode.lineno,
       colno: extendsNode.colno,
@@ -645,7 +648,7 @@ class CompileInheritance {
   }
 
   _emitConstructorSuperReturn(constructorDefinition) {
-    const errorContextJson = JSON.stringify(this.compiler._createErrorContext(constructorDefinition));
+    const errorContextJson = JSON.stringify(this.compiler._createLegacyErrorContext(constructorDefinition));
     this.emit.line(`return runtime.resolveSingle(currentInstance.invokeSuper(methodData, [], context, ${this.compiler.buffer.currentBuffer}, ${errorContextJson})).then((parentResult) => {`);
     this.emit.line(`  ${this.compiler.buffer.currentBuffer}.finish();`);
     this.emit.line('  return parentResult;');
@@ -860,7 +863,7 @@ class CompileInheritance {
     const ownMutatedChainNames = callableFootprint.mutatedChains;
     const ownLinkedChains = JSON.stringify(ownLinkedChainNames);
     const ownMutatedChains = JSON.stringify(ownMutatedChainNames);
-    const origin = JSON.stringify(this.compiler._createErrorContext(entry.originNode));
+    const origin = JSON.stringify(this.compiler._createLegacyErrorContext(entry.originNode));
     const name = JSON.stringify(entry.name);
     return `${name}: { name: ${name}, fn: ${entry.fnExpr}, signature: ${JSON.stringify(entry.signature)}, origin: ${origin}, isConstructor: ${entry.isConstructor ? 'true' : 'false'}, super: ${entry.usesSuper ? 'true' : 'false'}, superOrigin: ${entry.superOrigin || 'null'}, inheritedMethodDependencies: ${entry.inheritedMethodDependencies || '{}'}, ownLinkedChains: ${ownLinkedChains}, ownMutatedChains: ${ownMutatedChains} }`;
   }
@@ -888,7 +891,7 @@ class CompileInheritance {
       const originNode = child.declarationOrigin ? child.declarationOrigin.node : node;
       return `${JSON.stringify(child.name)}: { ` +
         `type: ${JSON.stringify(child.type)}, ` +
-        `origin: ${JSON.stringify(this.compiler._createErrorContext(originNode))}, ` +
+        `origin: ${JSON.stringify(this.compiler._createLegacyErrorContext(originNode))}, ` +
         `hasDefault: ${child.initializer ? 'true' : 'false'} ` +
         `}`;
     });
@@ -934,7 +937,7 @@ class CompileInheritance {
       );
     }
 
-    const errorContextJson = JSON.stringify(this.compiler._createErrorContext(node));
+    const errorContextJson = JSON.stringify(this.compiler._createLegacyErrorContext(node));
     if (hasAssignmentTarget) {
       this.emit(`let ${id} = `);
     } else if (needsSafeTemplateOutput) {

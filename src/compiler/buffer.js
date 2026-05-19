@@ -438,8 +438,8 @@ class CompileBuffer {
    *
    * For non-async nodes falls through to a plain synchronous call (like asyncBufferNode).
    */
-  _compileAsyncControlFlowBoundary(node, emitFunc = null) {
-    return this.compiler.boundaries.compileAsyncControlFlowBoundary(this, node, emitFunc);
+  _compileAsyncControlFlowBoundary(node, emitFunc = null, errorContextNode = node) {
+    return this.compiler.boundaries.compileAsyncControlFlowBoundary(this, node, emitFunc, errorContextNode);
   }
 
   _compileSyncControlFlowBoundary(node, frame, emitFunc = null) {

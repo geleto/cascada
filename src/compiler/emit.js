@@ -90,11 +90,12 @@ class CompileEmit {
     if (this.compiler.asyncMode) {
       if (name === 'root') {
         this.line(`function ${name}(env, context, runtime, cb) {`);
+        this.line('const __ec = getErrorContexts(runtime, context.path, cb);');
       } else {
         const extraParamSource = Array.isArray(extraParams) && extraParams.length > 0
           ? `, ${extraParams.join(', ')}`
           : '';
-        this.line(`function ${name}(env, context, runtime, cb, parentBuffer = null${extraParamSource}) {`);
+        this.line(`function ${name}(env, context, runtime, cb, parentBuffer = null${extraParamSource}, __ec = null) {`);
       }
     } else {
       this.line(`function ${name}(env, context, frame, runtime, cb) {`);
@@ -104,7 +105,7 @@ class CompileEmit {
     }
     // this.Line(`let ${this.compiler.buffer.currentBuffer} = "";`);
     if (this.compiler.asyncMode && name === 'root') {
-      const rootErrorContextArg = this._emitManagedBufferErrorContext(node, { boundaryName: name });
+      const rootErrorContextArg = this.compiler.emitErrorContext(node, { boundaryName: name });
       this.line(
         `let ${this.compiler.buffer.currentBuffer} = ` +
         `new runtime.CommandBuffer(context, null, null, null, null, ${rootErrorContextArg});`
@@ -121,28 +122,13 @@ class CompileEmit {
         this.compiler.asyncMode ? 'parentBuffer' : null,
         this.compiler.buffer.currentTextChainVar,
         linkedChains,
-        this._emitManagedBufferErrorContext(node, { boundaryName: name }),
+        this.compiler.emitErrorContext(node, { boundaryName: name }),
         this.compiler.asyncMode ? 'parentBuffer' : 'null'
       );
     }
     if (!this.compiler.asyncMode) {
       this.line('try {');
     }
-  }
-
-  _emitManagedBufferErrorContext(node, fields = {}) {
-    if (!node) {
-      return 'null';
-    }
-    // TODO(error-context-cleanup): replace legacy _createErrorContext(...) output
-    // with { ec: __ec[index], ...fields } after the compiler context table lands.
-    const parts = [`ec: ${JSON.stringify(this.compiler._createErrorContext(node))}`];
-    Object.entries(fields).forEach(([key, value]) => {
-      if (value !== undefined && value !== null) {
-        parts.push(`${key}: ${JSON.stringify(value)}`);
-      }
-    });
-    return `{ ${parts.join(', ')} }`;
   }
 
   _endEntryFunction(node, noReturn) {
@@ -213,7 +199,7 @@ class CompileEmit {
           parentBufferId,
           `${bufferId}_textOutputVar`,
           linkedChains,
-          this._emitManagedBufferErrorContext(errorContextNode),
+          this.compiler.emitErrorContext(errorContextNode),
           traceParentArg
         );
         if (typeof emitFunc === 'function') {

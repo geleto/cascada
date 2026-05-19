@@ -8,6 +8,7 @@ import {
   isRuntimeFatalError,
   PoisonError,
   handleError,
+  normalizeErrorContext,
 } from './errors.js';
 
 import {VarCommand} from './commands/var.js';
@@ -706,6 +707,7 @@ async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOpti
   let limitSequentialOverride = false;
   const isAsync = asyncOptions !== null;
   const errorContext = asyncOptions ? asyncOptions.errorContext : null;
+  const normalizedErrorContext = normalizeErrorContext(errorContext);
 
   let didIterate = false;
   // Called between sequential iterations. The ordered chain observation may
@@ -713,7 +715,7 @@ async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOpti
   const returnAdvanceCheck = asyncOptions && asyncOptions.returnCheckChainName
     ? (() => buffer.addCommand(new ReturnIsUnsetCommand({
       chainName: asyncOptions.returnCheckChainName,
-      pos: { lineno: errorContext?.lineno || 0, colno: errorContext?.colno || 0 }
+      pos: { lineno: normalizedErrorContext.lineno || 0, colno: normalizedErrorContext.colno || 0 }
     }), asyncOptions.returnCheckChainName))
     : null;
 

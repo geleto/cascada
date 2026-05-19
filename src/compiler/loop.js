@@ -95,7 +95,7 @@ class CompileLoop {
         elseChains: ${JSON.stringify(elseChains ? Array.from(elseChains) : [])},
         concurrentLimit: ${node.concurrentLimit ? limitVar : 'null'},
         returnCheckChainName: ${returnCheckChainName ? `"${returnCheckChainName}"` : 'null'},
-        errorContext: { lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: "${this.compiler._generateErrorContext(node)}", path: context.path }
+        errorContext: ${this.compiler.emitErrorContextRef(node)}
       }`;
 
       const loopOwnsWaitedCompletion = sequentialLoopBody || hasConcurrentLimit;
@@ -221,8 +221,6 @@ class CompileLoop {
     const parentBufferArg = this.compiler.buffer.currentBuffer;
     const linkedChainsArg = this.compiler.emit.getLinkedChainsArg(node);
     const linkedMutatedChainsArg = this.compiler.emit.getLinkedMutatedChainsArg(node);
-    // TODO(error-context-cleanup): replace the legacy loop errorContext argument
-    // with __ec[index] after the compiler context table lands.
     const loopInfoArg = `{ ec: ${errorContextVar}, loop: ${loopMetaVar} }`;
     this.compiler.emit(
       `return runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, cb, async (currentBuffer) => {`
@@ -265,7 +263,7 @@ class CompileLoop {
             this.compiler._compileAwaitedExpression(whileConditionNode, null);
           });
           this.compiler.emit.line(';');
-          const whileErrorContext = this.compiler._createErrorContext(node, whileConditionNode);
+          const whileErrorContext = this.compiler._createLegacyErrorContext(node, whileConditionNode);
           this.compiler.emit('} catch (e) {');
           this.compiler.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ${whileErrorContext.lineno}, ${whileErrorContext.colno}, "${whileErrorContext.errorContextString}", context.path);`);
           catchPoisonPos = this.compiler.codebuf.length;

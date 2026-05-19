@@ -158,7 +158,14 @@ Recommended labels:
 - `For.Limit(FunCall)`
 - `While.Condition(FunCall)`
 - `Include.Template`
+- `Include.Script`
 - `Extends.Template`
+- `Extends.Script`
+- `Import.Template`
+- `Import.Script`
+- `FromImport.Template`
+- `FromImport.Script`
+- `Component.Script`
 - `Block`
 - `Super`
 - `ChainCommand`
@@ -230,6 +237,31 @@ owner label and current position-node type are flattened before storage. The
 long-term target is explicit parent-provided owner labels for important child
 expressions while preserving the current owner/position-node fallback.
 
+Final `_generateErrorContext(node)` target:
+
+- called only by analysis, except compile-time error decoration
+- reads only `node._analysis.errorContextLabel` and
+  `node._analysis.errorContextPositionNode`
+- generates a stable source-operation label
+- allocates the compact entry and stores `node._analysis.errorContextIndex`
+- does not inspect command payloads, static chain paths, runtime routing, or
+  helper-specific details
+
+The final implementation should be close to:
+
+```js
+const positionNode = node._analysis.errorContextPositionNode || node;
+const owner = node._analysis.errorContextLabel || node.typename;
+const posType = positionNode.typename;
+const label = positionNode === node && owner === posType
+  ? owner
+  : `${owner}(${posType})`;
+```
+
+Any remaining special cases, especially `ChainCommand` static-path label
+generation, are legacy and should be removed when command diagnostics read
+command payloads directly.
+
 ## Parent-Provided Child Labels
 
 Important parent nodes may assign semantic labels to child expressions during
@@ -240,7 +272,7 @@ Example target pattern:
 
 ```js
 analyzeSwitch(node) {
-  node.expr._analysis.errorLabel = 'Switch.Expression';
+  node.expr._analysis.errorContextLabel = 'Switch.Expression';
   return { createsLinkedChildBuffer: true };
 }
 ```
@@ -249,7 +281,7 @@ When compiling that child expression, context creation can combine the semantic
 label with the actual child node type:
 
 ```js
-const ecIndex = compiler.getErrorContextIndex(node.expr);
+const ecIndex = node.expr._analysis.errorContextIndex;
 // __ec[ecIndex] label: "Switch.Expression(Symbol)"
 ```
 
@@ -259,44 +291,45 @@ the origin label before creation; it does not mutate an existing context later.
 ## Context Creation
 
 Analysis should assign the semantic context facts for compiler nodes, such as
-parent-provided labels and position-node choices. Codegen may assemble the
-final error context in `compileXXX` methods as long as it does so simply from
-analysis-owned properties. The compiler should expose one artifact-wide context
-table with a canonical helper for registering or retrieving indices. The useful
-abstraction is the table, not an individual `ErrorContext` class per node.
+parent-provided labels. Immediately after each node's `analyzeXXX` hook, the
+analysis pass should allocate the node's artifact-wide context index and store
+it in `node._analysis.errorContextIndex`. Codegen should treat that index as
+already available.
 
 Per-node compiler context data should stay as plain info: source position,
-semantic label facts, and assigned index where one has already been registered.
-The table helper owns conversion to compact runtime specs, repeated-label
-compression, and table emission in one place.
-Do not add a compiler-side `new ErrorContext(...)` layer unless the collector
-itself needs private implementation objects.
-
-The exact API can evolve, but the behavior should be:
-
-```js
-getErrorContextIndex(node, {
-  positionNode = node,
-  label = node._analysis?.errorLabel
-} = {})
-```
+optional `errorContextLabel`, optional `errorContextPositionNode`, and
+`errorContextIndex`. The table helper owns conversion to compact runtime specs,
+repeated-label compression, and table emission in one place. Do not add a
+compiler-side `new ErrorContext(...)` layer unless the collector itself needs
+private implementation objects.
 
 Rules:
 
-- `positionNode` controls `lineno` and `colno`
-- `label` is the optional parent-provided owner label
+- the node controls `lineno` and `colno` unless `errorContextPositionNode`
+  is set
+- `errorContextLabel` is the optional parent-provided owner label
+- `errorContextPositionNode` is the optional source-position node; when it is
+  different from the owner node, the final label keeps the old
+  `Owner(PositionType)` shape even if no `errorContextLabel` is set
 - final label generation follows the algorithm in [Label Generation](#label-generation)
 - path and callback are attached by
   `runtime.prepareErrorContexts(context.path, cb, labels, specs)` in the prepared
   per-invocation table
 - the specs store already-adjusted, user-facing one-based line numbers; this
-  replaces the current `_createErrorContext(...)` `positionNode.lineno + 1`
+  replaces the current `_createLegacyErrorContext(...)` `positionNode.lineno + 1`
   adjustment
 - the third spec element is either an inline label string or an index into the
   repeated-label dictionary
 - emitted runtime calls refer to prepared contexts as `__ec[index]`; compiler
-  codegen registers indices into the artifact-wide specs array from analysis
-  properties
+  codegen reads the index from `node._analysis.errorContextIndex`
+- compiler emission helper names should distinguish the two generated shapes:
+  `emitErrorContext(node)` emits the raw source-origin reference `__ec[index]`;
+  `emitBufferErrorContext(node, fields)` emits the buffer metadata object
+  `{ ec: __ec[index], ...fields }`
+- `_generateErrorContext(node)` is the analysis-time label/index helper. After
+  migration, codegen should not call it for runtime error contexts; it should
+  use the already-assigned index through `emitErrorContext(...)` or
+  `emitBufferErrorContext(...)`.
 - compile-time error decoration, if needed, should use a small helper that
   consumes the same plain context info rather than an `ErrorContext` instance
 
@@ -335,6 +368,20 @@ The separation should be:
 
 If a diagnostic needs both source origin and chain routing, combine
 `command.errorContext` with the apply-time chain name at the reporting site.
+
+Command diagnostics should provide command-specific details from the command
+payload, not from the `ErrorContext` label. For chain commands this means:
+
+- `command.errorContext` identifies the source location and stable operation
+  label, such as `ChainCommand`
+- `chainName`, `operation`, `path`, method name, and similar payload fields
+  identify what the command attempted to apply
+- the reporting site combines both, for example source origin plus
+  `result.posts.push`
+
+This replaces the legacy `ChainCommand` static-path label special case in
+`_generateErrorContext(...)`. The source context should stay stable and
+payload-independent; command-specific formatting belongs to command diagnostics.
 
 ## Stored Contexts
 
@@ -649,7 +696,8 @@ come together for reporting.
 
 Before implementation, audit:
 
-- every `_createErrorContext(...)` and `_generateErrorContext(...)` call site
+- every `_createLegacyErrorContext(...)` legacy object-context call site
+- every `_generateErrorContext(...)` legacy string-label call site
 - inline compiler-emitted context literals
 - command constructors and command application paths
 - `RuntimePromise`, `RuntimeFatalError`, `createPoison`, and `handleError`
@@ -790,9 +838,8 @@ Deletion checklist for `TODO(error-context-cleanup)`:
 - `normalizeBufferErrorContext(...)` compact/context-shape convenience once
   compiler-created buffers always pass `{ ec: __ec[index], ...fields }`
 - legacy compiler buffer-context emit helpers in boundaries, entry/managed
-  buffers, macro/caller buffers, and loop body buffers once they use
-  `__ec[index]`, including `_emitBoundaryErrorContext(...)` and
-  `_emitManagedBufferErrorContext(...)`
+  buffers, macro/caller buffers, and loop body buffers once they use the shared
+  `emitBufferErrorContext(node, fields)` helper
 - the temporary runtime inheritance `createBufferErrorContext(...)` helper and
   `src/runtime/inheritance/error-context.js` bridge file if no final ownership
   case remains
@@ -809,10 +856,12 @@ Deletion checklist for `TODO(error-context-cleanup)`:
 1. Replace `resolveErrorContextArgs(...)` with compact-context normalization
    and remove the current `path: ctx.path ?? ctx.errorContextString` fallback
    after all active call sites use compact contexts.
-2. Remove `_createErrorContext(...)` and `_generateErrorContext(...)` after
-   compiler output no longer calls them. Any remaining compile-time failures
-   should use the new label-generation/index helper or direct `TemplateError`
-   paths as appropriate.
+2. Remove `_createLegacyErrorContext(...)` after compiler output no longer
+   emits object contexts. Keep `_generateErrorContext(...)` as the analysis-time
+   compiler label/index helper, but remove its legacy-only runtime codegen
+   string-label call sites after they are migrated to compact `__ec[index]`
+   contexts. Any remaining compile-time failures should use
+   `_generateErrorContext(...)` or direct `TemplateError` paths as appropriate.
 3. Remove the `ChainCommand` static-path label special case; chain command
    labels become `ChainCommand`, with path/method details coming from command
    payload diagnostics when needed.

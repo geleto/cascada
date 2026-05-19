@@ -55,6 +55,7 @@ class CompileAnalysis {
 
     const analysis = this._ensureAnalysis(node, parentNode, parentField);
     this._analyzeNode(node);
+    this.compiler._generateErrorContext(node);
     this._registerDeclarations(analysis);
     this._validateUses(analysis);
     this._validateMutations(analysis);

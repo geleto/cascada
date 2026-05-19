@@ -229,7 +229,7 @@ class CompileLookup {
     }
 
     compiler._assertSequenceRootIsContextPath(nodeStaticPathKey, node);
-    const errorContextJson = JSON.stringify(compiler._createErrorContext(node));
+    const errorContextJson = JSON.stringify(compiler._createLegacyErrorContext(node));
     if (compiler.scriptMode) {
       this.emit('runtime.sequentialMemberLookupScriptValue((');
     } else {
@@ -244,7 +244,7 @@ class CompileLookup {
 
   _compileDynamicLookup(node) {
     const compiler = this.compiler;
-    const errorContextJson = JSON.stringify(compiler._createErrorContext(node));
+    const errorContextJson = JSON.stringify(compiler._createLegacyErrorContext(node));
     if (compiler.scriptMode) {
       this.emit('runtime.memberLookupScript((');
     } else {
@@ -259,7 +259,7 @@ class CompileLookup {
   _emitThisSharedVarNestedLookup(thisSharedFacts, node) {
     const compiler = this.compiler;
     const nestedPath = thisSharedFacts.chainPath.slice(1);
-    const errorContextJson = JSON.stringify(compiler._createErrorContext(node));
+    const errorContextJson = JSON.stringify(compiler._createLegacyErrorContext(node));
     const memberLookupHelper = compiler.scriptMode ? 'memberLookupScript' : 'memberLookupAsync';
 
     nestedPath.forEach(() => {
