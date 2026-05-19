@@ -47,7 +47,7 @@ class CompilerCommon extends Obj {
       : (typeof options.templateName === 'string' ? options.templateName : undefined);
     this.errorContextEntries = [];
     this.inBlock = false;
-    
+
     this.sequential = new CompileSequential(this);
     this.emit = new CompileEmit(this);
     this.async = null;

@@ -2,7 +2,6 @@ import expect from 'expect.js';
 import {
   precompile,
   precompileString,
-  precompileScriptString,
   precompileTemplateAsync,
   precompileTemplateStringAsync
 } from '../src/precompile.js';

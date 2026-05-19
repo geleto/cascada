@@ -87,12 +87,7 @@ const noopTmplSrcAsync = {
   type: 'code',
   obj: {
     root(env, context, runtime, cb) {
-      try {
-        return '';
-      } catch (e) {
-        const err = handleError(e, null, null, null, context ? context.path : null);
-        cb(err);
-      }
+      return '';
     }
   }
 };
