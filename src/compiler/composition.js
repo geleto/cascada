@@ -18,7 +18,7 @@ class CompileComposition {
 
   compileAsyncResolveTargetFile(node, eagerCompile, ignoreMissing, allowNoParent = false) {
     const targetVar = this.compiler._tmpid();
-    const parentName = JSON.stringify(this.compiler.templateName);
+    const parentName = JSON.stringify(this.compiler.sourcePath);
     const eagerCompileArg = eagerCompile ? 'true' : 'false';
     const ignoreMissingArg = ignoreMissing ? 'true' : 'false';
     const positionNode = node.template || node;
@@ -44,7 +44,7 @@ class CompileComposition {
   compileSyncResolveTargetFile(node, frame, eagerCompile, ignoreMissing, allowNoParent = false) {
     const targetVar = this.compiler._tmpid();
     const errId = this.compiler._tmpid();
-    const parentName = JSON.stringify(this.compiler.templateName);
+    const parentName = JSON.stringify(this.compiler.sourcePath);
     const eagerCompileArg = eagerCompile ? 'true' : 'false';
     const ignoreMissingArg = ignoreMissing ? 'true' : 'false';
     const resolvedTargetValue = this.compiler._tmpid();
@@ -257,7 +257,7 @@ class CompileComposition {
       this.compiler.compileExpression(node.template, null, node.template, true);
       this.emit.line(';');
 
-      this.emit.line(`let ${templateVar} = env.getTemplate.bind(env)(${templateNameVar}, false, ${JSON.stringify(this.compiler.templateName)}, ${node.ignoreMissing ? 'true' : 'false'});`);
+      this.emit.line(`let ${templateVar} = env.getTemplate.bind(env)(${templateNameVar}, false, ${JSON.stringify(this.compiler.sourcePath)}, ${node.ignoreMissing ? 'true' : 'false'});`);
       this.emit.line(`let ${includeVarsVar} = {};`);
       this.compiler.compositionPayload.emitCompiledInputs(node, includeVarsVar);
       this.compiler.compositionPayload.emitContext(includeContextVar, includeVarsVar, node.withContext);

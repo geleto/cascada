@@ -621,7 +621,7 @@ class CompileInheritance {
   }
 
   _getOwnerContextPath() {
-    return this.compiler.templateName ?? INLINE_SOURCE_OWNER_PATH;
+    return this.compiler.sourcePath ?? INLINE_SOURCE_OWNER_PATH;
   }
 
   _getScriptMethodContextPath(callableNode) {
@@ -758,9 +758,9 @@ class CompileInheritance {
       : null;
     const invocationPath = isScriptMethod
       ? JSON.stringify(this._getScriptMethodContextPath(callableNode))
-      : (this.compiler.templateName == null
+      : (this.compiler.sourcePath == null
         ? 'null'
-        : JSON.stringify(this.compiler.templateName));
+        : JSON.stringify(this.compiler.sourcePath));
     const callableSignature = this._getCallableSignature(callableNode);
     // This only wires the entry-local command buffer to its immediate parent
     // invocation buffer. Caller-side inherited invocation linking is resolved

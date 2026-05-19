@@ -117,12 +117,15 @@ class CompileEmit {
         );
       }
     } else {
+      const managedBufferErrorContext = this.compiler.asyncMode
+        ? this.compiler.emitErrorContext(node, { boundaryName: name })
+        : null;
       this.compiler.buffer.initManagedBuffer(
         this.compiler.buffer.currentBuffer,
         this.compiler.asyncMode ? 'parentBuffer' : null,
         this.compiler.buffer.currentTextChainVar,
         linkedChains,
-        this.compiler.emitErrorContext(node, { boundaryName: name }),
+        managedBufferErrorContext,
         this.compiler.asyncMode ? 'parentBuffer' : 'null'
       );
     }
@@ -194,12 +197,15 @@ class CompileEmit {
         const traceParentArg = traceParentOverride !== undefined
           ? traceParentOverride
           : (parentBufferId || 'null');
+        const managedBufferErrorContext = this.compiler.asyncMode
+          ? this.compiler.emitErrorContext(errorContextNode)
+          : null;
         this.compiler.buffer.initManagedBuffer(
           bufferId,
           parentBufferId,
           `${bufferId}_textOutputVar`,
           linkedChains,
-          this.compiler.emitErrorContext(errorContextNode),
+          managedBufferErrorContext,
           traceParentArg
         );
         if (typeof emitFunc === 'function') {

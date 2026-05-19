@@ -42,7 +42,9 @@ class CompilerCommon extends Obj {
     this.scriptMode = options.scriptMode || false;
     this.guardDepth = 0;
     this.importedBindings = new Set();
-    this.templateName = typeof options.templateName === 'string' ? options.templateName : undefined;
+    this.sourcePath = typeof options.sourcePath === 'string'
+      ? options.sourcePath
+      : (typeof options.templateName === 'string' ? options.templateName : undefined);
     this.errorContextEntries = [];
     this.inBlock = false;
     
@@ -114,7 +116,7 @@ class CompilerCommon extends Obj {
     return new ErrorContext(
       positionNode.lineno + 1,
       positionNode.colno,
-      this.templateName, // At runtime, context.path will be used
+      this.sourcePath, // At runtime, context.path will be used
       this._generateErrorContext(node, positionNode)
     );
   }

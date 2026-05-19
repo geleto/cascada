@@ -13,8 +13,8 @@ import {CompileGuard} from './guard.js';
 import {CompileAssignment} from './assignment.js';
 
 class CompilerAsync extends CompilerBaseAsync {
-  init(templateName, options) {
-    super.init({ ...options, asyncMode: true, templateName });
+  init(sourcePath, options) {
+    super.init({ ...options, asyncMode: true, sourcePath });
     this.guard = new CompileGuard(this);
     this.assignment = new CompileAssignment(this);
   }

@@ -5,8 +5,8 @@ import {CompilerBaseSync} from './compiler-base-sync.js';
 import {CompileBuffer} from './buffer.js';
 
 class CompilerSync extends CompilerBaseSync {
-  init(templateName, options) {
-    super.init(Object.assign({}, options, { asyncMode: false, templateName }));
+  init(sourcePath, options) {
+    super.init(Object.assign({}, options, { asyncMode: false, sourcePath }));
   }
 
   compileCallExtension(node, frame) {

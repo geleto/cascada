@@ -443,7 +443,7 @@ class CompileMacro {
       `function (${emittedParamNames.join(', ')}, macroParentBuffer) {`
     );
 
-    compiler.emit.line(`return runtime.withPath(this, "${compiler.templateName}", function() {`);
+    compiler.emit.line(`return runtime.withPath(this, "${compiler.sourcePath}", function() {`);
     compiler.emit.line('return (function() {');
     compiler.emit.lines(
       'kwargs = kwargs || {};',
@@ -535,7 +535,7 @@ class CompileMacro {
       `function (${emittedParamNames.join(', ')}) {`
     );
 
-    compiler.emit.line(`return runtime.withPath(this, "${compiler.templateName}", function() {`);
+    compiler.emit.line(`return runtime.withPath(this, "${compiler.sourcePath}", function() {`);
     compiler.emit.line('return (function(frame) {');
     compiler.emit.line('let callerFrame = frame;');
     if (keepFrame) {
