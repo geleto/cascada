@@ -136,12 +136,11 @@ class CompileCall {
 
     const compiler = this.compiler;
     const funcName = compiler._getNodeName(node.name).replace(/"/g, '\\"');
-    const errorContextJson = JSON.stringify(compiler._createLegacyErrorContext(node));
     compiler.emit('runtime.sequentialCallWrapValue(');
     compiler.compile(node.name, null);
     compiler.emit(`, "${funcName}", context, `);
     compiler._compileAggregate(node.args, null, '[', ']', false, false);
-    compiler.emit(`, "${sequenceLockKey}", ${errorContextJson}, ${!!sequenceLockLookup.repair}, ${compiler.buffer.currentBuffer})`);
+    compiler.emit(`, "${sequenceLockKey}", ${compiler.emitErrorContext(node)}, ${!!sequenceLockLookup.repair}, ${compiler.buffer.currentBuffer})`);
     return true;
   }
 

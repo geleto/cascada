@@ -18,7 +18,7 @@ class CompileBoundaries {
 
   _emitTextChainSnapshot(bufferExpr, chainName, positionNode, resultId) {
     this.compiler.emit.line(
-      `let ${resultId} = ${bufferExpr}.addCommand(new runtime.SnapshotCommand({ chainName: "${chainName}", pos: {lineno: ${positionNode.lineno}, colno: ${positionNode.colno}} }), "${chainName}");`
+      `let ${resultId} = ${bufferExpr}.addCommand(new runtime.SnapshotCommand({ chainName: "${chainName}", errorContext: ${this.compiler.emitErrorContext(positionNode)} }), "${chainName}");`
     );
   }
 
@@ -64,7 +64,7 @@ class CompileBoundaries {
       this.compiler.emit.line(`  return await ${resultId};`);
       this.compiler.emit.line('} catch (e) {');
       this.compiler.emit.line(
-        `  const err = runtime.isPoisonError(e) ? e : new runtime.PoisonError(e, ${positionNode.lineno}, ${positionNode.colno}, "${this.compiler._generateErrorContext(node, positionNode)}", context.path);`
+        `  const err = runtime.isPoisonError(e) ? e : new runtime.PoisonError(e, ${errorContextArg});`
       );
       this.compiler.emit.line('  throw err;');
       this.compiler.emit.line('}');
@@ -183,7 +183,7 @@ class CompileBoundaries {
 
     emitCallbackResult(resultId);
     emitCompiler.line(`  return ${resultId};`);
-    emitCompiler.line(`}, ${errorContextArg})`);
+    emitCompiler.line(`}, ${errorContextArg}, ${this.compiler.buffer.currentBuffer})`);
   }
 
   _compileSyncRenderBoundaryImpl(emitCompiler, node, frame, innerBodyFunction, callbackName, positionNode = node) {

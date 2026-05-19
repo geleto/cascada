@@ -105,7 +105,7 @@ class CompileEmit {
     }
     // this.Line(`let ${this.compiler.buffer.currentBuffer} = "";`);
     if (this.compiler.asyncMode && name === 'root') {
-      const rootErrorContextArg = this.compiler.emitErrorContext(node, { boundaryName: name });
+      const rootErrorContextArg = this.compiler.emitBufferErrorContext(node, { boundaryName: name });
       this.line(
         `let ${this.compiler.buffer.currentBuffer} = ` +
         `new runtime.CommandBuffer(context, null, null, null, null, ${rootErrorContextArg});`
@@ -118,7 +118,7 @@ class CompileEmit {
       }
     } else {
       const managedBufferErrorContext = this.compiler.asyncMode
-        ? this.compiler.emitErrorContext(node, { boundaryName: name })
+        ? this.compiler.emitBufferErrorContext(node, { boundaryName: name })
         : null;
       this.compiler.buffer.initManagedBuffer(
         this.compiler.buffer.currentBuffer,
@@ -198,7 +198,7 @@ class CompileEmit {
           ? traceParentOverride
           : (parentBufferId || 'null');
         const managedBufferErrorContext = this.compiler.asyncMode
-          ? this.compiler.emitErrorContext(errorContextNode)
+          ? this.compiler.emitBufferErrorContext(errorContextNode)
           : null;
         this.compiler.buffer.initManagedBuffer(
           bufferId,

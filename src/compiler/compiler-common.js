@@ -121,15 +121,21 @@ class CompilerCommon extends Obj {
     );
   }
 
-  emitErrorContextRef(node) {
-    return `__ec[${node._analysis.errorContextIndex}]`;
-  }
-
-  emitErrorContext(node, fields = {}) {
+  emitErrorContext(node) {
     if (!node) {
       return 'null';
     }
-    const parts = [`ec: ${this.emitErrorContextRef(node)}`];
+    if (node._analysis.errorContextIndex === undefined) {
+      this._generateErrorContext(node);
+    }
+    return `__ec[${node._analysis.errorContextIndex}]`;
+  }
+
+  emitBufferErrorContext(node, fields = {}) {
+    if (!node) {
+      return 'null';
+    }
+    const parts = [`ec: ${this.emitErrorContext(node)}`];
     for (const [key, value] of Object.entries(fields)) {
       if (value !== undefined && value !== null) {
         parts.push(`${key}: ${JSON.stringify(value)}`);

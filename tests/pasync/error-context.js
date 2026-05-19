@@ -9,10 +9,12 @@ import {
   handleError,
   handleFatal,
   isPoison,
+  memberLookupScript,
   normalizeErrorContext,
   prepareErrorContexts,
   runControlFlowBoundary,
-  runValueBoundary
+  runValueBoundary,
+  sequentialContextLookupValue
 } from '../../src/runtime/runtime.js';
 import {AsyncEnvironment} from '../../src/environment/async-environment.js';
 import {Script} from '../../src/environment/script.js';
@@ -177,6 +179,38 @@ describe('error context tracing runtime foundation', () => {
     expect(poison.errors[0].errorContext).to.eql(ec);
     expect(poison.errors[1].errorContext).to.eql(ec);
     expect(poison.errors[1].message).to.contain('two');
+  });
+
+  it('applies lookup context to promise input failures', async () => {
+    const ec = [8, 12, 'LookupVal', 'lookup.casc', null];
+    const buffer = new CommandBuffer({ path: 'lookup.casc' });
+
+    try {
+      await memberLookupScript(Promise.reject(new Error('lookup failed')), 'name', ec, buffer);
+      throw new Error('expected lookup failure');
+    } catch (error) {
+      const contextualError = error.errors ? error.errors[0] : error;
+      expect(contextualError.errorContext).to.eql(ec);
+      expect(contextualError.message).to.contain('lookup.casc');
+      expect(contextualError.message).to.contain('LookupVal');
+    }
+  });
+
+  it('stores sequential root lookup command context without normalizing position', () => {
+    const ec = [9, 4, 'Symbol', 'sequence.casc', null];
+    let command = null;
+    const buffer = {
+      getChainIfExists: () => ({ _chainType: 'sequential_path' }),
+      addCommand: (cmd) => {
+        command = cmd;
+        return cmd.promise;
+      }
+    };
+
+    sequentialContextLookupValue({ lookup: () => 'db' }, 'db', '!db', ec, false, buffer);
+
+    expect(command.errorContext).to.eql(ec);
+    expect(command.pos).to.be(undefined);
   });
 
   it('RuntimeFatalError accepts compact context', () => {
@@ -446,6 +480,38 @@ describe('error context tracing runtime foundation', () => {
 
       expect(result.trim()).to.be('Parent Ada');
       expect(parentContextPaths).to.contain('parent.njk');
+    });
+
+    it('emits compact contexts for migrated helper and command call sites', () => {
+      const env = new AsyncEnvironment();
+      const source = new Script([
+        'data result',
+        'var user = fetchUser(userId)',
+        'var name = user.name',
+        'db!.save(name)',
+        'result.name.set(name)',
+        'return result.snapshot()'
+      ].join('\n'), env, 'phase4-generated.casc').compileSource();
+
+      expect(source).to.match(/runtime\.callWrapAsync\([^;]+__ec\[\d+\], output\)/);
+      expect(source).to.match(/context\.lookupScript\("fetchUser", __ec\[\d+\]\)/);
+      expect(source).to.match(/runtime\.memberLookupScript\([^;]+__ec\[\d+\], output\)/);
+      expect(source).to.match(/runtime\.sequentialCallWrapValue\([^;]+__ec\[\d+\], false, output\)/);
+      expect(source).to.match(/new runtime\.SnapshotCommand\(\{ chainName: "name", errorContext: __ec\[\d+\] \}\)/);
+      expect(source).to.match(/new runtime\.VarCommand\(\{ chainName: 'name', args: \[t_\d+\], errorContext: __ec\[\d+\] \}\)/);
+      expect(source).to.contain('new runtime.DataCommand({ chainName: \'result\'');
+      expect(source).to.match(/errorContext: __ec\[\d+\] \}\);/);
+    });
+
+    it('passes compact contexts into sequential root lookups', () => {
+      const env = new AsyncEnvironment();
+      const source = new Script([
+        'data result',
+        'db!.save(userId)',
+        'return result.snapshot()'
+      ].join('\n'), env, 'phase4-sequential-root.casc').compileSource();
+
+      expect(source).to.match(/runtime\.sequentialCallWrapValue\([^;]+context\.lookupScript\("db", __ec\[\d+\]\)[^;]+__ec\[\d+\], false, output\)/);
     });
   });
 });

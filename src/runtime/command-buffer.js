@@ -200,22 +200,21 @@ class CommandBuffer {
       if (!chain) {
         throw new RuntimeFatalError(
           `Chain '${resolvedChainName}' is unavailable on finished CommandBuffer`,
-          {...cmd.pos, path}
+          cmd.errorContext
         );
       }
       if (!chain._buffer.isChainFinished(resolvedChainName)) {
         throw new RuntimeFatalError(
           `${cmd.constructor.name} on finished buffer is allowed only if the target chain stream is finished`,
-          {...cmd.pos, path}
+          cmd.errorContext
         );
       }
       return this._runObservationCommandOnFinishedBuffer(cmd, resolvedChainName);
     }
 
-    const path = this._context?.path || null;
     throw new RuntimeFatalError(
       `Adding command '${cmd?.constructor ? cmd.constructor.name : 'unknown'}' is not allowed on a finished CommandBuffer`,
-      {...cmd?.pos, path}
+      cmd.errorContext
     );
   }
 
@@ -225,11 +224,10 @@ class CommandBuffer {
 
   _runObservationCommandOnFinishedBuffer(cmd, chainName) {
     const chain = this.getChainIfExists(chainName);
-    const path = this._context?.path || null;
     if (!chain) {
       throw new RuntimeFatalError(
         `Chain '${chainName}' is unavailable on finished CommandBuffer`,
-        {...cmd.pos, path}
+        cmd.errorContext
       );
     }
 
@@ -237,8 +235,7 @@ class CommandBuffer {
       try {
         cmd.apply(chain);
       } catch (err) {
-        const chainPath = chain && chain._context && chain._context.path ? chain._context.path : path;
-        cmd.rejectResult(handleError(err, cmd.pos.lineno, cmd.pos.colno, null, chainPath));
+        cmd.rejectResult(handleError(err, cmd.errorContext));
       }
       return cmd.promise;
     };

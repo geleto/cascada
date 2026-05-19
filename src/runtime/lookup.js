@@ -57,7 +57,7 @@ function memberLookupScriptRaw(obj, val) {
  * Async member lookup for templates.
  * Uses sync-first hybrid pattern.
  */
-function memberLookupAsync(obj, val, errorContext) {
+function memberLookupAsync(obj, val, errorContext, currentBuffer = null) {
 
   // Check if ANY input requires async processing
   const objIsPromise = obj && typeof obj.then === 'function' && !isPoison(obj);
@@ -65,7 +65,7 @@ function memberLookupAsync(obj, val, errorContext) {
 
   if (objIsPromise || valIsPromise) {
     // Must delegate to async helper to await all promises
-    return _memberLookupAsyncComplex(obj, val, errorContext);
+    return _memberLookupAsyncComplex(obj, val, errorContext, currentBuffer);
   }
 
   // Sync path - collect ALL errors from both sources (never miss any error principle)
@@ -91,11 +91,11 @@ function memberLookupAsync(obj, val, errorContext) {
   return result;
 }
 
-async function _memberLookupAsyncComplex(obj, val, errorContext) {
+async function _memberLookupAsyncComplex(obj, val, errorContext, currentBuffer = null) {
   // Collect errors from both inputs (await all promises)
   const errors = await collectErrors([obj, val]);
   if (errors.length > 0) {
-    return createPoison(errors); // Errors already have position info from collectErrors
+    return createPoison(errors, errorContext, currentBuffer);
   }
 
   // Resolve the values
@@ -115,7 +115,7 @@ async function _memberLookupAsyncComplex(obj, val, errorContext) {
     if (isPoisonError(err)) {
       return createPoison(err.errors);
     } else {
-      const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+      const contextualError = handleError(err, errorContext, currentBuffer);
       return createPoison(contextualError);
     }
   }
@@ -125,7 +125,7 @@ async function _memberLookupAsyncComplex(obj, val, errorContext) {
  * Async member lookup for scripts.
  * Uses sync-first hybrid pattern.
  */
-function memberLookupScript(obj, val, errorContext) {
+function memberLookupScript(obj, val, errorContext, currentBuffer = null) {
 
   // Check if ANY input requires async processing
   const objIsPromise = obj && typeof obj.then === 'function' && !isPoison(obj);
@@ -133,7 +133,7 @@ function memberLookupScript(obj, val, errorContext) {
 
   if (objIsPromise || valIsPromise) {
     // Must delegate to async helper to await all promises
-    return _memberLookupScriptComplex(obj, val, errorContext);
+    return _memberLookupScriptComplex(obj, val, errorContext, currentBuffer);
   }
 
   // Sync path - collect ALL errors from both sources (never miss any error principle)
@@ -152,7 +152,7 @@ function memberLookupScript(obj, val, errorContext) {
   }
 
   if (obj === undefined || obj === null) {
-    return createPoison(new Error(`Cannot read property ${val} of ${obj}`));
+    return createPoison(new Error(`Cannot read property ${val} of ${obj}`), errorContext, currentBuffer);
   }
 
   const value = obj[val];//some APIs (vercel ai result.elementStream) do not like multiple reads
@@ -166,11 +166,11 @@ function memberLookupScript(obj, val, errorContext) {
   return value;
 }
 
-async function _memberLookupScriptComplex(obj, val, errorContext) {
+async function _memberLookupScriptComplex(obj, val, errorContext, currentBuffer = null) {
   // Collect errors from both inputs
   const errors = await collectErrors([obj, val]);
   if (errors.length > 0) {
-    return createPoison(errors); // Errors already have position info from collectErrors
+    return createPoison(errors, errorContext, currentBuffer);
   }
 
   // Resolve the values
@@ -194,30 +194,21 @@ async function _memberLookupScriptComplex(obj, val, errorContext) {
       return createPoison(err.errors);
     } else {
       // Otherwise, it's a native error. Enrich it with template context.
-      const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+      const contextualError = handleError(err, errorContext, currentBuffer);
       return createPoison(contextualError);
     }
   }
 }
 
-function _getObservationPosition(errorContext) {
-  return errorContext && typeof errorContext === 'object'
-    ? {
-      lineno: typeof errorContext.lineno === 'number' ? errorContext.lineno : 0,
-      colno: typeof errorContext.colno === 'number' ? errorContext.colno : 0
-    }
-    : { lineno: 0, colno: 0 };
-}
-
-function _addObservationCommand(targetBuffer, chainName, pos, mode) {
+function _addObservationCommand(targetBuffer, chainName, errorContext, mode) {
   if (mode === 'snapshot') {
-    return targetBuffer.addCommand(new SnapshotCommand({ chainName, pos }), chainName);
+    return targetBuffer.addCommand(new SnapshotCommand({ chainName, errorContext }), chainName);
   }
   if (mode === 'isError') {
-    return targetBuffer.addCommand(new IsErrorCommand({ chainName, pos }), chainName);
+    return targetBuffer.addCommand(new IsErrorCommand({ chainName, errorContext }), chainName);
   }
   if (mode === 'getError') {
-    return targetBuffer.addCommand(new GetErrorCommand({ chainName, pos }), chainName);
+    return targetBuffer.addCommand(new GetErrorCommand({ chainName, errorContext }), chainName);
   }
 
   throw new Error(`Unsupported shared-chain observation mode '${mode}'`);
@@ -228,7 +219,6 @@ function observeInheritanceSharedChain(name, currentBuffer, errorContext = null,
     return undefined;
   }
 
-  const pos = _getObservationPosition(errorContext);
   const runtimeSharedSchema = inheritanceStateValue.runtimeState?.sharedSchema ?? null;
   if (runtimeSharedSchema) {
     const schemaEntry = runtimeSharedSchema[name] ?? null;
@@ -246,7 +236,7 @@ function observeInheritanceSharedChain(name, currentBuffer, errorContext = null,
         errorContext
       );
     }
-    return _addObservationCommand(currentBuffer, name, pos, mode);
+    return _addObservationCommand(currentBuffer, name, errorContext, mode);
   }
 
   const sourceName = getSharedSourceName(name);
@@ -270,8 +260,7 @@ function chainLookup(name, currentBuffer) {
     return undefined;
   }
   return currentBuffer.addCommand(new SnapshotCommand({
-    chainName: name,
-    pos: { lineno: 0, colno: 0 }
+    chainName: name
   }), name);
 }
 

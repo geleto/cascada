@@ -112,6 +112,12 @@ own the mechanics:
 - helpers that need named fields call a small internal
   `normalizeErrorContext(ec)` helper
 
+Prepared error contexts should stay compact until an error is actually being
+created, wrapped, formatted, or reported. Do not normalize contexts during
+ordinary command construction, helper setup, or pass-through storage. Commands
+store `command.errorContext` directly and command diagnostics consume that
+context at the error-reporting point.
+
 All compiler-called runtime APIs should receive both the compact prepared
 context entry, such as `__ec[index]`, and `currentBuffer`. Do not support
 object-or-array dual shapes in runtime helper APIs; transitional compatibility
@@ -355,6 +361,13 @@ new DataCommand({
   errorContext
 })
 ```
+
+Final target: every command that can report or propagate an error is created
+with an `errorContext`. Compiler-emitted commands get the source operation's
+compact `__ec[index]`; runtime-created/bootstrap commands should receive the
+best available owning source or boundary context instead of relying on `null`.
+Any command constructor default of `errorContext = null` is temporary migration
+slack, not the long-term contract.
 
 Do not pass `chainName` into command constructors just to support diagnostics.
 The buffer or chain application path already knows the chain name when applying
@@ -795,23 +808,38 @@ Before implementation, audit:
    macro/caller, loop, guard, output, return, and boundary codegen paths.
    Include legacy inheritance catch paths that still call
    `handleError(e, lineno, colno, errorContextString, path)`.
-   Fill in command-buffer optional fields such as `loadName`,
-   `targetIdentifier`, and `branch` at these call sites when the compiler can
-   provide stable AST information. Pass `traceParent` to emitted
-   `runRenderBoundary(...)` calls where the render boundary has a diagnostic
-   caller buffer. Ensure macro, caller, method, block, and other callable
+   Pass `traceParent` to emitted `runRenderBoundary(...)` calls where the
+   render boundary has a diagnostic caller buffer. Ensure macro, caller,
+   method, block, and other callable
    invocation paths require a current buffer/trace parent rather than
    supporting untraceable calls.
    Verify `Script` and precompiled script/template instances expose
    `getErrorContexts` through the same runtime surface while updating
    precompile/browser fixtures.
 4. Move command constructors toward accepting `errorContext` instead of raw
-   `pos` as the compiler call sites are migrated. During transition, commands
-   that still expose `.pos` should derive it mechanically as
-   `{ lineno: ec[0], colno: ec[1] }` from their stored `errorContext`; no call
-   site should provide both independently.
-5. Expand `tests/pasync/error-context.js` for command-stored context
+   `pos` as the compiler call sites are migrated. Commands should store
+   `errorContext` and avoid deriving `.pos` during construction. Command
+   argument resolution, command application, finished-buffer observations, and
+   chain-level error handling should report through `command.errorContext`.
+   The first Phase 4 pass updates the shared `ChainCommand` base plus data,
+   text, var, sequence, wait, observation, error, return, guard, and chain
+   bootstrap command paths. During migration, some command constructors may
+   still default `errorContext = null`; this default is temporary and should be
+   removed after all runtime-created/bootstrap commands receive an owning
+   context.
+5. Use `emitErrorContext(node)` for raw `__ec[index]` references and
+   `emitBufferErrorContext(node, fields)` only for command-buffer boundary
+   metadata objects shaped as `{ ec: __ec[index], ...fields }`.
+6. Expand `tests/pasync/error-context.js` for command-stored context
    and migrated compiler output.
+
+Phase 4 may leave legacy contexts in compile-time metadata and synchronous
+compiler paths. The important boundary is that async compiler-emitted runtime
+helper calls should no longer need generated `{ lineno, colno,
+errorContextString, path }` objects or positional `handleError(...)` calls.
+Optional command-buffer display fields such as `loadName`, `targetIdentifier`,
+and `branch` may also be filled in after this migration; they need
+AST-specific display choices rather than broad mechanical rewrites.
 
 ### Phase 5 - Cleanup And Fixtures
 
@@ -837,9 +865,15 @@ Deletion checklist for `TODO(error-context-cleanup)`:
 - the legacy `ErrorContext` object wrapper
 - `normalizeBufferErrorContext(...)` compact/context-shape convenience once
   compiler-created buffers always pass `{ ec: __ec[index], ...fields }`
-- legacy compiler buffer-context emit helpers in boundaries, entry/managed
-  buffers, macro/caller buffers, and loop body buffers once they use the shared
-  `emitBufferErrorContext(node, fields)` helper
+- compile-time inheritance metadata origins that still store legacy
+  `ErrorContext` objects until the metadata/runtime contracts are redesigned
+- synchronous compiler paths that still emit positional `handleError(...)`
+  calls
+- command constructor `errorContext = null` defaults and any runtime-created
+  commands that still lack an owning context
+- optional command-buffer display fields such as `loadName`,
+  `targetIdentifier`, and `branch` that were deferred from the mechanical
+  Phase 4 call-site migration
 - the temporary runtime inheritance `createBufferErrorContext(...)` helper and
   `src/runtime/inheritance/error-context.js` bridge file if no final ownership
   case remains

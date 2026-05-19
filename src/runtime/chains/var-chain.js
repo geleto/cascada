@@ -10,8 +10,7 @@ class VarChain extends Chain {
     if (!this._buffer) return;
     this._buffer.addCommand(new VarCommand({
       chainName: this._chainName,
-      args: [value],
-      pos: { lineno: 0, colno: 0 }
+      args: [value]
     }), this._chainName);
   }
 

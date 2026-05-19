@@ -3,6 +3,7 @@ import {markDeferredThenablesHandled} from './arguments.js';
 
 class Command {
   constructor() {
+    this.errorContext = null;
     this.resolved = false;
     this.promise = null;
     this.resolve = null;
@@ -94,14 +95,14 @@ class ObservableCommand extends Command {
 }
 
 class ChainCommand extends MutatingCommand {
-  constructor({ chainName, args = null, pos = null }) {
+  constructor({ chainName, args = null, errorContext = null }) {
     super();
     this.chainName = chainName;
     this.arguments = args || [];
     if (this.arguments.length > 0) {
       markDeferredThenablesHandled(this.arguments);
     }
-    this.pos = pos || { lineno: 0, colno: 0 };
+    this.errorContext = errorContext || null;
   }
 
   extractPoisonFromArgs(args = this.arguments) {
@@ -147,7 +148,7 @@ class ChainObservableCommand extends ObservableCommand {
     if (this.arguments.length > 0) {
       markDeferredThenablesHandled(this.arguments);
     }
-    this.pos = spec.pos || { lineno: 0, colno: 0 };
+    this.errorContext = spec.errorContext || null;
   }
 }
 

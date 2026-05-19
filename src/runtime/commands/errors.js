@@ -20,10 +20,10 @@ class ErrorCommand extends MutatingCommand {
 }
 
 class TargetPoisonCommand extends MutatingCommand {
-  constructor({ chainName, errors = null, pos = null }) {
+  constructor({ chainName, errors = null, errorContext = null }) {
     super();
     this.chainName = chainName;
-    this.pos = pos || { lineno: 0, colno: 0 };
+    this.errorContext = errorContext || null;
     this.errors = Array.isArray(errors) ? errors : [errors || new Error('Command buffer entry produced an unspecified error')];
   }
 
@@ -35,7 +35,7 @@ class TargetPoisonCommand extends MutatingCommand {
     if (!chain) {
       return;
     }
-    const contextualizedErrors = contextualizeErrorsForChain(chain, this.pos, this.errors);
+    const contextualizedErrors = contextualizeErrorsForChain(chain, this.errorContext, this.errors);
     const chainType = chain._chainType;
     if (chainType === 'text') {
       if (!Array.isArray(chain._target)) {
@@ -49,37 +49,33 @@ class TargetPoisonCommand extends MutatingCommand {
   }
 }
 
-function contextualizeErrorsForChain(chain, pos, errors) {
+function contextualizeErrorsForChain(chain, errorContext, errors) {
+  void chain;
   if (!Array.isArray(errors) || errors.length === 0) {
     return [];
   }
-  const lineno = pos && typeof pos.lineno === 'number' ? pos.lineno : 0;
-  const colno = pos && typeof pos.colno === 'number' ? pos.colno : 0;
-  const path = chain && chain._context && chain._context.path ? chain._context.path : null;
   const contextualized = [];
   for (const err of errors) {
     if (isPoisonError(err) && Array.isArray(err.errors) && err.errors.length > 0) {
       for (const nested of err.errors) {
-        contextualized.push(handleError(nested, lineno, colno, null, path));
+        contextualized.push(contextualizeChainError(chain, errorContext, nested));
       }
       continue;
     }
-    contextualized.push(handleError(err, lineno, colno, null, path));
+    contextualized.push(contextualizeChainError(chain, errorContext, err));
   }
   return contextualized;
 }
 
-function contextualizeChainError(chain, pos, err) {
-  const lineno = pos && typeof pos.lineno === 'number' ? pos.lineno : 0;
-  const colno = pos && typeof pos.colno === 'number' ? pos.colno : 0;
-  const path = chain && chain._context && chain._context.path ? chain._context.path : null;
+function contextualizeChainError(chain, errorContext, err) {
+  void chain;
   if (err && (typeof err === 'object' || typeof err === 'function')) {
-    const cacheKey = `${lineno}:${colno}:${path || ''}`;
+    const cacheKey = errorContext || 'none';
     const perError = contextualizedChainErrorCache.get(err);
     if (perError && perError.has(cacheKey)) {
       return perError.get(cacheKey);
     }
-    const wrapped = handleError(err, lineno, colno, null, path);
+    const wrapped = handleError(err, errorContext);
     if (wrapped !== err) {
       const nextPerError = perError || new Map();
       nextPerError.set(cacheKey, wrapped);
@@ -87,7 +83,7 @@ function contextualizeChainError(chain, pos, err) {
     }
     return wrapped;
   }
-  return handleError(err, lineno, colno, null, path);
+  return handleError(err, errorContext);
 }
 
 export {ErrorCommand, TargetPoisonCommand, contextualizeErrorsForChain, contextualizeChainError};

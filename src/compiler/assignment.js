@@ -180,7 +180,7 @@ class CompileAssignment {
       const facts = targetFacts && targetFacts[i] ? targetFacts[i] : null;
 
       if (hasAssignedValue) {
-        this.emit.line(`${compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ chainName: '${name}', args: [${valueId}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${name}');`);
+        this.emit.line(`${compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ chainName: '${name}', args: [${valueId}], errorContext: ${compiler.emitErrorContext(node)} }), '${name}');`);
       }
 
       if (name.charAt(0) !== '_' && hasAssignedValue && facts && facts.exportFromRootScope && !facts.isSharedDeclaration) {

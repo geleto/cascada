@@ -58,6 +58,18 @@ function normalizeErrorContext(ec) {
   };
 }
 
+function getErrorContextCallback(ec) {
+  if (Array.isArray(ec)) {
+    return ec[4] ?? null;
+  }
+  if (ec && typeof ec === 'object') {
+    // TODO(error-context-cleanup): remove legacy object-context callback support
+    // once inheritance origin metadata is compact-only.
+    return ec.cb ?? null;
+  }
+  return null;
+}
+
 // TODO(error-context-cleanup): remove this compatibility converter once runtime
 // APIs no longer accept legacy object or positional error-context arguments.
 function compactErrorContext(ec) {
@@ -744,4 +756,4 @@ function peekError(value) {
   return null;
 }
 
-export { PoisonedValue, PoisonError, RuntimeError, RuntimeFatalError, RuntimePromise, ErrorContext, prepareErrorContexts, normalizeErrorContext, getErrorInfo, createPoison, isPoison, isPoisonError, isRuntimeFatalError, isError, collectErrors, handleError, handleFatal, peekError, markPromiseHandled };
+export { PoisonedValue, PoisonError, RuntimeError, RuntimeFatalError, RuntimePromise, ErrorContext, prepareErrorContexts, normalizeErrorContext, getErrorContextCallback, getErrorInfo, createPoison, isPoison, isPoisonError, isRuntimeFatalError, isError, collectErrors, handleError, handleFatal, peekError, markPromiseHandled };

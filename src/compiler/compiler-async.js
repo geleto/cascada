@@ -297,9 +297,9 @@ class CompilerAsync extends CompilerBaseAsync {
 
       this.emit('}');
 
-      const errorCtx = this._createLegacyErrorContext(node, node.expr);
+      const errorContext = this.emitErrorContext(node.expr);
       this.emit('} catch (e) {');
-      this.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ${errorCtx.lineno}, ${errorCtx.colno}, "${errorCtx.errorContextString}", context.path);`);
+      this.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ${errorContext}, ${this.buffer.currentBuffer});`);
       catchPoisonPos = this.codebuf.length;
       this.emit('');
       this.emit('}');
@@ -370,9 +370,9 @@ class CompilerAsync extends CompilerBaseAsync {
       }
       this.emit('}');
 
-      const errorContext = this._createLegacyErrorContext(node, node.cond);
+      const errorContext = this.emitErrorContext(node.cond);
       this.emit('} catch (e) {');
-      this.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ${errorContext.lineno}, ${errorContext.colno}, "${errorContext.errorContextString}", context.path);`);
+      this.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ${errorContext}, ${this.buffer.currentBuffer});`);
       catchPoisonPos = this.codebuf.length;
       this.emit('');
       this.emit('}');

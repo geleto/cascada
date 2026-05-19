@@ -14,11 +14,9 @@ class CompileChain {
   }
 
   emitLocalVarChainInit(bufferId, name, emitValueExpression, positionNode = null) {
-    const lineno = positionNode && positionNode.lineno !== undefined ? positionNode.lineno : 0;
-    const colno = positionNode && positionNode.colno !== undefined ? positionNode.colno : 0;
     this.compiler.emit(`${bufferId}.addCommand(new runtime.VarCommand({ chainName: ${JSON.stringify(name)}, args: [`);
     emitValueExpression();
-    this.compiler.emit.line(`], pos: {lineno: ${lineno}, colno: ${colno}} }), ${JSON.stringify(name)});`);
+    this.compiler.emit.line(`], errorContext: ${this.compiler.emitErrorContext(positionNode)} }), ${JSON.stringify(name)});`);
   }
 
   emitLocalVarChainBindings(bufferId, bindings) {
@@ -440,7 +438,7 @@ class CompileChain {
         }
         compiler.emit('normalizeArgs: true, args: ');
         compiler._compileAggregate(node.args, null, '[', ']', false, true);
-        compiler.emit(`, pos: ${compiler.buffer._emitPositionLiteral(node)} })`);
+        compiler.emit(`, errorContext: ${compiler.emitErrorContext(node)} })`);
       }, node, specialChainCall.chainName);
       return true;
     }
@@ -459,7 +457,7 @@ class CompileChain {
           compiler._compileAggregate(node.args, null, '', '', false, true);
         }
         compiler.emit(']');
-        compiler.emit(`, pos: ${compiler.buffer._emitPositionLiteral(node)} })`);
+        compiler.emit(`, errorContext: ${compiler.emitErrorContext(node)} })`);
       }, node, specialChainCall.chainName);
       return true;
     }

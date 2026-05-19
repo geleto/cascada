@@ -16,7 +16,6 @@ function withSequentialPathChain(currentBuffer, pathKey, errorContext, repair, i
     );
   }
   ensureSequentialPathChain(currentBuffer, pathKey);
-  const pos = { lineno: errorContext?.lineno ?? 0, colno: errorContext?.colno ?? 0 };
   const CommandClass = isWrite
     ? (repair ? RepairWriteCommand : SequentialPathWriteCommand)
     : (repair ? RepairReadCommand : SequentialPathReadCommand);
@@ -24,31 +23,31 @@ function withSequentialPathChain(currentBuffer, pathKey, errorContext, repair, i
     chainName: pathKey,
     pathKey,
     operation,
-    pos
+    errorContext
   }), pathKey);
 }
 
 function sequentialCallWrapValue(func, funcName, context, args, pathKey, errorContext, repair = false, currentBuffer) {
   return withSequentialPathChain(currentBuffer, pathKey, errorContext, repair, true, () =>
-    callWrapAsync(func, funcName, context, args, errorContext)
+    callWrapAsync(func, funcName, context, args, errorContext, currentBuffer)
   );
 }
 
-function sequentialContextLookupValue(context, name, pathKey, repair = false, currentBuffer) {
-  return withSequentialPathChain(currentBuffer, pathKey, null, repair, false, () =>
+function sequentialContextLookupValue(context, name, pathKey, errorContext, repair = false, currentBuffer) {
+  return withSequentialPathChain(currentBuffer, pathKey, errorContext, repair, false, () =>
     contextLookupOnly(context, name, pathKey)
   );
 }
 
 function sequentialMemberLookupAsyncValue(target, key, pathKey, errorContext, repair = false, currentBuffer) {
   return withSequentialPathChain(currentBuffer, pathKey, errorContext, repair, false, () =>
-    memberLookupAsync(target, key, errorContext)
+    memberLookupAsync(target, key, errorContext, currentBuffer)
   );
 }
 
 function sequentialMemberLookupScriptValue(target, key, pathKey, errorContext, repair = false, currentBuffer) {
   return withSequentialPathChain(currentBuffer, pathKey, errorContext, repair, false, () =>
-    memberLookupScript(target, key, errorContext)
+    memberLookupScript(target, key, errorContext, currentBuffer)
   );
 }
 

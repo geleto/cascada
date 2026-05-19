@@ -161,7 +161,7 @@ async function _suppressValueAsyncComplex(val, autoescape, errorContext) {
       if (isPoisonError(err)) {
         throw err;
       } else {
-        const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+        const contextualError = handleError(err, errorContext);
         throw new PoisonError([contextualError]);
       }
     }
@@ -177,7 +177,7 @@ async function _suppressValueAsyncComplex(val, autoescape, errorContext) {
       if (isPoisonError(err)) {
         throw err;
       }
-      const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+      const contextualError = handleError(err, errorContext);
       throw new PoisonError([contextualError]);
     }
 
@@ -243,7 +243,7 @@ async function _ensureDefinedAsyncComplex(val, lineno, colno, context, errorCont
       if (isPoisonError(err)) {
         throw err;
       } else {
-        const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+        const contextualError = handleError(err, errorContext);
         throw new PoisonError([contextualError]);
       }
     }
@@ -299,7 +299,7 @@ async function _suppressValueScriptComplex(val, autoescape, errorContext) {
     if (isPoisonError(err)) {
       throw err;
     } else {
-      const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+      const contextualError = handleError(err, errorContext);
       throw new PoisonError([contextualError]);
     }
   }

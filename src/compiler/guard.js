@@ -109,7 +109,7 @@ class CompileGuard {
           if (node.errorVar) {
             this.emit.line(`runtime.declareBufferChain(${compiler.buffer.currentBuffer}, "${node.errorVar}", "var", context, null);`);
             this.emit.line(
-              `${compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ chainName: '${node.errorVar}', args: [new runtime.PoisonError(${guardErrorsVar})], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${node.errorVar}');`
+              `${compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ chainName: '${node.errorVar}', args: [new runtime.PoisonError(${guardErrorsVar})], errorContext: ${compiler.emitErrorContext(node)} }), '${node.errorVar}');`
             );
           }
           compiler.compile(node.recoveryBody, null);

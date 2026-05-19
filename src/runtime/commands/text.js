@@ -10,14 +10,14 @@ class TextCommand extends ChainCommand {
     chainName,
     args = null,
     operation = null,
-    pos = null,
+    errorContext = null,
     normalizeArgs = false,
     initializeIfNotSet = false
   }) {
     super({
       chainName,
       args: args || [],
-      pos
+      errorContext
     });
     this.operation = operation || null;
     this.normalizeArgs = normalizeArgs;
@@ -43,7 +43,7 @@ class TextCommand extends ChainCommand {
       if (this.operation === 'set') {
         if (args.length !== 1) {
           chain._setTarget(this.toPoisonValue([
-            contextualizeChainError(chain, this.pos, new Error('text.set() accepts exactly one argument'))
+            contextualizeChainError(chain, this.errorContext, new Error('text.set() accepts exactly one argument'))
           ]));
           return;
         }
@@ -53,35 +53,35 @@ class TextCommand extends ChainCommand {
         chain._setTarget([]);
       } else if (this.operation !== null) {
         chain._setTarget(this.toPoisonValue([
-          contextualizeChainError(chain, this.pos, new Error(`Unsupported text chain command '${this.operation}'`))
+          contextualizeChainError(chain, this.errorContext, new Error(`Unsupported text chain command '${this.operation}'`))
         ]));
         return;
       }
       if (!this.normalizeArgs) {
-        appendTextValues(chain, args, this.pos);
+        appendTextValues(chain, args, this.errorContext);
         return;
       }
-      const materializedArgs = materializeTextCommandArgs(args, chain, this.pos);
+      const materializedArgs = materializeTextCommandArgs(args, chain, this.errorContext);
       if (materializedArgs && typeof materializedArgs.then === 'function') {
         return Promise.resolve(materializedArgs).then((finalArgs) => {
-          appendTextValues(chain, finalArgs, this.pos);
+          appendTextValues(chain, finalArgs, this.errorContext);
         });
       }
-      appendTextValues(chain, materializedArgs, this.pos);
+      appendTextValues(chain, materializedArgs, this.errorContext);
     });
   }
 }
 
-function normalizeTextCommandArg(value, chain, pos) {
-  const materialized = materializeTemplateTextValue(value, buildTextErrorContext(chain, pos));
+function normalizeTextCommandArg(value, chain, errorContext) {
+  const materialized = materializeTemplateTextValue(value, errorContext);
   if (materialized && typeof materialized.then === 'function') {
-    return Promise.resolve(materialized).then((resolved) => normalizeMaterializedTextArg(resolved, chain, pos));
+    return Promise.resolve(materialized).then((resolved) => normalizeMaterializedTextArg(resolved, chain, errorContext));
   }
-  return normalizeMaterializedTextArg(materialized, chain, pos);
+  return normalizeMaterializedTextArg(materialized, chain, errorContext);
 }
 
-function materializeTextCommandArgs(values, chain, pos) {
-  const normalizedArgs = values.map((value) => normalizeTextCommandArg(value, chain, pos));
+function materializeTextCommandArgs(values, chain, errorContext) {
+  const normalizedArgs = values.map((value) => normalizeTextCommandArg(value, chain, errorContext));
   const resolvedArgs = resolveAll(normalizedArgs);
   if (isResolvedValue(resolvedArgs)) {
     return unwrapResolvedValue(resolvedArgs);
@@ -97,10 +97,10 @@ function materializeTextCommandArgs(values, chain, pos) {
   });
 }
 
-function normalizeMaterializedTextArg(value, chain, pos) {
+function normalizeMaterializedTextArg(value, chain, errorContext) {
   const throwOnUndefined = isThrowOnUndefinedEnabled(chain);
   if (throwOnUndefined && (value === null || value === undefined)) {
-    throw contextualizeChainError(chain, pos, new Error('attempted to output null or undefined value'));
+    throw contextualizeChainError(chain, errorContext, new Error('attempted to output null or undefined value'));
   }
   const autoescape = isAutoescapeEnabled(chain);
   if (isScriptOutputMode(chain)) {
@@ -109,9 +109,8 @@ function normalizeMaterializedTextArg(value, chain, pos) {
   return suppressValue(value, autoescape);
 }
 
-function appendTextValues(chain, values, pos) {
+function appendTextValues(chain, values, errorContext) {
   const args = Array.isArray(values) ? values : [values];
-  const commandPos = pos || { lineno: 0, colno: 0 };
   for (const value of args) {
     if (value === null || value === undefined) {
       continue;
@@ -129,18 +128,13 @@ function appendTextValues(chain, values, pos) {
       }
     }
     const argType = Array.isArray(value) ? 'array' : type;
-    throw new Error(`Invalid TextCommand argument type '${argType}' at ${commandPos.lineno}:${commandPos.colno}. TextCommand only accepts text-like scalar values.`);
+    throw contextualizeChainError(
+      chain,
+      errorContext,
+      new Error(`Invalid TextCommand argument type '${argType}'. TextCommand only accepts text-like scalar values.`)
+    );
   }
   chain._markStateChanged();
-}
-
-function buildTextErrorContext(chain, pos) {
-  return {
-    lineno: pos && typeof pos.lineno === 'number' ? pos.lineno : 0,
-    colno: pos && typeof pos.colno === 'number' ? pos.colno : 0,
-    errorContextString: null,
-    path: chain && chain._context ? chain._context.path || null : null
-  };
 }
 
 function isAutoescapeEnabled(chain) {

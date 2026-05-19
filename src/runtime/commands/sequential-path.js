@@ -3,13 +3,13 @@ import {ObservableCommand, MutatingResultCommand} from './base.js';
 import {contextualizeErrorsForChain} from './errors.js';
 
 class SequentialPathReadCommand extends ObservableCommand {
-  constructor({ chainName, pathKey, operation, repair = false, pos = null }) {
+  constructor({ chainName, pathKey, operation, repair = false, errorContext = null }) {
     super();
     this.chainName = chainName;
     this.pathKey = pathKey || this.chainName;
     this.operation = operation;
     this.repair = !!repair;
-    this.pos = pos || { lineno: 0, colno: 0 };
+    this.errorContext = errorContext || null;
   }
 
   apply(chain) {
@@ -25,7 +25,7 @@ class SequentialPathReadCommand extends ObservableCommand {
         result = this.operation();
       } catch (err) {
         const errs = isPoisonError(err) ? err.errors : [err];
-        const contextualized = contextualizeErrorsForChain(chain, this.pos, errs);
+        const contextualized = contextualizeErrorsForChain(chain, this.errorContext, errs);
         this.rejectResult(new PoisonError(contextualized));
         return;
       }
@@ -33,7 +33,7 @@ class SequentialPathReadCommand extends ObservableCommand {
       const resolveResultValue = (value) => {
         if (isPoison(value)) {
           const errs = Array.isArray(value.errors) ? value.errors : [value];
-          const contextualized = contextualizeErrorsForChain(chain, this.pos, errs);
+          const contextualized = contextualizeErrorsForChain(chain, this.errorContext, errs);
           this.rejectResult(new PoisonError(contextualized));
           return;
         }
@@ -45,7 +45,7 @@ class SequentialPathReadCommand extends ObservableCommand {
 
       const rejectResultError = (err) => {
         const errs = isPoisonError(err) ? err.errors : [err];
-        const contextualized = contextualizeErrorsForChain(chain, this.pos, errs);
+        const contextualized = contextualizeErrorsForChain(chain, this.errorContext, errs);
         this.rejectResult(new PoisonError(contextualized));
       };
 
@@ -71,13 +71,13 @@ class RepairReadCommand extends SequentialPathReadCommand {
 }
 
 class SequentialPathWriteCommand extends MutatingResultCommand {
-  constructor({ chainName, pathKey, operation, repair = false, pos = null }) {
+  constructor({ chainName, pathKey, operation, repair = false, errorContext = null }) {
     super();
     this.chainName = chainName;
     this.pathKey = pathKey || this.chainName;
     this.operation = operation;
     this.repair = !!repair;
-    this.pos = pos || { lineno: 0, colno: 0 };
+    this.errorContext = errorContext || null;
   }
 
   apply(chain) {
@@ -93,7 +93,7 @@ class SequentialPathWriteCommand extends MutatingResultCommand {
         result = this.operation();
       } catch (err) {
         const errs = isPoisonError(err) ? err.errors : [err];
-        const contextualized = contextualizeErrorsForChain(chain, this.pos, errs);
+        const contextualized = contextualizeErrorsForChain(chain, this.errorContext, errs);
         chain._applySequentialPathPoisonErrors(contextualized);
         this.rejectResult(new PoisonError(contextualized));
         return;
@@ -102,7 +102,7 @@ class SequentialPathWriteCommand extends MutatingResultCommand {
       const resolveResultValue = (value) => {
         if (isPoison(value)) {
           const errs = Array.isArray(value.errors) ? value.errors : [value];
-          const contextualized = contextualizeErrorsForChain(chain, this.pos, errs);
+          const contextualized = contextualizeErrorsForChain(chain, this.errorContext, errs);
           chain._applySequentialPathPoisonErrors(contextualized);
           this.rejectResult(new PoisonError(contextualized));
           return;
@@ -116,7 +116,7 @@ class SequentialPathWriteCommand extends MutatingResultCommand {
 
       const rejectResultError = (err) => {
         const errs = isPoisonError(err) ? err.errors : [err];
-        const contextualized = contextualizeErrorsForChain(chain, this.pos, errs);
+        const contextualized = contextualizeErrorsForChain(chain, this.errorContext, errs);
         chain._applySequentialPathPoisonErrors(contextualized);
         this.rejectResult(new PoisonError(contextualized));
       };

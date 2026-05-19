@@ -38,8 +38,7 @@ class DataChain extends Chain {
           this._buffer.addCommand(new DataCommand({
             chainName: this._chainName,
             operation: methodName,
-            args,
-            pos: { lineno: 0, colno: 0 }
+            args
           }), this._chainName);
         }
       });

@@ -114,10 +114,7 @@ class Chain {
   }
 
   _setFatalError(err, cmd = null) {
-    const lineno = cmd && cmd.pos && typeof cmd.pos.lineno === 'number' ? cmd.pos.lineno : 0;
-    const colno = cmd && cmd.pos && typeof cmd.pos.colno === 'number' ? cmd.pos.colno : 0;
-    const path = this._context && this._context.path ? this._context.path : null;
-    this._fatalError = handleError(err, lineno, colno, null, path);
+    this._fatalError = handleError(err, cmd.errorContext);
     this._markStateChanged();
   }
 
@@ -412,11 +409,9 @@ async function inspectTargetForErrors(target) {
 }
 
 function contextualizeCommandErrors(chain, cmd, errors) {
+  void chain;
   if (!Array.isArray(errors) || errors.length === 0) {
     return [];
   }
-  const lineno = cmd && cmd.pos && typeof cmd.pos.lineno === 'number' ? cmd.pos.lineno : 0;
-  const colno = cmd && cmd.pos && typeof cmd.pos.colno === 'number' ? cmd.pos.colno : 0;
-  const path = chain && chain._context && chain._context.path ? chain._context.path : null;
-  return errors.map((err) => handleError(err, lineno, colno, null, path));
+  return errors.map((err) => handleError(err, cmd.errorContext));
 }

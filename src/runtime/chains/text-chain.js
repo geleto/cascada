@@ -13,8 +13,7 @@ class TextChain extends Chain {
     this._buffer.addCommand(new TextCommand({
       chainName: this._chainName,
       args,
-      normalizeArgs: true,
-      pos: { lineno: 0, colno: 0 }
+      normalizeArgs: true
     }), this._chainName);
   }
 

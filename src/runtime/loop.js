@@ -8,7 +8,6 @@ import {
   isRuntimeFatalError,
   PoisonError,
   handleError,
-  normalizeErrorContext,
 } from './errors.js';
 
 import {VarCommand} from './commands/var.js';
@@ -132,11 +131,11 @@ function createLoopBindings(index, len, last) {
   return loopMeta;
 }
 
-function setLoopValueBindings(chainName, index, len, last, pos) {
+function setLoopValueBindings(chainName, index, len, last, errorContext = null) {
   return new VarCommand({
     chainName,
     args: [createLoopBindings(index, len, last)],
-    pos
+    errorContext
   });
 }
 
@@ -186,7 +185,7 @@ async function iterateAsyncSequential(arr, loopBody, loopVars, errorContext, ret
   } catch (err) {
     // Hard error: generator threw OR the loopBody threw.
     // Add error context and re-throw immediately (stop iteration)
-    const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+    const contextualError = handleError(err, errorContext);
     contextualError.didIterate = didIterate;
     throw contextualError;
   }
@@ -657,7 +656,7 @@ async function iterateObject(arr, loopBody, loopVars, errorContext, effectiveSeq
  */
 function poisonLoopEffects(buffer, asyncOptions, errors, didIterate) {
   //replace the errors with the handleError'd errors
-  errors = errors.map(error => handleError(error, asyncOptions.errorContext.lineno, asyncOptions.errorContext.colno, asyncOptions.errorContext.errorContextString, asyncOptions.errorContext.path));
+  errors = errors.map(error => handleError(error, asyncOptions.errorContext, buffer));
 
   // Poison body chain effects.
   if (asyncOptions.bodyChains && asyncOptions.bodyChains.length > 0) {
@@ -707,7 +706,6 @@ async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOpti
   let limitSequentialOverride = false;
   const isAsync = asyncOptions !== null;
   const errorContext = asyncOptions ? asyncOptions.errorContext : null;
-  const normalizedErrorContext = normalizeErrorContext(errorContext);
 
   let didIterate = false;
   // Called between sequential iterations. The ordered chain observation may
@@ -715,7 +713,7 @@ async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOpti
   const returnAdvanceCheck = asyncOptions && asyncOptions.returnCheckChainName
     ? (() => buffer.addCommand(new ReturnIsUnsetCommand({
       chainName: asyncOptions.returnCheckChainName,
-      pos: { lineno: normalizedErrorContext.lineno || 0, colno: normalizedErrorContext.colno || 0 }
+      errorContext
     }), asyncOptions.returnCheckChainName))
     : null;
 

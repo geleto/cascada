@@ -9,7 +9,7 @@ class CompileComposition {
   _emitValueImportBinding(name, sourceVar, node) {
     this.emit.line(`runtime.declareBufferChain(${this.compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
     this.emit.line(
-      `${this.compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ chainName: '${name}', args: [${sourceVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${name}');`
+      `${this.compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ chainName: '${name}', args: [${sourceVar}], errorContext: ${this.compiler.emitErrorContext(node)} }), '${name}');`
     );
     if (this.compiler.analysis.isRootScopeOwner(node._analysis)) {
       this.emit.line(`context.addDeferredExport("${name}", "${name}", ${this.compiler.buffer.currentBuffer});`);
@@ -170,17 +170,17 @@ class CompileComposition {
         ? nameNode.value.value
         : nameNode.value;
       const id = this.compiler._tmpid();
-      const errorContext = this.compiler._generateErrorContext(node, nameNode);
       const failMsg = `cannot import '${importedName}'`.replace(/"/g, '\\"');
+      const errorContext = this.compiler.emitErrorContext(nameNode);
 
       this.emit.line(`let ${id} = (async () => { try {`);
       this.emit.line(`  let exported = await ${exportedId};`);
       this.emit.line(`  if(Object.prototype.hasOwnProperty.call(exported, "${importedName}")) {`);
       this.emit.line(`    return exported["${importedName}"];`);
       this.emit.line(`  } else {`);
-      this.emit.line(`    var err = runtime.handleError(new Error("${failMsg}"), ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}", context.path); throw err;`);
+      this.emit.line(`    var err = runtime.handleError(new Error("${failMsg}"), ${errorContext}, ${this.compiler.buffer.currentBuffer}); throw err;`);
       this.emit.line(`  }`);
-      this.emit.line(`} catch(e) { var err = runtime.handleError(e, ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}", context.path); throw err; } })();`);
+      this.emit.line(`} catch(e) { var err = runtime.handleError(e, ${errorContext}, ${this.compiler.buffer.currentBuffer}); throw err; } })();`);
       bindingIds.push(id);
       this._emitValueImportBinding(alias, id, node);
     });
@@ -251,7 +251,7 @@ class CompileComposition {
       const includeVarsVar = this.compiler._tmpid();
       const includeContextVar = this.compiler._tmpid();
       const includeTextValue = this.compiler._tmpid();
-      const errorContextJson = JSON.stringify(this.compiler._createLegacyErrorContext(node));
+      const errorContext = this.compiler.emitErrorContext(node);
 
       this.emit(`let ${templateNameVar} = `);
       this.compiler.compileExpression(node.template, null, node.template, true);
@@ -264,8 +264,8 @@ class CompileComposition {
 
       this.emit.line(`const ${templateVar}_resolved = await runtime.resolveSingle(${templateVar});`);
       this.emit.line(`${templateVar}_resolved.compile();`);
-      this.emit.line(`let ${includeTextValue} = ${templateVar}_resolved._renderIncludeText(${includeContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, ${errorContextJson});`);
-      this.emit.line(`${this.compiler.buffer.currentBuffer}.addCommand(new runtime.TextCommand({ chainName: "${this.compiler.buffer.currentTextChainName}", args: [${includeTextValue}], pos: {lineno: ${node?.lineno ?? 0}, colno: ${node?.colno ?? 0}} }), "${this.compiler.buffer.currentTextChainName}");`);
+      this.emit.line(`let ${includeTextValue} = ${templateVar}_resolved._renderIncludeText(${includeContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, ${errorContext});`);
+      this.emit.line(`${this.compiler.buffer.currentBuffer}.addCommand(new runtime.TextCommand({ chainName: "${this.compiler.buffer.currentTextChainName}", args: [${includeTextValue}], errorContext: ${this.compiler.emitErrorContext(node)} }), "${this.compiler.buffer.currentTextChainName}");`);
       this.compiler.buffer.emitLimitedLoopCompletion(includeTextValue, node);
     });
   }

@@ -107,11 +107,9 @@ async function runWithResolvedArgumentsAsync(value, cmd, chain, applyFn) {
 }
 
 function classifyCommandArgumentFailure(chain, cmd, err) {
+  void chain;
   const errors = isPoisonError(err) ? err.errors : [err];
-  const lineno = cmd && cmd.pos && typeof cmd.pos.lineno === 'number' ? cmd.pos.lineno : 0;
-  const colno = cmd && cmd.pos && typeof cmd.pos.colno === 'number' ? cmd.pos.colno : 0;
-  const path = chain && chain._context && chain._context.path ? chain._context.path : null;
-  const contextualized = errors.map((item) => handleError(item, lineno, colno, null, path));
+  const contextualized = errors.map((item) => handleError(item, cmd.errorContext));
   const fatalRuntimeError = contextualized.find((item) => isRuntimeFatalError(item));
   if (fatalRuntimeError) {
     throw fatalRuntimeError;

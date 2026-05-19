@@ -229,7 +229,6 @@ class CompileLookup {
     }
 
     compiler._assertSequenceRootIsContextPath(nodeStaticPathKey, node);
-    const errorContextJson = JSON.stringify(compiler._createLegacyErrorContext(node));
     if (compiler.scriptMode) {
       this.emit('runtime.sequentialMemberLookupScriptValue((');
     } else {
@@ -238,13 +237,12 @@ class CompileLookup {
     compiler.compile(node.target, null);
     this.emit('),');
     compiler.compile(node.val, null);
-    this.emit(`, "${nodeStaticPathKey}", ${errorContextJson}, ${!!sequenceLockLookup.repair}, ${compiler.buffer.currentBuffer})`);
+    this.emit(`, "${nodeStaticPathKey}", ${compiler.emitErrorContext(node)}, ${!!sequenceLockLookup.repair}, ${compiler.buffer.currentBuffer})`);
     return true;
   }
 
   _compileDynamicLookup(node) {
     const compiler = this.compiler;
-    const errorContextJson = JSON.stringify(compiler._createLegacyErrorContext(node));
     if (compiler.scriptMode) {
       this.emit('runtime.memberLookupScript((');
     } else {
@@ -253,13 +251,12 @@ class CompileLookup {
     compiler.compile(node.target, null);
     this.emit('),');
     compiler.compile(node.val, null);
-    this.emit(`, ${errorContextJson})`);
+    this.emit(`, ${compiler.emitErrorContext(node)}, ${compiler.buffer.currentBuffer})`);
   }
 
   _emitThisSharedVarNestedLookup(thisSharedFacts, node) {
     const compiler = this.compiler;
     const nestedPath = thisSharedFacts.chainPath.slice(1);
-    const errorContextJson = JSON.stringify(compiler._createLegacyErrorContext(node));
     const memberLookupHelper = compiler.scriptMode ? 'memberLookupScript' : 'memberLookupAsync';
 
     nestedPath.forEach(() => {
@@ -267,7 +264,7 @@ class CompileLookup {
     });
     compiler.inheritance.emitSharedChainObservation(thisSharedFacts.chainName, node, 'snapshot', true);
     nestedPath.forEach((propertyName) => {
-      this.emit(`), ${JSON.stringify(propertyName)}, ${errorContextJson})`);
+      this.emit(`), ${JSON.stringify(propertyName)}, ${compiler.emitErrorContext(node)}, ${compiler.buffer.currentBuffer})`);
     });
   }
 }

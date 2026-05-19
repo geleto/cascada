@@ -214,7 +214,6 @@ class CompilerBaseAsync extends CompilerCommon {
     const testName = testFacts.name;
     const testFunc = `env.getTest("${testName}")`;
     const failMsg = `test not found: ${testName}`.replace(/"/g, '\\"');
-    const errorContext = this._generateErrorContext(node, node.right);
 
     if (testFacts.isError) {
       const observationFacts = testFacts.errorObservation;
@@ -234,7 +233,7 @@ class CompilerBaseAsync extends CompilerCommon {
     };
     this._compileAggregate(mergedNode, null, '[', ']', true, true, function (args) {
       this.emit.line(`  const testFunc = ${testFunc};`);
-      this.emit.line(`  if (!testFunc) { var err = runtime.handleError(new Error("${failMsg}"), ${node.right.lineno}, ${node.right.colno}, "${errorContext}", context.path); throw err; }`);
+      this.emit.line(`  if (!testFunc) { var err = runtime.handleError(new Error("${failMsg}"), ${this.emitErrorContext(node.right)}, ${this.buffer.currentBuffer}); throw err; }`);
       this.emit.line(`  const result = await testFunc.call(context, ${args}[0]`);
       if (node.right.args && node.right.args.children.length > 0) {
         this.emit.line(`, ...${args}.slice(1)`);
@@ -464,7 +463,7 @@ class CompilerBaseAsync extends CompilerCommon {
     const nodeStaticPathKey = sequenceLockLookup?.key;
     if (nodeStaticPathKey) {
       this._assertSequenceRootIsContextPath(nodeStaticPathKey, node);
-      this.emit(`runtime.sequentialContextLookupValue(context, "${name}", "${nodeStaticPathKey}", ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
+      this.emit(`runtime.sequentialContextLookupValue(context, "${name}", "${nodeStaticPathKey}", ${this.emitErrorContext(node)}, ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
       return;
     }
     this._compileScriptAmbientOnlySymbolLookup(node, name);
@@ -473,7 +472,7 @@ class CompilerBaseAsync extends CompilerCommon {
   _compileScriptAmbientOnlySymbolLookup(node, name) {
     this.emit(
       `context.lookupScript("${name}", ` +
-      `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(this._generateErrorContext(node))}, path: context.path }` +
+      `${this.emitErrorContext(node)}` +
       ')'
     );
   }
@@ -483,7 +482,7 @@ class CompilerBaseAsync extends CompilerCommon {
     const nodeStaticPathKey = sequenceLockLookup?.key;
     if (nodeStaticPathKey) {
       this._assertSequenceRootIsContextPath(nodeStaticPathKey, node);
-      this.emit(`runtime.sequentialContextLookupValue(context, "${name}", "${nodeStaticPathKey}", ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
+      this.emit(`runtime.sequentialContextLookupValue(context, "${name}", "${nodeStaticPathKey}", ${this.emitErrorContext(node)}, ${!!sequenceLockLookup.repair}, ${this.buffer.currentBuffer})`);
       return;
     }
 
@@ -529,12 +528,11 @@ class CompilerBaseAsync extends CompilerCommon {
 
   _emitAsyncDynamicCall(node, currentBufferExpr) {
     const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
-    const errorContextJson = JSON.stringify(this._createLegacyErrorContext(node));
     this.emit('runtime.callWrapAsync(');
     this.compile(node.name, null);
     this.emit(`, "${funcName}", context, `);
     this._compileAggregate(node.args, null, '[', ']', false, false);
-    this.emit(`, ${errorContextJson}, ${currentBufferExpr})`);
+    this.emit(`, ${this.emitErrorContext(node)}, ${currentBufferExpr})`);
   }
 
   _emitAsyncBinFunc(node, funcName, separator) {

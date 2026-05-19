@@ -100,15 +100,7 @@ class CompileBuffer {
   }
 
   _emitTemplateTextCommandExpression(valueExpression, positionNode, normalizeArgs = false) {
-    const lineno = positionNode && positionNode.lineno !== undefined ? positionNode.lineno : 0;
-    const colno = positionNode && positionNode.colno !== undefined ? positionNode.colno : 0;
-    return `new runtime.TextCommand({ chainName: "${this.currentTextChainName}", args: [${valueExpression}], normalizeArgs: ${normalizeArgs}, pos: {lineno: ${lineno}, colno: ${colno}} })`;
-  }
-
-  _emitPositionLiteral(positionNode) {
-    const lineno = positionNode && positionNode.lineno !== undefined ? positionNode.lineno : 0;
-    const colno = positionNode && positionNode.colno !== undefined ? positionNode.colno : 0;
-    return `{lineno: ${lineno}, colno: ${colno}}`;
+    return `new runtime.TextCommand({ chainName: "${this.currentTextChainName}", args: [${valueExpression}], normalizeArgs: ${normalizeArgs}, errorContext: ${this.compiler.emitErrorContext(positionNode)} })`;
   }
 
   emitFinishedTextBoundaryPromise(bufferExpr, textChainName, positionNode, transformExpr = null, addToCurrentWaited = false) {
@@ -149,14 +141,14 @@ class CompileBuffer {
     if (isObservationCall) {
       validateChainObservationCall(this.compiler, { node, command, chainName, chainType });
       if (command === 'snapshot') {
-        this.compiler.emit(`new runtime.SnapshotCommand({ chainName: '${chainName}', pos: ${this._emitPositionLiteral(node)} })`);
+        this.compiler.emit(`new runtime.SnapshotCommand({ chainName: '${chainName}', errorContext: ${this.compiler.emitErrorContext(node)} })`);
         return;
       }
       if (command === 'isError') {
-        this.compiler.emit(`new runtime.IsErrorCommand({ chainName: '${chainName}', pos: ${this._emitPositionLiteral(node)} })`);
+        this.compiler.emit(`new runtime.IsErrorCommand({ chainName: '${chainName}', errorContext: ${this.compiler.emitErrorContext(node)} })`);
         return;
       }
-      this.compiler.emit(`new runtime.GetErrorCommand({ chainName: '${chainName}', pos: ${this._emitPositionLiteral(node)} })`);
+      this.compiler.emit(`new runtime.GetErrorCommand({ chainName: '${chainName}', errorContext: ${this.compiler.emitErrorContext(node)} })`);
       return;
     }
 
@@ -171,7 +163,7 @@ class CompileBuffer {
         }
         this.compiler.emit('args: ');
         this.compiler._compileAggregate(node.call.args, null, '[', ']', false, true);
-        this.compiler.emit(`, pos: ${this._emitPositionLiteral(node)} })`);
+        this.compiler.emit(`, errorContext: ${this.compiler.emitErrorContext(node)} })`);
         return;
       }
 
@@ -182,7 +174,7 @@ class CompileBuffer {
       if (path && path.length > 0) {
         this.compiler.emit(`path: ${JSON.stringify(path)}, `);
       }
-      this.compiler.emit(`pos: ${this._emitPositionLiteral(node)} })`);
+      this.compiler.emit(`errorContext: ${this.compiler.emitErrorContext(node)} })`);
       return;
     }
 
@@ -231,13 +223,13 @@ class CompileBuffer {
     // Chain commands are constructed with unresolved args; resolution/normalization
     // happens once in runtime right before command.apply().
     this.compiler._compileAggregate(argList, null, '[', ']', false, true);
-    this.compiler.emit(`, pos: ${this._emitPositionLiteral(node)} })`);
+    this.compiler.emit(`, errorContext: ${this.compiler.emitErrorContext(node)} })`);
   }
 
   emitAddCommand(chainName, valueExpr, positionNode = null, emitTextCommand = false) {
     if (emitTextCommand) {
       this.compiler.emit.line(
-        `${this.currentBuffer}.addCommand(new runtime.TextCommand({ chainName: "${chainName}", args: [${valueExpr}], pos: ${this._emitPositionLiteral(positionNode)} }), "${chainName}")`
+        `${this.currentBuffer}.addCommand(new runtime.TextCommand({ chainName: "${chainName}", args: [${valueExpr}], errorContext: ${this.compiler.emitErrorContext(positionNode)} }), "${chainName}")`
       );
       return;
     }
@@ -282,7 +274,7 @@ class CompileBuffer {
     const props = [
       `chainName: ${chainNameExpr}`,
       `args: ${argsExpr}`,
-      `pos: ${this._emitPositionLiteral(positionNode)}`
+      `errorContext: ${this.compiler.emitErrorContext(positionNode)}`
     ];
     if (operation) {
       props.splice(1, 0, `operation: ${JSON.stringify(operation)}`);
@@ -319,24 +311,24 @@ class CompileBuffer {
     }
     // Register as usage, not mutation: __waited__ tracks completion, not chain state.
     this.compiler.emit.line(
-      `${waitedOwnerBuffer}.addCommand(new runtime.WaitResolveCommand({ chainName: "${waitedChainName}", args: [${valueExpr}], pos: ${this._emitPositionLiteral(positionNode)} }), "${waitedChainName}");`
+      `${waitedOwnerBuffer}.addCommand(new runtime.WaitResolveCommand({ chainName: "${waitedChainName}", args: [${valueExpr}], errorContext: ${this.compiler.emitErrorContext(positionNode)} }), "${waitedChainName}");`
     );
   }
 
   emitAddSequenceGet(chainName, path, positionNode) {
     this.compiler.emit(
-      `${this.currentBuffer}.addCommand(new runtime.SequenceGetCommand({ chainName: "${chainName}", path: ${JSON.stringify(path)}, pos: ${this._emitPositionLiteral(positionNode)} }), "${chainName}")`
+      `${this.currentBuffer}.addCommand(new runtime.SequenceGetCommand({ chainName: "${chainName}", path: ${JSON.stringify(path)}, errorContext: ${this.compiler.emitErrorContext(positionNode)} }), "${chainName}")`
     );
   }
 
   emitAddSequenceCall(chainName, methodName, receiverPath, argsExpr, positionNode) {
     this.compiler.emit(
-      `${this.currentBuffer}.addCommand(new runtime.SequenceCallCommand({ chainName: "${chainName}", methodName: "${methodName}", path: ${JSON.stringify(receiverPath || [])}, args: ${argsExpr}, pos: ${this._emitPositionLiteral(positionNode)} }), "${chainName}")`
+      `${this.currentBuffer}.addCommand(new runtime.SequenceCallCommand({ chainName: "${chainName}", methodName: "${methodName}", path: ${JSON.stringify(receiverPath || [])}, args: ${argsExpr}, errorContext: ${this.compiler.emitErrorContext(positionNode)} }), "${chainName}")`
     );
   }
 
   emitAddSnapshot(chainName, positionNode, asExpression = false) {
-    const snapshotExpr = `${this.currentBuffer}.addCommand(new runtime.SnapshotCommand({ chainName: "${chainName}", pos: ${this._emitPositionLiteral(positionNode)} }), "${chainName}")`;
+    const snapshotExpr = `${this.currentBuffer}.addCommand(new runtime.SnapshotCommand({ chainName: "${chainName}", errorContext: ${this.compiler.emitErrorContext(positionNode)} }), "${chainName}")`;
     if (asExpression) {
       return snapshotExpr;
     }
@@ -346,19 +338,19 @@ class CompileBuffer {
   // Emit an ordered raw snapshot command (no nested poison inspection).
   emitAddRawSnapshot(chainName, positionNode) {
     this.compiler.emit(
-      `${this.currentBuffer}.addCommand(new runtime.RawSnapshotCommand({ chainName: "${chainName}", pos: ${this._emitPositionLiteral(positionNode)} }), "${chainName}")`
+      `${this.currentBuffer}.addCommand(new runtime.RawSnapshotCommand({ chainName: "${chainName}", errorContext: ${this.compiler.emitErrorContext(positionNode)} }), "${chainName}")`
     );
   }
 
   emitAddIsError(chainName, positionNode) {
     this.compiler.emit(
-      `${this.currentBuffer}.addCommand(new runtime.IsErrorCommand({ chainName: "${chainName}", pos: ${this._emitPositionLiteral(positionNode)} }), "${chainName}")`
+      `${this.currentBuffer}.addCommand(new runtime.IsErrorCommand({ chainName: "${chainName}", errorContext: ${this.compiler.emitErrorContext(positionNode)} }), "${chainName}")`
     );
   }
 
   emitAddGetError(chainName, positionNode) {
     this.compiler.emit(
-      `${this.currentBuffer}.addCommand(new runtime.GetErrorCommand({ chainName: "${chainName}", pos: ${this._emitPositionLiteral(positionNode)} }), "${chainName}")`
+      `${this.currentBuffer}.addCommand(new runtime.GetErrorCommand({ chainName: "${chainName}", errorContext: ${this.compiler.emitErrorContext(positionNode)} }), "${chainName}")`
     );
   }
 

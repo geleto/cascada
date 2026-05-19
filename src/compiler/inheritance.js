@@ -30,7 +30,7 @@ class CompileInheritance {
     const compiler = this.compiler;
     compiler.emit(
       `runtime.observeInheritanceSharedChain(${JSON.stringify(chainName)}, ${compiler.buffer.currentBuffer}, ` +
-      `{ lineno: ${node.lineno}, colno: ${node.colno}, errorContextString: ${JSON.stringify(compiler._generateErrorContext(node))}, path: context.path }, ` +
+      `${compiler.emitErrorContext(node)}, ` +
       `currentInstance, ${JSON.stringify(mode)}, ${implicitVarRead})`
     );
   }
@@ -203,7 +203,6 @@ class CompileInheritance {
 
   compileParticipantRootBody(node) {
     this._compileParticipantRootDeclarations(node);
-    const originJson = JSON.stringify(this.compiler._createLegacyErrorContext(node));
     this.emit.line('return runtime.renderInheritanceParticipantRoot({');
     this.emit.line('    entryTemplateOrScript: this,');
     this.emit.line('    env,');
@@ -212,9 +211,9 @@ class CompileInheritance {
     this.emit.line('    cb,');
     this.emit.line('    rootBuffer: output,');
     this.emit.line('    entryErrorContextTable: __ec,');
-    this.emit.line(`    origin: ${originJson}`);
+    this.emit.line(`    origin: ${this.compiler.emitErrorContext(node)}`);
     this.emit.line('}).catch((e) => {');
-    this.emit.line(`  cb(runtime.handleError(e, ${node.lineno}, ${node.colno}, "${this.compiler._generateErrorContext(node)}", context.path));`);
+    this.emit.line(`  cb(runtime.handleError(e, ${this.compiler.emitErrorContext(node)}, output));`);
     this.emit.line('  throw e;');
     this.emit.line('});');
   }
@@ -408,8 +407,7 @@ class CompileInheritance {
     if (!methodName) {
       return false;
     }
-    const errorContextJson = JSON.stringify(this.compiler._createLegacyErrorContext(node));
-    this._emitInheritedMethodInvocation(methodName, node.args, errorContextJson);
+    this._emitInheritedMethodInvocation(methodName, node.args, this.compiler.emitErrorContext(node));
     return true;
   }
 
@@ -539,12 +537,11 @@ class CompileInheritance {
     }
 
     const id = this.compiler._tmpid();
-    const errorContextJson = JSON.stringify(this.compiler._createLegacyErrorContext(node));
     const explicitBlockArgNodes = this._getCallableSignature(node).placementArgNodes;
     const explicitBlockArgsNode = new nodes.NodeList(node.lineno, node.colno, explicitBlockArgNodes);
     this.emit.line(`let ${id};`);
     this._emitBlockTextPlacement(node, id, () => {
-      this._emitInheritedMethodInvocation(node.name.value, explicitBlockArgsNode, errorContextJson);
+      this._emitInheritedMethodInvocation(node.name.value, explicitBlockArgsNode, this.compiler.emitErrorContext(node));
     });
   }
 
@@ -593,6 +590,7 @@ class CompileInheritance {
 
   _compileExtendsParentResolver(node) {
     this.emit.line('async function resolveInheritanceParent(env, context, runtime, origin) {');
+    this.emit.line('  const __ec = getErrorContexts(runtime, context && context.path, runtime.getErrorContextCallback(origin));');
     const inheritanceFacts = node._analysis.inheritance;
     if (!inheritanceFacts.localExtendsNode || inheritanceFacts.localExtendsNode.noParentLiteral) {
       this.emit.line('  return runtime.noInheritanceParent();');
@@ -649,8 +647,7 @@ class CompileInheritance {
   }
 
   _emitConstructorSuperReturn(constructorDefinition) {
-    const errorContextJson = JSON.stringify(this.compiler._createLegacyErrorContext(constructorDefinition));
-    this.emit.line(`return runtime.resolveSingle(currentInstance.invokeSuper(methodData, [], context, ${this.compiler.buffer.currentBuffer}, ${errorContextJson})).then((parentResult) => {`);
+    this.emit.line(`return runtime.resolveSingle(currentInstance.invokeSuper(methodData, [], context, ${this.compiler.buffer.currentBuffer}, ${this.compiler.emitErrorContext(constructorDefinition)})).then((parentResult) => {`);
     this.emit.line(`  ${this.compiler.buffer.currentBuffer}.finish();`);
     this.emit.line('  return parentResult;');
     this.emit.line('});');
@@ -938,7 +935,6 @@ class CompileInheritance {
       );
     }
 
-    const errorContextJson = JSON.stringify(this.compiler._createLegacyErrorContext(node));
     if (hasAssignmentTarget) {
       this.emit(`let ${id} = `);
     } else if (needsSafeTemplateOutput) {
@@ -950,7 +946,7 @@ class CompileInheritance {
     } else {
       this.emit('[]');
     }
-    this.emit(`, context, ${this.compiler.buffer.currentBuffer}, ${errorContextJson}`);
+    this.emit(`, context, ${this.compiler.buffer.currentBuffer}, ${this.compiler.emitErrorContext(node)}`);
     this.emit(')');
     if (!hasAssignmentTarget) {
       if (needsSafeTemplateOutput) {

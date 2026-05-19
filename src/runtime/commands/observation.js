@@ -3,18 +3,17 @@ import {isPoisonError, handleError} from '../errors.js';
 import {ObservableCommand, MutatingResultCommand} from './base.js';
 
 class SnapshotCommand extends ObservableCommand {
-  constructor({ chainName, pos = null }) {
+  constructor({ chainName, errorContext = null }) {
     super();
     this.chainName = chainName;
-    this.pos = pos || { lineno: 0, colno: 0 };
+    this.errorContext = errorContext || null;
     this.isUniversalObservationCommand = true;
   }
 
   apply(chain) {
-    const path = chain && chain._context ? chain._context.path : null;
     const contextualize = (err) => (isPoisonError(err)
       ? err
-      : handleError(err, this.pos.lineno, this.pos.colno, null, path));
+      : handleError(err, this.errorContext));
 
     if (!chain) {
       this.rejectResult(contextualize(new Error('SnapshotCommand requires a chain')));
@@ -32,17 +31,16 @@ class SnapshotCommand extends ObservableCommand {
 }
 
 class RawSnapshotCommand extends ObservableCommand {
-  constructor({ chainName, pos = null }) {
+  constructor({ chainName, errorContext = null }) {
     super();
     this.chainName = chainName;
-    this.pos = pos || { lineno: 0, colno: 0 };
+    this.errorContext = errorContext || null;
   }
 
   apply(chain) {
-    const path = chain && chain._context ? chain._context.path : null;
     const contextualize = (err) => (isPoisonError(err)
       ? err
-      : handleError(err, this.pos.lineno, this.pos.colno, null, path));
+      : handleError(err, this.errorContext));
 
     if (!chain) {
       this.rejectResult(contextualize(new Error('RawSnapshotCommand requires a chain')));
@@ -58,17 +56,16 @@ class RawSnapshotCommand extends ObservableCommand {
 }
 
 class ReturnIsUnsetCommand extends ObservableCommand {
-  constructor({ chainName, pos = null }) {
+  constructor({ chainName, errorContext = null }) {
     super();
     this.chainName = chainName;
-    this.pos = pos || { lineno: 0, colno: 0 };
+    this.errorContext = errorContext || null;
   }
 
   apply(chain) {
-    const path = chain && chain._context ? chain._context.path : null;
     const contextualize = (err) => (isPoisonError(err)
       ? err
-      : handleError(err, this.pos.lineno, this.pos.colno, null, path));
+      : handleError(err, this.errorContext));
 
     if (!chain) {
       this.rejectResult(contextualize(new Error('ReturnIsUnsetCommand requires a chain')));
@@ -84,18 +81,17 @@ class ReturnIsUnsetCommand extends ObservableCommand {
 }
 
 class IsErrorCommand extends ObservableCommand {
-  constructor({ chainName, pos = null }) {
+  constructor({ chainName, errorContext = null }) {
     super();
     this.chainName = chainName;
-    this.pos = pos || { lineno: 0, colno: 0 };
+    this.errorContext = errorContext || null;
     this.isUniversalObservationCommand = true;
   }
 
   apply(chain) {
-    const path = chain && chain._context ? chain._context.path : null;
     const contextualize = (err) => (isPoisonError(err)
       ? err
-      : handleError(err, this.pos.lineno, this.pos.colno, null, path));
+      : handleError(err, this.errorContext));
 
     if (!chain) {
       this.rejectResult(contextualize(new Error('IsErrorCommand requires a chain')));
@@ -115,18 +111,17 @@ class IsErrorCommand extends ObservableCommand {
 }
 
 class GetErrorCommand extends ObservableCommand {
-  constructor({ chainName, pos = null }) {
+  constructor({ chainName, errorContext = null }) {
     super();
     this.chainName = chainName;
-    this.pos = pos || { lineno: 0, colno: 0 };
+    this.errorContext = errorContext || null;
     this.isUniversalObservationCommand = true;
   }
 
   apply(chain) {
-    const path = chain && chain._context ? chain._context.path : null;
     const contextualize = (err) => (isPoisonError(err)
       ? err
-      : handleError(err, this.pos.lineno, this.pos.colno, null, path));
+      : handleError(err, this.errorContext));
 
     if (!chain) {
       this.rejectResult(contextualize(new Error('GetErrorCommand requires a chain')));
@@ -146,17 +141,16 @@ class GetErrorCommand extends ObservableCommand {
 }
 
 class CaptureGuardStateCommand extends ObservableCommand {
-  constructor({ chainName, pos = null }) {
+  constructor({ chainName, errorContext = null }) {
     super();
     this.chainName = chainName;
-    this.pos = pos || { lineno: 0, colno: 0 };
+    this.errorContext = errorContext || null;
   }
 
   apply(chain) {
-    const path = chain && chain._context ? chain._context.path : null;
     const contextualize = (err) => (isPoisonError(err)
       ? err
-      : handleError(err, this.pos.lineno, this.pos.colno, null, path));
+      : handleError(err, this.errorContext));
 
     if (!chain) {
       this.rejectResult(contextualize(new Error('CaptureGuardStateCommand requires a chain')));
@@ -174,18 +168,17 @@ class CaptureGuardStateCommand extends ObservableCommand {
 }
 
 class RestoreGuardStateCommand extends MutatingResultCommand {
-  constructor({ chainName, target, pos = null }) {
+  constructor({ chainName, target, errorContext = null }) {
     super();
     this.chainName = chainName;
     this.target = target;
-    this.pos = pos || { lineno: 0, colno: 0 };
+    this.errorContext = errorContext || null;
   }
 
   apply(chain) {
-    const path = chain && chain._context ? chain._context.path : null;
     const contextualize = (err) => (isPoisonError(err)
       ? err
-      : handleError(err, this.pos.lineno, this.pos.colno, null, path));
+      : handleError(err, this.errorContext));
 
     if (!chain) {
       this.resolveResult(undefined);

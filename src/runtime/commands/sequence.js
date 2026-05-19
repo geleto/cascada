@@ -3,11 +3,11 @@ import {ChainMutatingResultCommand, ChainObservableCommand} from './base.js';
 import {runWithResolvedArguments} from './arguments.js';
 
 class SequenceCallCommand extends ChainMutatingResultCommand {
-  constructor({ chainName, methodName, args = null, path = null, pos = null }) {
+  constructor({ chainName, methodName, args = null, path = null, errorContext = null }) {
     super({
       chainName,
       args: args || [],
-      pos
+      errorContext
     });
     this.methodName = methodName || null;
     this.path = path || null;
@@ -48,11 +48,11 @@ class SequenceCallCommand extends ChainMutatingResultCommand {
 }
 
 class SequenceGetCommand extends ChainObservableCommand {
-  constructor({ chainName, path = null, pos = null }) {
+  constructor({ chainName, path = null, errorContext = null }) {
     super({
       chainName,
       args: [],
-      pos
+      errorContext
     });
     this.path = path || null;
   }

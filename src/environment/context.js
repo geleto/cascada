@@ -69,10 +69,7 @@ class Context extends Obj {
       } else {
         return createPoison(
           new Error(`Can not look up unknown variable/function: ${name}`),
-          errorContext?.lineno ?? 0,
-          errorContext?.colno ?? 0,
-          errorContext?.errorContextString ?? null,
-          errorContext?.path ?? this.path ?? null
+          errorContext
         );
       }
     }

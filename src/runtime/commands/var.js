@@ -3,11 +3,11 @@ import {runWithResolvedArguments} from './arguments.js';
 import {contextualizeChainError} from './errors.js';
 
 class VarCommand extends ChainCommand {
-  constructor({ chainName, args = null, pos = null, initializeIfNotSet = false }) {
+  constructor({ chainName, args = null, errorContext = null, initializeIfNotSet = false }) {
     super({
       chainName,
       args: args || [],
-      pos
+      errorContext
     });
     this.initializeIfNotSet = initializeIfNotSet;
   }
@@ -28,7 +28,7 @@ class VarCommand extends ChainCommand {
       }
       if (args.length > 1) {
         chain._setTarget(this.toPoisonValue([
-          contextualizeChainError(chain, this.pos, new Error('var chain accepts exactly one argument'))
+          contextualizeChainError(chain, this.errorContext, new Error('var chain accepts exactly one argument'))
         ]));
         return;
       }

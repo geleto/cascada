@@ -34,7 +34,6 @@ class CompileComponent {
     const componentScriptOrTemplateVar = this.compiler.composition.compileAsyncResolveTargetFile(node, true, false);
     const componentVarsVar = this.compiler._tmpid();
     const rootContextVar = this.compiler._tmpid();
-    const errorContextJson = JSON.stringify(this.compiler._createLegacyErrorContext(node));
 
     this.emit.line(`runtime.declareBufferChain(${this.compiler.buffer.currentBuffer}, "${targetName}", "var", context, null);`);
     this.emit.line(`const ${componentVarsVar} = {};`);
@@ -49,7 +48,7 @@ class CompileComponent {
     this.emit.line('  env,');
     this.emit.line('  runtime,');
     this.emit.line('  cb,');
-    this.emit.line(`  errorContext: ${errorContextJson}`);
+    this.emit.line(`  errorContext: ${this.compiler.emitErrorContext(node)}`);
     this.emit.line('});');
 
     if (targetName.charAt(0) !== '_' && this.compiler.analysis.isRootScopeOwner(node._analysis)) {
@@ -131,46 +130,43 @@ class CompileComponent {
   }
 
   compileMethodCall(componentBindingFacts, node) {
-    const errorContextJson = JSON.stringify(this.compiler._createLegacyErrorContext(node));
     this.emit('runtime.callComponentMethod({ ');
     this.emit(`bindingName: ${JSON.stringify(componentBindingFacts.bindingName)}, `);
     this.emit(`currentBuffer: ${this.compiler.buffer.currentBuffer}, `);
     this.emit(`methodName: ${JSON.stringify(componentBindingFacts.methodName)}, args: `);
     this.compiler._compileAggregate(node.args, null, '[', ']', false, false);
-    this.emit(`, runtime, cb, errorContext: ${errorContextJson} })`);
+    this.emit(`, runtime, cb, errorContext: ${this.compiler.emitErrorContext(node)} })`);
   }
 
   emitObservationCommand(chainName, node, mode = 'snapshot') {
-    const posLiteral = this.compiler.buffer._emitPositionLiteral(node);
+    const errorContext = this.compiler.emitErrorContext(node);
     const chainNameJson = JSON.stringify(chainName);
     if (mode === 'snapshot') {
-      this.emit(`new runtime.SnapshotCommand({ chainName: ${chainNameJson}, pos: ${posLiteral} })`);
+      this.emit(`new runtime.SnapshotCommand({ chainName: ${chainNameJson}, errorContext: ${errorContext} })`);
       return;
     }
     if (mode === 'isError') {
-      this.emit(`new runtime.IsErrorCommand({ chainName: ${chainNameJson}, pos: ${posLiteral} })`);
+      this.emit(`new runtime.IsErrorCommand({ chainName: ${chainNameJson}, errorContext: ${errorContext} })`);
       return;
     }
     if (mode === 'getError') {
-      this.emit(`new runtime.GetErrorCommand({ chainName: ${chainNameJson}, pos: ${posLiteral} })`);
+      this.emit(`new runtime.GetErrorCommand({ chainName: ${chainNameJson}, errorContext: ${errorContext} })`);
       return;
     }
     throw new Error(`Unsupported component observation mode '${mode}'`);
   }
 
   emitChainObservation(componentBindingFacts, node) {
-    const errorContextJson = JSON.stringify(this.compiler._createLegacyErrorContext(node));
     this.emit('runtime.observeComponentChain({ ');
     this.emit(`bindingName: ${JSON.stringify(componentBindingFacts.bindingName)}, `);
     this.emit(`currentBuffer: ${this.compiler.buffer.currentBuffer}, observationCommand: `);
     this.emitObservationCommand(componentBindingFacts.chainName, node, componentBindingFacts.mode || 'snapshot');
-    this.emit(`, errorContext: ${errorContextJson}, implicitVarRead: ${componentBindingFacts.implicitVarRead ? 'true' : 'false'} })`);
+    this.emit(`, errorContext: ${this.compiler.emitErrorContext(node)}, implicitVarRead: ${componentBindingFacts.implicitVarRead ? 'true' : 'false'} })`);
   }
 
   emitSharedVarNestedLookup(componentBindingRoot, node) {
     const staticPath = componentBindingRoot.staticPath;
     const nestedPath = staticPath.slice(2);
-    const errorContextJson = JSON.stringify(this.compiler._createLegacyErrorContext(node));
 
     nestedPath.forEach(() => {
       this.emit('runtime.memberLookupScript((');
@@ -182,7 +178,7 @@ class CompileComponent {
       implicitVarRead: true
     }, node);
     nestedPath.forEach((propertyName) => {
-      this.emit(`), ${JSON.stringify(propertyName)}, ${errorContextJson})`);
+      this.emit(`), ${JSON.stringify(propertyName)}, ${this.compiler.emitErrorContext(node)}, ${this.compiler.buffer.currentBuffer})`);
     });
   }
 }

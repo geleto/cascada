@@ -79,7 +79,7 @@ class CompileReturn {
     // Unlike an ordinary function call or comparison, this internal guard uses
     // ReturnIsUnsetCommand and therefore cannot surface poison stored in the
     // returned value.
-    compiler.emit(`${compiler.buffer.currentBuffer}.addCommand(new runtime.ReturnIsUnsetCommand({ chainName: "${RETURN_CHAIN_NAME}", pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), "${RETURN_CHAIN_NAME}")`);
+    compiler.emit(`${compiler.buffer.currentBuffer}.addCommand(new runtime.ReturnIsUnsetCommand({ chainName: "${RETURN_CHAIN_NAME}", errorContext: ${compiler.emitErrorContext(node)} }), "${RETURN_CHAIN_NAME}")`);
   }
 
   emitDeclareChain(bufferExpr) {
@@ -91,7 +91,7 @@ class CompileReturn {
   emitChainWrite(node, resultVar) {
     const compiler = this.compiler;
     compiler.emit.line(
-      `${compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ chainName: '${RETURN_CHAIN_NAME}', args: [${resultVar}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), "${RETURN_CHAIN_NAME}");`
+      `${compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ chainName: '${RETURN_CHAIN_NAME}', args: [${resultVar}], errorContext: ${compiler.emitErrorContext(node)} }), "${RETURN_CHAIN_NAME}");`
     );
   }
 

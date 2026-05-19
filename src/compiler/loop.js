@@ -95,7 +95,7 @@ class CompileLoop {
         elseChains: ${JSON.stringify(elseChains ? Array.from(elseChains) : [])},
         concurrentLimit: ${node.concurrentLimit ? limitVar : 'null'},
         returnCheckChainName: ${returnCheckChainName ? `"${returnCheckChainName}"` : 'null'},
-        errorContext: ${this.compiler.emitErrorContextRef(node)}
+        errorContext: ${this.compiler.emitErrorContext(node)}
       }`;
 
       const loopOwnsWaitedCompletion = sequentialLoopBody || hasConcurrentLimit;
@@ -263,9 +263,9 @@ class CompileLoop {
             this.compiler._compileAwaitedExpression(whileConditionNode, null);
           });
           this.compiler.emit.line(';');
-          const whileErrorContext = this.compiler._createLegacyErrorContext(node, whileConditionNode);
+          const whileErrorContext = this.compiler.emitErrorContext(whileConditionNode);
           this.compiler.emit('} catch (e) {');
-          this.compiler.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ${whileErrorContext.lineno}, ${whileErrorContext.colno}, "${whileErrorContext.errorContextString}", context.path);`);
+          this.compiler.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ${whileErrorContext}, ${this.compiler.buffer.currentBuffer});`);
           catchPoisonPos = this.compiler.codebuf.length;
           this.compiler.emit.line('');
           this.compiler.emit(`  ${whileCondId} = false;`);
@@ -404,13 +404,13 @@ class CompileLoop {
 
   _emitLoopValueAssignment(node, chainName, valueExpr) {
     this.compiler.emit.line(
-      `${this.compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ chainName: '${chainName}', args: [${valueExpr}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${chainName}');`
+      `${this.compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ chainName: '${chainName}', args: [${valueExpr}], errorContext: ${this.compiler.emitErrorContext(node)} }), '${chainName}');`
     );
   }
 
   _emitLoopMetadataValueBinding(node, loopValueExpr) {
     this.compiler.emit.line(
-      `${this.compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ chainName: '${node.loopRuntimeName}', args: [${loopValueExpr}], pos: {lineno: ${node.lineno}, colno: ${node.colno}} }), '${node.loopRuntimeName}');`
+      `${this.compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ chainName: '${node.loopRuntimeName}', args: [${loopValueExpr}], errorContext: ${this.compiler.emitErrorContext(node)} }), '${node.loopRuntimeName}');`
     );
   }
 

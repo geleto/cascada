@@ -63,8 +63,7 @@ function initChainSnapshots(chainNames = null, buffer = null, cb = null) {
       continue;
     }
     const capturePromise = buffer.addCommand(new CaptureGuardStateCommand({
-      chainName,
-      pos: { lineno: 0, colno: 0 }
+      chainName
     }), chainName)
       .then((capturedState) => {
         state.snapshots[chainName] = capturedState;
@@ -87,8 +86,7 @@ async function restoreChains(buffer, chainGuardState) {
     const restorePromises = snapshotNames.map((chainName) =>
       buffer.addCommand(new RestoreGuardStateCommand({
         chainName,
-        target: chainGuardState.snapshots[chainName],
-        pos: { lineno: 0, colno: 0 }
+        target: chainGuardState.snapshots[chainName]
       }), chainName).catch((err) => reportAndThrow(chainGuardState.fatalCb, err))
     );
     await Promise.all(restorePromises);
@@ -102,8 +100,7 @@ async function restoreChains(buffer, chainGuardState) {
       buffer.addCommand(new RepairWriteCommand({
         chainName,
         pathKey: chainName,
-        operation: () => true,
-        pos: { lineno: 0, colno: 0 }
+        operation: () => true
       }), chainName).catch((err) => reportAndThrow(chainGuardState.fatalCb, err))
     );
     await Promise.all(repairPromises);
@@ -156,8 +153,7 @@ async function collectChainErrors(buffer, allowedChains) {
 
   for (const chainName of names) {
     const chainError = await buffer.addCommand(new GetErrorCommand({
-      chainName,
-      pos: { lineno: 0, colno: 0 }
+      chainName
     }), chainName);
     if (!chainError) {
       continue;
@@ -196,8 +192,7 @@ function repairSequenceChains(buffer, guardState, lockNames) {
 
   for (const lockName of lockNames) {
     const detectPromise = buffer.addCommand(new GetErrorCommand({
-      chainName: lockName,
-      pos: { lineno: 0, colno: 0 }
+      chainName: lockName
     }), lockName)
       .then((chainError) => {
         if (!chainError) {
@@ -216,8 +211,7 @@ function repairSequenceChains(buffer, guardState, lockNames) {
       chainName: lockName,
       pathKey: lockName,
       // Repair is unconditional: clear poison and publish a healthy lock state.
-      operation: () => true,
-      pos: { lineno: 0, colno: 0 }
+      operation: () => true
     }), lockName).catch((err) => reportAndThrow(guardState.fatalCb, err));
 
     guardState.detectionPromises.push(Promise.all([detectPromise, repairPromise]).then(() => true));

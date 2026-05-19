@@ -70,12 +70,14 @@ function callWrapAsync(obj, name, context, args, errorContext, currentBuffer = n
   if (!obj) {
     return createPoison(
       new Error('Unable to call `' + name + '`, which is undefined or falsey'),
-      errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path
+      errorContext,
+      currentBuffer
     );
   } else if (typeof obj !== 'function') {
     return createPoison(
       new Error('Unable to call `' + name + '`, which is not a function'),
-      errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path
+      errorContext,
+      currentBuffer
     );
   }
 
@@ -91,7 +93,7 @@ function callWrapAsync(obj, name, context, args, errorContext, currentBuffer = n
     }
     return result;
   } catch (err) {
-    return createPoison(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+    return createPoison(err, errorContext, currentBuffer);
   }
 }
 
@@ -110,7 +112,7 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
         errors.push(...err.errors);
       } else {
         // Add context to the error when catching from await
-        const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+        const contextualError = handleError(err, errorContext, currentBuffer);
         errors.push(contextualError);
       }
     }
@@ -132,7 +134,7 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
     if (isPoisonError(err)) {
       errors.push(...err.errors);
     } else {
-      const contextualError = handleError(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+      const contextualError = handleError(err, errorContext, currentBuffer);
       errors.push(contextualError);
     }
   }
@@ -145,12 +147,14 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
   if (!obj) {
     return createPoison(
       new Error('Unable to call `' + name + '`, which is undefined or falsey'),
-      errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path
+      errorContext,
+      currentBuffer
     );
   } else if (typeof obj !== 'function') {
     return createPoison(
       new Error('Unable to call `' + name + '`, which is not a function'),
-      errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path
+      errorContext,
+      currentBuffer
     );
   }
 
@@ -168,7 +172,7 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
 
     return result;
   } catch (err) {
-    return createPoison(err, errorContext.lineno, errorContext.colno, errorContext.errorContextString, errorContext.path);
+    return createPoison(err, errorContext, currentBuffer);
   }
 }
 

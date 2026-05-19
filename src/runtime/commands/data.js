@@ -4,11 +4,11 @@ import {runWithResolvedArguments} from './arguments.js';
 import {contextualizeChainError} from './errors.js';
 
 class DataCommand extends ChainCommand {
-  constructor({ chainName, operation, args = null, pos = null, initializeIfNotSet = false }) {
+  constructor({ chainName, operation, args = null, errorContext = null, initializeIfNotSet = false }) {
     super({
       chainName,
       args: args || [],
-      pos
+      errorContext
     });
     this.operation = operation || null;
     this.initializeIfNotSet = initializeIfNotSet;
@@ -41,7 +41,7 @@ class DataCommand extends ChainCommand {
           chain,
           args,
           this.toPoisonValue([
-            contextualizeChainError(chain, this.pos, new Error(`has no method '${this.operation}'`))
+            contextualizeChainError(chain, this.errorContext, new Error(`has no method '${this.operation}'`))
           ])
         );
         return;
@@ -63,7 +63,7 @@ class DataCommand extends ChainCommand {
           chain,
           args,
           this.toPoisonValue([
-            contextualizeChainError(chain, this.pos, err)
+            contextualizeChainError(chain, this.errorContext, err)
           ])
         );
       }

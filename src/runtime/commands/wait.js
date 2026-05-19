@@ -2,11 +2,11 @@ import {resolveAll} from '../resolve.js';
 import {ChainCommand, ObservableCommand} from './base.js';
 
 class WaitResolveCommand extends ChainCommand {
-  constructor({ chainName, args = null, pos = null }) {
+  constructor({ chainName, args = null, errorContext = null }) {
     super({
       chainName,
       args: args || [],
-      pos
+      errorContext
     });
   }
 
@@ -30,10 +30,10 @@ class WaitResolveCommand extends ChainCommand {
 }
 
 class WaitCurrentCommand extends ObservableCommand {
-  constructor({ chainName, pos = null }) {
+  constructor({ chainName, errorContext = null }) {
     super();
     this.chainName = chainName;
-    this.pos = pos || { lineno: 0, colno: 0 };
+    this.errorContext = errorContext || null;
   }
 
   apply(chain) {
