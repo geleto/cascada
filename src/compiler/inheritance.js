@@ -110,9 +110,11 @@ class CompileInheritance {
   }
 
   analyzeRoot(node) {
-    node._analysis.inheritanceCallableDefinitions = node._analysis.inheritanceCallableDefinitions || [];
-    node._analysis.inheritanceComponentOperations = node._analysis.inheritanceComponentOperations || [];
-    node._analysis.inheritanceExtendsNodes = node._analysis.inheritanceExtendsNodes || [];
+    node.addAnalysis({
+      inheritanceCallableDefinitions: node._analysis.inheritanceCallableDefinitions ?? [],
+      inheritanceComponentOperations: node._analysis.inheritanceComponentOperations ?? [],
+      inheritanceExtendsNodes: node._analysis.inheritanceExtendsNodes ?? [],
+    });
     if (this.compiler.scriptMode) {
       node.inheritanceMetadata.methods.children.forEach((methodNode) => {
         this._recordCallableDefinition(methodNode, node._analysis);
@@ -321,7 +323,7 @@ class CompileInheritance {
       ? this.analyzeInheritedMethodCallTarget(node.name)
       : null;
     if (methodName) {
-      (node.name._analysis || (node.name._analysis = {})).allowInheritedMethodCall = true;
+      node.name.addAnalysis({ allowInheritedMethodCall: true });
       this._recordInheritedMethodCall(node, methodName);
     }
     return methodName;
@@ -441,7 +443,7 @@ class CompileInheritance {
     const declares = [];
     const seenBlockArgNames = new Set();
     signature.argNameNodes.forEach((nameNode, index) => {
-      nameNode._analysis = { ...nameNode._analysis, skipDeclarationOwner: node._analysis };
+      nameNode.addAnalysis({ skipDeclarationOwner: node._analysis });
       const canonicalName = signature.argNames[index];
       if (seenBlockArgNames.has(canonicalName)) {
         compiler.fail(
@@ -466,10 +468,9 @@ class CompileInheritance {
       const bodyDeclares = bodyAnalysis.declares
         ? bodyAnalysis.declares.concat(declares)
         : declares;
-      node.body._analysis = {
-        ...bodyAnalysis,
+      node.body.addAnalysis({
         declares: bodyDeclares
-      };
+      });
     }
     const textChain = !compiler.scriptMode
       ? compiler.analysis.getCurrentTextChain(node._analysis)
@@ -678,7 +679,7 @@ class CompileInheritance {
       ownerNode: callableNode
     });
     if (callableNode && callableNode._analysis) {
-      callableNode._analysis.callableSignatureFacts = signatureFacts;
+      callableNode.addAnalysis({ callableSignatureFacts: signatureFacts });
     }
     return signatureFacts;
   }

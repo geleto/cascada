@@ -13,7 +13,7 @@ class CompileCall {
     const mutates = [];
 
     const sequenceLockLookup = compiler.sequential.getSequenceLockLookup(node);
-    node._analysis.sequenceLockLookup = sequenceLockLookup;
+    node.addAnalysis({ sequenceLockLookup });
 
     if (compiler.return.isUnsetCall(node)) {
       return compiler.return.analyzeIsUnsetCall(node);

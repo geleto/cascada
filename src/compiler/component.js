@@ -8,7 +8,7 @@ class CompileComponent {
   }
 
   analyzeComponent(node) {
-    node.target._analysis = { declarationTarget: true };
+    node.target.addAnalysis({ declarationTarget: true });
     return {
       declares: [{
         name: node.target.value,

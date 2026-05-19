@@ -36,7 +36,7 @@ class CompilerBaseAsync extends CompilerCommon {
     const uses = [];
     const mutates = [];
     const sequenceLockLookup = this.sequential.getSequenceLockLookup(node);
-    node._analysis.sequenceLockLookup = sequenceLockLookup;
+    node.addAnalysis({ sequenceLockLookup });
     if (sequenceLockLookup) {
       const thisSharedFacts = this.chain.getThisSharedAccessFacts(node, analysisPass);
       if (thisSharedFacts) {

@@ -60,7 +60,7 @@ class CompileLookup {
   _collectSequenceLockLookup(node, analysisPass, facts) {
     const compiler = this.compiler;
     const sequenceLockLookup = compiler.sequential.getSequenceLockLookup(node);
-    node._analysis.sequenceLockLookup = sequenceLockLookup;
+    node.addAnalysis({ sequenceLockLookup });
     if (sequenceLockLookup) {
       compiler._failIfSequenceRootIsDeclared(node, sequenceLockLookup.key, analysisPass);
       facts.uses.push(sequenceLockLookup.key);

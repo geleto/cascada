@@ -252,7 +252,7 @@ class CompileChain {
   }
 
   analyzeChainDeclaration(node) {
-    node.name._analysis = { declarationTarget: true };
+    node.name.addAnalysis({ declarationTarget: true });
     validateChainDeclarationNode(this.compiler, node);
     const name = node.name.value;
     return {

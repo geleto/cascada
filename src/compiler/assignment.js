@@ -25,7 +25,7 @@ class CompileAssignment {
       compiler.fail(`'${node.varType}' is not allowed in template mode. Use 'set' or declaration tags.`, node.lineno, node.colno, node);
     }
     if (node.body) {
-      node.body._analysis = { createScope: true };
+      node.body.addAnalysis({ createScope: true });
     }
     if (node.path && targets.length !== 1) {
       compiler.fail('set_path only supports a single target.', node.lineno, node.colno, node);
@@ -43,7 +43,7 @@ class CompileAssignment {
     }
     targets.forEach((target) => {
       if (target instanceof nodes.Symbol) {
-        target._analysis = { ...target._analysis, declarationTarget: true };
+        target.addAnalysis({ declarationTarget: true });
         const name = target.value;
         const declaration = analysisPass.findDeclaration(node._analysis, name);
         if (compiler.scriptMode && !isDeclaration && declaration && declaration.shared) {

@@ -36,7 +36,7 @@ class CompileAnalysis {
     }
 
     const sequenceLocks = Array.from(new Set(this.compiler.sequential.collectSequenceLocks(rootNode)));
-    rootNode._analysis = { ...rootNode._analysis, sequenceLocks };
+    rootNode.addAnalysis({ sequenceLocks });
   }
 
   _walk(node, parentNode, parentField) {
@@ -121,7 +121,7 @@ class CompileAnalysis {
     if (typeof analyzer === 'function') {
       const returned = analyzer.call(this.compiler, node, this);
       if (returned && typeof returned === 'object' && returned !== node._analysis) {
-        node._analysis = Object.assign(node._analysis || {}, returned);
+        node.addAnalysis(returned);
       }
     }
   }
@@ -132,7 +132,7 @@ class CompileAnalysis {
     if (typeof analyzer === 'function') {
       const returned = analyzer.call(this.compiler, node, this);
       if (returned && typeof returned === 'object' && returned !== node._analysis) {
-        node._analysis = Object.assign(node._analysis || {}, returned);
+        node.addAnalysis(returned);
       }
     }
   }
@@ -175,7 +175,7 @@ class CompileAnalysis {
 
   markLookupDeclaration(node, name, analysis = node._analysis) {
     const declaration = this.findDeclaration(analysis, name);
-    node._analysis = { ...node._analysis, lookupDeclaration: declaration || null };
+    node.addAnalysis({ lookupDeclaration: declaration || null });
     return declaration;
   }
 

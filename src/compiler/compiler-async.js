@@ -158,10 +158,10 @@ class CompilerAsync extends CompilerBaseAsync {
 
   _analyzeLoopNodeDeclarations(node, analysisPass, declarationsInBody = false) {
     if (node.name instanceof nodes.Symbol) {
-      node.name._analysis = { ...node.name._analysis, declarationTarget: true };
+      node.name.addAnalysis({ declarationTarget: true });
     } else if (node.name instanceof nodes.Array || node.name instanceof nodes.NodeList) {
       node.name.children.forEach((child) => {
-        child._analysis = { ...child._analysis, declarationTarget: true };
+        child.addAnalysis({ declarationTarget: true });
       });
     }
     const declares = [];
@@ -173,15 +173,14 @@ class CompilerAsync extends CompilerBaseAsync {
       declares.push({ name: 'loop', type: 'var', initializer: null, internal: true, isLoopMeta: true });
     }
     if (node.concurrentLimit) {
-      node.body._analysis = {
-        ...node.body._analysis,
+      node.body.addAnalysis({
         waitedChainName: node.body._analysis?.waitedChainName ?? `__waited__${this._tmpid()}`
-      };
+      });
     }
     if (declarationsInBody) {
-      node.body._analysis = { ...node.body._analysis, createScope: true, loopOwner: node, declares };
+      node.body.addAnalysis({ createScope: true, loopOwner: node, declares });
       if (node.else_) {
-        node.else_._analysis = { ...node.else_._analysis, createScope: true };
+        node.else_.addAnalysis({ createScope: true });
       }
       return { createsLinkedChildBuffer: true };
     }
@@ -190,12 +189,11 @@ class CompilerAsync extends CompilerBaseAsync {
 
   analyzeWhile(node, analysisPass) {
     const result = this._analyzeLoopNodeDeclarations(node, analysisPass);
-    (node.cond._analysis ||= {}).errorContextLabel = 'While.Condition';
+    node.cond.addAnalysis({ errorContextLabel: 'While.Condition' });
     if (node.body) {
-      node.body._analysis = {
-        ...node.body._analysis,
+      node.body.addAnalysis({
         waitedChainName: node.body._analysis?.waitedChainName ?? `__waited__${this._tmpid()}`
-      };
+      });
     }
     return result;
   }
@@ -205,9 +203,9 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeFor(node, analysisPass) {
-    (node.arr._analysis ||= {}).errorContextLabel = 'For.Iterator';
+    node.arr.addAnalysis({ errorContextLabel: 'For.Iterator' });
     if (node.concurrentLimit) {
-      (node.concurrentLimit._analysis ||= {}).errorContextLabel = 'For.Limit';
+      node.concurrentLimit.addAnalysis({ errorContextLabel: 'For.Limit' });
     }
     return this._analyzeLoopNodeDeclarations(node, analysisPass, true);
   }
@@ -217,16 +215,15 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeAsyncEach(node, analysisPass) {
-    (node.arr._analysis ||= {}).errorContextLabel = 'For.Iterator';
+    node.arr.addAnalysis({ errorContextLabel: 'For.Iterator' });
     if (node.concurrentLimit) {
-      (node.concurrentLimit._analysis ||= {}).errorContextLabel = 'For.Limit';
+      node.concurrentLimit.addAnalysis({ errorContextLabel: 'For.Limit' });
     }
     const result = this._analyzeLoopNodeDeclarations(node, analysisPass, true);
     if (node.body) {
-      node.body._analysis = {
-        ...node.body._analysis,
+      node.body.addAnalysis({
         waitedChainName: node.body._analysis?.waitedChainName ?? `__waited__${this._tmpid()}`
-      };
+      });
     }
     return result;
   }
@@ -236,9 +233,9 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeAsyncAll(node, analysisPass) {
-    (node.arr._analysis ||= {}).errorContextLabel = 'For.Iterator';
+    node.arr.addAnalysis({ errorContextLabel: 'For.Iterator' });
     if (node.concurrentLimit) {
-      (node.concurrentLimit._analysis ||= {}).errorContextLabel = 'For.Limit';
+      node.concurrentLimit.addAnalysis({ errorContextLabel: 'For.Limit' });
     }
     return this._analyzeLoopNodeDeclarations(node, analysisPass, true);
   }
@@ -248,12 +245,12 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeSwitch(node) {
-    (node.expr._analysis ||= {}).errorContextLabel = 'Switch.Expression';
+    node.expr.addAnalysis({ errorContextLabel: 'Switch.Expression' });
     node.cases.forEach((c) => {
-      (c.cond._analysis ||= {}).errorContextLabel = 'Switch.Case';
+      c.cond.addAnalysis({ errorContextLabel: 'Switch.Case' });
     });
     if (node.default) {
-      node.default._analysis = { createScope: true };
+      node.default.addAnalysis({ createScope: true });
     }
     return { createsLinkedChildBuffer: true };
   }
@@ -333,10 +330,10 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeIf(node) {
-    (node.cond._analysis ||= {}).errorContextLabel = 'If.Condition';
-    node.body._analysis = { createScope: true };
+    node.cond.addAnalysis({ errorContextLabel: 'If.Condition' });
+    node.body.addAnalysis({ createScope: true });
     if (node.else_) {
-      node.else_._analysis = { createScope: true };
+      node.else_.addAnalysis({ createScope: true });
     }
     return { createsLinkedChildBuffer: true };
   }
@@ -498,8 +495,8 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeImport(node) {
-    (node.template._analysis ||= {}).errorContextLabel = this.scriptMode ? 'Import.Script' : 'Import.Template';
-    node.target._analysis = { ...node.target._analysis, declarationTarget: true };
+    node.template.addAnalysis({ errorContextLabel: this.scriptMode ? 'Import.Script' : 'Import.Template' });
+    node.target.addAnalysis({ declarationTarget: true });
     this.importedBindings.add(node.target.value);
     return {
       declares: [{ name: node.target.value, type: 'var', initializer: null, imported: true }]
@@ -511,7 +508,7 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeComponent(node) {
-    (node.template._analysis ||= {}).errorContextLabel = 'Component.Script';
+    node.template.addAnalysis({ errorContextLabel: 'Component.Script' });
     this.inheritance.recordComponentOperation(node);
     return this.component.analyzeComponent(node);
   }
@@ -521,15 +518,15 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeFromImport(node) {
-    (node.template._analysis ||= {}).errorContextLabel = this.scriptMode ? 'FromImport.Script' : 'FromImport.Template';
+    node.template.addAnalysis({ errorContextLabel: this.scriptMode ? 'FromImport.Script' : 'FromImport.Template' });
     const declares = [];
     node.names.children.forEach((nameNode) => {
       if (nameNode instanceof nodes.Pair && nameNode.value instanceof nodes.Symbol) {
-        nameNode.value._analysis = { ...nameNode.value._analysis, declarationTarget: true };
+        nameNode.value.addAnalysis({ declarationTarget: true });
         this.importedBindings.add(nameNode.value.value);
         declares.push({ name: nameNode.value.value, type: 'var', initializer: null, imported: true });
       } else if (nameNode instanceof nodes.Symbol) {
-        nameNode._analysis = { ...nameNode._analysis, declarationTarget: true };
+        nameNode.addAnalysis({ declarationTarget: true });
         this.importedBindings.add(nameNode.value);
         declares.push({ name: nameNode.value, type: 'var', initializer: null, imported: true });
       }
@@ -578,7 +575,7 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeExtends(node) {
-    (node.template._analysis ||= {}).errorContextLabel = this.scriptMode ? 'Extends.Script' : 'Extends.Template';
+    node.template.addAnalysis({ errorContextLabel: this.scriptMode ? 'Extends.Script' : 'Extends.Template' });
     const inheritanceAnalysis = this.inheritance.analyzeExtends(node);
     if (this.scriptMode) {
       return inheritanceAnalysis;
@@ -596,7 +593,7 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeInclude(node) {
-    (node.template._analysis ||= {}).errorContextLabel = this.scriptMode ? 'Include.Script' : 'Include.Template';
+    node.template.addAnalysis({ errorContextLabel: this.scriptMode ? 'Include.Script' : 'Include.Template' });
     if (this.scriptMode) {
       return {};
     }

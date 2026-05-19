@@ -49,7 +49,7 @@ class CompileMacro {
 
   analyzeCaller(node) {
     const compiledMacroFuncId = `macro_${this.compiler._tmpid()}`;
-    node.name._analysis = Object.assign({}, node.name._analysis, { declarationTarget: true });
+    node.name.addAnalysis({ declarationTarget: true });
     const declares = [
       { name: 'caller', type: 'var', initializer: null },
       this.compiler.return.createChainDeclaration()
@@ -62,7 +62,7 @@ class CompileMacro {
     }
     node.args.children.forEach((arg) => {
       if (arg instanceof nodes.Symbol) {
-        arg._analysis = Object.assign({}, arg._analysis, { declarationTarget: true });
+        arg.addAnalysis({ declarationTarget: true });
         declares.push({ name: arg.value, type: 'var', initializer: null, macroParam: true });
       }
     });
@@ -115,12 +115,12 @@ class CompileMacro {
     const declares = [];
     const declaresInParent = [];
     const compiledMacroFuncId = `macro_${this.compiler._tmpid()}`;
-    node.name._analysis = Object.assign({}, node.name._analysis, { declarationTarget: true });
+    node.name.addAnalysis({ declarationTarget: true });
     declares.push(this.compiler.return.createChainDeclaration());
     declares.push({ name: 'caller', type: 'var', initializer: null });
     node.args.children.forEach((arg) => {
       if (arg instanceof nodes.Symbol) {
-        arg._analysis = Object.assign({}, arg._analysis, { declarationTarget: true });
+        arg.addAnalysis({ declarationTarget: true });
         declares.push({ name: arg.value, type: 'var', initializer: null, macroParam: true });
       } else if (arg instanceof nodes.Dict) {
         arg.children.forEach((pair) => {

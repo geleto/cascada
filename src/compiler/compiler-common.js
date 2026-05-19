@@ -103,7 +103,7 @@ class CompilerCommon extends Obj {
     if (positionNode === node && label === null && node._analysis && node._analysis.errorContextIndex === undefined) {
       const lineno = node.lineno !== undefined ? node.lineno + 1 : 0;
       const colno = node.colno !== undefined ? node.colno : 0;
-      node._analysis.errorContextIndex = this.errorContextEntries.length;
+      node.addAnalysis({ errorContextIndex: this.errorContextEntries.length });
       this.errorContextEntries.push({ lineno, colno, label: finalLabel });
     }
     return finalLabel;

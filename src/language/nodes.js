@@ -51,6 +51,12 @@ class Node extends Obj {
     });
   }
 
+  addAnalysis(facts) {
+    this._analysis ||= {};
+    Object.assign(this._analysis, facts);
+    return this._analysis;
+  }
+
 }
 
 // Abstract nodes

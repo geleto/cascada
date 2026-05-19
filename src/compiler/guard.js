@@ -9,16 +9,16 @@ class CompileGuard {
 
   analyzeGuard(node) {
     const compiler = this.compiler;
-    node.body._analysis = { createScope: true };
+    node.body.addAnalysis({ createScope: true });
     if (node.recoveryBody) {
       const recoveryAnalysis = { createScope: true };
       if (typeof node.errorVar === 'string' && node.errorVar) {
         recoveryAnalysis.declares = [{ name: node.errorVar, type: 'var', initializer: null }];
       } else if (node.errorVar instanceof nodes.Symbol) {
-        node.errorVar._analysis = Object.assign({}, node.errorVar._analysis, { declarationTarget: true });
+        node.errorVar.addAnalysis({ declarationTarget: true });
         recoveryAnalysis.declares = [{ name: node.errorVar.value, type: 'var', initializer: null }];
       }
-      node.recoveryBody._analysis = recoveryAnalysis;
+      node.recoveryBody.addAnalysis(recoveryAnalysis);
     }
     const guardTargets = this._getGuardTargets(node);
     validateGuardVariablesDeclared(guardTargets.variableValidationTargets, compiler, node);
