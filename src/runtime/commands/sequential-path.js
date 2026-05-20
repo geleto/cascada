@@ -1,15 +1,15 @@
 import {isPoison, isPoisonError, PoisonError} from '../errors.js';
-import {ObservableCommand, MutatingResultCommand} from './base.js';
+import {ObservableCommand, MutatingResultCommand, requireCommandErrorContext} from './base.js';
 import {contextualizeErrorsForChain} from './errors.js';
 
 class SequentialPathReadCommand extends ObservableCommand {
-  constructor({ chainName, pathKey, operation, repair = false, errorContext = null }) {
+  constructor({ chainName, pathKey, operation, repair = false, errorContext }) {
     super();
     this.chainName = chainName;
     this.pathKey = pathKey || this.chainName;
     this.operation = operation;
     this.repair = !!repair;
-    this.errorContext = errorContext || null;
+    this.errorContext = requireCommandErrorContext(errorContext, this.constructor.name);
   }
 
   apply(chain) {
@@ -71,13 +71,13 @@ class RepairReadCommand extends SequentialPathReadCommand {
 }
 
 class SequentialPathWriteCommand extends MutatingResultCommand {
-  constructor({ chainName, pathKey, operation, repair = false, errorContext = null }) {
+  constructor({ chainName, pathKey, operation, repair = false, errorContext }) {
     super();
     this.chainName = chainName;
     this.pathKey = pathKey || this.chainName;
     this.operation = operation;
     this.repair = !!repair;
-    this.errorContext = errorContext || null;
+    this.errorContext = requireCommandErrorContext(errorContext, this.constructor.name);
   }
 
   apply(chain) {

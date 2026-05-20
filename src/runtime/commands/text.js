@@ -10,7 +10,7 @@ class TextCommand extends ChainCommand {
     chainName,
     args = null,
     operation = null,
-    errorContext = null,
+    errorContext,
     normalizeArgs = false,
     initializeIfNotSet = false
   }) {

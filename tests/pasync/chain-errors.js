@@ -19,6 +19,9 @@ import {
 
 import {CommandBuffer} from '../../src/runtime/command-buffer.js';
 import {createArray} from '../../src/runtime/resolve.js';
+
+const TEST_EC = [1, 1, 'Test', 'test.casc', null];
+
 describe('chain errors', function () {
   describe('chain commands step2 poison encoding', function () {
     it('propagates RuntimeFatalError instead of degrading it into poison during argument resolution', async () => {
@@ -27,7 +30,7 @@ describe('chain errors', function () {
       const cmd = new TextCommand({
         chainName: 'text',
         args: [Promise.reject(fatal)],
-        pos: { lineno: 1, colno: 1 }
+        errorContext: TEST_EC
       });
 
       try {
@@ -42,7 +45,7 @@ describe('chain errors', function () {
     it('TextCommand encodes poison into target instead of throwing', () => {
       const output = new TextChain(null, 'text', null, 'text');
       const poison = createPoison([new Error('text poison')]);
-      const cmd = new TextCommand({ chainName: 'text', args: ['ok', poison], pos: { lineno: 1, colno: 1 } });
+      const cmd = new TextCommand({ chainName: 'text', args: ['ok', poison], errorContext: TEST_EC });
 
       cmd.apply(output);
 
@@ -53,7 +56,7 @@ describe('chain errors', function () {
 
     it('VarCommand poisons target on invalid arity', () => {
       const output = new VarChain(null, 'value', null, 'value');
-      const cmd = new VarCommand({ chainName: 'value', args: [1, 2], pos: { lineno: 1, colno: 1 } });
+      const cmd = new VarCommand({ chainName: 'value', args: [1, 2], errorContext: TEST_EC });
 
       cmd.apply(output);
 
@@ -68,13 +71,13 @@ describe('chain errors', function () {
         chainName: 'data',
         operation: 'set',
         args: [['x'], poison],
-        pos: { lineno: 1, colno: 1 }
+        errorContext: TEST_EC
       });
       const fix = new DataCommand({
         chainName: 'data',
         operation: 'set',
         args: [['x'], 'ok'],
-        pos: { lineno: 2, colno: 1 }
+        errorContext: TEST_EC
       });
 
       bad.apply(output);
@@ -93,7 +96,7 @@ describe('chain errors', function () {
         chainName: 'data',
         operation: 'doesNotExist',
         args: [['x'], 1],
-        pos: { lineno: 1, colno: 1 }
+        errorContext: TEST_EC
       });
 
       cmd.apply(output);
@@ -112,7 +115,8 @@ describe('chain errors', function () {
       const cmd = new SequenceCallCommand({
         chainName: 'seq',
         methodName: 'exec',
-        args: [poison]
+        args: [poison],
+        errorContext: TEST_EC
       });
 
       try {
@@ -131,7 +135,7 @@ describe('chain errors', function () {
       const output = new VarChain(null, 'value', { path: 'fatal-inspection.script' }, 'value');
       const fatal = new RuntimeFatalError('fatal inspection failure', [2, 3, null, 'fatal-inspection.script', null]);
 
-      output._recordError(fatal, { pos: { lineno: 2, colno: 3 } });
+      output._recordError(fatal, { errorContext: TEST_EC });
 
       const result = await output._ensureErrorState();
       expect(result.hasError).to.be(true);

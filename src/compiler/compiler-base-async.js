@@ -97,7 +97,7 @@ class CompilerBaseAsync extends CompilerCommon {
       return;
     }
     if (!this.scriptMode && this.inBlock) {
-      this.emit(`runtime.chainLookup("${name}", ${this.buffer.currentBuffer})`);
+      this.emit(`runtime.chainLookup("${name}", ${this.buffer.currentBuffer}, ${this.emitErrorContext(node)})`);
       return;
     }
     this.buffer.emitAddSnapshot(name, node);

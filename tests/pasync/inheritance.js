@@ -8,6 +8,8 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
 import * as runtime from '../../src/runtime/runtime.js';
 import {StringLoader} from '../util.js';
 
+const TEST_EC = [1, 1, 'Test', 'test.casc', null];
+
 function createIdPool() {
   return {
     value: 0,
@@ -2019,7 +2021,7 @@ describe('Inheritance rebuild', function () {
       ownerBuffer.addCommand(new runtime.VarCommand({
         chainName: 'card',
         args: [instance],
-        pos: { lineno: 1, colno: 1 }
+        errorContext: TEST_EC
       }), 'card');
       const sideChainFinished = ownerBuffer.getChain('card').finalSnapshot();
       ownerBuffer.finish();

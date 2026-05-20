@@ -6,6 +6,8 @@ import {AsyncEnvironment, Script} from '../../src/environment/environment.js';
 import {StringLoader} from '../util.js';
 import * as runtimeModule from '../../src/runtime/runtime.js';
 
+const TEST_EC = [1, 1, 'Test', 'test.casc', null];
+
 function compiledComponentMethod(name, options = {}) {
   return {
     name,
@@ -685,7 +687,7 @@ describe('Phase 8 - Component Observations', function () {
         rootBuffer: sharedRootBuffer,
         sharedRootBuffer
       })],
-      pos: { lineno: 1, colno: 1 }
+      errorContext: TEST_EC
     }), 'nsBinding');
 
     const observationPromise = runtimeModule.observeComponentChain({
@@ -694,7 +696,7 @@ describe('Phase 8 - Component Observations', function () {
       observationCommand: new runtimeModule.VarCommand({
         chainName: 'status',
         args: ['bad'],
-        pos: { lineno: 2, colno: 1 }
+        errorContext: TEST_EC
       }),
       errorContext: [2, 1, null, 'Main.script', null]
     });
@@ -1096,7 +1098,7 @@ describe('Phase 8 - Component Lifecycle', function () {
     ownerBuffer.addCommand(new runtimeModule.WaitResolveCommand({
       chainName: 'nsBinding',
       args: [gate],
-      pos: { lineno: 1, colno: 1 }
+      errorContext: TEST_EC
     }), 'nsBinding');
 
     const startupPromise = runtimeModule.startComponentInstance({
@@ -1224,7 +1226,7 @@ describe('Phase 8 - Component Lifecycle', function () {
     ownerBuffer.addCommand(new runtimeModule.VarCommand({
       chainName: 'nsBinding',
       args: [componentInstance],
-      pos: { lineno: 1, colno: 1 }
+      errorContext: TEST_EC
     }), 'nsBinding');
 
     const sideChainFinished = ownerBuffer.getChain('nsBinding').finalSnapshot();

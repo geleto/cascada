@@ -1,12 +1,12 @@
 import {RETURN_UNSET} from '../markers.js';
 import {isPoisonError, contextualizeError} from '../errors.js';
-import {ObservableCommand, MutatingResultCommand} from './base.js';
+import {ObservableCommand, MutatingResultCommand, requireCommandErrorContext} from './base.js';
 
 class SnapshotCommand extends ObservableCommand {
-  constructor({ chainName, errorContext = null }) {
+  constructor({ chainName, errorContext }) {
     super();
     this.chainName = chainName;
-    this.errorContext = errorContext || null;
+    this.errorContext = requireCommandErrorContext(errorContext, this.constructor.name);
     this.isUniversalObservationCommand = true;
   }
 
@@ -31,10 +31,10 @@ class SnapshotCommand extends ObservableCommand {
 }
 
 class RawSnapshotCommand extends ObservableCommand {
-  constructor({ chainName, errorContext = null }) {
+  constructor({ chainName, errorContext }) {
     super();
     this.chainName = chainName;
-    this.errorContext = errorContext || null;
+    this.errorContext = requireCommandErrorContext(errorContext, this.constructor.name);
   }
 
   apply(chain) {
@@ -56,10 +56,10 @@ class RawSnapshotCommand extends ObservableCommand {
 }
 
 class ReturnIsUnsetCommand extends ObservableCommand {
-  constructor({ chainName, errorContext = null }) {
+  constructor({ chainName, errorContext }) {
     super();
     this.chainName = chainName;
-    this.errorContext = errorContext || null;
+    this.errorContext = requireCommandErrorContext(errorContext, this.constructor.name);
   }
 
   apply(chain) {
@@ -81,10 +81,10 @@ class ReturnIsUnsetCommand extends ObservableCommand {
 }
 
 class IsErrorCommand extends ObservableCommand {
-  constructor({ chainName, errorContext = null }) {
+  constructor({ chainName, errorContext }) {
     super();
     this.chainName = chainName;
-    this.errorContext = errorContext || null;
+    this.errorContext = requireCommandErrorContext(errorContext, this.constructor.name);
     this.isUniversalObservationCommand = true;
   }
 
@@ -111,10 +111,10 @@ class IsErrorCommand extends ObservableCommand {
 }
 
 class GetErrorCommand extends ObservableCommand {
-  constructor({ chainName, errorContext = null }) {
+  constructor({ chainName, errorContext }) {
     super();
     this.chainName = chainName;
-    this.errorContext = errorContext || null;
+    this.errorContext = requireCommandErrorContext(errorContext, this.constructor.name);
     this.isUniversalObservationCommand = true;
   }
 
@@ -141,10 +141,10 @@ class GetErrorCommand extends ObservableCommand {
 }
 
 class CaptureGuardStateCommand extends ObservableCommand {
-  constructor({ chainName, errorContext = null }) {
+  constructor({ chainName, errorContext }) {
     super();
     this.chainName = chainName;
-    this.errorContext = errorContext || null;
+    this.errorContext = requireCommandErrorContext(errorContext, this.constructor.name);
   }
 
   apply(chain) {
@@ -168,11 +168,11 @@ class CaptureGuardStateCommand extends ObservableCommand {
 }
 
 class RestoreGuardStateCommand extends MutatingResultCommand {
-  constructor({ chainName, target, errorContext = null }) {
+  constructor({ chainName, target, errorContext }) {
     super();
     this.chainName = chainName;
     this.target = target;
-    this.errorContext = errorContext || null;
+    this.errorContext = requireCommandErrorContext(errorContext, this.constructor.name);
   }
 
   apply(chain) {

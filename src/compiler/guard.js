@@ -63,6 +63,7 @@ class CompileGuard {
     const guardFacts = node._analysis.guardFacts;
     const needsGuardState = guardFacts.needsGuardState;
     const guardStateVar = needsGuardState ? compiler._tmpid() : null;
+    const guardErrorContext = compiler.emitErrorContext(node);
 
     compiler.buffer._compileAsyncControlFlowBoundary(node, () => {
       const previousGuardDepth = compiler.guardDepth;
@@ -87,7 +88,7 @@ class CompileGuard {
         if (resolvedSequenceTargets.length > 0) {
           this.emit.insertLine(
             guardRepairLinePos,
-            `runtime.guard.repairSequenceChains(${compiler.buffer.currentBuffer}, ${guardStateVar}, ${JSON.stringify(resolvedSequenceTargets)});`
+            `runtime.guard.repairSequenceChains(${compiler.buffer.currentBuffer}, ${guardStateVar}, ${JSON.stringify(resolvedSequenceTargets)}, ${guardErrorContext});`
           );
         }
 
@@ -95,13 +96,13 @@ class CompileGuard {
           chainGuardStateVar = compiler._tmpid();
           this.emit.insertLine(
             chainGuardInitLinePos,
-            `const ${chainGuardStateVar} = runtime.guard.initChainSnapshots(${JSON.stringify(guardChains)}, ${compiler.buffer.currentBuffer}, cb);`
+            `const ${chainGuardStateVar} = runtime.guard.initChainSnapshots(${JSON.stringify(guardChains)}, ${compiler.buffer.currentBuffer}, cb, ${guardErrorContext});`
           );
         }
 
         const guardErrorsVar = compiler._tmpid();
         this.emit.line(
-          `const ${guardErrorsVar} = await runtime.guard.finalizeGuard(${guardStateVar || 'null'}, ${compiler.buffer.currentBuffer}, ${JSON.stringify(guardChains)}, ${chainGuardStateVar || 'null'});`
+          `const ${guardErrorsVar} = await runtime.guard.finalizeGuard(${guardStateVar || 'null'}, ${compiler.buffer.currentBuffer}, ${JSON.stringify(guardChains)}, ${chainGuardStateVar || 'null'}, ${guardErrorContext});`
         );
         this.emit.line(`if (${guardErrorsVar}.length > 0) {`);
 

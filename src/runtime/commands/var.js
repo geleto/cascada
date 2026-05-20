@@ -3,7 +3,7 @@ import {runWithResolvedArguments} from './arguments.js';
 import {contextualizeChainError} from './errors.js';
 
 class VarCommand extends ChainCommand {
-  constructor({ chainName, args = null, errorContext = null, initializeIfNotSet = false }) {
+  constructor({ chainName, args = null, errorContext, initializeIfNotSet = false }) {
     super({
       chainName,
       args: args || [],

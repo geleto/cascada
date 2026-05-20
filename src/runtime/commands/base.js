@@ -3,7 +3,8 @@ import {markDeferredThenablesHandled} from './arguments.js';
 
 class Command {
   constructor() {
-    this.errorContext = null;
+    // Commands that can report/apply runtime errors must set this.errorContext
+    // with requireCommandErrorContext(...) in their own constructor.
     this.resolved = false;
     this.promise = null;
     this.resolve = null;
@@ -95,14 +96,14 @@ class ObservableCommand extends Command {
 }
 
 class ChainCommand extends MutatingCommand {
-  constructor({ chainName, args = null, errorContext = null }) {
+  constructor({ chainName, args = null, errorContext }) {
     super();
     this.chainName = chainName;
     this.arguments = args || [];
     if (this.arguments.length > 0) {
       markDeferredThenablesHandled(this.arguments);
     }
-    this.errorContext = errorContext || null;
+    this.errorContext = requireCommandErrorContext(errorContext, this.constructor.name);
   }
 
   extractPoisonFromArgs(args = this.arguments) {
@@ -148,8 +149,16 @@ class ChainObservableCommand extends ObservableCommand {
     if (this.arguments.length > 0) {
       markDeferredThenablesHandled(this.arguments);
     }
-    this.errorContext = spec.errorContext || null;
+    this.errorContext = requireCommandErrorContext(spec.errorContext, this.constructor.name);
   }
+}
+
+function requireCommandErrorContext(errorContext, commandName) {
+  if (Array.isArray(errorContext)) {
+    return errorContext;
+  }
+  const received = errorContext === null ? 'null' : typeof errorContext;
+  throw new TypeError(`${commandName} requires a compact errorContext (got ${received})`);
 }
 
 export {
@@ -159,5 +168,6 @@ export {
   ObservableCommand,
   ChainCommand,
   ChainMutatingResultCommand,
-  ChainObservableCommand
+  ChainObservableCommand,
+  requireCommandErrorContext
 };

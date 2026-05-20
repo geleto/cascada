@@ -33,7 +33,7 @@ class InheritanceInstance {
       null,
       null,
       null,
-      { ec: options.errorContext, boundaryName: 'inheritance' },
+      { ec: options.errorContext, branchName: 'inheritance' },
       traceParent
     );
     const sharedRootBuffer = options.sharedRootBuffer || rootBuffer;
@@ -162,7 +162,7 @@ class InheritanceInstance {
       visibleChains,
       parentBuffer,
       methodData.mergedMutatedChains,
-      { ec: effectiveErrorContext, boundaryName: methodData.name },
+      { ec: effectiveErrorContext, branchName: methodData.name },
       traceParent
     );
     const callablePayload = methodData.isConstructor

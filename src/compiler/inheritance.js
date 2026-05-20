@@ -716,7 +716,7 @@ class CompileInheritance {
       `parentBuffer, ${this.compiler.buffer.currentBuffer}, ` +
       `methodData.mergedLinkedChains, ` +
       `methodData.mergedMutatedChains, ` +
-      `${this.compiler.buffer.currentBuffer}.errorContext && ${this.compiler.buffer.currentBuffer}.errorContext.ec` +
+      `${this.compiler.emitErrorContext(callableNode)}` +
       `);`
     );
     if (!isScriptMethod) {

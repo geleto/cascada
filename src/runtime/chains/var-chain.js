@@ -6,11 +6,16 @@ class VarChain extends Chain {
     super(buffer, chainName, context, chainType, initialValue, null);
   }
 
-  invoke(value) {
+  invoke(...args) {
     if (!this._buffer) return;
+    const errorContext = this._extractContextFromArgs(args);
+    if (args.length !== 1) {
+      throw new TypeError('VarChain.invoke requires exactly one value argument before errorContext');
+    }
     this._buffer.addCommand(new VarCommand({
       chainName: this._chainName,
-      args: [value]
+      args,
+      errorContext
     }), this._chainName);
   }
 

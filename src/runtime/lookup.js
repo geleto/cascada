@@ -254,13 +254,14 @@ function observeInheritanceSharedChain(name, currentBuffer, errorContext = null,
  * ordered snapshot on the current buffer only. CommandBuffer.add owns the
  * local lane assertion so lookup cannot silently create invisible lanes.
  */
-function chainLookup(name, currentBuffer) {
+function chainLookup(name, currentBuffer, errorContext) {
   const chain = currentBuffer.getChainIfExists(name);
   if (!chain) {
     return undefined;
   }
   return currentBuffer.addCommand(new SnapshotCommand({
-    chainName: name
+    chainName: name,
+    errorContext
   }), name);
 }
 

@@ -35,10 +35,12 @@ class DataChain extends Chain {
         writable: true,
         value: (...args) => {
           if (!this._buffer) return;
+          const errorContext = this._extractContextFromArgs(args, `DataChain.${methodName}`);
           this._buffer.addCommand(new DataCommand({
             chainName: this._chainName,
             operation: methodName,
-            args
+            args,
+            errorContext
           }), this._chainName);
         }
       });

@@ -4,7 +4,7 @@ import {runWithResolvedArguments} from './arguments.js';
 import {contextualizeChainError} from './errors.js';
 
 class DataCommand extends ChainCommand {
-  constructor({ chainName, operation, args = null, errorContext = null, initializeIfNotSet = false }) {
+  constructor({ chainName, operation, args = null, errorContext, initializeIfNotSet = false }) {
     super({
       chainName,
       args: args || [],

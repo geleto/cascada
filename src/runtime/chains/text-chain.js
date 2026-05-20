@@ -9,11 +9,13 @@ class TextChain extends Chain {
 
   invoke(...args) {
     if (!this._buffer) return;
+    const errorContext = this._extractContextFromArgs(args);
     if (args.length === 0) return;
     this._buffer.addCommand(new TextCommand({
       chainName: this._chainName,
       args,
-      normalizeArgs: true
+      normalizeArgs: true,
+      errorContext
     }), this._chainName);
   }
 

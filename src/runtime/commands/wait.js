@@ -1,8 +1,8 @@
 import {resolveAll} from '../resolve.js';
-import {ChainCommand, ObservableCommand} from './base.js';
+import {ChainCommand, ObservableCommand, requireCommandErrorContext} from './base.js';
 
 class WaitResolveCommand extends ChainCommand {
-  constructor({ chainName, args = null, errorContext = null }) {
+  constructor({ chainName, args = null, errorContext }) {
     super({
       chainName,
       args: args || [],
@@ -30,10 +30,10 @@ class WaitResolveCommand extends ChainCommand {
 }
 
 class WaitCurrentCommand extends ObservableCommand {
-  constructor({ chainName, errorContext = null }) {
+  constructor({ chainName, errorContext }) {
     super();
     this.chainName = chainName;
-    this.errorContext = errorContext || null;
+    this.errorContext = requireCommandErrorContext(errorContext, this.constructor.name);
   }
 
   apply(chain) {

@@ -113,6 +113,18 @@ class Chain {
     throw new Error(`Chain type '${this._chainType}' must implement _getCurrentResult()`);
   }
 
+  _extractContextFromArgs(args, label = `${this.constructor.name}.invoke`) {
+    if (args.length === 0) {
+      throw new TypeError(`${label} requires a compact errorContext as the last argument (got no arguments)`);
+    }
+    const errorContext = args.pop();
+    if (!Array.isArray(errorContext)) {
+      const received = errorContext === null ? 'null' : typeof errorContext;
+      throw new TypeError(`${label} requires a compact errorContext as the last argument (got ${received})`);
+    }
+    return errorContext;
+  }
+
   _setFatalError(err, cmd = null) {
     this._fatalError = contextualizeError(err, cmd.errorContext);
     this._markStateChanged();

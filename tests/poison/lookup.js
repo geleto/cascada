@@ -5,6 +5,8 @@ import {createPoison, isPoison, isPoisonError, Frame} from '../../src/runtime/ru
 
 (function () {
 
+  const TEST_EC = [1, 1, 'Test', 'test.casc', null];
+
   //let PoisonError;
   //let collectErrors;
   //PoisonError = runtime.PoisonError;
@@ -141,7 +143,7 @@ import {createPoison, isPoison, isPoisonError, Frame} from '../../src/runtime/ru
           await runtime.sequentialMemberLookupAsyncValue(
             { prop: 'value' },
             'prop',
-            '!lockKey', null,
+            '!lockKey', TEST_EC,
             false,
             currentBuffer
           );
@@ -158,7 +160,7 @@ import {createPoison, isPoison, isPoisonError, Frame} from '../../src/runtime/ru
           await runtime.sequentialMemberLookupAsyncValue(
             poison,
             'prop',
-            '!lockKey', null,
+            '!lockKey', TEST_EC,
             false,
             currentBuffer
           );
@@ -177,7 +179,7 @@ import {createPoison, isPoison, isPoisonError, Frame} from '../../src/runtime/ru
           await runtime.sequentialMemberLookupAsyncValue(
             promise,
             'prop',
-            '!lockKey', null,
+            '!lockKey', TEST_EC,
             false,
             currentBuffer
           );
@@ -195,7 +197,7 @@ import {createPoison, isPoison, isPoisonError, Frame} from '../../src/runtime/ru
           await runtime.sequentialMemberLookupAsyncValue(
             promise,
             'prop',
-            '!lockKey', null,
+            '!lockKey', TEST_EC,
             false,
             currentBuffer
           );
@@ -211,7 +213,7 @@ import {createPoison, isPoison, isPoisonError, Frame} from '../../src/runtime/ru
         const result = await runtime.sequentialMemberLookupAsyncValue(
           obj,
           'name',
-          '!lockKey', null,
+          '!lockKey', TEST_EC,
           false,
           currentBuffer
         );

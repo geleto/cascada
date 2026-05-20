@@ -7,6 +7,8 @@ import * as parser from '../../src/language/parser.js';
 import * as nodes from '../../src/language/nodes.js';
 import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
 
+const TEST_EC = [1, 1, 'Test', 'test.casc', null];
+
 (function () {
 
   function normalizeOutput(str) {
@@ -2670,7 +2672,7 @@ import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
       buffer.addCommand(new TextCommand({
         chainName: 'text',
         args: ['x'],
-        pos: { lineno: 1, colno: 1 }
+        errorContext: TEST_EC
       }), 'loop');
 
       expect(buffer.arrays.loop).to.be(undefined);
@@ -2686,13 +2688,13 @@ import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
       buffer.addCommand(new TextCommand({
         chainName: 'loop',
         args: ['A'],
-        pos: { lineno: 1, colno: 1 }
+        errorContext: TEST_EC
       }), 'loop');
       buffer.finish();
 
       const snap = await buffer.addCommand(new SnapshotCommand({
         chainName: 'loop',
-        pos: { lineno: 1, colno: 1 }
+        errorContext: TEST_EC
       }), 'loop');
       expect(snap).to.be('A');
     });
@@ -2711,7 +2713,7 @@ import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
       expect(() => child.addCommand(new TextCommand({
         chainName: 'text',
         args: ['x'],
-        pos: { lineno: 1, colno: 1 }
+        errorContext: TEST_EC
       }), 'someVar')).to.throwError(/has no linked lane/);
       expect(child.arrays.someVar).to.be(undefined);
       expect(child.arrays['someVar#9']).to.be(undefined);
@@ -2754,7 +2756,7 @@ import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
       buffer.addCommand(new TextCommand({
         chainName: 'text',
         args: ['x'],
-        pos: { lineno: 1, colno: 1 }
+        errorContext: TEST_EC
       }), 'loop#4');
 
       expect(buffer.arrays['loop#4']).to.have.length(1);

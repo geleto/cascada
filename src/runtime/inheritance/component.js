@@ -1,4 +1,4 @@
-import {MutatingResultCommand} from '../commands/base.js';
+import {MutatingResultCommand, requireCommandErrorContext} from '../commands/base.js';
 import {CommandBuffer} from '../command-buffer.js';
 import {RuntimeFatalError, markPromiseHandled} from '../errors.js';
 import {resolveSingle} from '../resolve.js';
@@ -40,12 +40,12 @@ class ComponentOperationCommand extends MutatingResultCommand {
   constructor({
     methodName,
     args,
-    errorContext = null
+    errorContext
   }) {
     super();
     this.methodName = methodName;
     this.args = args;
-    this.errorContext = errorContext;
+    this.errorContext = requireCommandErrorContext(errorContext, this.constructor.name);
   }
 
   apply(chain) {
@@ -60,12 +60,12 @@ class ComponentOperationCommand extends MutatingResultCommand {
 class ObserveComponentChainCommand extends MutatingResultCommand {
   constructor({
     observationCommand,
-    errorContext = null,
+    errorContext,
     implicitVarRead = false
   }) {
     super();
     this.observationCommand = observationCommand;
-    this.errorContext = errorContext;
+    this.errorContext = requireCommandErrorContext(errorContext, this.constructor.name);
     this.implicitVarRead = implicitVarRead;
   }
 
@@ -122,7 +122,7 @@ async function createComponentInstance(spec) {
     ownerContext.getRenderContextVariables(),
     payloadContext
   );
-  const componentFrame = { ec: errorContext, boundaryName: bindingName || 'component' };
+  const componentFrame = { ec: errorContext, branchName: bindingName || 'component' };
   const rootBuffer = new CommandBuffer(componentContext, null, null, null, null, componentFrame, ownerBuffer || null);
   const sharedRootBuffer = new CommandBuffer(componentContext, null, null, null, null, componentFrame, ownerBuffer || null);
   const instance = await InheritanceInstance.create({

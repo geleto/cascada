@@ -9,6 +9,8 @@ import * as nodes from '../../src/language/nodes.js';
 import * as runtime from '../../src/runtime/runtime.js';
 import {transpiler as scriptTranspiler} from '../../src/language/script-transpiler.js';
 
+const TEST_EC = [1, 1, 'Test', 'test.casc', null];
+
 (function () {
   function createIdPool() {
     return {
@@ -409,7 +411,7 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
         rootBuffer.addCommand(new runtime.VarCommand({
           chainName: 'theme',
           args: ['dark'],
-          pos: { lineno: 1, colno: 1 }
+          errorContext: TEST_EC
         }), 'theme');
         return rootBuffer;
       };
@@ -422,7 +424,7 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       const invocationBuffer = new runtime.CommandBuffer(null, null, ['theme'], blockedRoot);
       const blockedRead = invocationBuffer.addCommand(new runtime.SnapshotCommand({
         chainName: 'theme',
-        pos: { lineno: 1, colno: 1 }
+        errorContext: TEST_EC
       }), 'theme');
       let blockedReadSettled = false;
       blockedRead.then(() => {
@@ -441,7 +443,7 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       const admittedInvocation = new runtime.CommandBuffer(null, null, ['theme'], textRoot);
       const admittedRead = admittedInvocation.addCommand(new runtime.SnapshotCommand({
         chainName: 'theme',
-        pos: { lineno: 1, colno: 1 }
+        errorContext: TEST_EC
       }), 'theme');
 
       expect(await admittedRead).to.be('dark');
