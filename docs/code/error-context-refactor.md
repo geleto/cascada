@@ -932,43 +932,89 @@ Deletion checklist for `TODO(error-context-cleanup)`:
 
 ### Phase 6 - Final Runtime Cleanup
 
-Phase 6 is the final async ErrorContext cleanup phase. It must not modify the
-synchronous Nunjucks-compatible compiler path. Any synchronous positional
+Phase 6 is split into small async cleanup phases. These phases must not modify
+the synchronous Nunjucks-compatible compiler path. Any synchronous positional
 `handleError(...)` calls that remain are intentionally frozen unless a separate
 sync-compiler project is opened.
 
-1. Remove the `ChainCommand` static-path label special case from
-   `_generateErrorContext(...)`. Chain command diagnostics should combine the
-   compact source context with command payload details at reporting sites.
-2. Remove remaining async/runtime positional and object-context adapters:
+#### Phase 6A - Remove Async Legacy Error-Context Adapters
+
+1. Remove remaining async/runtime positional and object-context adapters:
    `resolveErrorContextArgs(...)`, `compactErrorContext(...)`, object support in
    `normalizeErrorContext(...)`, and fallback conversion in
    `resolveEffectiveErrorContext(...)`, once no async/runtime caller depends on
    them.
-3. Collapse `RuntimeError(...)`, `RuntimeFatalError(...)`, `createPoison(...)`,
+2. Collapse `RuntimeError(...)`, `RuntimeFatalError(...)`, `createPoison(...)`,
    and `handleError(...)` to compact-context signatures for async runtime
    usage. Keep any separate sync compatibility surface isolated from these
    async helpers.
-4. Remove `errorContextString` aliases from async diagnostics and tests after
+3. Collapse `ensureDefinedAsync(...)` and its async helper to remove positional
+   `lineno` and `colno` arguments. Async safe-output diagnostics should use only
+   compact `errorContext`; synchronous `ensureDefined(...)` stays on the frozen
+   sync path.
+4. Audit compiler-emitted entry/catch blocks in `emit.js`; migrate any async
+   emitted `handleError(e, lineno, colno, ...)` path to compact context while
+   leaving the synchronous runtime-`lineno` path frozen.
+5. Check `handleFatal(...)` while collapsing `handleError(...)`; its signature
+   is already compact, but it should remain consistent with the final fatal
+   error path.
+6. Verify `RuntimePromise.errorContext` producers all store compact contexts
+   before removing object-context support from normalization.
+7. Remove `errorContextString` aliases from async diagnostics and tests after
    `label` is the only asserted field.
-5. Remove command constructor `errorContext = null` defaults after every
+8. After all legacy `_generateErrorContext(...)` string-label usages are gone,
+   strip the label-return role and rename the helper if needed so its sole
+   purpose is registering a node's error context index.
+9. Re-check `attachErrorContextIfMissing(...)` and in-place
+   `PoisonError.errors` mutation in `handleError(...)`; keep only the minimal
+   private behavior needed for already-wrapped errors.
+
+#### Phase 6B - Command Context Strictness
+
+1. Remove command constructor `errorContext = null` defaults after every
    compiler-created and runtime-created command receives an owning context.
-6. Replace hand-built inheritance metadata object error-context test scaffolding
+2. Remove the backward-compatible `pos` constructor argument and
+   `positionFromErrorContext(...)` helper from `ChainCommand` and
+   `ChainObservableCommand` once no remaining caller passes `pos`. Normalize
+   compact contexts only at error-reporting points, not during command
+   construction.
+3. Remove the `ChainCommand` static-path label special case from
+   `_generateErrorContext(...)`. Chain command diagnostics should combine the
+   compact source context with command payload details at reporting sites.
+
+#### Phase 6C - Inheritance Metadata And Test Cleanup
+
+1. Replace hand-built inheritance metadata object error-context test scaffolding
    with integration tests or index-based fixture helpers, then remove the
    legacy fallback paths in inheritance finalization.
-7. Fill or explicitly drop deferred optional command-buffer display fields:
-   `loadName`, `targetIdentifier`, and `branch`.
-8. Rename or reframe the `CommandBuffer` constructor's `linkedParent` parameter
+2. Simplify `getErrorContextCallback(...)` after inheritance legacy object
+   fallbacks are removed. The final helper should only read the compact callback
+   slot.
+3. Evaluate whether `loadEntry(...)` and `createRuntimeOwnerEntry(...)` can be
+   consolidated after the inheritance object error-context fallback paths are
+   gone.
+4. Re-check all inheritance names and payload fields so originating
+   error-context values are named `errorContext`, `ec`, or another explicit
+   context name. Historical `origin` names must not be used where the value is
+   an originating error context.
+
+#### Phase 6D - Helper Ownership And Buffer API Cleanup
+
+1. Reconcile and either fill or explicitly drop deferred optional command-buffer
+   display fields. Use the canonical field names from the command-buffer
+   context shape (`name`, `target`, `source`, `loop`, `branch`) unless a
+   specific field has been deliberately renamed.
+2. Rename or reframe the `CommandBuffer` constructor's `linkedParent` parameter
    as a chain `linkTarget`, not a diagnostic or ownership parent.
-9. Simplify the long positional `managedBlock(...)` signature once
+3. Simplify the long positional `managedBlock(...)` signature once
    error-context and trace-parent arguments have settled.
-10. Re-check `attachErrorContextIfMissing(...)` and in-place
-    `PoisonError.errors` mutation in `handleError(...)`; keep only the minimal
-    private behavior needed for already-wrapped errors.
-11. Re-check and regenerate precompile/browser fixtures after final async
-    compatibility adapters are removed.
-12. Evaluate whether `loadEntry(...)` and `createRuntimeOwnerEntry(...)` can be
-    consolidated once inheritance object error-context fallback paths are gone.
+4. Review all helpers, methods, and small bridge functions added during this
+   refactor for final ownership. Move them to the file/class that owns the
+   concept, inline one-off helpers where clearer, and remove migration-only
+   helpers instead of leaving them in incidental locations.
+5. Perform the terminal precompile/browser fixture pass after final async
+   compatibility adapters are removed. This closes out fixture churn from the
+   refactor and is distinct from incremental fixture updates in earlier phases.
 
 ## Tests
 
