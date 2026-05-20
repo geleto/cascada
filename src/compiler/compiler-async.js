@@ -307,7 +307,7 @@ class CompilerAsync extends CompilerBaseAsync {
       for (const chainName of (node._analysis.poisonChains ?? [])) {
         this.emit.insertLine(
           catchPoisonPos,
-          `    ${this.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(Array.isArray(contextualError) ? contextualError : [contextualError]), "${chainName}");`
+          `    ${this.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(Array.isArray(contextualError) ? contextualError : [contextualError], ${errorContext}), "${chainName}");`
         );
       }
     }, node.expr);
@@ -380,7 +380,7 @@ class CompilerAsync extends CompilerBaseAsync {
       for (const chainName of (node._analysis.poisonChains ?? [])) {
         this.emit.insertLine(
           catchPoisonPos,
-          `    ${this.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(Array.isArray(contextualError) ? contextualError : [contextualError]), "${chainName}");`
+          `    ${this.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(Array.isArray(contextualError) ? contextualError : [contextualError], ${errorContext}), "${chainName}");`
         );
       }
     }, node.cond);

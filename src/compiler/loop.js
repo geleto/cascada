@@ -253,6 +253,7 @@ class CompileLoop {
 
         let catchPoisonPos = null;
         let whileCondId;
+        let whileErrorContext = null;
 
         if (whileConditionNode) {
           whileCondId = this.compiler._tmpid();
@@ -263,7 +264,7 @@ class CompileLoop {
             this.compiler._compileAwaitedExpression(whileConditionNode, null);
           });
           this.compiler.emit.line(';');
-          const whileErrorContext = this.compiler.emitErrorContext(whileConditionNode);
+          whileErrorContext = this.compiler.emitErrorContext(whileConditionNode);
           this.compiler.emit('} catch (e) {');
           this.compiler.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.contextualizeError(e, ${whileErrorContext}, ${this.compiler.buffer.currentBuffer});`);
           catchPoisonPos = this.compiler.codebuf.length;
@@ -282,7 +283,7 @@ class CompileLoop {
         if (whileConditionNode && catchPoisonPos !== null) {
           const bodyChains = new Set(node.body._analysis.usedChains ?? []);
           for (const chainName of bodyChains) {
-            this.compiler.emit.insertLine(catchPoisonPos, `  ${this.compiler.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(Array.isArray(contextualError) ? contextualError : [contextualError]), "${chainName}");`);
+            this.compiler.emit.insertLine(catchPoisonPos, `  ${this.compiler.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(Array.isArray(contextualError) ? contextualError : [contextualError], ${whileErrorContext}), "${chainName}");`);
           }
         }
 

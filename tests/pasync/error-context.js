@@ -1,12 +1,15 @@
 import expect from 'expect.js';
 import {
   CommandBuffer,
+  ErrorCommand,
   PoisonError,
   RuntimeError,
   RuntimeFatalError,
   createPoison,
+  declareBufferChain,
   getErrorInfo,
   contextualizeError,
+  guard,
   handleFatal,
   isPoison,
   memberLookupScript,
@@ -236,7 +239,7 @@ describe('error context tracing runtime foundation', () => {
     const buffer = new CommandBuffer({ path: 'script.casc' }, null, null, null, null, {
       ec: bufferEc,
       branch: 'then',
-      boundaryName: 'if-block'
+      branchName: 'if-block'
     });
 
     const info = getErrorInfo(new Error('failure'), opEc, buffer, false);
@@ -247,7 +250,7 @@ describe('error context tracing runtime foundation', () => {
       path: 'script.casc',
       label: 'If.Condition(FunCall)',
       branch: 'then',
-      boundaryName: 'if-block'
+      branchName: 'if-block'
     });
   });
 
@@ -256,7 +259,7 @@ describe('error context tracing runtime foundation', () => {
     const childEc = [5, 2, 'For.Iterator(Symbol)', 'script.casc', null];
     const root = new CommandBuffer({ path: 'script.casc' }, null, null, null, null, {
       ec: rootEc,
-      boundaryName: 'root'
+      branchName: 'root'
     });
     const loop = {
       index: 2,
@@ -287,7 +290,7 @@ describe('error context tracing runtime foundation', () => {
         colno: 0,
         path: 'script.casc',
         label: 'Root',
-        boundaryName: 'root'
+        branchName: 'root'
       }
     ]);
   });
@@ -297,16 +300,16 @@ describe('error context tracing runtime foundation', () => {
     const macroEc = [7, 2, 'Macro', 'script.casc', null];
     const root = new CommandBuffer({ path: 'script.casc' }, null, null, null, null, {
       ec: rootEc,
-      boundaryName: 'root'
+      branchName: 'root'
     });
     const macro = new CommandBuffer({ path: 'script.casc' }, null, null, null, null, {
       ec: macroEc,
-      boundaryName: 'renderCard'
+      branchName: 'renderCard'
     }, root);
 
     const info = getErrorInfo(new Error('failure'), macroEc, macro, true);
 
-    expect(info.stack.map(frame => frame.boundaryName)).to.eql(['renderCard', 'root']);
+    expect(info.stack.map(frame => frame.branchName)).to.eql(['renderCard', 'root']);
   });
 
   it('prefers traceParent over parent when building command-buffer stack', () => {
@@ -315,23 +318,23 @@ describe('error context tracing runtime foundation', () => {
     const methodEc = [9, 0, 'Method', 'script.casc', null];
     const shared = new CommandBuffer({ path: 'script.casc' }, null, null, null, null, {
       ec: sharedEc,
-      boundaryName: 'shared'
+      branchName: 'shared'
     });
     const caller = new CommandBuffer({ path: 'script.casc' }, null, null, null, null, {
       ec: callerEc,
-      boundaryName: 'caller'
+      branchName: 'caller'
     });
     const method = new CommandBuffer({ path: 'script.casc' }, shared, null, null, null, {
       ec: methodEc,
-      boundaryName: 'method'
+      branchName: 'method'
     }, caller);
 
     const info = getErrorInfo(new Error('failure'), methodEc, method, true);
 
-    expect(info.stack.map(frame => frame.boundaryName)).to.eql(['method', 'caller']);
+    expect(info.stack.map(frame => frame.branchName)).to.eql(['method', 'caller']);
   });
 
-  it('stores boundary error context on runtime value boundaries', async () => {
+  it('stores buffer branch context on runtime value boundaries', async () => {
     const root = new CommandBuffer({ path: 'script.casc' });
     const boundaryEc = [11, 6, 'FunCall', 'script.casc', null];
     let child = null;
@@ -341,13 +344,13 @@ describe('error context tracing runtime foundation', () => {
     }, { ec: boundaryEc, loadName: 'include source@(11,6)' });
 
     expect(child.traceParent).to.be(root);
-    expect(child.errorContext).to.eql({
+    expect(child.bufferBranchContext).to.eql({
       ec: boundaryEc,
       loadName: 'include source@(11,6)'
     });
   });
 
-  it('stores boundary error context on runtime control-flow boundaries', async () => {
+  it('stores buffer branch context on runtime control-flow boundaries', async () => {
     const root = new CommandBuffer({ path: 'script.casc' });
     const boundaryEc = [12, 3, 'If.Condition(Symbol)', 'script.casc', null];
     let child = null;
@@ -357,11 +360,37 @@ describe('error context tracing runtime foundation', () => {
     }, { ec: boundaryEc, branch: 'then' });
 
     expect(child.traceParent).to.be(root);
-    expect(child.errorContext).to.eql({
+    expect(child.bufferBranchContext).to.eql({
       ec: boundaryEc,
       branch: 'then'
     });
   });
+
+  it('requires source context on command-buffer error commands', () => {
+    const ec = [13, 2, 'Guard.Condition(Symbol)', 'script.casc', null];
+    const command = new ErrorCommand([new Error('guard failed')], ec);
+
+    expect(command.errorContext).to.eql(ec);
+    expect(() => new ErrorCommand([new Error('guard failed')])).to.throwError(/ErrorCommand requires a compact errorContext/);
+  });
+
+  it('requires source context for direct text chain invocation', () => {
+    const buffer = new CommandBuffer({ path: 'script.casc' });
+    const text = declareBufferChain(buffer, 'text', 'text', { path: 'script.casc' }, null);
+    const ec = [14, 4, 'Output(Symbol)', 'script.casc', null];
+
+    expect(() => text.invoke()).to.throwError(/TextChain\.invoke requires a compact errorContext/);
+    expect(() => text.invoke(ec)).to.not.throwError();
+    expect(() => text.invoke('hello', ec)).to.not.throwError();
+  });
+
+  it('requires source context for guard command helpers', () => {
+    const buffer = new CommandBuffer({ path: 'script.casc' });
+    declareBufferChain(buffer, 'text', 'text', { path: 'script.casc' }, null);
+
+    expect(() => guard.initChainSnapshots(['text'], buffer, null)).to.throwError(/guard\.initChainSnapshots requires a compact errorContext/);
+  });
+
   describe('error context compiler table', () => {
     it('emits prepared context tables with repeated labels compressed inline', () => {
       const env = new AsyncEnvironment();
@@ -384,7 +413,7 @@ describe('error context tracing runtime foundation', () => {
       expect(source).to.match(/\[3,7,\d+\]/);
       expect(source).to.match(/\[6,7,\d+\]/);
       expect(source).to.match(/\[\d+,\d+,"[^"]+"\]/);
-      expect(source).to.match(/new runtime\.CommandBuffer\(context, null, null, null, null, \{ ec: __ec\[\d+\], boundaryName: "root" \}\);/);
+      expect(source).to.match(/new runtime\.CommandBuffer\(context, null, null, null, null, \{ ec: __ec\[\d+\], branchName: "root" \}\);/);
     });
 
     it('uses parent-provided semantic labels in generated diagnostics', () => {

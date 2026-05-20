@@ -105,10 +105,10 @@ class CompileEmit {
     }
     // this.Line(`let ${this.compiler.buffer.currentBuffer} = "";`);
     if (this.compiler.asyncMode && name === 'root') {
-      const rootErrorContextArg = this.compiler.emitBufferErrorContext(node, { boundaryName: name });
+      const rootBufferBranchContext = this.compiler.emitBufferBranchContext(node, { branchName: name });
       this.line(
         `let ${this.compiler.buffer.currentBuffer} = ` +
-        `new runtime.CommandBuffer(context, null, null, null, null, ${rootErrorContextArg});`
+        `new runtime.CommandBuffer(context, null, null, null, null, ${rootBufferBranchContext});`
       );
       if (!this.compiler.scriptMode) {
         this.line(
@@ -117,15 +117,15 @@ class CompileEmit {
         );
       }
     } else {
-      const managedBufferErrorContext = this.compiler.asyncMode
-        ? this.compiler.emitBufferErrorContext(node, { boundaryName: name })
+      const managedBufferBranchContext = this.compiler.asyncMode
+        ? this.compiler.emitBufferBranchContext(node, { branchName: name })
         : null;
       this.compiler.buffer.initManagedBuffer(
         this.compiler.buffer.currentBuffer,
         this.compiler.asyncMode ? 'parentBuffer' : null,
         this.compiler.buffer.currentTextChainVar,
         linkedChains,
-        managedBufferErrorContext,
+        managedBufferBranchContext,
         this.compiler.asyncMode ? 'parentBuffer' : 'null'
       );
     }
@@ -191,15 +191,15 @@ class CompileEmit {
         const traceParentArg = traceParentOverride !== undefined
           ? traceParentOverride
           : (parentBufferId || 'null');
-        const managedBufferErrorContext = this.compiler.asyncMode
-          ? this.compiler.emitBufferErrorContext(errorContextNode)
+        const managedBufferBranchContext = this.compiler.asyncMode
+          ? this.compiler.emitBufferBranchContext(errorContextNode)
           : null;
         this.compiler.buffer.initManagedBuffer(
           bufferId,
           parentBufferId,
           `${bufferId}_textOutputVar`,
           linkedChains,
-          managedBufferErrorContext,
+          managedBufferBranchContext,
           traceParentArg
         );
         if (typeof emitFunc === 'function') {

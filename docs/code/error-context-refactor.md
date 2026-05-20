@@ -330,12 +330,12 @@ Rules:
   codegen reads the index from `node._analysis.errorContextIndex`
 - compiler emission helper names should distinguish the two generated shapes:
   `emitErrorContext(node)` emits the raw source-origin reference `__ec[index]`;
-  `emitBufferErrorContext(node, fields)` emits the buffer metadata object
+  `emitBufferBranchContext(node, fields)` emits the buffer metadata object
   `{ ec: __ec[index], ...fields }`
 - `_generateErrorContext(node)` is the analysis-time label/index helper. After
   migration, codegen should not call it for runtime error contexts; it should
   use the already-assigned index through `emitErrorContext(...)` or
-  `emitBufferErrorContext(...)`.
+  `emitBufferBranchContext(...)`.
 - compile-time error decoration, if needed, should use a small helper that
   consumes the same plain context info rather than an `ErrorContext` instance
 
@@ -493,7 +493,7 @@ optional execution metadata owned by the buffer.
 
 Useful optional fields:
 
-- `boundaryName` - compiler/runtime boundary identifier, such as `root`,
+- `branchName` - compiler/runtime buffer-branch identifier, such as `root`,
   `caller`, or a generated block/method boundary. This is execution metadata,
   not a replacement for the compact `ec` label. User-visible callable names can
   be added in Phase 4 when the compiler has stable AST names at the call site.
@@ -768,7 +768,7 @@ Before implementation, audit:
    components, and extends/parent rendering paths. Stack walking should prefer
    `traceParent` over `parent` when both are present.
 3. Add runtime support for optional command-buffer fields and emit the cheap
-   compiler fields available during this phase, especially `boundaryName` and
+   compiler fields available during this phase, especially `branchName` and
    `loop`.
    Later compiler call-site migration should fill in additional `loadName`,
    `targetIdentifier`, and `branch` fields where the compiler already has
@@ -840,7 +840,7 @@ Before implementation, audit:
    removed after all runtime-created/bootstrap commands receive an owning
    context.
 5. Use `emitErrorContext(node)` for raw `__ec[index]` references and
-   `emitBufferErrorContext(node, fields)` only for command-buffer boundary
+   `emitBufferBranchContext(node, fields)` only for command-buffer branch
    metadata objects shaped as `{ ec: __ec[index], ...fields }`.
 6. Expand `tests/pasync/error-context.js` for command-stored context
    and migrated compiler output.
@@ -926,7 +926,7 @@ Deletion checklist for `TODO(error-context-cleanup)`:
    compatibility adapters once generated code, runtime APIs, tests, and
    precompile fixtures are updated.
    The legacy `ErrorContext` runtime wrapper, the inheritance
-   `createBufferErrorContext(...)` bridge file, and command-buffer context-shape
+   `createBufferBranchContext(...)` bridge file, and command-buffer context-shape
    normalizer have been removed. Remaining expanded object contexts are
    hand-built test scaffolding or frozen sync-path data.
 7. Re-check `attachErrorContextIfMissing(...)` usage after all wrappers accept

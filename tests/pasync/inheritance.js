@@ -800,7 +800,8 @@ describe('Inheritance rebuild', function () {
         templateOrScript: entry,
         env: localEnv,
         context,
-        runtime
+        runtime,
+        errorContext: [1, 0, 'Extends', entryName, null]
       });
     }
 
@@ -813,7 +814,8 @@ describe('Inheritance rebuild', function () {
         templateOrScript: entry,
         env: localEnv,
         context,
-        runtime
+        runtime,
+        errorContext: [1, 0, 'Extends', entryName, null]
       });
     }
 
@@ -907,7 +909,7 @@ describe('Inheritance rebuild', function () {
       }
     });
 
-    it('adds context path to entry compile failures without an extends error context', async function () {
+    it('wraps entry compile failures with the supplied entry error context', async function () {
       const entry = Object.freeze({
         path: 'entry.njk',
         compile() {
@@ -920,12 +922,14 @@ describe('Inheritance rebuild', function () {
           templateOrScript: entry,
           env: null,
           context: createContext({}, 'entry-context.njk'),
-          runtime
+          runtime,
+          errorContext: [4, 2, 'Extends', 'entry-context.njk', null]
         });
         expect().fail('Expected entry compile failure');
       } catch (error) {
         expect(String(error)).to.contain('entry compile failed');
         expect(error.path).to.be('entry-context.njk');
+        expect(error.lineno).to.be(4);
       }
     });
 
@@ -1188,7 +1192,8 @@ describe('Inheritance rebuild', function () {
             return {};
           }
         },
-        runtime
+        runtime,
+        errorContext: [1, 0, 'Extends', entryName, null]
       });
     }
 

@@ -3,14 +3,14 @@ import {assertChainLaneAvailable, checkFinishedBuffer} from './checks.js';
 import {contextualizeError, RuntimeFatalError} from './errors.js';
 
 class CommandBuffer {
-  constructor(context, parent = null, linkedChains = null, linkedParent = null, linkedMutatedChains = null, errorContext = null, traceParent = null) {
+  constructor(context, parent = null, linkedChains = null, linkedParent = null, linkedMutatedChains = null, bufferBranchContext = null, traceParent = null) {
     const linkedLaneNames = validateLaneNames(linkedChains, 'linkedChains', context);
     const linkedMutatedLaneNames = validateLaneNames(linkedMutatedChains, 'linkedMutatedChains', context);
 
     this._context = context;
     this.parent = parent;
     this.traceParent = traceParent || null;
-    this.errorContext = errorContext || null;
+    this.bufferBranchContext = bufferBranchContext || null;
     this.finished = false;
     this._finishedChains = Object.create(null);
     // Local addressability map. Entries may be owned by this buffer or linked

@@ -15,6 +15,9 @@ import {
   runControlFlowBoundary
 } from '../../src/runtime/runtime.js';
 
+const TEST_EC = [1, 1, 'Test', 'test.casc', null];
+const TEST_BRANCH_CONTEXT = { ec: TEST_EC, branchName: 'test' };
+
 describe('chain.finalSnapshot', function () {
   let env;
   let context;
@@ -43,7 +46,7 @@ describe('chain.finalSnapshot', function () {
         return;
       }
       if (targetName === 'text') {
-        buffer.addCommand(new TextCommand({ chainName: 'text', args: [item], pos: { lineno: 0, colno: 0 } }), targetName);
+        buffer.addCommand(new TextCommand({ chainName: 'text', args: [item], errorContext: TEST_EC }), targetName);
         return;
       }
       buffer._add(item, targetName);
@@ -57,6 +60,9 @@ describe('chain.finalSnapshot', function () {
     return cb;
   };
   const makeChain = (buffer, ctx, chainName) => {
+    if (!buffer.bufferBranchContext) {
+      buffer.bufferBranchContext = TEST_BRANCH_CONTEXT;
+    }
     const name = chainName || 'text';
     return buffer.getOwnChain(name) || declareBufferChain(buffer, name, name, ctx || null, null);
   };
@@ -72,13 +78,17 @@ describe('chain.finalSnapshot', function () {
     return sequence;
   };
   const cmd = (spec) => {
+    const commandSpec = {
+      ...spec,
+      errorContext: spec.errorContext || TEST_EC
+    };
     if (spec.chainName === 'data') {
-      return new DataCommand(spec);
+      return new DataCommand(commandSpec);
     }
     if (spec.chainName === 'text') {
-      return new TextCommand(spec);
+      return new TextCommand(commandSpec);
     }
-    return new SequenceCallCommand(spec);
+    return new SequenceCallCommand(commandSpec);
   };
 
   // For each test, create a fresh environment and context.
@@ -98,12 +108,12 @@ describe('chain.finalSnapshot', function () {
       buffer.addCommand(new TextCommand({
         chainName: 'text',
         args: ['A'],
-        pos: { lineno: 1, colno: 1 }
+        errorContext: TEST_EC
       }), 'text');
       buffer.addCommand(new TextCommand({
         chainName: 'text',
         args: ['B'],
-        pos: { lineno: 1, colno: 2 }
+        errorContext: TEST_EC
       }), 'text');
       buffer.finish();
 
@@ -121,7 +131,7 @@ describe('chain.finalSnapshot', function () {
       child.addCommand(new TextCommand({
         chainName: 'text',
         args: ['A'],
-        pos: { lineno: 1, colno: 1 }
+        errorContext: TEST_EC
       }), 'text');
       child.finish();
 
@@ -129,7 +139,7 @@ describe('chain.finalSnapshot', function () {
       parent.addCommand(new TextCommand({
         chainName: 'text',
         args: ['B'],
-        pos: { lineno: 1, colno: 2 }
+        errorContext: TEST_EC
       }), 'text');
       parent.finish();
 
@@ -148,7 +158,7 @@ describe('chain.finalSnapshot', function () {
       buffer.addCommand(new TextCommand({
         chainName: 'text',
         args: ['A'],
-        pos: { lineno: 1, colno: 1 }
+        errorContext: TEST_EC
       }), 'text');
       buffer.finish();
 
@@ -171,7 +181,7 @@ describe('chain.finalSnapshot', function () {
       buffer.addCommand(new TextCommand({
         chainName: 'text',
         args: ['A'],
-        pos: { lineno: 1, colno: 1 }
+        errorContext: TEST_EC
       }), 'text');
       buffer.finish();
 
@@ -190,7 +200,7 @@ describe('chain.finalSnapshot', function () {
       buffer.addCommand(new TextCommand({
         chainName: 'text',
         args: ['A'],
-        pos: { lineno: 1, colno: 1 }
+        errorContext: TEST_EC
       }), 'text');
       buffer.finish();
 
@@ -334,7 +344,7 @@ describe('chain.finalSnapshot', function () {
         buffer.addCommand(new TextCommand({
           chainName: 'text',
           args: ['hidden'],
-          pos: { lineno: 1, colno: 1 }
+          errorContext: TEST_EC
         }), 'text');
       }).to.throwError(/has no linked lane/);
     });
@@ -472,14 +482,15 @@ describe('chain.finalSnapshot', function () {
   describe('Error Handling & Edge Cases', function () {
     it('should resolve snapshot at command position before later writes', async function () {
       const buffer = new CommandBuffer(context, null);
+      buffer.bufferBranchContext = TEST_BRANCH_CONTEXT;
       const textOut = declareBufferChain(buffer, 'text', 'text', context, null);
 
-      textOut('A');
+      textOut('A', TEST_EC);
       const snap = buffer.addCommand(new SnapshotCommand({
         chainName: 'text',
-        pos: { lineno: 0, colno: 0 }
+        errorContext: TEST_EC
       }), 'text');
-      textOut('B');
+      textOut('B', TEST_EC);
       buffer.finish();
 
       const early = await snap;
@@ -499,8 +510,9 @@ describe('chain.finalSnapshot', function () {
 
     it('finalSnapshot should wait for owning chain completion', async function () {
       const buffer = new CommandBuffer(context, null);
+      buffer.bufferBranchContext = TEST_BRANCH_CONTEXT;
       const out = declareBufferChain(buffer, 'text', 'text', context, null);
-      out('late');
+      out('late', TEST_EC);
 
       const early = await Promise.race([
         out.finalSnapshot(),
@@ -515,11 +527,12 @@ describe('chain.finalSnapshot', function () {
 
     it('tracks finished state per chain', async function () {
       const buffer = new CommandBuffer(context, null);
+      buffer.bufferBranchContext = TEST_BRANCH_CONTEXT;
       const text = declareBufferChain(buffer, 'text', 'text', context, null);
       const data = declareBufferChain(buffer, 'data', 'data', context, null);
 
-      text('later');
-      data.set(['ready'], 1);
+      text('later', TEST_EC);
+      data.set(['ready'], 1, TEST_EC);
 
       buffer.finishChain('data');
 
@@ -529,11 +542,11 @@ describe('chain.finalSnapshot', function () {
 
       const dataSnapshot = await buffer.addCommand(new SnapshotCommand({
         chainName: 'data',
-        pos: { lineno: 0, colno: 0 }
+        errorContext: TEST_EC
       }), 'data');
       expect(dataSnapshot).to.eql({ ready: 1 });
 
-      text(' now');
+      text(' now', TEST_EC);
       buffer.finishChain('text');
 
       expect(buffer.finished).to.be(false);
@@ -576,9 +589,9 @@ describe('chain.finalSnapshot', function () {
     it('should reject CommandBuffer values inside TextCommand arguments', async function () {
       const nested = new CommandBuffer(context, null);
       declareBufferChain(nested, 'text', 'text', context, null);
-      nested.addCommand(new TextCommand({ chainName: 'text', args: ['x'], pos: { lineno: 0, colno: 0 } }), 'text');
+      nested.addCommand(new TextCommand({ chainName: 'text', args: ['x'], errorContext: TEST_EC }), 'text');
       const buffer = createBuffer([
-        new TextCommand({ chainName: 'text', args: [nested], pos: { lineno: 1, colno: 1 } })
+        new TextCommand({ chainName: 'text', args: [nested], errorContext: TEST_EC })
       ], context, 'text');
 
       await expectAsyncError(async () => {
@@ -590,7 +603,7 @@ describe('chain.finalSnapshot', function () {
 
     it('should reject plain object envelope values inside TextCommand arguments', async function () {
       const buffer = createBuffer([
-        new TextCommand({ chainName: 'text', args: [{ text: 'wrapped' }], pos: { lineno: 1, colno: 1 } })
+        new TextCommand({ chainName: 'text', args: [{ text: 'wrapped' }], errorContext: TEST_EC })
       ], context, 'text');
 
       await expectAsyncError(async () => {
@@ -696,7 +709,7 @@ describe('chain.finalSnapshot', function () {
         const arr = [cmd({
           chainName: 'text',
           args: ['valid', poison],
-          pos: { lineno: 1, colno: 1 }
+          errorContext: TEST_EC
         })];
 
         try {
@@ -816,7 +829,7 @@ describe('chain.finalSnapshot', function () {
           chainName: 'data',
           operation: 'nonexistentMethod',
           args: [null],
-          pos: { lineno: 1, colno: 1 }
+          errorContext: TEST_EC
         })];
 
         try {

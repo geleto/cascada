@@ -2,9 +2,9 @@
 import {POISON_KEY, RESOLVE_MARKER} from './markers.js';
 
 // Command-buffer execution metadata copied into getErrorInfo output. Keep this
-// list narrow: `boundaryName` is the compiler/runtime boundary label, while
+// list narrow: `branchName` is the compiler/runtime buffer branch label, while
 // source-operation identity still comes from the compact `ec` label.
-const BUFFER_CONTEXT_OPTIONAL_KEYS = ['boundaryName', 'loadName', 'targetIdentifier', 'loop', 'branch'];
+const BUFFER_CONTEXT_OPTIONAL_KEYS = ['branchName', 'loadName', 'targetIdentifier', 'loop', 'branch'];
 // TODO(error-context-cleanup): remove with normalizeOptionalErrorContext(...)
 // once async paths no longer tolerate missing errorContext values.
 const EMPTY_ERROR_CONTEXT_INFO = Object.freeze({
@@ -48,6 +48,9 @@ function normalizeErrorContext(ec) {
   };
 }
 
+// TODO(error-context-cleanup): remove once every async error path has a
+// guaranteed compact errorContext and normalizeErrorContext(...) can be used
+// directly at all consumption sites.
 function normalizeOptionalErrorContext(ec) {
   return Array.isArray(ec) ? normalizeErrorContext(ec) : EMPTY_ERROR_CONTEXT_INFO;
 }
@@ -596,11 +599,11 @@ function handleFatal(error, ec, currentBuffer = null) {
 }
 
 function getBufferErrorInfo(buffer) {
-  if (!buffer || !buffer.errorContext) {
+  if (!buffer || !buffer.bufferBranchContext) {
     return null;
   }
 
-  const bufferContext = buffer.errorContext;
+  const bufferContext = buffer.bufferBranchContext;
   const context = normalizeErrorContext(bufferContext.ec || bufferContext);
   const info = {
     lineno: context.lineno,
@@ -629,8 +632,8 @@ function getBufferErrorStack(currentBuffer) {
     if (info) {
       stack.push(info);
     }
-    // Buffers without errorContext are omitted from output, but they do not
-    // stop the walk; earlier migration phases may leave intentional gaps.
+    // Buffers without bufferBranchContext are omitted from output, but they
+    // do not stop the walk; earlier migration phases may leave intentional gaps.
     buffer = buffer.traceParent || buffer.parent || null;
   }
 

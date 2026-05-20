@@ -23,7 +23,7 @@ class CompileMacro {
     const activeContext = this.currentCallerBindingContext;
     const argsId = compiler._tmpid();
     const errorContext = compiler.emitErrorContext(node);
-    const callerBufferErrorContext = compiler.emitBufferErrorContext(node, { boundaryName: 'caller' });
+    const callerBufferBranchContext = compiler.emitBufferBranchContext(node, { branchName: 'caller' });
 
     // Direct caller() must register its invocation buffer and __caller__
     // waits in the current boundary, not from a later .then.
@@ -36,7 +36,7 @@ class CompileMacro {
     const invocationBufferId = compiler._tmpid();
     const invocationFinishedId = compiler._tmpid();
     const invocationResultId = compiler._tmpid();
-    compiler.emit.line(`let ${invocationBufferId} = new runtime.CommandBuffer(context, ${activeContext.allCallersBufferId}, ${activeContext.rawCallerVar}.__callerLinkedChains || null, null, ${activeContext.rawCallerVar}.__callerLinkedMutatedChains || null, ${callerBufferErrorContext});`);
+    compiler.emit.line(`let ${invocationBufferId} = new runtime.CommandBuffer(context, ${activeContext.allCallersBufferId}, ${activeContext.rawCallerVar}.__callerLinkedChains || null, null, ${activeContext.rawCallerVar}.__callerLinkedMutatedChains || null, ${callerBufferBranchContext});`);
     compiler.emit.line(`let ${invocationFinishedId} = ${invocationBufferId}.getFinishedPromise();`);
     compiler.emit.line(`${bufferId}.addCommand(new runtime.WaitResolveCommand({ chainName: "${CALLER_SCHED_CHAIN_NAME}", args: [${invocationFinishedId}], errorContext: ${compiler.emitErrorContext(node)} }), "${CALLER_SCHED_CHAIN_NAME}");`);
     compiler.emit.line(`let ${invocationResultId} = Promise.resolve(runtime.invokeMacro(${activeContext.rawCallerVar}, context, ${argsId}, ${invocationBufferId})).finally(() => ${invocationBufferId}.finish());`);
@@ -217,7 +217,7 @@ class CompileMacro {
     const invocationArgsId = compiler._tmpid();
     const invocationFinishedId = compiler._tmpid();
     const invocationResultId = compiler._tmpid();
-    const callerBufferErrorContext = compiler.emitBufferErrorContext(positionNode, { boundaryName: 'caller' });
+    const callerBufferBranchContext = compiler.emitBufferBranchContext(positionNode, { branchName: 'caller' });
 
     // See docs/code/caller.md for the full caller-boundary architecture.
     // The macro body can use caller(), but a particular invocation only has a
@@ -226,7 +226,7 @@ class CompileMacro {
     // all-callers buffer so multiple invocations can schedule independently.
     compiler.emit(`(${rawCallerVar} && ${rawCallerVar}.isMacro ? function() {`);
     compiler.emit(`let ${invocationArgsId} = Array.prototype.slice.call(arguments);`);
-    compiler.emit(`let ${invocationBufferId} = new runtime.CommandBuffer(context, ${allCallersBufferId}, ${rawCallerVar}.__callerLinkedChains || null, null, ${rawCallerVar}.__callerLinkedMutatedChains || null, ${callerBufferErrorContext});`);
+    compiler.emit(`let ${invocationBufferId} = new runtime.CommandBuffer(context, ${allCallersBufferId}, ${rawCallerVar}.__callerLinkedChains || null, null, ${rawCallerVar}.__callerLinkedMutatedChains || null, ${callerBufferBranchContext});`);
     compiler.emit(`let ${invocationFinishedId} = ${invocationBufferId}.getFinishedPromise();`);
     compiler.emit(`${bufferId}.addCommand(new runtime.WaitResolveCommand({ chainName: "${CALLER_SCHED_CHAIN_NAME}", args: [${invocationFinishedId}], errorContext: ${compiler.emitErrorContext(positionNode)} }), "${CALLER_SCHED_CHAIN_NAME}");`);
     // __caller__ timing is owned only by caller invocation code. Track both:
@@ -240,7 +240,7 @@ class CompileMacro {
 
   _emitMacroCallerSetup({ node, bufferId, rawCallerVar, allCallersBufferId }) {
     const compiler = this.compiler;
-    const callerBufferErrorContext = compiler.emitBufferErrorContext(node, { boundaryName: 'caller' });
+    const callerBufferBranchContext = compiler.emitBufferBranchContext(node, { branchName: 'caller' });
     compiler.emit.line(`let ${rawCallerVar} = kwargs.caller;`);
     compiler.emit.line(`let ${allCallersBufferId} = null;`);
     // __caller__ records when each invocation child buffer has finished
@@ -251,7 +251,7 @@ class CompileMacro {
     compiler.emit.line(`if (${rawCallerVar} && ${rawCallerVar}.isMacro) {`);
     // The all-callers buffer is parent-linked because caller() may emit
     // parent-visible observable commands, unlike the isolated macro buffer.
-    compiler.emit.line(`  ${allCallersBufferId} = new runtime.CommandBuffer(context, macroParentBuffer, ${rawCallerVar}.__callerLinkedChains || null, null, ${rawCallerVar}.__callerLinkedMutatedChains || null, ${callerBufferErrorContext}, macroParentBuffer);`);
+    compiler.emit.line(`  ${allCallersBufferId} = new runtime.CommandBuffer(context, macroParentBuffer, ${rawCallerVar}.__callerLinkedChains || null, null, ${rawCallerVar}.__callerLinkedMutatedChains || null, ${callerBufferBranchContext}, macroParentBuffer);`);
     compiler.emit.line('}');
   }
 

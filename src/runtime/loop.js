@@ -131,7 +131,7 @@ function createLoopBindings(index, len, last) {
   return loopMeta;
 }
 
-function setLoopValueBindings(chainName, index, len, last, errorContext = null) {
+function setLoopValueBindings(chainName, index, len, last, errorContext) {
   return new VarCommand({
     chainName,
     args: [createLoopBindings(index, len, last)],
@@ -661,7 +661,7 @@ function poisonLoopEffects(buffer, asyncOptions, errors, didIterate) {
   // Poison body chain effects.
   if (asyncOptions.bodyChains && asyncOptions.bodyChains.length > 0) {
     for (const chainName of asyncOptions.bodyChains) {
-      buffer.addCommand(new ErrorCommand(errors), chainName);
+      buffer.addCommand(new ErrorCommand(errors, asyncOptions.errorContext), chainName);
     }
   }
 
@@ -672,7 +672,7 @@ function poisonLoopEffects(buffer, asyncOptions, errors, didIterate) {
   // Poison else chain effects.
   if (asyncOptions.elseChains && asyncOptions.elseChains.length > 0) {
     for (const chainName of asyncOptions.elseChains) {
-      buffer.addCommand(new ErrorCommand(errors), chainName);
+      buffer.addCommand(new ErrorCommand(errors, asyncOptions.errorContext), chainName);
     }
   }
 }

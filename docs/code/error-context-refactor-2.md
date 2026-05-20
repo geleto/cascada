@@ -22,10 +22,15 @@ async adapters.
   of this cleanup
 - wrapped errors preserve the first source-origin context assigned to them
 - `PoisonError` stores context on contained errors, not as the wrapper origin
-- async helpers, commands, and boundaries should receive an originating
+- async helpers, commands, and buffer branches should receive an originating
   `errorContext`; handling for missing async contexts is temporary cleanup
   scaffolding
-- command and buffer diagnostics must not invent source origin from ambient
+- commands and direct chain invocations receive their source-origin
+  `errorContext` explicitly; they must not infer it from the current buffer
+- command buffers use `bufferBranchContext` only for buffer-branch trace
+  frames, such as root, call, loop, include/render, and condition buffers. It is
+  not a fallback source context for commands.
+- command and branch diagnostics must not invent source origin from ambient
   buffer, parent, or render context state
 
 ## Out Of Scope
@@ -70,19 +75,28 @@ Implemented for the async runtime:
 
 ## Phase B - Command Context Strictness
 
-1. Remove command constructor `errorContext = null` defaults after every
-   compiler-created and runtime-created command receives an owning context.
-2. Remove the backward-compatible `pos` constructor argument and
-   `positionFromErrorContext(...)` helper from `ChainCommand` and
-   `ChainObservableCommand` once no remaining caller passes `pos`. Normalize
-   compact contexts only at error-reporting points, not during command
-   construction.
-3. Remove the `ChainCommand` static-path label special case from
-   `_generateErrorContext(...)`. Chain command diagnostics should combine the
-   compact source context with command payload details at reporting sites.
-4. After async command diagnostics no longer need legacy string labels, re-check
-   `_generateErrorContext(...)` ownership. It must keep serving frozen sync
-   compiler paths unless a separate sync-compiler cleanup is opened.
+Implemented for async commands:
+
+1. Removed command constructor `errorContext = null` defaults from chain,
+   observation, wait, sequence, sequential-path, poison-target, and component
+   operation commands, including command-buffer `ErrorCommand` poison entries.
+   Command constructors now require a compact
+   `errorContext`.
+2. Removed test and runtime use of backward-compatible command `pos` inputs.
+   Command construction stores compact contexts directly and normalization stays
+   at error-reporting points.
+3. Threaded explicit contexts into runtime-created command paths:
+   `chainLookup(...)`, guard snapshot/restore/repair/error observations, public
+   chain invocation helpers, and component operation wrappers. Public runtime
+   chain invocation takes the compact source context as the last invocation
+   argument, with the shared `Chain` helper extracting that context before the
+   command is created.
+4. Removed the `ChainCommand` static-path label special case from
+   `_generateErrorContext(...)`. Chain command diagnostics now use the stable
+   source-operation label, with command payload details supplied by the command
+   itself at reporting time.
+5. `_generateErrorContext(...)` still serves frozen sync compiler paths and
+   remains in place until a separate sync-compiler cleanup is opened.
 
 ## Phase C - Inheritance Metadata And Test Cleanup
 
@@ -130,10 +144,13 @@ Implemented for the async runtime:
 
 ## Phase E - Helper Ownership And Buffer API Cleanup
 
-1. Reconcile and either fill or explicitly drop deferred optional command-buffer
-   display fields. Use the canonical field names from the command-buffer
-   context shape (`name`, `target`, `source`, `loop`, `branch`) unless a
-   specific field has been deliberately renamed.
+1. Reconcile and either fill or explicitly drop deferred optional
+   `bufferBranchContext` display fields. Use the current canonical field names
+   (`branchName`, `loadName`, `targetIdentifier`, `loop`, `branch`) unless a
+   specific field has been deliberately renamed. Re-evaluate the
+   `branchName`/`branch` pair in particular: `branchName` currently identifies
+   the buffer branch/root/callable frame, while `branch` identifies conditional
+   direction such as `then` or `case`.
 2. Rename or reframe the `CommandBuffer` constructor's `linkedParent` parameter
    as a chain `linkTarget`, not a diagnostic or ownership parent.
 3. Simplify the long positional `managedBlock(...)` signature once
@@ -141,17 +158,30 @@ Implemented for the async runtime:
 4. Review all helpers, methods, and small bridge functions added during this
    refactor for final ownership. Move them to the file/class that owns the
    concept, inline one-off helpers where clearer, and remove migration-only
-   helpers instead of leaving them in incidental locations.
+   helpers instead of leaving them in incidental locations. This includes
+   deciding whether `requireCommandErrorContext(...)` belongs in
+   `commands/base.js` long term or in a smaller shared runtime validation
+   module.
 5. Make `contextualizeError(...)` the single runtime error-context wrapper.
    Inline or remove helper wrappers that only forward to it, including
    `contextualize*` helpers that do not add real domain-specific data. Keep
    small helpers only when they attach additional command, chain, or buffer
    information before calling `contextualizeError(...)`.
 6. Remove fallback handling for missing async error contexts after every async
-   helper, command, and boundary has an originating context. This includes
+   helper, command, and buffer branch has an originating context. This includes
    boundary fallback arrays such as `_reportBoundaryError(...)`'s
    no-`errorContext` path and any remaining `errorContext = null` defaults that
-   hide missing compiler/runtime ownership.
-7. Perform the terminal precompile/browser fixture pass after final async
+   hide missing compiler/runtime ownership. Remove
+   `normalizeOptionalErrorContext(...)` and `EMPTY_ERROR_CONTEXT_INFO` in the
+   same cleanup, leaving `normalizeErrorContext(...)` as the only normalization
+   path for non-null compact contexts.
+7. Remove remaining generated/precompiled boundary calls that omit the final
+   buffer-branch context argument. The current browser precompile fixture still
+   contains older `runControlFlowBoundary(...)` calls that rely on the boundary
+   fallback path; regenerate it after the runtime fallback is removed.
+8. Re-check command constructor shape and convert the positional
+   `ErrorCommand(errors, errorContext)` signature to a spec object if the
+   command API should be uniform after compatibility cleanup.
+9. Perform the terminal precompile/browser fixture pass after final async
    compatibility adapters are removed. This closes out fixture churn from the
    refactor and is distinct from incremental fixture updates in earlier phases.

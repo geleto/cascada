@@ -81,23 +81,11 @@ class CompilerCommon extends Obj {
     }
     const parentProvidedOwnerLabel = label || node._analysis?.errorContextLabel || null;
 
-    // TODO(error-context-cleanup): remove this ChainCommand payload label
-    // special case; final labels should use stable source-operation names.
-    let finalLabel;
-    if (!parentProvidedOwnerLabel && node.typename === 'ChainCommand' && node.call && node.call.name) {
-      const staticPath = this.sequential._extractStaticPath(node.call.name);
-      if (staticPath) {
-        finalLabel = staticPath.join('.');
-      }
-    }
-
-    if (!finalLabel) {
-      const nodeType = parentProvidedOwnerLabel || node.typename || 'Node';
-      const posType = (positionNode && positionNode.typename) || 'PosNode';
-      finalLabel = (!parentProvidedOwnerLabel && (node === positionNode || nodeType === posType))
-        ? nodeType
-        : `${nodeType}(${posType})`;
-    }
+    const nodeType = parentProvidedOwnerLabel || node.typename || 'Node';
+    const posType = (positionNode && positionNode.typename) || 'PosNode';
+    const finalLabel = (!parentProvidedOwnerLabel && (node === positionNode || nodeType === posType))
+      ? nodeType
+      : `${nodeType}(${posType})`;
 
     if (positionNode === node && label === null && node._analysis && node._analysis.errorContextIndex === undefined) {
       const lineno = node.lineno !== undefined ? node.lineno + 1 : 0;
@@ -125,7 +113,7 @@ class CompilerCommon extends Obj {
     return node._analysis.errorContextIndex;
   }
 
-  emitBufferErrorContext(node, fields = {}) {
+  emitBufferBranchContext(node, fields = {}) {
     if (!node) {
       return 'null';
     }

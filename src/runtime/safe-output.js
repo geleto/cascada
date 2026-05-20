@@ -211,21 +211,17 @@ function ensureDefinedAsync(val, errorContext) {
 
   // Simple literal value - validate and return synchronously
   if (!val || (typeof val.then !== 'function' && !val[RESOLVE_MARKER] && !Array.isArray(val))) {
-    return ensureDefinedWithErrorContext(val, errorContext);
+    if (val === null || val === undefined) {
+      throw contextualizeError(
+        new Error('attempted to output null or undefined value'),
+        errorContext
+      );
+    }
+    return val;
   }
 
   // Complex cases - delegate to async helper
   return _ensureDefinedAsyncComplex(val, errorContext);
-}
-
-function ensureDefinedWithErrorContext(val, errorContext) {
-  if (val === null || val === undefined) {
-    throw contextualizeError(
-      new Error('attempted to output null or undefined value'),
-      errorContext
-    );
-  }
-  return val;
 }
 
 async function _ensureDefinedAsyncComplex(val, errorContext) {
@@ -259,7 +255,13 @@ async function _ensureDefinedAsyncComplex(val, errorContext) {
 
   }
 
-  return ensureDefinedWithErrorContext(val, errorContext);
+  if (val === null || val === undefined) {
+    throw contextualizeError(
+      new Error('attempted to output null or undefined value'),
+      errorContext
+    );
+  }
+  return val;
 }
 
 function suppressValueScriptRaw(val, autoescape) {

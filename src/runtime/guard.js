@@ -10,6 +10,7 @@ import {
 import {
   RepairWriteCommand,
 } from './commands/sequential-path.js';
+import {requireCommandErrorContext} from './commands/base.js';
 
 function init(cb = null) {
   const guardState = {
@@ -21,7 +22,8 @@ function init(cb = null) {
   return guardState;
 }
 
-function initChainSnapshots(chainNames = null, buffer = null, cb = null) {
+function initChainSnapshots(chainNames = null, buffer = null, cb = null, errorContext) {
+  errorContext = requireCommandErrorContext(errorContext, 'guard.initChainSnapshots');
   const state = {
     snapshots: Object.create(null),
     sequenceTransactions: [],
@@ -63,7 +65,8 @@ function initChainSnapshots(chainNames = null, buffer = null, cb = null) {
       continue;
     }
     const capturePromise = buffer.addCommand(new CaptureGuardStateCommand({
-      chainName
+      chainName,
+      errorContext
     }), chainName)
       .then((capturedState) => {
         state.snapshots[chainName] = capturedState;
@@ -74,19 +77,20 @@ function initChainSnapshots(chainNames = null, buffer = null, cb = null) {
   return state;
 }
 
-async function restoreChains(buffer, chainGuardState) {
+async function restoreChains(buffer, chainGuardState, errorContext) {
   if (!chainGuardState || !buffer) {
     return [];
   }
+  errorContext = requireCommandErrorContext(errorContext, 'guard.restoreChains');
 
   const errors = [];
-
   const snapshotNames = Object.keys(chainGuardState.snapshots || {});
   if (snapshotNames.length > 0) {
     const restorePromises = snapshotNames.map((chainName) =>
       buffer.addCommand(new RestoreGuardStateCommand({
         chainName,
-        target: chainGuardState.snapshots[chainName]
+        target: chainGuardState.snapshots[chainName],
+        errorContext
       }), chainName).catch((err) => reportAndThrow(chainGuardState.fatalCb, err))
     );
     await Promise.all(restorePromises);
@@ -100,7 +104,8 @@ async function restoreChains(buffer, chainGuardState) {
       buffer.addCommand(new RepairWriteCommand({
         chainName,
         pathKey: chainName,
-        operation: () => true
+        operation: () => true,
+        errorContext
       }), chainName).catch((err) => reportAndThrow(chainGuardState.fatalCb, err))
     );
     await Promise.all(repairPromises);
@@ -113,8 +118,9 @@ async function restoreChains(buffer, chainGuardState) {
   return errors;
 }
 
-async function finalizeGuard(guardState, buffer, allowedChains, chainGuardState) {
-  const bufferErrors = await collectChainErrors(buffer, allowedChains);
+async function finalizeGuard(guardState, buffer, allowedChains, chainGuardState, errorContext) {
+  errorContext = requireCommandErrorContext(errorContext, 'guard.finalizeGuard');
+  const bufferErrors = await collectChainErrors(buffer, allowedChains, errorContext);
   const sequenceErrors = [];
   if (guardState) {
     if (guardState.detectionPromises && guardState.detectionPromises.length > 0) {
@@ -135,7 +141,7 @@ async function finalizeGuard(guardState, buffer, allowedChains, chainGuardState)
 
   if (guardErrors.length > 0) {
     if (chainGuardState) {
-      const rollbackErrors = await restoreChains(buffer, chainGuardState);
+      const rollbackErrors = await restoreChains(buffer, chainGuardState, errorContext);
       if (rollbackErrors.length > 0) {
         guardErrors.push(...rollbackErrors);
       }
@@ -146,14 +152,15 @@ async function finalizeGuard(guardState, buffer, allowedChains, chainGuardState)
   return guardErrors;
 }
 
-async function collectChainErrors(buffer, allowedChains) {
+async function collectChainErrors(buffer, allowedChains, errorContext) {
 
   const names = resolveGuardChainNames(buffer, allowedChains);
   const allErrors = [];
 
   for (const chainName of names) {
     const chainError = await buffer.addCommand(new GetErrorCommand({
-      chainName
+      chainName,
+      errorContext
     }), chainName);
     if (!chainError) {
       continue;
@@ -178,10 +185,11 @@ function resolveGuardChainNames(buffer, allowedChains) {
   return Object.keys(buffer.arrays || Object.create(null));
 }
 
-function repairSequenceChains(buffer, guardState, lockNames) {
+function repairSequenceChains(buffer, guardState, lockNames, errorContext) {
   if (!lockNames || lockNames.length === 0) {
     return;
   }
+  errorContext = requireCommandErrorContext(errorContext, 'guard.repairSequenceChains');
 
   if (!guardState.detectionPromises) {
     guardState.detectionPromises = [];
@@ -189,10 +197,10 @@ function repairSequenceChains(buffer, guardState, lockNames) {
   if (!guardState.sequenceErrors) {
     guardState.sequenceErrors = [];
   }
-
   for (const lockName of lockNames) {
     const detectPromise = buffer.addCommand(new GetErrorCommand({
-      chainName: lockName
+      chainName: lockName,
+      errorContext
     }), lockName)
       .then((chainError) => {
         if (!chainError) {
@@ -211,7 +219,8 @@ function repairSequenceChains(buffer, guardState, lockNames) {
       chainName: lockName,
       pathKey: lockName,
       // Repair is unconditional: clear poison and publish a healthy lock state.
-      operation: () => true
+      operation: () => true,
+      errorContext
     }), lockName).catch((err) => reportAndThrow(guardState.fatalCb, err));
 
     guardState.detectionPromises.push(Promise.all([detectPromise, repairPromise]).then(() => true));

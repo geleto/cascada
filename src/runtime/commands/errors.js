@@ -1,16 +1,17 @@
 import {PoisonError, createPoison, isPoisonError, contextualizeError} from '../errors.js';
-import {MutatingCommand} from './base.js';
+import {MutatingCommand, requireCommandErrorContext} from './base.js';
 
 const contextualizedChainErrorCache = new WeakMap();
 
 class ErrorCommand extends MutatingCommand {
-  constructor(errors) {
+  constructor(errors, errorContext) {
     super();
+    this.errorContext = requireCommandErrorContext(errorContext, this.constructor.name);
     this.errors = Array.isArray(errors) ? errors : [errors || new Error('Command buffer entry produced an unspecified error')];
   }
 
   getError() {
-    return new PoisonError(this.errors);
+    return new PoisonError(this.errors, this.errorContext);
   }
 
   apply(ctx) {
@@ -20,10 +21,10 @@ class ErrorCommand extends MutatingCommand {
 }
 
 class TargetPoisonCommand extends MutatingCommand {
-  constructor({ chainName, errors = null, errorContext = null }) {
+  constructor({ chainName, errors = null, errorContext }) {
     super();
     this.chainName = chainName;
-    this.errorContext = errorContext || null;
+    this.errorContext = requireCommandErrorContext(errorContext, this.constructor.name);
     this.errors = Array.isArray(errors) ? errors : [errors || new Error('Command buffer entry produced an unspecified error')];
   }
 
@@ -70,7 +71,7 @@ function contextualizeErrorsForChain(chain, errorContext, errors) {
 function contextualizeChainError(chain, errorContext, err) {
   void chain;
   if (err && (typeof err === 'object' || typeof err === 'function')) {
-    const cacheKey = errorContext || 'none';
+    const cacheKey = errorContext;
     const perError = contextualizedChainErrorCache.get(err);
     if (perError && perError.has(cacheKey)) {
       return perError.get(cacheKey);
