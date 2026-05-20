@@ -146,6 +146,28 @@ Use the runtime `resolve*` helpers (`resolveAll`, `resolveSingle`, `resolveDuo`,
 
 Avoid resolving or awaiting values early. Resolution belongs at true async boundaries and final consumption (function calls, condition checks, iteration, output materialization). Command arguments must be enqueued as-is and resolved only by the command/chain apply path.
 
+Values are awaited only at three semantic points:
+
+1. **Command application** — `Command.apply(...)` and command argument
+   preparation may consume command inputs when the command iterator reaches the
+   source-ordered slot.
+2. **Control boundaries** — async boundary bodies may await values that decide
+   command shape or control flow, such as conditions, iterables, loop
+   continuation checks, composition targets, and load/selection results.
+3. **Value transformations** — pure value helpers may consume value inputs and
+   return a new value without mutating chain state or the input values.
+   Examples include expression operators, member lookup, function-call argument
+   preparation, text
+   materialization, and object/array property resolution.
+
+At these value-consumption points, promise rejection and existing
+`PoisonedValue`/`PoisonError` inputs are Cascada dataflow errors. The consuming
+site must catch them and surface `PoisonError`/`PoisonedValue` with the
+originating `errorContext`, while continuing to collect independent errors when
+possible. Structural failures outside value consumption are runtime failures and
+should surface as `RuntimeError`/fatal runtime errors. Compiler/analysis
+failures belong to `CompileError`.
+
 ---
 
 ## Final Output Materialization
