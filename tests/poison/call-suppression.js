@@ -8,7 +8,7 @@ import {createPoison, isPoison, isPoisonError, collectErrors, Frame} from '../..
   //let PoisonError;
   //PoisonError = runtime.PoisonError;
 
-  const mockErrorContext = { lineno: 1, colno: 1, errorContextString: 'test', path: 'test' };
+  const mockErrorContext = [1, 1, 'test', 'test', null];
 
   function setupSequentialRuntimeForTests(root) {
     const context = { path: 'test', env: {} };
@@ -773,10 +773,8 @@ import {createPoison, isPoison, isPoisonError, collectErrors, Frame} from '../..
     });
 
     describe('ensureDefinedAsync - Sync-First Hybrid', () => {
-      const mockContext = { path: '/test.html' };
-
       it('should return literal values synchronously', () => {
-        const result = runtime.ensureDefinedAsync('hello', 1, 1, mockContext, mockErrorContext);
+        const result = runtime.ensureDefinedAsync('hello', mockErrorContext);
 
         expect(result).to.equal('hello');
         expect(typeof result.then).to.equal('undefined');
@@ -784,7 +782,7 @@ import {createPoison, isPoison, isPoisonError, collectErrors, Frame} from '../..
 
       it('should return rejected Promise for poison synchronously', async () => {
         const poison = createPoison(new Error('Test'));
-        const result = runtime.ensureDefinedAsync(poison, 1, 1, mockContext, mockErrorContext);
+        const result = runtime.ensureDefinedAsync(poison, mockErrorContext);
 
         expect(typeof result.then).to.equal('function');
 
@@ -799,7 +797,7 @@ import {createPoison, isPoison, isPoisonError, collectErrors, Frame} from '../..
 
       it('should throw for null values', () => {
         try {
-          runtime.ensureDefinedAsync(null, 1, 1, mockContext, mockErrorContext);
+          runtime.ensureDefinedAsync(null, mockErrorContext);
           expect().fail('Should have thrown');
         } catch (err) {
           expect(err.message).to.contain('null or undefined');
@@ -808,7 +806,7 @@ import {createPoison, isPoison, isPoisonError, collectErrors, Frame} from '../..
 
       it('should throw for undefined values', () => {
         try {
-          runtime.ensureDefinedAsync(undefined, 1, 1, mockContext, mockErrorContext);
+          runtime.ensureDefinedAsync(undefined, mockErrorContext);
           expect().fail('Should have thrown');
         } catch (err) {
           expect(err.message).to.contain('null or undefined');
@@ -820,7 +818,7 @@ import {createPoison, isPoison, isPoisonError, collectErrors, Frame} from '../..
         const promise = Promise.resolve(poison);
 
         try {
-          await runtime.ensureDefinedAsync(promise, 1, 1, mockContext, mockErrorContext);
+          await runtime.ensureDefinedAsync(promise, mockErrorContext);
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -835,7 +833,7 @@ import {createPoison, isPoison, isPoisonError, collectErrors, Frame} from '../..
         const arr = [poison1, poison2];
 
         try {
-          await runtime.ensureDefinedAsync(arr, 1, 1, mockContext, mockErrorContext);
+          await runtime.ensureDefinedAsync(arr, mockErrorContext);
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -847,7 +845,7 @@ import {createPoison, isPoison, isPoisonError, collectErrors, Frame} from '../..
 
       it('should return valid array unchanged', async () => {
         const arr = ['valid'];
-        const result = await runtime.ensureDefinedAsync(arr, 1, 1, mockContext, mockErrorContext);
+        const result = await runtime.ensureDefinedAsync(arr, mockErrorContext);
 
         // Array is defined (not null/undefined), passed through without mutation
         expect(Array.isArray(result)).to.be(true);
@@ -859,7 +857,7 @@ import {createPoison, isPoison, isPoisonError, collectErrors, Frame} from '../..
         const promise = Promise.resolve(null);
 
         try {
-          await runtime.ensureDefinedAsync(promise, 1, 1, mockContext, mockErrorContext);
+          await runtime.ensureDefinedAsync(promise, mockErrorContext);
           expect().fail('Should have thrown');
         } catch (err) {
           expect(err.message).to.contain('null or undefined');
@@ -868,7 +866,7 @@ import {createPoison, isPoison, isPoisonError, collectErrors, Frame} from '../..
 
       it('should handle promise that resolves to valid value', async () => {
         const promise = Promise.resolve('valid');
-        const result = await runtime.ensureDefinedAsync(promise, 1, 1, mockContext, mockErrorContext);
+        const result = await runtime.ensureDefinedAsync(promise, mockErrorContext);
 
         expect(result).to.equal('valid');
       });
@@ -877,7 +875,7 @@ import {createPoison, isPoison, isPoisonError, collectErrors, Frame} from '../..
         const promise = Promise.reject(new Error('Promise rejection'));
 
         try {
-          await runtime.ensureDefinedAsync(promise, 1, 1, mockContext, mockErrorContext);
+          await runtime.ensureDefinedAsync(promise, mockErrorContext);
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -889,7 +887,7 @@ import {createPoison, isPoison, isPoisonError, collectErrors, Frame} from '../..
         const arr = runtime.createArray(['ok', Promise.reject(new Error('Marker rejection'))]);
 
         try {
-          await runtime.ensureDefinedAsync(arr, 1, 1, mockContext, mockErrorContext);
+          await runtime.ensureDefinedAsync(arr, mockErrorContext);
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
@@ -914,7 +912,7 @@ import {createPoison, isPoison, isPoisonError, collectErrors, Frame} from '../..
       it('should not allocate Promise for literal in ensureDefinedAsync', () => {
         const results = [];
         for (let i = 0; i < 100; i++) {
-          results.push(runtime.ensureDefinedAsync('test', 1, 1, null, mockErrorContext));
+          results.push(runtime.ensureDefinedAsync('test', mockErrorContext));
         }
 
         results.forEach(r => {

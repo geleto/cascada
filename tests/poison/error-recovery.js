@@ -33,7 +33,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
       }
       CustomError.prototype = new Error();
       const err = new CustomError('test error');
-      const p = runtime.createPoison(err, { lineno: 1, colno: 1 });
+      const p = runtime.createPoison(err, [1, 1, null, null, null]);
 
       const output = await env.renderTemplateString('{{ val is error }}', { val: p });
       expect(output).to.equal('true');
@@ -48,7 +48,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
 
     it('should poison render if LHS of "is" is poisoned', async () => {
       const err = new Error('test error');
-      const p = runtime.createPoison(err, { lineno: 1, colno: 1 });
+      const p = runtime.createPoison(err, [1, 1, null, null, null]);
       try {
         await env.renderTemplateString('{{ val is defined }}', { val: p });
         expect().fail('Should have thrown');

@@ -1,5 +1,5 @@
 
-import {RuntimeError, handleError, markPromiseHandled} from './errors.js';
+import {RuntimeError, contextualizeError, markPromiseHandled} from './errors.js';
 import {CommandBuffer} from './command-buffer.js';
 
 function _createChildBoundary(parentBuffer, linkedChainNames, linkedMutatedChainNames = null, isolatedContext = null, errorContext = null, traceParent = null) {
@@ -21,9 +21,12 @@ function _createChildBoundary(parentBuffer, linkedChainNames, linkedMutatedChain
 }
 
 function _reportBoundaryError(err, boundaryName, context, cb, errorContext = null) {
+  // Fallback only for boundary calls that do not pass an originating context.
+  // Normal boundary diagnostics use the boundary buffer's errorContext object,
+  // which can carry execution metadata such as loop and branch fields.
   const reportedError = err instanceof RuntimeError
     ? err
-    : handleError(err, errorContext ?? [0, 0, boundaryName, context?.path ?? null, cb ?? null]);
+    : contextualizeError(err, errorContext ?? [0, 0, boundaryName, context?.path ?? null, cb ?? null]);
   cb(reportedError);
 }
 

@@ -3,6 +3,7 @@ import {escape} from '../lib.js';
 import {
   isPoison,
   isPoisonError,
+  contextualizeError,
   handleError,
   collectErrors,
   PoisonError
@@ -161,7 +162,7 @@ async function _suppressValueAsyncComplex(val, autoescape, errorContext) {
       if (isPoisonError(err)) {
         throw err;
       } else {
-        const contextualError = handleError(err, errorContext);
+        const contextualError = contextualizeError(err, errorContext);
         throw new PoisonError([contextualError]);
       }
     }
@@ -177,7 +178,7 @@ async function _suppressValueAsyncComplex(val, autoescape, errorContext) {
       if (isPoisonError(err)) {
         throw err;
       }
-      const contextualError = handleError(err, errorContext);
+      const contextualError = contextualizeError(err, errorContext);
       throw new PoisonError([contextualError]);
     }
 
@@ -201,8 +202,7 @@ function ensureDefined(val, lineno, colno, context) {
   return val;
 }
 
-//@todo - remove lineno, colno
-function ensureDefinedAsync(val, lineno, colno, context, errorContext) {
+function ensureDefinedAsync(val, errorContext) {
   val = normalizeBufferValue(val);
   // Poison check - return rejected promise synchronously
   if (isPoison(val)) {
@@ -211,15 +211,24 @@ function ensureDefinedAsync(val, lineno, colno, context, errorContext) {
 
   // Simple literal value - validate and return synchronously
   if (!val || (typeof val.then !== 'function' && !val[RESOLVE_MARKER] && !Array.isArray(val))) {
-    return ensureDefined(val, lineno, colno, context);
+    return ensureDefinedWithErrorContext(val, errorContext);
   }
 
   // Complex cases - delegate to async helper
-  return _ensureDefinedAsyncComplex(val, lineno, colno, context, errorContext);
+  return _ensureDefinedAsyncComplex(val, errorContext);
 }
 
-//@todo - remove lineno, colno
-async function _ensureDefinedAsyncComplex(val, lineno, colno, context, errorContext) {
+function ensureDefinedWithErrorContext(val, errorContext) {
+  if (val === null || val === undefined) {
+    throw contextualizeError(
+      new Error('attempted to output null or undefined value'),
+      errorContext
+    );
+  }
+  return val;
+}
+
+async function _ensureDefinedAsyncComplex(val, errorContext) {
   val = normalizeBufferValue(val);
   // Handle arrays with possible poison values
   if (Array.isArray(val)) {
@@ -243,14 +252,14 @@ async function _ensureDefinedAsyncComplex(val, lineno, colno, context, errorCont
       if (isPoisonError(err)) {
         throw err;
       } else {
-        const contextualError = handleError(err, errorContext);
+        const contextualError = contextualizeError(err, errorContext);
         throw new PoisonError([contextualError]);
       }
     }
 
   }
 
-  return ensureDefined(val, lineno, colno, context);
+  return ensureDefinedWithErrorContext(val, errorContext);
 }
 
 function suppressValueScriptRaw(val, autoescape) {
@@ -299,7 +308,7 @@ async function _suppressValueScriptComplex(val, autoescape, errorContext) {
     if (isPoisonError(err)) {
       throw err;
     } else {
-      const contextualError = handleError(err, errorContext);
+      const contextualError = contextualizeError(err, errorContext);
       throw new PoisonError([contextualError]);
     }
   }

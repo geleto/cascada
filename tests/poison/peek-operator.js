@@ -13,7 +13,7 @@ import * as runtime from '../../src/runtime/runtime.js';
 
     it('should peek at a synchronous PoisonedValue', async () => {
       const err = new Error('Basic Error');
-      const poison = runtime.createPoison(err, { lineno: 1, colno: 1 });
+      const poison = runtime.createPoison(err, [1, 1, null, null, null]);
 
       const template = `
         {% if val is error %}
@@ -60,7 +60,7 @@ import * as runtime from '../../src/runtime/runtime.js';
 
     it('should access array of errors via #errors', async () => {
       const err = new Error('Sub Error');
-      const poison = runtime.createPoison(err, { lineno: 1, colno: 1 });
+      const poison = runtime.createPoison(err, [1, 1, null, null, null]);
 
       const template = `
         {% if val is error %}
@@ -101,7 +101,7 @@ import * as runtime from '../../src/runtime/runtime.js';
 
     it('should parse variable# correctly', async () => {
       const err = new Error('Traiing hash');
-      const poison = runtime.createPoison(err, { lineno: 1, colno: 1 });
+      const poison = runtime.createPoison(err, [1, 1, null, null, null]);
       const template = `
           {% if val is error %}
              {% set errinfo = val# %}
@@ -115,7 +115,7 @@ import * as runtime from '../../src/runtime/runtime.js';
     it('should work with chained property access on peek result', async () => {
       const err = new Error('Detail Error');
       err.name = 'CustomName';
-      const poison = runtime.createPoison(err, { lineno: 1, colno: 1 });
+      const poison = runtime.createPoison(err, [1, 1, null, null, null]);
 
       const template = `
         {{ val#errors[0].name }}

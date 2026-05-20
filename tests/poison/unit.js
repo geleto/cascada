@@ -144,12 +144,7 @@ import {createPoison, isPoison, PoisonError, collectErrors} from '../../src/runt
 
       it('should apply explicit context parameters to contained errors', () => {
         const err = new Error('Contextual failure');
-        const compound = new PoisonError(err, {
-          lineno: 12,
-          colno: 4,
-          errorContextString: 'Output(Symbol)',
-          path: 'template.njk'
-        });
+        const compound = new PoisonError(err, [12, 4, 'Output(Symbol)', 'template.njk', null]);
 
         expect(compound.errors).to.have.length(1);
         expect(compound.errors[0].path).to.equal('template.njk');
@@ -158,14 +153,9 @@ import {createPoison, isPoison, PoisonError, collectErrors} from '../../src/runt
         expect(compound.errors[0].message).to.contain('Output(Symbol)');
       });
 
-      it('should accept errorContext objects when adding metadata', () => {
-        const err = new Error('Context object failure');
-        const errorContext = {
-          lineno: 7,
-          colno: 9,
-          path: 'script.casc',
-          errorContextString: 'For(PosNode)'
-        };
+      it('should accept compact error contexts when adding metadata', () => {
+        const err = new Error('Context failure');
+        const errorContext = [7, 9, 'For(PosNode)', 'script.casc', null];
 
         const compound = new PoisonError(err, errorContext);
 

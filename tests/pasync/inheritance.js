@@ -64,10 +64,32 @@ function compileProps(src, options = {}) {
   return new Function('runtime', source)(runtime);
 }
 
+function compactTestErrorContext(errorContext) {
+  if (!errorContext) {
+    return null;
+  }
+  if (Array.isArray(errorContext)) {
+    return errorContext;
+  }
+  return [
+    errorContext.lineno ?? 0,
+    errorContext.colno ?? 0,
+    errorContext.label ?? null,
+    errorContext.path ?? null,
+    errorContext.cb ?? null
+  ];
+}
+
+function testErrorContextPath(errorContext) {
+  return errorContext[3];
+}
+
 function sharedSchemaEntry(type, options = {}) {
   return {
     type,
-    errorContext: options.errorContext || { path: `${type}-shared.owner`, lineno: 1, colno: 1 },
+    errorContext: compactTestErrorContext(
+      options.errorContext || { path: `${type}-shared.owner`, lineno: 1, colno: 1 }
+    ),
     hasDefault: !!options.hasDefault
   };
 }
@@ -832,7 +854,7 @@ describe('Inheritance rebuild', function () {
         compile() {},
         inheritanceSpec: { methodEntries: {}, sharedSchema: {}, hasExtends: true },
         async resolveInheritanceParent() {
-          return { parentTemplateOrScript: parent, errorContext: { path: 'child.njk' } };
+          return { parentTemplateOrScript: parent, errorContext: [0, 0, null, 'child.njk', null] };
         },
         root() {
           throw new Error('child root should not run');
@@ -863,12 +885,7 @@ describe('Inheritance rebuild', function () {
         async resolveInheritanceParent() {
           return {
             parentTemplateOrScript: parent,
-            errorContext: {
-              lineno: 7,
-              colno: 3,
-              errorContextString: 'Extends',
-              path: 'child.njk'
-            }
+            errorContext: [7, 3, 'Extends', 'child.njk', null]
           };
         }
       });
@@ -1059,16 +1076,26 @@ describe('Inheritance rebuild', function () {
   });
 
   describe('metadata finalization', function () {
+    function compactDependencies(dependencies) {
+      return Object.fromEntries(Object.entries(dependencies).map(([name, dependency]) => [
+        name,
+        {
+          ...dependency,
+          errorContext: compactTestErrorContext(dependency.errorContext)
+        }
+      ]));
+    }
+
     function compiledMethod(name, options = {}) {
       return {
         name,
         fn: options.fn || function compiledInheritanceMethod() {},
         signature: { argNames: options.argNames || [] },
-        errorContext: options.errorContext || { path: `${name}.owner`, lineno: 1, colno: 1 },
+        errorContext: compactTestErrorContext(options.errorContext || { path: `${name}.owner`, lineno: 1, colno: 1 }),
         isConstructor: !!options.isConstructor,
         super: !!options.super,
-        superErrorContext: options.superErrorContext || null,
-        inheritedMethodDependencies: options.inheritedMethodDependencies || {},
+        superErrorContext: compactTestErrorContext(options.superErrorContext),
+        inheritedMethodDependencies: compactDependencies(options.inheritedMethodDependencies || {}),
         ownLinkedChains: options.ownLinkedChains || [],
         ownMutatedChains: options.ownMutatedChains || []
       };
@@ -1087,7 +1114,7 @@ describe('Inheritance rebuild', function () {
           hasExtends: !!options.hasExtends
         },
         path,
-        errorContext: options.errorContext || { path, lineno: 1, colno: 1 }
+        errorContext: compactTestErrorContext(options.errorContext || { path, lineno: 1, colno: 1 })
       };
     }
 
@@ -1245,7 +1272,7 @@ describe('Inheritance rebuild', function () {
         loadedEntry('root.script', { scriptMode: true, methodEntries: { build: rootBuild } })
       ]);
 
-      expect(state.methods.build.errorContext.path).to.be('build.owner');
+      expect(testErrorContextPath(state.methods.build.errorContext)).to.be('build.owner');
       expect(state.methods.build.super.fn).to.be(rootBuild.fn);
       expect(state.methods.build.super.name).to.be('build');
     });
@@ -1401,9 +1428,9 @@ describe('Inheritance rebuild', function () {
       ]);
 
       expect(state.sharedSchema.theme.type).to.be('var');
-      expect(state.sharedSchema.theme.errorContext.path).to.be('child.script');
+      expect(testErrorContextPath(state.sharedSchema.theme.errorContext)).to.be('child.script');
       expect(state.sharedSchema.theme.hasDefault).to.be(true);
-      expect(state.sharedSchema.theme.defaultErrorContext.path).to.be('root.script');
+      expect(testErrorContextPath(state.sharedSchema.theme.defaultErrorContext)).to.be('root.script');
     });
 
     it('merges chain footprints across overridden entries', function () {
@@ -1454,7 +1481,7 @@ describe('Inheritance rebuild', function () {
       expect(entry.name).to.be('body');
       expect(entry.fn).to.be.a(Function);
       expect(entry.signature).to.eql({ argNames: [] });
-      expect(entry.errorContext.path).to.be('body.owner');
+      expect(testErrorContextPath(entry.errorContext)).to.be('body.owner');
       expect(entry.isConstructor).to.be(false);
       expect(entry.ownerEntry.path).to.be('root.njk');
       expect(entry.ownerEntry.isStructuralTemplate).to.be(true);
@@ -1685,7 +1712,7 @@ describe('Inheritance rebuild', function () {
       participant.resolveInheritanceParent = async function () {
         return {
           parentTemplateOrScript: parentParticipant,
-          errorContext: { path: 'component.script', lineno: 1, colno: 1 }
+          errorContext: [1, 1, null, 'component.script', null]
         };
       };
       const instance = await runtime.InheritanceInstance.create({
@@ -1987,7 +2014,7 @@ describe('Inheritance rebuild', function () {
         runtime,
         ownerBuffer,
         bindingName: 'card',
-        errorContext: { path: 'main.script', lineno: 1, colno: 1 }
+        errorContext: [1, 1, null, 'main.script', null]
       });
       ownerBuffer.addCommand(new runtime.VarCommand({
         chainName: 'card',
@@ -2011,7 +2038,7 @@ describe('Inheritance rebuild', function () {
     });
 
     it('rejects component creation when the constructor fails', async function () {
-      const failure = new runtime.RuntimeFatalError('constructor failed', 1, 1, null, 'component.script');
+      const failure = new runtime.RuntimeFatalError('constructor failed', [1, 1, null, 'component.script', null]);
       const participant = inheritanceParticipant('component.script', {
         scriptMode: true,
         methodEntries: {
@@ -2035,7 +2062,7 @@ describe('Inheritance rebuild', function () {
           ownerContext: createRuntimeContext({}, 'main.script'),
           env: {},
           runtime,
-          errorContext: { path: 'main.script', lineno: 1, colno: 1 }
+          errorContext: [1, 1, null, 'main.script', null]
         });
         expect().fail('Expected component creation failure');
       } catch (error) {

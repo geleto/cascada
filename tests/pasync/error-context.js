@@ -6,7 +6,7 @@ import {
   RuntimeFatalError,
   createPoison,
   getErrorInfo,
-  handleError,
+  contextualizeError,
   handleFatal,
   isPoison,
   memberLookupScript,
@@ -54,16 +54,15 @@ describe('error context tracing runtime foundation', () => {
 
   it('wraps errors with compact context metadata', () => {
     const ec = [3, 7, 'If.Condition(LookupVal)', 'script.casc', null];
-    const wrapped = handleError(new Error('bad condition'), ec, {});
+    const wrapped = contextualizeError(new Error('bad condition'), ec, {});
 
     expect(wrapped.message).to.contain('(script.casc) [Line 3, Column 7]');
     expect(wrapped.message).to.contain('doing \'If.Condition(LookupVal)\'');
     expect(wrapped.errorContext).to.eql(ec);
     expect(wrapped.label).to.be('If.Condition(LookupVal)');
-    expect(wrapped.errorContextString).to.be('If.Condition(LookupVal)');
   });
 
-  it('normalizes compact, legacy object, and empty contexts', () => {
+  it('normalizes compact contexts', () => {
     const cb = () => {};
 
     expect(normalizeErrorContext([1, 2, 'LookupVal', 'script.casc', cb])).to.eql({
@@ -73,26 +72,12 @@ describe('error context tracing runtime foundation', () => {
       path: 'script.casc',
       cb
     });
-    expect(normalizeErrorContext({
-      lineno: 3,
-      colno: 4,
-      errorContextString: 'FunCall',
-      path: 'legacy.casc',
-      cb
-    })).to.eql({
-      lineno: 3,
-      colno: 4,
-      label: 'FunCall',
-      path: 'legacy.casc',
-      cb
-    });
-    expect(normalizeErrorContext(null)).to.eql({
-      lineno: null,
-      colno: null,
-      label: null,
-      path: null,
-      cb: null
-    });
+    try {
+      normalizeErrorContext(null);
+      expect().fail('Expected normalizeErrorContext to reject null');
+    } catch (err) {
+      expect(err.message).to.contain('compact error context');
+    }
   });
 
   it('does not add source metadata when no context is present', () => {
@@ -105,8 +90,8 @@ describe('error context tracing runtime foundation', () => {
   it('preserves an existing error context over helper fallback context', () => {
     const origin = [2, 4, 'FunCall', 'origin.casc', null];
     const fallback = [9, 1, 'Output', 'consumer.casc', null];
-    const wrapped = handleError(new Error('original failure'), origin);
-    const consumed = handleError(wrapped, fallback);
+    const wrapped = contextualizeError(new Error('original failure'), origin);
+    const consumed = contextualizeError(wrapped, fallback);
 
     expect(consumed).to.equal(wrapped);
     expect(consumed.errorContext).to.eql(origin);
@@ -115,7 +100,6 @@ describe('error context tracing runtime foundation', () => {
       colno: 4,
       path: 'origin.casc',
       label: 'FunCall',
-      errorContextString: 'FunCall',
       cb: null
     });
     expect(getErrorInfo(consumed, fallback, null, true).stack).to.eql([]);
@@ -150,11 +134,11 @@ describe('error context tracing runtime foundation', () => {
   it('applies context precedence per PoisonError contained error', () => {
     const origin = [4, 2, 'LookupVal', 'origin.casc', null];
     const fallback = [8, 3, 'For.Iterator(Symbol)', 'consumer.casc', null];
-    const wrapped = handleError(new Error('already wrapped'), origin);
+    const wrapped = contextualizeError(new Error('already wrapped'), origin);
     const raw = new Error('raw');
     const poison = new PoisonError([wrapped, raw]);
 
-    const handled = handleError(poison, fallback);
+    const handled = contextualizeError(poison, fallback);
 
     expect(handled.errors[0].errorContext).to.eql(origin);
     expect(handled.errors[1].errorContext).to.eql(fallback);
@@ -165,7 +149,7 @@ describe('error context tracing runtime foundation', () => {
     const raw = new Error('raw');
     const poison = new PoisonError([raw]);
 
-    const handled = handleError(poison);
+    const handled = contextualizeError(poison);
 
     expect(handled.errors[0]).to.equal(raw);
   });
@@ -262,7 +246,6 @@ describe('error context tracing runtime foundation', () => {
       colno: 4,
       path: 'script.casc',
       label: 'If.Condition(FunCall)',
-      errorContextString: 'If.Condition(FunCall)',
       branch: 'then',
       boundaryName: 'if-block'
     });
@@ -297,7 +280,6 @@ describe('error context tracing runtime foundation', () => {
         colno: 2,
         path: 'script.casc',
         label: 'For.Iterator(Symbol)',
-        errorContextString: 'For.Iterator(Symbol)',
         loop
       },
       {
@@ -305,7 +287,6 @@ describe('error context tracing runtime foundation', () => {
         colno: 0,
         path: 'script.casc',
         label: 'Root',
-        errorContextString: 'Root',
         boundaryName: 'root'
       }
     ]);

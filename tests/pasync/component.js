@@ -271,7 +271,7 @@ describe('Phase 8 - Component Method Calls', function () {
     const env = new AsyncEnvironment(loader);
 
     env.addGlobal('fatalArg', () => Promise.reject(
-      new runtimeModule.RuntimeFatalError('fatal component arg', 1, 1, 'fatalArg()', 'Main.script')
+      new runtimeModule.RuntimeFatalError('fatal component arg', [1, 1, 'fatalArg()', 'Main.script', null])
     ));
 
     loader.addTemplate('Component.script', [
@@ -696,7 +696,7 @@ describe('Phase 8 - Component Observations', function () {
         args: ['bad'],
         pos: { lineno: 2, colno: 1 }
       }),
-      errorContext: { lineno: 2, colno: 1, path: 'Main.script' }
+      errorContext: [2, 1, null, 'Main.script', null]
     });
 
     ownerBuffer.finish();
@@ -1108,7 +1108,7 @@ describe('Phase 8 - Component Lifecycle', function () {
       env,
       runtime: runtimeModule,
       cb: () => {},
-      errorContext: { lineno: 2, colno: 1, path: 'Main.script' }
+      errorContext: [2, 1, null, 'Main.script', null]
     });
 
     const sideChainFinished = ownerBuffer.getChain('nsBinding').finalSnapshot();
@@ -1175,7 +1175,7 @@ describe('Phase 8 - Component Lifecycle', function () {
       env,
       runtime: runtimeModule,
       cb: () => {},
-      errorContext: { lineno: 2, colno: 1, path: 'Main.script' }
+      errorContext: [2, 1, null, 'Main.script', null]
     });
 
     const sideChainFinished = ownerBuffer.getChain('nsBinding').finalSnapshot();
@@ -1218,7 +1218,7 @@ describe('Phase 8 - Component Lifecycle', function () {
       cb: () => {},
       ownerBuffer,
       bindingName: 'nsBinding',
-      errorContext: { lineno: 1, colno: 1, path: 'Main.script' }
+      errorContext: [1, 1, null, 'Main.script', null]
     });
 
     ownerBuffer.addCommand(new runtimeModule.VarCommand({
@@ -1303,7 +1303,7 @@ describe('Phase 8 - Component Lifecycle', function () {
       runtime: runtimeModule,
       cb: () => {},
       ownerBuffer,
-      errorContext: { lineno: 1, colno: 1, path: 'Main.script' }
+      errorContext: [1, 1, null, 'Main.script', null]
     });
 
     expect(seen.nextPath).to.be('Component.script');
@@ -1336,7 +1336,7 @@ describe('Phase 8 - Component Lifecycle', function () {
         runtime: runtimeModule,
         cb: () => {},
         ownerBuffer,
-        errorContext: { lineno: 1, colno: 1, path: 'Main.script' }
+        errorContext: [1, 1, null, 'Main.script', null]
       });
       expect().fail('Expected createComponentInstance to reject');
     } catch (error) {
@@ -1359,10 +1359,7 @@ describe('Phase 8 - Component Lifecycle', function () {
 
     const failure = new runtimeModule.RuntimeFatalError(
       'async constructor failed',
-      1,
-      1,
-      null,
-      'Component.script'
+      [1, 1, null, 'Component.script', null]
     );
 
     try {
@@ -1387,7 +1384,7 @@ describe('Phase 8 - Component Lifecycle', function () {
           }
         },
         ownerBuffer,
-        errorContext: { lineno: 1, colno: 1, path: 'Main.script' }
+        errorContext: [1, 1, null, 'Main.script', null]
       });
       expect().fail('Expected createComponentInstance to reject');
     } catch (error) {

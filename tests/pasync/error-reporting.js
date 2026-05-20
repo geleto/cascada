@@ -965,7 +965,7 @@ import * as runtime from '../../src/runtime/runtime.js';
 
         // Throw our fatal error
         // We pass dummy values for line/col/ctx as this is a simulation
-        throw new runtime.RuntimeFatalError(fatalMsg, 1, 1, 'test execution', 'test.njk');
+        throw new runtime.RuntimeFatalError(fatalMsg, [1, 1, 'test execution', 'test.njk', null]);
       };
 
       runtime.runValueBoundary(

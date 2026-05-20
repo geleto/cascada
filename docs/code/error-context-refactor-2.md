@@ -11,6 +11,9 @@ async adapters.
 
 - async compiler/runtime code passes compact prepared error contexts
   (`__ec[index]`) explicitly
+- `normalizeErrorContext(ec)` expects a non-null compact prepared context;
+  callers that still permit no context during migration must handle that before
+  normalization
 - `contextualizeError(error, errorContext, currentBuffer)` is the async runtime
   wrapper for non-poison errors
 - `handleError(error, lineno, colno, label, path)` remains only for the frozen
@@ -19,6 +22,9 @@ async adapters.
   of this cleanup
 - wrapped errors preserve the first source-origin context assigned to them
 - `PoisonError` stores context on contained errors, not as the wrapper origin
+- async helpers, commands, and boundaries should receive an originating
+  `errorContext`; handling for missing async contexts is temporary cleanup
+  scaffolding
 - command and buffer diagnostics must not invent source origin from ambient
   buffer, parent, or render context state
 
@@ -107,9 +113,19 @@ Implemented for the async runtime:
    contract.
 4. Audit all `handleFatal(...)` callers before changing delivery behavior so
    callback reporting and rethrow behavior are deliberate and covered.
-5. Migrate tests that assert `RuntimeFatalError` specifically to the final
+5. Audit `RuntimeError` construction so non-poison runtime errors are created
+   with an explicit source context wherever compiler/runtime ownership can
+   provide one. Any remaining `null` context should be intentional and covered.
+6. Decide the final role of the `currentBuffer` parameter on
+   `contextualizeError(...)`, `createPoison(...)`, and `handleFatal(...)`.
+   Either use it for stack enrichment through `getErrorInfo(...)` or remove it
+   from helpers that do not need direct buffer access.
+7. Re-check `PoisonError` handling and remove the in-place mutation of
+   `PoisonError.errors` if it can be replaced with clearer construction without
+   changing multiple-error propagation.
+8. Migrate tests that assert `RuntimeFatalError` specifically to the final
    runtime error contract.
-6. Re-check docs and public exports so the error taxonomy is explicit and
+9. Re-check docs and public exports so the error taxonomy is explicit and
    small.
 
 ## Phase E - Helper Ownership And Buffer API Cleanup
@@ -131,6 +147,11 @@ Implemented for the async runtime:
    `contextualize*` helpers that do not add real domain-specific data. Keep
    small helpers only when they attach additional command, chain, or buffer
    information before calling `contextualizeError(...)`.
-6. Perform the terminal precompile/browser fixture pass after final async
+6. Remove fallback handling for missing async error contexts after every async
+   helper, command, and boundary has an originating context. This includes
+   boundary fallback arrays such as `_reportBoundaryError(...)`'s
+   no-`errorContext` path and any remaining `errorContext = null` defaults that
+   hide missing compiler/runtime ownership.
+7. Perform the terminal precompile/browser fixture pass after final async
    compatibility adapters are removed. This closes out fixture churn from the
    refactor and is distinct from incremental fixture updates in earlier phases.
