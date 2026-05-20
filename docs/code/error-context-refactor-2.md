@@ -100,24 +100,66 @@ Implemented for async commands:
 
 ## Phase C - Inheritance Metadata And Test Cleanup
 
-1. Replace hand-built inheritance metadata object error-context test scaffolding
-   with integration tests or index-based fixture helpers, then remove the
-   legacy fallback paths in inheritance finalization.
-2. Simplify `getErrorContextCallback(...)` after inheritance legacy object
+1. Establish and verify the inheritance callback invariant: within a single
+   `InheritanceInstance` (including constructor, method, block, component, and
+   super invocations), one fatal/reporting `cb` is used for all error reporting
+   and all prepared error-context tables. Component instances created from an
+   inheritance instance should use the parent instance callback or an
+   intentionally scoped callback, not an arbitrary local callback. Do not move
+   prepared `__ec` tables into compiled-module/global mutable state while
+   entries still embed `cb`; compiled template/script objects can be rendered
+   concurrently.
+2. Add and verify `getErrorContexts` support on `Script` instances, matching
+   `TemplateRuntime`, so script-based inheritance participants can contribute
+   owner artifact tables.
+3. Prepare one compact error-context table per owner template/script entry per
+   inheritance instance in `InheritanceInstance.create`, after
+   `finalizeInheritanceChain(...)` returns and while `options.cb` is available.
+   Use the owner artifact path and the instance callback. Do not thread `cb`
+   into `finalizeInheritanceChain(...)`; finalization should remain a generic
+   metadata pass. Treat the entry template/script as just another owner entry so
+   `entryErrorContextTable` can be unified with the same per-owner table binding
+   path.
+4. Clarify or remove the existing `ownerEntry.errorContextTable` prepared with
+   `cb = null` during `loadEntry(...)`. If finalization still needs it for
+   validation diagnostics, document it as finalization-only and keep it separate
+   from the per-instance callback-bearing table. If it is no longer needed,
+   remove it with the legacy fallback cleanup.
+5. Bind or store each owner prepared table on finalized constructor/method/block
+   runtime entries. The raw compiled callable may continue to accept `__ec` as a
+   low-level final parameter, but inheritance invocation should not rediscover
+   or select a table for each call; the runtime entry should provide its bound
+   owner table when it invokes the compiled function. Create the wrapper during
+   `InheritanceInstance.create` so it closes over the per-instance
+   callback-bearing table, not the finalization-time `cb = null` table. Remove
+   the explicit table argument from `_invokeFromMethodData(...)`'s call to
+   `methodData.fn(...)` once wrappers provide the callable's owner table.
+6. Remove hot-path owner-table lookup after runtime callable entries carry their
+   prepared owner table directly. Delete `getErrorContextTableForMethod(...)`,
+   `getErrorContextForMethod(...)`, and `errorContextTablesByOwner` once the
+   pre-bound table path is in place. The benefit is simpler ownership and less
+   invocation plumbing, not primarily performance.
+7. Replace hand-built inheritance metadata object error-context test
+   scaffolding in `tests/pasync/inheritance.js` with integration tests or
+   index-based fixture helpers. Then remove legacy fallback fields and fallback
+   parameters from `resolveCompiledEntryErrorContext(...)`, including
+   object-format fields such as `errorContext` and `superErrorContext` that only
+   exist for those tests.
+8. Simplify `getErrorContextCallback(...)` after inheritance legacy object
    fallbacks are removed. The final helper should only read the compact callback
    slot.
-3. Evaluate whether `loadEntry(...)` and `createRuntimeOwnerEntry(...)` can be
-   consolidated after the inheritance object error-context fallback paths are
-   gone.
-4. Re-check all inheritance names and payload fields so originating
-   error-context values are named `errorContext`, `ec`, or another explicit
-   context name. Historical `origin` names must not be used where the value is
-   an originating error context.
+9. Evaluate whether `loadEntry(...)` and `createRuntimeOwnerEntry(...)` can be
+   consolidated after item 7 removes the inheritance object error-context
+   fallback paths.
+10. Perform a narrow final inheritance naming audit: confirm historical
+   `origin` names are gone for originating error contexts, and that remaining
+   `errorContext` fields genuinely hold compact source contexts rather than
+   renamed legacy object-origin payloads.
 
 ## Phase D - Error Taxonomy And Fatal Delivery
 
 1. Reduce runtime error families to the target three:
-   `PoisonError`, `RuntimeError`, and compile/`TemplateError`.
+   `PoisonError`, `RuntimeError`, and `CompileError`.
 2. Evaluate `RuntimeFatalError`. If it is redundant now that non-poison
    runtime errors are fatal by default, remove it or reduce it to a
    compatibility alias/shim.
