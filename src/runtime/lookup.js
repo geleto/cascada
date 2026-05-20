@@ -3,7 +3,7 @@ import {
   createPoison,
   isPoison,
   isPoisonError,
-  handleError,
+  contextualizeError,
   RuntimeFatalError,
   RuntimePromise,
   collectErrors,
@@ -115,7 +115,7 @@ async function _memberLookupAsyncComplex(obj, val, errorContext, currentBuffer =
     if (isPoisonError(err)) {
       return createPoison(err.errors);
     } else {
-      const contextualError = handleError(err, errorContext, currentBuffer);
+      const contextualError = contextualizeError(err, errorContext, currentBuffer);
       return createPoison(contextualError);
     }
   }
@@ -194,7 +194,7 @@ async function _memberLookupScriptComplex(obj, val, errorContext, currentBuffer 
       return createPoison(err.errors);
     } else {
       // Otherwise, it's a native error. Enrich it with template context.
-      const contextualError = handleError(err, errorContext, currentBuffer);
+      const contextualError = contextualizeError(err, errorContext, currentBuffer);
       return createPoison(contextualError);
     }
   }

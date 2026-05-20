@@ -1,4 +1,4 @@
-import {handleError} from '../errors.js';
+import {contextualizeError} from '../errors.js';
 import {getSharedSourceName} from '../../inheritance/shared-names.js';
 
 class InheritanceFinalizationError extends Error {
@@ -13,7 +13,7 @@ class InheritanceFinalizationError extends Error {
 }
 
 function addFinalizationError(errors, message, errorContext) {
-  errors.push(handleError(
+  errors.push(contextualizeError(
     new Error(message),
     errorContext ?? null,
     null

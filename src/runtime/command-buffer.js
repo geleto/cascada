@@ -1,6 +1,6 @@
 
 import {assertChainLaneAvailable, checkFinishedBuffer} from './checks.js';
-import {handleError, RuntimeFatalError} from './errors.js';
+import {contextualizeError, RuntimeFatalError} from './errors.js';
 
 class CommandBuffer {
   constructor(context, parent = null, linkedChains = null, linkedParent = null, linkedMutatedChains = null, errorContext = null, traceParent = null) {
@@ -235,7 +235,7 @@ class CommandBuffer {
       try {
         cmd.apply(chain);
       } catch (err) {
-        cmd.rejectResult(handleError(err, cmd.errorContext));
+        cmd.rejectResult(contextualizeError(err, cmd.errorContext));
       }
       return cmd.promise;
     };

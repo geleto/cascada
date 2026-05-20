@@ -1,5 +1,5 @@
 import {RETURN_UNSET} from '../markers.js';
-import {isPoisonError, handleError} from '../errors.js';
+import {isPoisonError, contextualizeError} from '../errors.js';
 import {ObservableCommand, MutatingResultCommand} from './base.js';
 
 class SnapshotCommand extends ObservableCommand {
@@ -13,7 +13,7 @@ class SnapshotCommand extends ObservableCommand {
   apply(chain) {
     const contextualize = (err) => (isPoisonError(err)
       ? err
-      : handleError(err, this.errorContext));
+      : contextualizeError(err, this.errorContext));
 
     if (!chain) {
       this.rejectResult(contextualize(new Error('SnapshotCommand requires a chain')));
@@ -40,7 +40,7 @@ class RawSnapshotCommand extends ObservableCommand {
   apply(chain) {
     const contextualize = (err) => (isPoisonError(err)
       ? err
-      : handleError(err, this.errorContext));
+      : contextualizeError(err, this.errorContext));
 
     if (!chain) {
       this.rejectResult(contextualize(new Error('RawSnapshotCommand requires a chain')));
@@ -65,7 +65,7 @@ class ReturnIsUnsetCommand extends ObservableCommand {
   apply(chain) {
     const contextualize = (err) => (isPoisonError(err)
       ? err
-      : handleError(err, this.errorContext));
+      : contextualizeError(err, this.errorContext));
 
     if (!chain) {
       this.rejectResult(contextualize(new Error('ReturnIsUnsetCommand requires a chain')));
@@ -91,7 +91,7 @@ class IsErrorCommand extends ObservableCommand {
   apply(chain) {
     const contextualize = (err) => (isPoisonError(err)
       ? err
-      : handleError(err, this.errorContext));
+      : contextualizeError(err, this.errorContext));
 
     if (!chain) {
       this.rejectResult(contextualize(new Error('IsErrorCommand requires a chain')));
@@ -121,7 +121,7 @@ class GetErrorCommand extends ObservableCommand {
   apply(chain) {
     const contextualize = (err) => (isPoisonError(err)
       ? err
-      : handleError(err, this.errorContext));
+      : contextualizeError(err, this.errorContext));
 
     if (!chain) {
       this.rejectResult(contextualize(new Error('GetErrorCommand requires a chain')));
@@ -150,7 +150,7 @@ class CaptureGuardStateCommand extends ObservableCommand {
   apply(chain) {
     const contextualize = (err) => (isPoisonError(err)
       ? err
-      : handleError(err, this.errorContext));
+      : contextualizeError(err, this.errorContext));
 
     if (!chain) {
       this.rejectResult(contextualize(new Error('CaptureGuardStateCommand requires a chain')));
@@ -178,7 +178,7 @@ class RestoreGuardStateCommand extends MutatingResultCommand {
   apply(chain) {
     const contextualize = (err) => (isPoisonError(err)
       ? err
-      : handleError(err, this.errorContext));
+      : contextualizeError(err, this.errorContext));
 
     if (!chain) {
       this.resolveResult(undefined);

@@ -1,8 +1,8 @@
-import {handleError} from '../errors.js';
+import {contextualizeError} from '../errors.js';
 
 function addLoadErrorContext(error, errorContext, context) {
   // Fallback compact context: [lineno=0, colno=0, label=null, path, cb=null].
-  return handleError(error, errorContext ?? [0, 0, null, context?.path ?? null, null], null);
+  return contextualizeError(error, errorContext ?? [0, 0, null, context?.path ?? null, null], null);
 }
 
 function loadEntry(templateOrScript, errorContext, runtime) {
@@ -22,7 +22,7 @@ function loadEntry(templateOrScript, errorContext, runtime) {
 
 function assertLoadableInheritanceEntry(entry) {
   if (!entry.spec || !entry.templateOrScript.resolveInheritanceParent) {
-    throw handleError(
+    throw contextualizeError(
       new Error('expected an inheritance participant but got a plain template/script'),
       entry.errorContext ?? null,
       null
@@ -49,7 +49,7 @@ async function loadInheritanceChain({ templateOrScript, env, context, runtime, e
     // to reference identity.
     const cycleIdentity = currentTemplateOrScript.path ?? currentTemplateOrScript;
     if (seen.has(cycleIdentity)) {
-      throw handleError(
+      throw contextualizeError(
         new Error(`inheritance cycle detected at ${currentTemplateOrScript.path ?? '<anonymous>'}`),
         selectedByErrorContext ?? null,
         null

@@ -1,5 +1,5 @@
 
-import {createPoison, isPoison, isPoisonError, handleError, RuntimePromise} from './errors.js';
+import {createPoison, isPoison, isPoisonError, contextualizeError, RuntimePromise} from './errors.js';
 import {RESOLVE_MARKER, resolveAll} from './resolve.js';
 
 /**
@@ -112,7 +112,7 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
         errors.push(...err.errors);
       } else {
         // Add context to the error when catching from await
-        const contextualError = handleError(err, errorContext, currentBuffer);
+        const contextualError = contextualizeError(err, errorContext, currentBuffer);
         errors.push(contextualError);
       }
     }
@@ -134,7 +134,7 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
     if (isPoisonError(err)) {
       errors.push(...err.errors);
     } else {
-      const contextualError = handleError(err, errorContext, currentBuffer);
+      const contextualError = contextualizeError(err, errorContext, currentBuffer);
       errors.push(contextualError);
     }
   }

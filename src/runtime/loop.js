@@ -7,7 +7,7 @@ import {
   isPoisonError,
   isRuntimeFatalError,
   PoisonError,
-  handleError,
+  contextualizeError,
 } from './errors.js';
 
 import {VarCommand} from './commands/var.js';
@@ -185,7 +185,7 @@ async function iterateAsyncSequential(arr, loopBody, loopVars, errorContext, ret
   } catch (err) {
     // Hard error: generator threw OR the loopBody threw.
     // Add error context and re-throw immediately (stop iteration)
-    const contextualError = handleError(err, errorContext);
+    const contextualError = contextualizeError(err, errorContext);
     contextualError.didIterate = didIterate;
     throw contextualError;
   }
@@ -655,8 +655,8 @@ async function iterateObject(arr, loopBody, loopVars, errorContext, effectiveSeq
  * @param {boolean} didIterate - Whether any iterations occurred
  */
 function poisonLoopEffects(buffer, asyncOptions, errors, didIterate) {
-  //replace the errors with the handleError'd errors
-  errors = errors.map(error => handleError(error, asyncOptions.errorContext, buffer));
+  // Replace the errors with contextualized errors.
+  errors = errors.map(error => contextualizeError(error, asyncOptions.errorContext, buffer));
 
   // Poison body chain effects.
   if (asyncOptions.bodyChains && asyncOptions.bodyChains.length > 0) {

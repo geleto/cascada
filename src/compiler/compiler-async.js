@@ -299,7 +299,7 @@ class CompilerAsync extends CompilerBaseAsync {
 
       const errorContext = this.emitErrorContext(node.expr);
       this.emit('} catch (e) {');
-      this.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ${errorContext}, ${this.buffer.currentBuffer});`);
+      this.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.contextualizeError(e, ${errorContext}, ${this.buffer.currentBuffer});`);
       catchPoisonPos = this.codebuf.length;
       this.emit('');
       this.emit('}');
@@ -372,7 +372,7 @@ class CompilerAsync extends CompilerBaseAsync {
 
       const errorContext = this.emitErrorContext(node.cond);
       this.emit('} catch (e) {');
-      this.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ${errorContext}, ${this.buffer.currentBuffer});`);
+      this.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.contextualizeError(e, ${errorContext}, ${this.buffer.currentBuffer});`);
       catchPoisonPos = this.codebuf.length;
       this.emit('');
       this.emit('}');

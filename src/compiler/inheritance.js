@@ -213,7 +213,7 @@ class CompileInheritance {
     this.emit.line('    entryErrorContextTable: __ec,');
     this.emit.line(`    errorContext: ${this.compiler.emitErrorContext(node)}`);
     this.emit.line('}).catch((e) => {');
-    this.emit.line(`  cb(runtime.handleError(e, ${this.compiler.emitErrorContext(node)}, output));`);
+    this.emit.line(`  cb(runtime.contextualizeError(e, ${this.compiler.emitErrorContext(node)}, output));`);
     this.emit.line('  throw e;');
     this.emit.line('});');
   }

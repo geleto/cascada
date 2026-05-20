@@ -233,7 +233,7 @@ class CompilerBaseAsync extends CompilerCommon {
     };
     this._compileAggregate(mergedNode, null, '[', ']', true, true, function (args) {
       this.emit.line(`  const testFunc = ${testFunc};`);
-      this.emit.line(`  if (!testFunc) { var err = runtime.handleError(new Error("${failMsg}"), ${this.emitErrorContext(node.right)}, ${this.buffer.currentBuffer}); throw err; }`);
+      this.emit.line(`  if (!testFunc) { var err = runtime.contextualizeError(new Error("${failMsg}"), ${this.emitErrorContext(node.right)}, ${this.buffer.currentBuffer}); throw err; }`);
       this.emit.line(`  const result = await testFunc.call(context, ${args}[0]`);
       if (node.right.args && node.right.args.children.length > 0) {
         this.emit.line(`, ...${args}.slice(1)`);

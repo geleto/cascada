@@ -1,4 +1,4 @@
-import {PoisonError, createPoison, isPoisonError, handleError} from '../errors.js';
+import {PoisonError, createPoison, isPoisonError, contextualizeError} from '../errors.js';
 import {MutatingCommand} from './base.js';
 
 const contextualizedChainErrorCache = new WeakMap();
@@ -75,7 +75,7 @@ function contextualizeChainError(chain, errorContext, err) {
     if (perError && perError.has(cacheKey)) {
       return perError.get(cacheKey);
     }
-    const wrapped = handleError(err, errorContext);
+    const wrapped = contextualizeError(err, errorContext);
     if (wrapped !== err) {
       const nextPerError = perError || new Map();
       nextPerError.set(cacheKey, wrapped);
@@ -83,7 +83,7 @@ function contextualizeChainError(chain, errorContext, err) {
     }
     return wrapped;
   }
-  return handleError(err, errorContext);
+  return contextualizeError(err, errorContext);
 }
 
 export {ErrorCommand, TargetPoisonCommand, contextualizeErrorsForChain, contextualizeChainError};

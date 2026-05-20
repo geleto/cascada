@@ -7,7 +7,7 @@ import {
   isPoisonError,
   isRuntimeFatalError,
   createPoison,
-  handleError,
+  contextualizeError,
 } from '../errors.js';
 import {BufferIterator} from '../buffer-iterator.js';
 
@@ -114,7 +114,7 @@ class Chain {
   }
 
   _setFatalError(err, cmd = null) {
-    this._fatalError = handleError(err, cmd.errorContext);
+    this._fatalError = contextualizeError(err, cmd.errorContext);
     this._markStateChanged();
   }
 
@@ -413,5 +413,5 @@ function contextualizeCommandErrors(chain, cmd, errors) {
   if (!Array.isArray(errors) || errors.length === 0) {
     return [];
   }
-  return errors.map((err) => handleError(err, cmd.errorContext));
+  return errors.map((err) => contextualizeError(err, cmd.errorContext));
 }

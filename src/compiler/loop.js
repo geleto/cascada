@@ -265,7 +265,7 @@ class CompileLoop {
           this.compiler.emit.line(';');
           const whileErrorContext = this.compiler.emitErrorContext(whileConditionNode);
           this.compiler.emit('} catch (e) {');
-          this.compiler.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ${whileErrorContext}, ${this.compiler.buffer.currentBuffer});`);
+          this.compiler.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.contextualizeError(e, ${whileErrorContext}, ${this.compiler.buffer.currentBuffer});`);
           catchPoisonPos = this.compiler.codebuf.length;
           this.compiler.emit.line('');
           this.compiler.emit(`  ${whileCondId} = false;`);

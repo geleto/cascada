@@ -1,4 +1,4 @@
-import {handleError} from '../errors.js';
+import {contextualizeError} from '../errors.js';
 import {resolveSingle} from '../resolve.js';
 
 function noInheritanceParent() {
@@ -9,14 +9,14 @@ async function resolveInheritanceParent(env, isScript, target, inheritedErrorCon
   try {
     target = await resolveSingle(target);
   } catch (error) {
-    throw handleError(error, errorContext, null);
+    throw contextualizeError(error, errorContext, null);
   }
 
   if (target === null || target === undefined) {
     // Scripts use null as an explicit parentless selection; templates must
     // select a concrete parent when dynamic extends is present.
     if (!isScript) {
-      throw handleError(
+      throw contextualizeError(
         new Error('template extends must select a parent template'),
         errorContext,
         null
@@ -30,7 +30,7 @@ async function resolveInheritanceParent(env, isScript, target, inheritedErrorCon
     const parentTemplateOrScript = await env[loadMethod](target, true, context.path, false);
     return { parentTemplateOrScript, errorContext: inheritedErrorContext };
   } catch (error) {
-    throw handleError(
+    throw contextualizeError(
       error,
       inheritedErrorContext ?? null,
       null
