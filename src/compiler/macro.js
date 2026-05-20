@@ -255,9 +255,10 @@ class CompileMacro {
     compiler.emit.line('}');
   }
 
-  _emitAsyncMacroReturn({ node, bufferId, errVar, allCallersBufferId, hasCallerSupport }) {
+  _emitAsyncMacroReturn({ node, bufferId, allCallersBufferId, hasCallerSupport }) {
     const compiler = this.compiler;
-    const errorCheck = `if (${errVar}) throw ${errVar};`;
+    // Macro-body boundary errors report through the compiled reportError
+    // callback and propagate through chain poison, not by rejecting here.
     const callerReadyVar = hasCallerSupport ? compiler._tmpid() : null;
     const callerSyncPrefix =
       (hasCallerSupport ? `const ${callerReadyVar} = ${bufferId}.addCommand(new runtime.SnapshotCommand({ chainName: "${CALLER_SCHED_CHAIN_NAME}", errorContext: ${compiler.emitErrorContext(node)} }), "${CALLER_SCHED_CHAIN_NAME}");` : '') +
@@ -270,7 +271,6 @@ class CompileMacro {
         callerSyncPrefix +
         `${bufferId}.finish();` +
         `const ${returnVar}_snapshot = ${bufferId}.getChain("${RETURN_CHAIN_NAME}").finalSnapshot();` +
-        `${errorCheck}` +
         `return ${returnVar}_snapshot.then((value) => value === runtime.RETURN_UNSET ? null : value);` +
         `})()`;
     } else {
@@ -279,7 +279,6 @@ class CompileMacro {
         callerSyncPrefix +
         `${bufferId}.finish();` +
         `const ${textSnapshotVar} = ${bufferId}.getChain("${compiler.buffer.currentTextChainName}").finalSnapshot();` +
-        `${errorCheck}` +
         `return ${textSnapshotVar}.then((value) => runtime.markSafe(value));` +
         `})()`;
     }
@@ -377,7 +376,7 @@ class CompileMacro {
     }
   }
 
-  _emitCompiledAsyncMacroBody({ node, callableSignature, managedFrame, bufferId, args, kwargs, rawCallerVar, allCallersBufferId, errVar, hasCallerSupport }) {
+  _emitCompiledAsyncMacroBody({ node, callableSignature, managedFrame, bufferId, args, kwargs, rawCallerVar, allCallersBufferId, hasCallerSupport }) {
     const compiler = this.compiler;
     this._emitAsyncMacroBindings({
       node,
@@ -402,7 +401,6 @@ class CompileMacro {
     return this._emitAsyncMacroReturn({
       node,
       bufferId,
-      errVar,
       allCallersBufferId,
       hasCallerSupport
     });
@@ -450,14 +448,6 @@ class CompileMacro {
       '}'
     );
 
-    const err = compiler._tmpid();
-    compiler.emit.lines(
-      `let ${err} = null;`,
-      'function cb(err) {',
-      `if(err) {${err} = err;}`,
-      '}'
-    );
-
     let returnStatement;
     const rawCallerVar = macroNeedsCallerSupport ? compiler._tmpid() : null;
     const allCallersBufferId = macroNeedsCallerSupport ? compiler._tmpid() : null;
@@ -480,7 +470,6 @@ class CompileMacro {
           kwargs,
           rawCallerVar,
           allCallersBufferId,
-          errVar: err,
           hasCallerSupport: macroNeedsCallerSupport
         });
       });
@@ -495,7 +484,6 @@ class CompileMacro {
           kwargs,
           rawCallerVar,
           allCallersBufferId,
-          errVar: err,
           hasCallerSupport: macroNeedsCallerSupport
         });
       }, null, node.body, node, 'macroParentBuffer');

@@ -87,6 +87,7 @@ class CompilerAsync extends CompilerBaseAsync {
               }, arg);
               this.emit(')');
             } else {
+              // External/Nunjucks-compatible adapter callback, kept as cb.
               this.emit.line('function(cb) {');
               this.emit.line('if(!cb) { cb = function(err) { if(err) { throw err; }}}');
 

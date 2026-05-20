@@ -196,7 +196,6 @@ class CommandBuffer {
     if (cmd && cmd.isObservable) {
       const resolvedChainName = this._resolveAliasedChainName(chainName);
       const chain = this.getChainIfExists(resolvedChainName);
-      const path = this._context?.path || null;
       if (!chain) {
         throw new RuntimeFatalError(
           `Chain '${resolvedChainName}' is unavailable on finished CommandBuffer`,

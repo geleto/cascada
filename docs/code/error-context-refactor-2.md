@@ -98,6 +98,26 @@ Implemented for async commands:
 5. `_generateErrorContext(...)` still serves frozen sync compiler paths and
    remains in place until a separate sync-compiler cleanup is opened.
 
+## Phase C Prerequisite - Error-Only Compiled Callback
+
+Implemented before inheritance owner-table binding: the compiled async
+reporting callback contract is explicit and error-only.
+
+1. Audit generated async code so the render/reporting callback passed through
+   compiled template/script functions is never used to return a value. Values
+   should flow through return values, command buffers, snapshots, promises, or
+   explicit external callback adapters, not through the render/report callback.
+2. Keep public/environment and third-party callback APIs free to use Node-style
+   `(err, value)` callbacks. This cleanup is only for the internal compiled
+   async reporting callback that carries fatal/runtime errors and is embedded in
+   prepared error contexts.
+3. Renamed the generated async callback parameter from generic `cb` to
+   `reportError`. Local adapter callbacks used for external APIs may keep
+   conventional names such as `callback`.
+4. Updated `prepareErrorContexts(...)` / generated `getErrorContexts(...)`
+   terminology so the callback slot reads as an error-reporting callback, not a
+   value completion callback.
+
 ## Phase C - Inheritance Metadata And Test Cleanup
 
 1. Establish and verify the inheritance callback invariant: within a single
