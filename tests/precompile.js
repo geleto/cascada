@@ -31,14 +31,14 @@ import {
         name: 'async-test.njk'
       });
 
-      expect(output).to.contain('function root(env, context, runtime, cb');
+      expect(output).to.contain('function root(env, context, runtime, reportError');
       expect(output).to.not.contain('function root(env, context, frame, runtime, cb');
     });
 
     it('should preserve async mode for precompileTemplateAsync', function() {
       const output = precompileTemplateAsync('./tests/templates/item.njk');
 
-      expect(output).to.contain('function root(env, context, runtime, cb');
+      expect(output).to.contain('function root(env, context, runtime, reportError');
       expect(output).to.not.contain('function root(env, context, frame, runtime, cb');
     });
 

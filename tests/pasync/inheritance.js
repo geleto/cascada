@@ -78,7 +78,7 @@ function compactTestErrorContext(errorContext) {
     errorContext.colno ?? 0,
     errorContext.label ?? null,
     errorContext.path ?? null,
-    errorContext.cb ?? null
+    errorContext.reportError ?? null
   ];
 }
 
@@ -221,7 +221,7 @@ describe('Inheritance rebuild', function () {
         expect(source).not.to.contain(fragment);
       });
       expect(source).to.contain('async function resolveInheritanceParent(env, context, runtime, errorContext)');
-      expect(source).to.contain('function root(env, context, runtime, cb)');
+      expect(source).to.contain('function root(env, context, runtime, reportError)');
     });
 
     it('emits clean finalized invocation calls for this and super', function () {
@@ -1548,7 +1548,7 @@ describe('Inheritance rebuild', function () {
         methodEntries: {
           greet: compiledMethod('greet', {
             argNames: ['user'],
-            fn(envArg, contextArg, runtimeArg, cb, invocationBuffer, payload, renderContext, methodData, currentInstance) {
+            fn(envArg, contextArg, runtimeArg, reportError, invocationBuffer, payload, renderContext, methodData, currentInstance) {
               expect(currentInstance.runtimeState.methods.greet).to.be(methodData);
               expect(invocationBuffer.parent).to.be(currentInstance.sharedRootBuffer);
               return `hello ${payload.originalArgs.user}`;
@@ -1572,7 +1572,7 @@ describe('Inheritance rebuild', function () {
         methodEntries: {
           greet: compiledMethod('greet', {
             argNames: ['user', 'fallback'],
-            fn(envArg, contextArg, runtimeArg, cb, invocationBuffer, payload) {
+            fn(envArg, contextArg, runtimeArg, reportError, invocationBuffer, payload) {
               return `${payload.originalArgs.user}:${payload.originalArgs.fallback}`;
             }
           })
@@ -1658,7 +1658,7 @@ describe('Inheritance rebuild', function () {
         scriptMode: true,
         methodEntries: {
           outer: compiledMethod('outer', {
-            fn(envArg, contextArg, runtimeArg, cb, invocationBuffer, payload, renderContext, methodData, currentInstance) {
+            fn(envArg, contextArg, runtimeArg, reportError, invocationBuffer, payload, renderContext, methodData, currentInstance) {
               outerBuffer = invocationBuffer;
               return currentInstance.invokeFromCurrentBuffer(
                 'inner',
@@ -1670,7 +1670,7 @@ describe('Inheritance rebuild', function () {
             }
           }),
           inner: compiledMethod('inner', {
-            fn(envArg, contextArg, runtimeArg, cb, invocationBuffer) {
+            fn(envArg, contextArg, runtimeArg, reportError, invocationBuffer) {
               expect(invocationBuffer.parent).to.be(outerBuffer);
               return 'inner';
             }
@@ -1691,7 +1691,7 @@ describe('Inheritance rebuild', function () {
       const child = compiledMethod('build', {
         argNames: ['user'],
         super: true,
-        fn(envArg, contextArg, runtimeArg, cb, invocationBuffer, payload, renderContext, methodData, currentInstance) {
+        fn(envArg, contextArg, runtimeArg, reportError, invocationBuffer, payload, renderContext, methodData, currentInstance) {
           return currentInstance.invokeSuper(
             methodData,
             [payload.originalArgs.user],
@@ -1703,7 +1703,7 @@ describe('Inheritance rebuild', function () {
       });
       const parent = compiledMethod('build', {
         argNames: ['user'],
-        fn(envArg, contextArg, runtimeArg, cb, invocationBuffer, payload) {
+        fn(envArg, contextArg, runtimeArg, reportError, invocationBuffer, payload) {
           return payload.originalArgs.user;
         }
       });

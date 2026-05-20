@@ -76,7 +76,7 @@ class CompileGuard {
         let chainGuardStateVar = null;
         this.emit.line('');
         if (guardStateVar) {
-          this.emit.line(`const ${guardStateVar} = runtime.guard.init(cb);`);
+          this.emit.line(`const ${guardStateVar} = runtime.guard.init(reportError);`);
         }
         guardRepairLinePos = compiler.codebuf.length;
         this.emit.line('');
@@ -96,7 +96,7 @@ class CompileGuard {
           chainGuardStateVar = compiler._tmpid();
           this.emit.insertLine(
             chainGuardInitLinePos,
-            `const ${chainGuardStateVar} = runtime.guard.initChainSnapshots(${JSON.stringify(guardChains)}, ${compiler.buffer.currentBuffer}, cb, ${guardErrorContext});`
+            `const ${chainGuardStateVar} = runtime.guard.initChainSnapshots(${JSON.stringify(guardChains)}, ${compiler.buffer.currentBuffer}, reportError, ${guardErrorContext});`
           );
         }
 

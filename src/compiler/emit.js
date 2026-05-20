@@ -89,13 +89,13 @@ class CompileEmit {
     this.scopeClosers = '';
     if (this.compiler.asyncMode) {
       if (name === 'root') {
-        this.line(`function ${name}(env, context, runtime, cb) {`);
-        this.line('const __ec = getErrorContexts(runtime, context.path, cb);');
+        this.line(`function ${name}(env, context, runtime, reportError) {`);
+        this.line('const __ec = getErrorContexts(runtime, context.path, reportError);');
       } else {
         const extraParamSource = Array.isArray(extraParams) && extraParams.length > 0
           ? `, ${extraParams.join(', ')}`
           : '';
-        this.line(`function ${name}(env, context, runtime, cb, parentBuffer = null${extraParamSource}, __ec = null) {`);
+        this.line(`function ${name}(env, context, runtime, reportError, parentBuffer = null${extraParamSource}, __ec = null) {`);
       }
     } else {
       this.line(`function ${name}(env, context, frame, runtime, cb) {`);

@@ -223,7 +223,7 @@ class CompileLoop {
     const linkedMutatedChainsArg = this.compiler.emit.getLinkedMutatedChainsArg(node);
     const loopInfoArg = `{ ec: ${errorContextVar}, loop: ${loopMetaVar} }`;
     this.compiler.emit(
-      `return runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, cb, async (currentBuffer) => {`
+      `return runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, reportError, async (currentBuffer) => {`
     );
     this.compiler.emit.asyncClosureDepth++;
 

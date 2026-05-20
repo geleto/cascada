@@ -208,12 +208,12 @@ class CompileInheritance {
     this.emit.line('    env,');
     this.emit.line('    context,');
     this.emit.line('    runtime,');
-    this.emit.line('    cb,');
+    this.emit.line('    reportError,');
     this.emit.line('    rootBuffer: output,');
     this.emit.line('    entryErrorContextTable: __ec,');
     this.emit.line(`    errorContext: ${this.compiler.emitErrorContext(node)}`);
     this.emit.line('}).catch((e) => {');
-    this.emit.line(`  cb(runtime.contextualizeError(e, ${this.compiler.emitErrorContext(node)}, output));`);
+    this.emit.line(`  reportError(runtime.contextualizeError(e, ${this.compiler.emitErrorContext(node)}, output));`);
     this.emit.line('  throw e;');
     this.emit.line('});');
   }
@@ -592,7 +592,7 @@ class CompileInheritance {
 
   _compileExtendsParentResolver(node) {
     this.emit.line('async function resolveInheritanceParent(env, context, runtime, errorContext) {');
-    this.emit.line('  const __ec = getErrorContexts(runtime, this?.path ?? context?.path ?? null, runtime.getErrorContextCallback(errorContext));');
+    this.emit.line('  const __ec = getErrorContexts(runtime, this?.path ?? context?.path ?? null, runtime.getErrorContextReportError(errorContext));');
     const inheritanceFacts = node._analysis.inheritance;
     if (!inheritanceFacts.localExtendsNode || inheritanceFacts.localExtendsNode.noParentLiteral) {
       this.emit.line('  return runtime.noInheritanceParent();');

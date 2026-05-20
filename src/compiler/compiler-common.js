@@ -153,8 +153,8 @@ class CompilerCommon extends Obj {
   emitErrorContextHelper() {
     const { labels, specs } = this._buildErrorContextTable();
     this.emit(
-      `function getErrorContexts(runtime, path, cb) {\n` +
-      `  return runtime.prepareErrorContexts(path, cb, ${JSON.stringify(labels)}, ${JSON.stringify(specs)});\n` +
+      `function getErrorContexts(runtime, path, reportError) {\n` +
+      `  return runtime.prepareErrorContexts(path, reportError, ${JSON.stringify(labels)}, ${JSON.stringify(specs)});\n` +
       `}\n`
     );
   }

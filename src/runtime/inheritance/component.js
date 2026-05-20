@@ -103,7 +103,7 @@ async function createComponentInstance(spec) {
     ownerContext,
     env,
     runtime,
-    cb,
+    reportError,
     ownerBuffer,
     sideChainName = null,
     bindingName = null,
@@ -130,7 +130,7 @@ async function createComponentInstance(spec) {
     env,
     context: componentContext,
     runtime,
-    cb,
+    reportError,
     rootBuffer,
     sharedRootBuffer,
     traceParent: ownerBuffer || null,
@@ -141,8 +141,8 @@ async function createComponentInstance(spec) {
     await instance.invokeConstructor(errorContext);
   } catch (error) {
     instance.close(error);
-    if (cb) {
-      cb(error);
+    if (reportError) {
+      reportError(error);
     }
     throw error;
   }
@@ -163,7 +163,7 @@ function startComponentInstance(spec) {
     ownerContext,
     env,
     runtime,
-    cb,
+    reportError,
     errorContext = null
   } = spec;
   // The user binding is also the internal side-chain lane that orders later
@@ -176,7 +176,7 @@ function startComponentInstance(spec) {
     ownerContext,
     env,
     runtime,
-    cb,
+    reportError,
     ownerBuffer: currentBuffer,
     sideChainName,
     errorContext

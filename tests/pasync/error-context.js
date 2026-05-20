@@ -31,13 +31,13 @@ describe('error context tracing runtime foundation', () => {
       [1, 0, 'Root'],
       [7, 11, 0]
     ];
-    const cb = () => {};
+    const reportError = () => {};
 
-    const prepared = prepareErrorContexts('script.casc', cb, labels, specs);
+    const prepared = prepareErrorContexts('script.casc', reportError, labels, specs);
 
     expect(prepared).to.eql([
-      [1, 0, 'Root', 'script.casc', cb],
-      [7, 11, 'For.Iterator(Symbol)', 'script.casc', cb]
+      [1, 0, 'Root', 'script.casc', reportError],
+      [7, 11, 'For.Iterator(Symbol)', 'script.casc', reportError]
     ]);
     expect(specs).to.eql([
       [1, 0, 'Root'],
@@ -66,14 +66,14 @@ describe('error context tracing runtime foundation', () => {
   });
 
   it('normalizes compact contexts', () => {
-    const cb = () => {};
+    const reportError = () => {};
 
-    expect(normalizeErrorContext([1, 2, 'LookupVal', 'script.casc', cb])).to.eql({
+    expect(normalizeErrorContext([1, 2, 'LookupVal', 'script.casc', reportError])).to.eql({
       lineno: 1,
       colno: 2,
       label: 'LookupVal',
       path: 'script.casc',
-      cb
+      reportError
     });
     try {
       normalizeErrorContext(null);
@@ -103,7 +103,7 @@ describe('error context tracing runtime foundation', () => {
       colno: 4,
       path: 'origin.casc',
       label: 'FunCall',
-      cb: null
+      reportError: null
     });
     expect(getErrorInfo(consumed, fallback, null, true).stack).to.eql([]);
   });
@@ -212,10 +212,10 @@ describe('error context tracing runtime foundation', () => {
 
   it('handleFatal reports through context callback when present', () => {
     let reported = null;
-    const cb = err => {
+    const reportError = err => {
       reported = err;
     };
-    const ec = [7, 2, 'AsyncBoundary', 'fatal.casc', cb];
+    const ec = [7, 2, 'AsyncBoundary', 'fatal.casc', reportError];
 
     const wrapped = handleFatal(new Error('fatal failure'), ec, {});
 
@@ -406,9 +406,9 @@ describe('error context tracing runtime foundation', () => {
         'return result.snapshot()'
       ].join('\n'), env, 'context-table.casc').compileSource();
 
-      expect(source).to.contain('const __ec = getErrorContexts(runtime, context.path, cb);');
-      expect(source).to.contain('function getErrorContexts(runtime, path, cb) {');
-      expect(source).to.contain('return runtime.prepareErrorContexts(path, cb,');
+      expect(source).to.contain('const __ec = getErrorContexts(runtime, context.path, reportError);');
+      expect(source).to.contain('function getErrorContexts(runtime, path, reportError) {');
+      expect(source).to.contain('return runtime.prepareErrorContexts(path, reportError,');
       expect(source).to.contain('"If.Condition(Symbol)"');
       expect(source).to.match(/\[3,7,\d+\]/);
       expect(source).to.match(/\[6,7,\d+\]/);
@@ -452,8 +452,8 @@ describe('error context tracing runtime foundation', () => {
       ].join('\n'), env, 'block-context.njk').compileSource();
 
       expect(source.match(/runtime\.prepareErrorContexts/g)).to.have.length(1);
-      expect(source).to.contain('const __ec = getErrorContexts(runtime, context.path, cb);');
-      expect(source).to.match(/function b_body\(env, context, runtime, cb, parentBuffer = null.*__ec = null\)/);
+      expect(source).to.contain('const __ec = getErrorContexts(runtime, context.path, reportError);');
+      expect(source).to.match(/function b_body\(env, context, runtime, reportError, parentBuffer = null.*__ec = null\)/);
     });
 
     it('uses script labels for script-mode load targets', () => {
@@ -481,9 +481,9 @@ describe('error context tracing runtime foundation', () => {
       const parentContextPaths = [];
       const getParentErrorContexts = parent.getErrorContexts;
 
-      parent.getErrorContexts = function getObservedErrorContexts(runtime, path, cb) {
+      parent.getErrorContexts = function getObservedErrorContexts(runtime, path, reportError) {
         parentContextPaths.push(path);
-        return getParentErrorContexts.call(this, runtime, path, cb);
+        return getParentErrorContexts.call(this, runtime, path, reportError);
       };
 
       const result = await env.renderTemplate('child.njk', { name: 'Ada' });

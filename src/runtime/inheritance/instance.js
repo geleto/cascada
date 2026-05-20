@@ -8,15 +8,15 @@ class InheritanceInstance {
     this.runtimeState = options.runtimeState;
     this.env = options.env;
     this.runtime = options.runtime;
-    this.cb = options.cb;
+    this.reportError = options.reportError;
     this.rootBuffer = options.rootBuffer;
     this.sharedRootBuffer = options.sharedRootBuffer;
     this.traceParent = options.traceParent || null;
     this.context = options.context;
-    // The error context tables are reused by all loads of a given template or script,
-    // And are thus each time initialized with a different cb
-    // We need to know the error context table for each template or script in the inheritance
-    // chain in order to provide correct error contexts (cb) on method invocation.
+    // The error context tables are reused by all loads of a given template or
+    // script, and each render binds them to that render's reportError callback.
+    // We need the table for each owner in the inheritance chain to provide
+    // correct error contexts on method invocation.
     this.entryErrorContextTable = options.entryErrorContextTable || null;
     this.errorContextTablesByOwner = new Map();
     this.failure = null;
@@ -55,7 +55,7 @@ class InheritanceInstance {
       runtimeState,
       env: options.env,
       runtime,
-      cb: options.cb ?? function noopCallback() {},
+      reportError: options.reportError ?? function noopReportError() {},
       rootBuffer,
       sharedRootBuffer,
       traceParent,
@@ -136,7 +136,7 @@ class InheritanceInstance {
     // owners and should not be used for normal loaded inheritance entries.
     const ownerPath = ownerEntry.path ?? context.path;
     const prepared = ownerTemplateOrScript && typeof ownerTemplateOrScript.getErrorContexts === 'function'
-      ? ownerTemplateOrScript.getErrorContexts(this.runtime, ownerPath, this.cb)
+      ? ownerTemplateOrScript.getErrorContexts(this.runtime, ownerPath, this.reportError)
       : null;
     this.errorContextTablesByOwner.set(ownerEntry, prepared);
     return prepared;
@@ -181,7 +181,7 @@ class InheritanceInstance {
         this.env,
         context,
         this.runtime,
-        this.cb,
+        this.reportError,
         invocationBuffer,
         callablePayload,
         renderContext,
@@ -211,13 +211,13 @@ class InheritanceInstance {
   }
 }
 
-async function renderInheritanceParticipantRoot({ entryTemplateOrScript, env, context, runtime, cb, rootBuffer, entryErrorContextTable = null, errorContext = null }) {
+async function renderInheritanceParticipantRoot({ entryTemplateOrScript, env, context, runtime, reportError, rootBuffer, entryErrorContextTable = null, errorContext = null }) {
   const instance = await InheritanceInstance.create({
     entryTemplateOrScript,
     env,
     context,
     runtime,
-    cb,
+    reportError,
     rootBuffer,
     entryErrorContextTable,
     errorContext

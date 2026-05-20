@@ -682,7 +682,7 @@ describe('Phase 8 - Component Observations', function () {
         },
         env: {},
         runtime: runtimeModule,
-        cb: () => {},
+        reportError: () => {},
         context: makeContext('Component.script'),
         rootBuffer: sharedRootBuffer,
         sharedRootBuffer
@@ -1109,7 +1109,7 @@ describe('Phase 8 - Component Lifecycle', function () {
       ownerContext,
       env,
       runtime: runtimeModule,
-      cb: () => {},
+      reportError: () => {},
       errorContext: [2, 1, null, 'Main.script', null]
     });
 
@@ -1176,7 +1176,7 @@ describe('Phase 8 - Component Lifecycle', function () {
       ownerContext,
       env,
       runtime: runtimeModule,
-      cb: () => {},
+      reportError: () => {},
       errorContext: [2, 1, null, 'Main.script', null]
     });
 
@@ -1217,7 +1217,7 @@ describe('Phase 8 - Component Lifecycle', function () {
       ownerContext,
       env: {},
       runtime: runtimeModule,
-      cb: () => {},
+      reportError: () => {},
       ownerBuffer,
       bindingName: 'nsBinding',
       errorContext: [1, 1, null, 'Main.script', null]
@@ -1257,7 +1257,7 @@ describe('Phase 8 - Component Lifecycle', function () {
       },
       env: {},
       runtime: runtimeModule,
-      cb: () => {},
+      reportError: () => {},
       context: { path: 'Component.script' },
       rootBuffer,
       sharedRootBuffer: rootBuffer
@@ -1303,7 +1303,7 @@ describe('Phase 8 - Component Lifecycle', function () {
       ownerContext,
       env: {},
       runtime: runtimeModule,
-      cb: () => {},
+      reportError: () => {},
       ownerBuffer,
       errorContext: [1, 1, null, 'Main.script', null]
     });
@@ -1336,7 +1336,7 @@ describe('Phase 8 - Component Lifecycle', function () {
         ownerContext,
         env: {},
         runtime: runtimeModule,
-        cb: () => {},
+        reportError: () => {},
         ownerBuffer,
         errorContext: [1, 1, null, 'Main.script', null]
       });
@@ -1380,7 +1380,7 @@ describe('Phase 8 - Component Lifecycle', function () {
         ownerContext,
         env: {},
         runtime: runtimeModule,
-        cb: (error) => {
+        reportError: (error) => {
           if (error) {
             seenErrors.push(error);
           }

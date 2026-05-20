@@ -12,7 +12,7 @@ const EMPTY_ERROR_CONTEXT_INFO = Object.freeze({
   colno: null,
   label: null,
   path: null,
-  cb: null
+  reportError: null
 });
 
 // Internal promises are sometimes observed through an owning command/chain
@@ -25,13 +25,13 @@ function markPromiseHandled(promise) {
   return promise;
 }
 
-function prepareErrorContexts(path, cb, labels, specs) {
+function prepareErrorContexts(path, reportError, labels, specs) {
   return specs.map(([lineno, colno, label]) => [
     lineno,
     colno,
     typeof label === 'number' ? labels[label] : label,
     path ?? null,
-    cb ?? null
+    reportError ?? null
   ]);
 }
 
@@ -44,7 +44,7 @@ function normalizeErrorContext(ec) {
     colno: ec[1] ?? null,
     label: ec[2] ?? null,
     path: ec[3] ?? null,
-    cb: ec[4] ?? null
+    reportError: ec[4] ?? null
   };
 }
 
@@ -55,14 +55,14 @@ function normalizeOptionalErrorContext(ec) {
   return Array.isArray(ec) ? normalizeErrorContext(ec) : EMPTY_ERROR_CONTEXT_INFO;
 }
 
-function getErrorContextCallback(ec) {
+function getErrorContextReportError(ec) {
   if (Array.isArray(ec)) {
     return ec[4] ?? null;
   }
   if (ec && typeof ec === 'object') {
     // TODO(error-context-cleanup): remove legacy object-context callback support
     // once inheritance origin metadata is compact-only.
-    return ec.cb ?? null;
+    return ec.reportError ?? ec.cb ?? null;
   }
   return null;
 }
@@ -590,8 +590,8 @@ function handleFatal(error, ec, currentBuffer = null) {
   const wrapped = contextualizeError(error, ec, currentBuffer);
   const context = normalizeOptionalErrorContext(resolveEffectiveErrorContext(wrapped, ec));
 
-  if (context.cb) {
-    context.cb(wrapped);
+  if (context.reportError) {
+    context.reportError(wrapped);
     return wrapped;
   }
 
@@ -647,7 +647,7 @@ function getErrorInfo(error, ec = null, currentBuffer = null, includeStack = fal
     colno: context.colno,
     path: context.path,
     label: context.label,
-    cb: context.cb
+    reportError: context.reportError
   };
 
   const bufferInfo = getBufferErrorInfo(currentBuffer);
@@ -687,4 +687,4 @@ function peekError(value) {
   return null;
 }
 
-export { PoisonedValue, PoisonError, RuntimeError, RuntimeFatalError, RuntimePromise, prepareErrorContexts, normalizeErrorContext, getErrorContextCallback, getErrorInfo, createPoison, isPoison, isPoisonError, isRuntimeFatalError, isError, collectErrors, contextualizeError, handleError, handleFatal, peekError, markPromiseHandled };
+export { PoisonedValue, PoisonError, RuntimeError, RuntimeFatalError, RuntimePromise, prepareErrorContexts, normalizeErrorContext, getErrorContextReportError, getErrorInfo, createPoison, isPoison, isPoisonError, isRuntimeFatalError, isError, collectErrors, contextualizeError, handleError, handleFatal, peekError, markPromiseHandled };

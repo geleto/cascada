@@ -76,7 +76,7 @@ class CompileComposition {
       const exportedId = this.compiler._tmpid();
       this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => {`);
       this.emit.line('  resolvedTemplate.compile();');
-      this.emit.line('  return runtime.resolveSingle(resolvedTemplate.getExported(null, cb));');
+      this.emit.line('  return runtime.resolveSingle(resolvedTemplate.getExported(null, reportError));');
       this.emit.line('});');
       this.compiler.buffer.emitLimitedLoopCompletion(exportedId, node);
       this._emitValueImportBinding(target, exportedId, node);
@@ -93,7 +93,7 @@ class CompileComposition {
     this.compiler.compositionPayload.emitContext(importContextVar, importVarsVar, node.withContext);
     this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => {`);
     this.emit.line('  resolvedTemplate.compile();');
-    this.emit.line(`  return runtime.resolveSingle(resolvedTemplate.getExported(${importContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, cb));`);
+    this.emit.line(`  return runtime.resolveSingle(resolvedTemplate.getExported(${importContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, reportError));`);
     this.emit.line('});');
     this.compiler.buffer.emitLimitedLoopCompletion(exportedId, node);
     this._emitValueImportBinding(target, exportedId, node);
@@ -138,7 +138,7 @@ class CompileComposition {
     const bindingIds = [];
     this.emit.line(`let ${exportedId} = runtime.resolveSingle(${importedId}).then((resolvedTemplate) => {`);
     this.emit.line('  resolvedTemplate.compile();');
-    this.emit.line('  return runtime.resolveSingle(resolvedTemplate.getExported(null, cb));');
+    this.emit.line('  return runtime.resolveSingle(resolvedTemplate.getExported(null, reportError));');
     this.emit.line('});');
     this._emitAsyncFromImportBindings(node, exportedId, bindingIds);
     this._emitFromImportCompletion(node, exportedId, bindingIds);
@@ -155,7 +155,7 @@ class CompileComposition {
     this.compiler.compositionPayload.emitContext(importContextVar, importVarsVar, node.withContext);
     this.emit.line(`let ${exportedId} = runtime.resolveSingle(${importedId}).then((resolvedTemplate) => {`);
     this.emit.line('  resolvedTemplate.compile();');
-    this.emit.line(`  return runtime.resolveSingle(resolvedTemplate.getExported(${importContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, cb));`);
+    this.emit.line(`  return runtime.resolveSingle(resolvedTemplate.getExported(${importContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, reportError));`);
     this.emit.line('});');
     this._emitAsyncFromImportBindings(node, exportedId, bindingIds);
     this._emitFromImportCompletion(node, exportedId, bindingIds);
