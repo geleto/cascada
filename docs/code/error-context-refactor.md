@@ -554,17 +554,17 @@ Not allowed:
 Canonical APIs should accept compact error context entries:
 
 ```js
-handleError(error, ec, currentBuffer)
+contextualizeError(error, ec, currentBuffer)
 createPoison(errors, ec, currentBuffer)
 new RuntimeFatalError(error, ec, currentBuffer)
 handleFatal(error, ec, currentBuffer)
 ```
 
-During migration, legacy overloads may remain:
+The frozen synchronous Nunjucks-compatible compiler path keeps a separate
+positional adapter:
 
 ```js
 handleError(error, lineno, colno, errorContextString, path)
-createPoison(errors, lineno, colno, errorContextString, path)
 ```
 
 All runtime helper calls emitted by the compiler should pass compact prepared
@@ -603,14 +603,26 @@ for boundary-owned fatal failures that must be reported asynchronously. Value
 consumption errors should be wrapped or poisoned, not reported directly through
 `cb`. If no callback is present, fatal reporting paths throw the wrapped error.
 
-`handleFatal(error, ec, currentBuffer)` owns that call-or-throw behavior. It
-wraps through `handleError(...)`, reads the effective context's `cb`, calls
-`cb(wrappedError)` when present, and throws the wrapped error when no callback
-is available. Boundary code should prefer this helper over open-coding fatal
-reporting.
+The target error families are:
+
+- `PoisonError` - value-consumption/dataflow failures that poison affected
+  outputs or effects. Contained errors carry source-origin context.
+- `RuntimeError` - all non-poison runtime failures. These are fatal to the
+  current runtime execution path.
+- `TemplateError`/compile errors - parse, compile, validation, and frozen sync
+  template compatibility failures.
+
+`RuntimeFatalError` is a transitional runtime subtype. Phase 6 should evaluate
+whether it still adds value now that non-poison runtime errors are fatal by
+default.
+
+`handleFatal(error, ec, currentBuffer)` owns fatal delivery. It wraps through
+`contextualizeError(...)`, reads the effective context's `cb`, reports to `cb`
+when present, and then throws/rethrows the wrapped error. Boundary code should
+prefer this helper over open-coding fatal reporting.
 
 Wrapped errors should store their originating compact error context. If
-`handleError(...)`, `createPoison(...)`, or another helper receives both an
+`contextualizeError(...)`, `createPoison(...)`, or another helper receives both an
 error that already has an error context and a helper argument `ec`, the error's
 existing context wins. The helper argument is only the fallback errorContext for new
 errors that do not already carry context.
@@ -728,7 +740,7 @@ Before implementation, audit:
    while call sites migrate. `prepareErrorContexts(...)` must return fresh
    prepared entries and must not mutate shared label/spec arrays.
 2. Add canonical runtime error paths:
-   `handleError(error, ec, currentBuffer)`,
+   `contextualizeError(error, ec, currentBuffer)`,
    `createPoison(errors, ec, currentBuffer)`, and
    `RuntimeFatalError(error, ec, currentBuffer)`. Add
    `handleFatal(error, ec, currentBuffer)` for callback-or-throw fatal
@@ -741,7 +753,7 @@ Before implementation, audit:
    filled in incrementally.
 5. Add the dedicated `tests/pasync/error-context.js` file with focused
    tests for compact context preparation, wrapped-error precedence, and basic
-   `handleError/createPoison/handleFatal/getErrorInfo` behavior.
+   `contextualizeError/createPoison/handleFatal/getErrorInfo` behavior.
 
 ### Phase 2 - Runtime Storage And Trace
 
@@ -864,7 +876,7 @@ Deletion checklist for `TODO(error-context-cleanup)`:
   helper should choose between `error.errorContext` and an already-compact
   fallback
 - positional `RuntimeError(...)`, `RuntimeFatalError(...)`,
-  `createPoison(...)`, and `handleError(...)` context overloads for async
+  `createPoison(...)`, and `contextualizeError(...)` context overloads for async
   compiler/runtime call sites
 - `errorContextString` storage and message plumbing after `label` is the only
   field used by async diagnostics and tests
@@ -886,7 +898,7 @@ Deletion checklist for `TODO(error-context-cleanup)`:
   handling, and all old positional/object adapter paths
 - `compactErrorContext(...)` `lineno ?? 0` / `colno ?? 0` defaults if compact
   contexts no longer need `0` as an absent-position sentinel
-- in-place `PoisonError.errors` mutation inside `handleError(...)`
+- in-place `PoisonError.errors` mutation inside `contextualizeError(...)`
 
 1. Replace `resolveErrorContextArgs(...)` with compact-context normalization
    and remove the current `path: ctx.path ?? ctx.errorContextString` fallback
@@ -916,11 +928,11 @@ Deletion checklist for `TODO(error-context-cleanup)`:
    The legacy `ErrorContext` runtime wrapper, the inheritance
    `createBufferErrorContext(...)` bridge file, and command-buffer context-shape
    normalizer have been removed. Remaining expanded object contexts are
-   compatibility inputs in runtime error adapters and hand-built tests.
+   hand-built test scaffolding or frozen sync-path data.
 7. Re-check `attachErrorContextIfMissing(...)` usage after all wrappers accept
    compact contexts directly. It should either remain a private helper used only
-   by `handleError(...)` for already-wrapped errors, or be removed if no longer
-   needed.
+   by `contextualizeError(...)` for already-wrapped errors, or be removed if no
+   longer needed.
 8. Review all helpers, methods, and small bridge functions added during this
    refactor for final ownership. Move them to the file/class that owns the
    concept, inline one-off helpers where clearer, and remove migration-only
@@ -932,89 +944,15 @@ Deletion checklist for `TODO(error-context-cleanup)`:
 
 ### Phase 6 - Final Runtime Cleanup
 
-Phase 6 is split into small async cleanup phases. These phases must not modify
-the synchronous Nunjucks-compatible compiler path. Any synchronous positional
-`handleError(...)` calls that remain are intentionally frozen unless a separate
-sync-compiler project is opened.
+Phase 6 has grown into a focused follow-up refactor. Track it in
+[`error-context-refactor-2.md`](error-context-refactor-2.md). It
+covers async adapter removal, command context strictness, inheritance test and
+metadata cleanup, runtime error taxonomy, fatal delivery, helper ownership,
+buffer API cleanup, and final fixture updates.
 
-#### Phase 6A - Remove Async Legacy Error-Context Adapters
-
-1. Remove remaining async/runtime positional and object-context adapters:
-   `resolveErrorContextArgs(...)`, `compactErrorContext(...)`, object support in
-   `normalizeErrorContext(...)`, and fallback conversion in
-   `resolveEffectiveErrorContext(...)`, once no async/runtime caller depends on
-   them.
-2. Collapse `RuntimeError(...)`, `RuntimeFatalError(...)`, `createPoison(...)`,
-   and `handleError(...)` to compact-context signatures for async runtime
-   usage. Keep any separate sync compatibility surface isolated from these
-   async helpers.
-3. Collapse `ensureDefinedAsync(...)` and its async helper to remove positional
-   `lineno` and `colno` arguments. Async safe-output diagnostics should use only
-   compact `errorContext`; synchronous `ensureDefined(...)` stays on the frozen
-   sync path.
-4. Audit compiler-emitted entry/catch blocks in `emit.js`; migrate any async
-   emitted `handleError(e, lineno, colno, ...)` path to compact context while
-   leaving the synchronous runtime-`lineno` path frozen.
-5. Check `handleFatal(...)` while collapsing `handleError(...)`; its signature
-   is already compact, but it should remain consistent with the final fatal
-   error path.
-6. Verify `RuntimePromise.errorContext` producers all store compact contexts
-   before removing object-context support from normalization.
-7. Remove `errorContextString` aliases from async diagnostics and tests after
-   `label` is the only asserted field.
-8. After all legacy `_generateErrorContext(...)` string-label usages are gone,
-   strip the label-return role and rename the helper if needed so its sole
-   purpose is registering a node's error context index.
-9. Re-check `attachErrorContextIfMissing(...)` and in-place
-   `PoisonError.errors` mutation in `handleError(...)`; keep only the minimal
-   private behavior needed for already-wrapped errors.
-
-#### Phase 6B - Command Context Strictness
-
-1. Remove command constructor `errorContext = null` defaults after every
-   compiler-created and runtime-created command receives an owning context.
-2. Remove the backward-compatible `pos` constructor argument and
-   `positionFromErrorContext(...)` helper from `ChainCommand` and
-   `ChainObservableCommand` once no remaining caller passes `pos`. Normalize
-   compact contexts only at error-reporting points, not during command
-   construction.
-3. Remove the `ChainCommand` static-path label special case from
-   `_generateErrorContext(...)`. Chain command diagnostics should combine the
-   compact source context with command payload details at reporting sites.
-
-#### Phase 6C - Inheritance Metadata And Test Cleanup
-
-1. Replace hand-built inheritance metadata object error-context test scaffolding
-   with integration tests or index-based fixture helpers, then remove the
-   legacy fallback paths in inheritance finalization.
-2. Simplify `getErrorContextCallback(...)` after inheritance legacy object
-   fallbacks are removed. The final helper should only read the compact callback
-   slot.
-3. Evaluate whether `loadEntry(...)` and `createRuntimeOwnerEntry(...)` can be
-   consolidated after the inheritance object error-context fallback paths are
-   gone.
-4. Re-check all inheritance names and payload fields so originating
-   error-context values are named `errorContext`, `ec`, or another explicit
-   context name. Historical `origin` names must not be used where the value is
-   an originating error context.
-
-#### Phase 6D - Helper Ownership And Buffer API Cleanup
-
-1. Reconcile and either fill or explicitly drop deferred optional command-buffer
-   display fields. Use the canonical field names from the command-buffer
-   context shape (`name`, `target`, `source`, `loop`, `branch`) unless a
-   specific field has been deliberately renamed.
-2. Rename or reframe the `CommandBuffer` constructor's `linkedParent` parameter
-   as a chain `linkTarget`, not a diagnostic or ownership parent.
-3. Simplify the long positional `managedBlock(...)` signature once
-   error-context and trace-parent arguments have settled.
-4. Review all helpers, methods, and small bridge functions added during this
-   refactor for final ownership. Move them to the file/class that owns the
-   concept, inline one-off helpers where clearer, and remove migration-only
-   helpers instead of leaving them in incidental locations.
-5. Perform the terminal precompile/browser fixture pass after final async
-   compatibility adapters are removed. This closes out fixture churn from the
-   refactor and is distinct from incremental fixture updates in earlier phases.
+The synchronous Nunjucks-compatible compiler path remains frozen. Any
+synchronous positional `handleError(...)` calls that remain are intentionally
+out of scope unless a separate sync-compiler project is opened.
 
 ## Tests
 
