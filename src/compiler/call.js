@@ -135,7 +135,7 @@ class CompileCall {
     }
 
     const compiler = this.compiler;
-    const funcName = compiler._getNodeName(node.name).replace(/"/g, '\\"');
+    const funcName = compiler._describeCallableTarget(node.name).replace(/"/g, '\\"');
     compiler.emit('runtime.sequentialCallWrapValue(');
     compiler.compile(node.name, null);
     compiler.emit(`, "${funcName}", context, `);

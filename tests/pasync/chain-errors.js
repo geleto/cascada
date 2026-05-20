@@ -23,7 +23,7 @@ describe('chain errors', function () {
   describe('chain commands step2 poison encoding', function () {
     it('propagates RuntimeFatalError instead of degrading it into poison during argument resolution', async () => {
       const output = new TextChain(null, 'text', { path: 'fatal-output.script' }, 'text');
-      const fatal = new RuntimeFatalError('fatal command failure', 1, 1, null, 'fatal-output.script');
+      const fatal = new RuntimeFatalError('fatal command failure', [1, 1, null, 'fatal-output.script', null]);
       const cmd = new TextCommand({
         chainName: 'text',
         args: [Promise.reject(fatal)],
@@ -129,7 +129,7 @@ describe('chain errors', function () {
   describe('output target inspection internals', function () {
     it('surfaces RuntimeFatalError through chain inspection without wrapping it as poison', async () => {
       const output = new VarChain(null, 'value', { path: 'fatal-inspection.script' }, 'value');
-      const fatal = new RuntimeFatalError('fatal inspection failure', 2, 3, null, 'fatal-inspection.script');
+      const fatal = new RuntimeFatalError('fatal inspection failure', [2, 3, null, 'fatal-inspection.script', null]);
 
       output._recordError(fatal, { pos: { lineno: 2, colno: 3 } });
 

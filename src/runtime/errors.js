@@ -309,7 +309,7 @@ class RuntimeError extends Error {
 class RuntimeFatalError extends RuntimeError {
   /**
    * @param {string|Error} message
-   * @param {number|Array|ErrorContext|object} ecOrLineno - Line number, compact context, or legacy context object.
+   * @param {number|Array|object} ecOrLineno - Line number, compact context, or legacy context object.
    * @param {number|object|null} currentBufferOrColno - Current buffer for compact context calls, or column number for legacy calls.
    * @param {string|null} errorContextString
    * @param {string|null} path
@@ -370,20 +370,6 @@ class RuntimePromise {
 
   static reject(reason, ctx) {
     return new RuntimePromise(Promise.reject(reason), ctx);
-  }
-}
-
-/**
- * Execution context for error reporting.
- */
-// TODO(error-context-cleanup): delete this legacy object wrapper once compact
-// prepared __ec entries are the only runtime context shape.
-class ErrorContext {
-  constructor(lineno, colno, path, errorContextString) {
-    this.lineno = lineno;
-    this.colno = colno;
-    this.path = path;
-    this.errorContextString = errorContextString;
   }
 }
 
@@ -756,4 +742,4 @@ function peekError(value) {
   return null;
 }
 
-export { PoisonedValue, PoisonError, RuntimeError, RuntimeFatalError, RuntimePromise, ErrorContext, prepareErrorContexts, normalizeErrorContext, getErrorContextCallback, getErrorInfo, createPoison, isPoison, isPoisonError, isRuntimeFatalError, isError, collectErrors, handleError, handleFatal, peekError, markPromiseHandled };
+export { PoisonedValue, PoisonError, RuntimeError, RuntimeFatalError, RuntimePromise, prepareErrorContexts, normalizeErrorContext, getErrorContextCallback, getErrorInfo, createPoison, isPoison, isPoisonError, isRuntimeFatalError, isError, collectErrors, handleError, handleFatal, peekError, markPromiseHandled };

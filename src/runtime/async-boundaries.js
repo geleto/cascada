@@ -20,10 +20,10 @@ function _createChildBoundary(parentBuffer, linkedChainNames, linkedMutatedChain
   return { childBuffer };
 }
 
-function _reportBoundaryError(err, boundaryName, context, cb) {
+function _reportBoundaryError(err, boundaryName, context, cb, errorContext = null) {
   const reportedError = err instanceof RuntimeError
     ? err
-    : handleError(err, 0, 0, boundaryName, context && context.path ? context.path : null);
+    : handleError(err, errorContext ?? [0, 0, boundaryName, context?.path ?? null, cb ?? null]);
   cb(reportedError);
 }
 
@@ -39,7 +39,7 @@ async function runControlFlowBoundary(parentBuffer, linkedChainNames, linkedMuta
   try {
     return await asyncFn(childBuffer);
   } catch (err) {
-    _reportBoundaryError(err, 'ControlFlowAsyncBlock', context, cb);
+    _reportBoundaryError(err, 'ControlFlowAsyncBlock', context, cb, errorContext);
     return null;
   } finally {
     childBuffer.finish();
@@ -57,7 +57,7 @@ async function runWaitedControlFlowBoundary(parentBuffer, linkedChainNames, link
   try {
     return await asyncFn(childBuffer);
   } catch (err) {
-    _reportBoundaryError(err, 'ControlFlowAsyncBlock', context, cb);
+    _reportBoundaryError(err, 'ControlFlowAsyncBlock', context, cb, errorContext);
     return null;
   } finally {
     childBuffer.finish();
@@ -76,7 +76,7 @@ async function runRenderBoundary(context, cb, asyncFn, errorContext = null, trac
   try {
     return await asyncFn(childBuffer);
   } catch (err) {
-    _reportBoundaryError(err, 'RenderAsyncBlock', context, cb);
+    _reportBoundaryError(err, 'RenderAsyncBlock', context, cb, errorContext);
     return null;
   } finally {
     childBuffer.finish();

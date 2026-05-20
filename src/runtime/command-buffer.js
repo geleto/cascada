@@ -10,7 +10,7 @@ class CommandBuffer {
     this._context = context;
     this.parent = parent;
     this.traceParent = traceParent || null;
-    this.errorContext = normalizeBufferErrorContext(errorContext);
+    this.errorContext = errorContext || null;
     this.finished = false;
     this._finishedChains = Object.create(null);
     // Local addressability map. Entries may be owned by this buffer or linked
@@ -378,21 +378,6 @@ class CommandBuffer {
     return resolvedChainName;
   }
 
-}
-
-function normalizeBufferErrorContext(errorContext) {
-  if (!errorContext) {
-    return null;
-  }
-  if (errorContext.ec) {
-    return errorContext;
-  }
-  // TODO(error-context-cleanup): remove this compact-context convenience once
-  // compiler-created buffers always pass { ec: __ec[index], ...fields }.
-  if (Array.isArray(errorContext)) {
-    return { ec: errorContext };
-  }
-  return errorContext;
 }
 
 function validateLaneNames(laneNames, label, context = null) {

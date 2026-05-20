@@ -40,7 +40,7 @@ function createInheritanceCallableArgumentFrame(
   return argumentFrame;
 }
 
-function linkInheritanceCallableFootprintChains(parentBuffer, currentBuffer, chainNames, linkedMutatedChainNames = null) {
+function linkInheritanceCallableFootprintChains(parentBuffer, currentBuffer, chainNames, linkedMutatedChainNames = null, errorContext = null) {
   if (parentBuffer === currentBuffer) {
     return currentBuffer;
   }
@@ -57,10 +57,7 @@ function linkInheritanceCallableFootprintChains(parentBuffer, currentBuffer, cha
     if (currentBuffer.hasChain(chainName)) {
       throw new RuntimeFatalError(
         `Cannot link chain '${chainName}' because the current buffer already has a different chain object`,
-        0,
-        0,
-        null,
-        null
+        errorContext
       );
     }
     if (parentBuffer.isChainFinished(chainName) || parentBuffer.isFinished()) {

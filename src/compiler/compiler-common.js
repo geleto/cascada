@@ -1,7 +1,6 @@
 
 import * as nodes from '../language/nodes.js';
 import {TemplateError} from '../lib.js';
-import {ErrorContext} from '../runtime/errors.js';
 import {Obj} from '../object.js';
 
 import {RESERVED_DECLARATION_NAMES, RESERVED_ASYNC_DECLARATION_NAMES} from './validation.js';
@@ -109,26 +108,21 @@ class CompilerCommon extends Obj {
     return finalLabel;
   }
 
-  // TODO(error-context-cleanup): remove this legacy ErrorContext object wrapper
-  // after compiler output uses compact __ec entries everywhere.
-  _createLegacyErrorContext(node, positionNode) {
-    positionNode = positionNode || node;
-    return new ErrorContext(
-      positionNode.lineno + 1,
-      positionNode.colno,
-      this.sourcePath, // At runtime, context.path will be used
-      this._generateErrorContext(node, positionNode)
-    );
-  }
-
   emitErrorContext(node) {
     if (!node) {
       return 'null';
     }
+    return `__ec[${this.getErrorContextIndex(node)}]`;
+  }
+
+  getErrorContextIndex(node) {
+    if (!node) {
+      return null;
+    }
     if (node._analysis.errorContextIndex === undefined) {
       this._generateErrorContext(node);
     }
-    return `__ec[${node._analysis.errorContextIndex}]`;
+    return node._analysis.errorContextIndex;
   }
 
   emitBufferErrorContext(node, fields = {}) {
@@ -324,19 +318,30 @@ class CompilerCommon extends Obj {
     }));
   }
 
-  _getNodeName(node) {
+  _describeCallableTarget(node) {
+    if (!node) {
+      return 'expression';
+    }
     switch (node.typename) {
       case 'Symbol':
         return node.value;
       case 'FunCall':
-        return 'the return value of (' + this._getNodeName(node.name) + ')';
-      case 'LookupVal':
-        return this._getNodeName(node.target) + '["' +
-          this._getNodeName(node.val) + '"]';
+        return this._describeCallableTarget(node.name) + '(...) result';
+      case 'LookupVal': {
+        const key = node.val && node.val.typename === 'Literal'
+          ? JSON.stringify(node.val.value)
+          : this._describeCallableTarget(node.val);
+        return this._describeCallableTarget(node.target) + '[' +
+          key + ']';
+      }
       case 'Literal':
-        return node.value.toString();
-      default:
-        return '--expression--';
+        return node.value === null || node.value === undefined
+          ? String(node.value)
+          : node.value.toString();
+      default: {
+        const label = node._analysis?.errorContextLabel || node.typename || 'unknown';
+        return `${label} expression`;
+      }
     }
   }
 

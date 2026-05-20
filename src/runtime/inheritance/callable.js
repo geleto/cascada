@@ -2,24 +2,24 @@ import {handleError} from '../errors.js';
 import {resolveSingle} from '../resolve.js';
 
 function noInheritanceParent() {
-  return { parentTemplateOrScript: null, origin: null };
+  return { parentTemplateOrScript: null, errorContext: null };
 }
 
-async function resolveInheritanceParent(env, isScript, target, origin, context, errorContext) {
+async function resolveInheritanceParent(env, isScript, target, inheritedErrorContext, context, errorContext) {
   try {
     target = await resolveSingle(target);
   } catch (error) {
-    throw runtimeError(error, context, errorContext);
+    throw handleError(error, errorContext, null);
   }
 
   if (target === null || target === undefined) {
     // Scripts use null as an explicit parentless selection; templates must
     // select a concrete parent when dynamic extends is present.
     if (!isScript) {
-      throw runtimeError(
+      throw handleError(
         new Error('template extends must select a parent template'),
-        context,
-        errorContext
+        errorContext,
+        null
       );
     }
     return noInheritanceParent();
@@ -28,14 +28,12 @@ async function resolveInheritanceParent(env, isScript, target, origin, context, 
   const loadMethod = isScript ? 'getScript' : 'getTemplate';
   try {
     const parentTemplateOrScript = await env[loadMethod](target, true, context.path, false);
-    return { parentTemplateOrScript, origin };
+    return { parentTemplateOrScript, errorContext: inheritedErrorContext };
   } catch (error) {
     throw handleError(
       error,
-      origin?.lineno,
-      origin?.colno,
-      origin?.errorContextString,
-      origin?.path ?? context.path
+      inheritedErrorContext ?? null,
+      null
     );
   }
 }
@@ -57,16 +55,6 @@ function createInheritanceCallableContext(context, isScriptMethod, invocationPat
     return context.forkForComposition(invocationPath, payloadContext, blockRenderCtx);
   }
   return context.forkForPath(invocationPath);
-}
-
-function runtimeError(error, context, errorContext) {
-  return handleError(
-    error,
-    errorContext?.lineno,
-    errorContext?.colno,
-    errorContext?.errorContextString,
-    context.path
-  );
 }
 
 export {

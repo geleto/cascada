@@ -48,7 +48,7 @@ class CompileInheritance {
       !(node.template instanceof nodes.Literal && typeof node.template.value === 'string');
   }
 
-  ensureImplicitTemplateSharedDeclaration(analysis, name, type, originNode) {
+  ensureImplicitTemplateSharedDeclaration(analysis, name, type, sourceNode) {
     const compiler = this.compiler;
     if (compiler.scriptMode) {
       return null;
@@ -67,12 +67,12 @@ class CompileInheritance {
     const sharedDeclaration = this._ensureImplicitRootSharedDeclaration(
       analysis,
       declaration,
-      originNode ? (originNode._analysis || analysis) : analysis
+      sourceNode ? (sourceNode._analysis || analysis) : analysis
     );
     return sharedDeclaration;
   }
 
-  _ensureImplicitRootSharedDeclaration(analysis, declaration, originAnalysis) {
+  _ensureImplicitRootSharedDeclaration(analysis, declaration, sourceAnalysis) {
     const rootOwner = this.compiler.analysis.getRootScopeOwner(analysis);
     const existingDeclaration = this.findRootSharedDeclaration(rootOwner, declaration.name);
     if (existingDeclaration) {
@@ -80,7 +80,7 @@ class CompileInheritance {
     }
 
     declaration.shared = true;
-    declaration.declarationOrigin = this.compiler.analysis.getTopmostChildAnalysis(originAnalysis);
+    declaration.declarationOrigin = this.compiler.analysis.getTopmostChildAnalysis(sourceAnalysis);
     rootOwner.declaredChains = rootOwner.declaredChains || new Map();
     if (!rootOwner.declaredChains.has(declaration.name)) {
       rootOwner.declaredChains.set(declaration.name, declaration);
@@ -211,7 +211,7 @@ class CompileInheritance {
     this.emit.line('    cb,');
     this.emit.line('    rootBuffer: output,');
     this.emit.line('    entryErrorContextTable: __ec,');
-    this.emit.line(`    origin: ${this.compiler.emitErrorContext(node)}`);
+    this.emit.line(`    errorContext: ${this.compiler.emitErrorContext(node)}`);
     this.emit.line('}).catch((e) => {');
     this.emit.line(`  cb(runtime.handleError(e, ${this.compiler.emitErrorContext(node)}, output));`);
     this.emit.line('  throw e;');
@@ -334,14 +334,14 @@ class CompileInheritance {
     const callableAnalysis = this._getNearestCallableAnalysis(node._analysis);
     if (callableAnalysis) {
       callableAnalysis.callableUsesSuper = true;
-      if (!callableAnalysis.callableSuperOrigin) {
-        callableAnalysis.callableSuperOrigin = this.compiler._createLegacyErrorContext(node);
+      if (callableAnalysis.callableSuperErrorContextIndex === undefined) {
+        callableAnalysis.callableSuperErrorContextIndex = this.compiler.getErrorContextIndex(node);
       }
       return;
     }
     rootAnalysis.callableUsesSuper = true;
-    if (!rootAnalysis.callableSuperOrigin) {
-      rootAnalysis.callableSuperOrigin = this.compiler._createLegacyErrorContext(node);
+    if (rootAnalysis.callableSuperErrorContextIndex === undefined) {
+      rootAnalysis.callableSuperErrorContextIndex = this.compiler.getErrorContextIndex(node);
     }
   }
 
@@ -356,14 +356,14 @@ class CompileInheritance {
     }
   }
 
-  _recordInheritedMethodDependency(analysis, fieldName, methodName, originNode) {
+  _recordInheritedMethodDependency(analysis, fieldName, methodName, errorContextNode) {
     if (!analysis[fieldName]) {
       analysis[fieldName] = Object.create(null);
     }
     if (!analysis[fieldName][methodName]) {
       analysis[fieldName][methodName] = {
         name: methodName,
-        origin: this.compiler._createLegacyErrorContext(originNode)
+        errorContextIndex: this.compiler.getErrorContextIndex(errorContextNode)
       };
     }
   }
@@ -548,14 +548,16 @@ class CompileInheritance {
   emitRootSharedDeclarations(node) {
     const sharedDeclarations = this._getSharedDeclarations(node);
     sharedDeclarations.forEach((declaration) => {
-      this._emitSharedDeclaration(declaration);
+      this._emitSharedDeclaration(declaration, node);
     });
   }
 
-  _emitSharedDeclaration(declaration) {
+  _emitSharedDeclaration(declaration, rootNode) {
     const targetBufferExpr = 'currentInstance.sharedRootBuffer';
+    const errorContextNode = declaration.declarationOrigin ? declaration.declarationOrigin.node : rootNode;
+    const errorContext = this.compiler.emitErrorContext(errorContextNode);
     this.emit(
-      `runtime.declareInheritanceSharedChain(${targetBufferExpr}, ${JSON.stringify(declaration.name)}, ${JSON.stringify(declaration.type)}, context`
+      `runtime.declareInheritanceSharedChain(${targetBufferExpr}, ${JSON.stringify(declaration.name)}, ${JSON.stringify(declaration.type)}, context, undefined, ${errorContext}`
     );
     this.emit.line(');');
     if (!declaration.initializer) {
@@ -568,7 +570,7 @@ class CompileInheritance {
         `runtime.declareInheritanceSharedChain(${targetBufferExpr}, ${JSON.stringify(declaration.name)}, ${JSON.stringify(declaration.type)}, context, `
       );
       this.compiler.compile(declaration.initializer, null);
-      this.emit.line(');');
+      this.emit.line(`, ${errorContext});`);
       this.emit.line('}');
       return;
     }
@@ -589,8 +591,8 @@ class CompileInheritance {
   }
 
   _compileExtendsParentResolver(node) {
-    this.emit.line('async function resolveInheritanceParent(env, context, runtime, origin) {');
-    this.emit.line('  const __ec = getErrorContexts(runtime, context && context.path, runtime.getErrorContextCallback(origin));');
+    this.emit.line('async function resolveInheritanceParent(env, context, runtime, errorContext) {');
+    this.emit.line('  const __ec = getErrorContexts(runtime, this?.path ?? context?.path ?? null, runtime.getErrorContextCallback(errorContext));');
     const inheritanceFacts = node._analysis.inheritance;
     if (!inheritanceFacts.localExtendsNode || inheritanceFacts.localExtendsNode.noParentLiteral) {
       this.emit.line('  return runtime.noInheritanceParent();');
@@ -599,22 +601,17 @@ class CompileInheritance {
     }
 
     const extendsNode = inheritanceFacts.localExtendsNode;
-    const originJson = JSON.stringify(this.compiler._createLegacyErrorContext(extendsNode));
-    const runtimeErrorContextJson = JSON.stringify({
-      lineno: extendsNode.lineno,
-      colno: extendsNode.colno,
-      errorContextString: this.compiler._generateErrorContext(extendsNode)
-    });
-    this.emit.line(`  const parentOrigin = origin ?? ${originJson};`);
+    const errorContextIndex = this.compiler.getErrorContextIndex(extendsNode);
+    this.emit.line(`  const parentErrorContext = errorContext ?? __ec[${errorContextIndex}];`);
     if (this.isStaticExtendsNode(extendsNode)) {
       // Static targets are known non-null here, so null-target error context is
       // only needed by the dynamic branch.
-      this.emit.line(`  return runtime.resolveInheritanceParent(env, ${this.compiler.scriptMode ? 'true' : 'false'}, ${JSON.stringify(extendsNode.template.value)}, parentOrigin, context);`);
+      this.emit.line(`  return runtime.resolveInheritanceParent(env, ${this.compiler.scriptMode ? 'true' : 'false'}, ${JSON.stringify(extendsNode.template.value)}, parentErrorContext, context);`);
     } else {
       this.emit('  const parentSelection = ');
       this.compiler.compileExpression(extendsNode.template, null, extendsNode.template, true);
       this.emit.line(';');
-      this.emit.line(`  return runtime.resolveInheritanceParent(env, ${this.compiler.scriptMode ? 'true' : 'false'}, parentSelection, parentOrigin, context, ${runtimeErrorContextJson});`);
+      this.emit.line(`  return runtime.resolveInheritanceParent(env, ${this.compiler.scriptMode ? 'true' : 'false'}, parentSelection, parentErrorContext, context, __ec[${errorContextIndex}]);`);
     }
     this.emit.line('}');
   }
@@ -718,7 +715,8 @@ class CompileInheritance {
       `runtime.linkInheritanceCallableFootprintChains(` +
       `parentBuffer, ${this.compiler.buffer.currentBuffer}, ` +
       `methodData.mergedLinkedChains, ` +
-      `methodData.mergedMutatedChains` +
+      `methodData.mergedMutatedChains, ` +
+      `${this.compiler.buffer.currentBuffer}.errorContext && ${this.compiler.buffer.currentBuffer}.errorContext.ec` +
       `);`
     );
     if (!isScriptMethod) {
@@ -842,10 +840,10 @@ class CompileInheritance {
       name,
       fnExpr: overrides.fnExpr ?? `b_${name}`,
       ownerNode: callableNode,
-      originNode: overrides.originNode ?? callableNode,
+      errorContextNode: overrides.errorContextNode ?? callableNode,
       isConstructor: !!overrides.isConstructor,
       usesSuper: overrides.usesSuper ?? !!callableNode._analysis.callableUsesSuper,
-      superOrigin: this._compileCallableSuperOriginLiteral(callableNode),
+      superErrorContextIndexLiteral: this._compileCallableSuperErrorContextIndexLiteral(callableNode),
       inheritedMethodDependencies: this._compileInheritedMethodDependenciesObject(callableNode._analysis.callableInheritedMethodDependencies),
       signature: overrides.signature ?? {
         argNames: this._getCallableSignature(callableNode).argNames
@@ -861,9 +859,9 @@ class CompileInheritance {
     const ownMutatedChainNames = callableFootprint.mutatedChains;
     const ownLinkedChains = JSON.stringify(ownLinkedChainNames);
     const ownMutatedChains = JSON.stringify(ownMutatedChainNames);
-    const origin = JSON.stringify(this.compiler._createLegacyErrorContext(entry.originNode));
+    const errorContextIndex = this.compiler.getErrorContextIndex(entry.errorContextNode);
     const name = JSON.stringify(entry.name);
-    return `${name}: { name: ${name}, fn: ${entry.fnExpr}, signature: ${JSON.stringify(entry.signature)}, origin: ${origin}, isConstructor: ${entry.isConstructor ? 'true' : 'false'}, super: ${entry.usesSuper ? 'true' : 'false'}, superOrigin: ${entry.superOrigin || 'null'}, inheritedMethodDependencies: ${entry.inheritedMethodDependencies || '{}'}, ownLinkedChains: ${ownLinkedChains}, ownMutatedChains: ${ownMutatedChains} }`;
+    return `${name}: { name: ${name}, fn: ${entry.fnExpr}, signature: ${JSON.stringify(entry.signature)}, errorContextIndex: ${errorContextIndex}, isConstructor: ${entry.isConstructor ? 'true' : 'false'}, super: ${entry.usesSuper ? 'true' : 'false'}, superErrorContextIndex: ${entry.superErrorContextIndexLiteral ?? 'null'}, inheritedMethodDependencies: ${entry.inheritedMethodDependencies || '{}'}, ownLinkedChains: ${ownLinkedChains}, ownMutatedChains: ${ownMutatedChains} }`;
   }
 
   _compileInheritedMethodDependenciesObject(methodDependencies) {
@@ -877,19 +875,19 @@ class CompileInheritance {
     return `{ ${names.map((name) => `${JSON.stringify(name)}: ${JSON.stringify(methodDependencies[name])}`).join(', ')} }`;
   }
 
-  _compileCallableSuperOriginLiteral(callableNode) {
-    return callableNode._analysis.callableSuperOrigin
-      ? JSON.stringify(callableNode._analysis.callableSuperOrigin)
+  _compileCallableSuperErrorContextIndexLiteral(callableNode) {
+    return callableNode._analysis.callableSuperErrorContextIndex !== undefined
+      ? String(callableNode._analysis.callableSuperErrorContextIndex)
       : 'null';
   }
 
   _compileSharedSchemaLiteral(node) {
     const sharedDeclarations = this._getSharedDeclarations(node);
     const entries = sharedDeclarations.map((child) => {
-      const originNode = child.declarationOrigin ? child.declarationOrigin.node : node;
+      const errorContextNode = child.declarationOrigin ? child.declarationOrigin.node : node;
       return `${JSON.stringify(child.name)}: { ` +
         `type: ${JSON.stringify(child.type)}, ` +
-        `origin: ${JSON.stringify(this.compiler._createLegacyErrorContext(originNode))}, ` +
+        `errorContextIndex: ${this.compiler.getErrorContextIndex(errorContextNode)}, ` +
         `hasDefault: ${child.initializer ? 'true' : 'false'} ` +
         `}`;
     });

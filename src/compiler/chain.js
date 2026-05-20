@@ -276,6 +276,8 @@ class CompileChain {
     if (!node.isShared && chainFacts && chainFacts.requiresInitializer && node.initializer) {
       compiler.emit(', ');
       compiler.compile(node.initializer, null);
+    } else if (node.isShared) {
+      compiler.emit(`, undefined, ${compiler.emitErrorContext(node)}`);
     }
     compiler.emit.line(');');
 
@@ -307,7 +309,7 @@ class CompileChain {
       if (chainType === 'sequence') {
         compiler.emit(`runtime.declareInheritanceSharedChain(${targetBufferExpr}, "${name}", "${chainType}", context, `);
         compiler.compile(node.initializer, null);
-        compiler.emit.line(');');
+        compiler.emit.line(`, ${compiler.emitErrorContext(node)});`);
         return;
       }
 

@@ -4,7 +4,6 @@ import {RuntimeFatalError, markPromiseHandled} from '../errors.js';
 import {resolveSingle} from '../resolve.js';
 import {getSharedSourceName, isPrivateSharedName} from '../../inheritance/shared-names.js';
 import {InheritanceInstance} from './instance.js';
-import {createBufferErrorContext} from './error-context.js';
 
 function getComponentSharedSchemaEntry(instance, chainName, errorContext) {
   const sourceName = getSharedSourceName(chainName);
@@ -123,7 +122,7 @@ async function createComponentInstance(spec) {
     ownerContext.getRenderContextVariables(),
     payloadContext
   );
-  const componentFrame = createBufferErrorContext(errorContext, bindingName || 'component');
+  const componentFrame = { ec: errorContext, boundaryName: bindingName || 'component' };
   const rootBuffer = new CommandBuffer(componentContext, null, null, null, null, componentFrame, ownerBuffer || null);
   const sharedRootBuffer = new CommandBuffer(componentContext, null, null, null, null, componentFrame, ownerBuffer || null);
   const instance = await InheritanceInstance.create({
@@ -135,7 +134,7 @@ async function createComponentInstance(spec) {
     rootBuffer,
     sharedRootBuffer,
     traceParent: ownerBuffer || null,
-    origin: errorContext
+    errorContext: errorContext
   });
 
   try {

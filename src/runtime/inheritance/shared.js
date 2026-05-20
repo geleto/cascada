@@ -4,14 +4,14 @@ import {declareBufferChain} from '../chains/index.js';
 
 const claimedSharedDefaults = new WeakSet();
 
-function declareInheritanceSharedChain(buffer, chainName, chainType, context, initializer) {
+function declareInheritanceSharedChain(buffer, chainName, chainType, context, initializer, errorContext = null) {
   const hasInitializer = initializer !== undefined;
   const existingChain = buffer.getOwnChain(chainName);
   if (existingChain) {
     if (existingChain.chainType !== chainType) {
       throw new RuntimeFatalError(
         `shared chain '${chainName}' was declared as '${existingChain.chainType}' and '${chainType}'`,
-        context
+        errorContext
       );
     }
     if (hasInitializer) {

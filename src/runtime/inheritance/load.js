@@ -1,33 +1,31 @@
 import {handleError} from '../errors.js';
 
-function addLoadErrorContext(error, origin, context) {
-  return handleError(
-    error,
-    origin?.lineno,
-    origin?.colno,
-    origin?.errorContextString,
-    origin?.path ?? context.path
-  );
+function addLoadErrorContext(error, errorContext, context) {
+  // Fallback compact context: [lineno=0, colno=0, label=null, path, cb=null].
+  return handleError(error, errorContext ?? [0, 0, null, context?.path ?? null, null], null);
 }
 
-function loadEntry(templateOrScript, origin) {
+function loadEntry(templateOrScript, errorContext, runtime) {
   templateOrScript.compile();
+  const path = templateOrScript.path ?? null;
+  const errorContextTable = typeof templateOrScript.getErrorContexts === 'function'
+    ? templateOrScript.getErrorContexts(runtime, path, null)
+    : null;
   return Object.freeze({
     templateOrScript,
     spec: templateOrScript.inheritanceSpec,
-    path: templateOrScript.path ?? null,
-    origin: origin ?? null
+    path,
+    errorContextTable,
+    errorContext: errorContext ?? null
   });
 }
 
-function assertLoadableInheritanceEntry(entry, context) {
+function assertLoadableInheritanceEntry(entry) {
   if (!entry.spec || !entry.templateOrScript.resolveInheritanceParent) {
     throw handleError(
       new Error('expected an inheritance participant but got a plain template/script'),
-      entry.origin?.lineno,
-      entry.origin?.colno,
-      entry.origin?.errorContextString,
-      entry.origin?.path ?? context.path
+      entry.errorContext ?? null,
+      null
     );
   }
 }
@@ -36,15 +34,15 @@ async function resolveLoadedParent(entry, env, context, runtime) {
   try {
     return await entry.templateOrScript.resolveInheritanceParent(env, context, runtime, null);
   } catch (error) {
-    throw addLoadErrorContext(error, entry.origin, context);
+    throw addLoadErrorContext(error, entry.errorContext, context);
   }
 }
 
-async function loadInheritanceChain({ templateOrScript, env, context, runtime, origin = null }) {
+async function loadInheritanceChain({ templateOrScript, env, context, runtime, errorContext = null }) {
   const entries = [];
   const seen = new Set();
   let currentTemplateOrScript = templateOrScript;
-  let currentOrigin = origin;
+  let selectedByErrorContext = errorContext;
 
   while (currentTemplateOrScript) {
     // Path is the stable source identity; pathless synthetic objects fall back
@@ -53,26 +51,24 @@ async function loadInheritanceChain({ templateOrScript, env, context, runtime, o
     if (seen.has(cycleIdentity)) {
       throw handleError(
         new Error(`inheritance cycle detected at ${currentTemplateOrScript.path ?? '<anonymous>'}`),
-        currentOrigin?.lineno,
-        currentOrigin?.colno,
-        currentOrigin?.errorContextString,
-        currentOrigin?.path ?? context.path
+        selectedByErrorContext ?? null,
+        null
       );
     }
     seen.add(cycleIdentity);
 
     let entry;
     try {
-      entry = loadEntry(currentTemplateOrScript, currentOrigin);
+      entry = loadEntry(currentTemplateOrScript, selectedByErrorContext, runtime);
     } catch (error) {
-      throw addLoadErrorContext(error, currentOrigin, context);
+      throw addLoadErrorContext(error, selectedByErrorContext, context);
     }
-    assertLoadableInheritanceEntry(entry, context);
+    assertLoadableInheritanceEntry(entry);
     entries.push(entry);
 
     const parentSelection = await resolveLoadedParent(entry, env, context, runtime);
     currentTemplateOrScript = parentSelection.parentTemplateOrScript;
-    currentOrigin = parentSelection.origin;
+    selectedByErrorContext = parentSelection.errorContext;
   }
 
   // Freeze only loader-owned wrappers; compiled templates/scripts remain owned

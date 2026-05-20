@@ -527,7 +527,7 @@ class CompilerBaseAsync extends CompilerCommon {
 
 
   _emitAsyncDynamicCall(node, currentBufferExpr) {
-    const funcName = this._getNodeName(node.name).replace(/"/g, '\\"');
+    const funcName = this._describeCallableTarget(node.name).replace(/"/g, '\\"');
     this.emit('runtime.callWrapAsync(');
     this.compile(node.name, null);
     this.emit(`, "${funcName}", context, `);

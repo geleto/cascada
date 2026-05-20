@@ -15,7 +15,7 @@ buffer lookup helper, or command-routing container.
 Target invariants:
 
 - every compiler node has an originating `ErrorContext`
-- the context is created at the source origin and then passed unchanged
+- the context is created at the source errorContext and then passed unchanged
 - commands store the originating context of the source operation that created
   them
 - command buffers store the context of the async/control/callable boundary or
@@ -179,7 +179,7 @@ Recommended labels:
 Avoid putting command-routing payload into labels. For example, prefer
 `ChainCommand` over `ChainCommand(result.posts.push)`. The command payload can
 record the data path or method name separately; the error context records the
-source origin and position.
+source errorContext and position.
 
 ## Label Generation
 
@@ -292,7 +292,7 @@ const ecIndex = node.expr._analysis.errorContextIndex;
 ```
 
 The context is still created once for the origin. Parent analysis helps choose
-the origin label before creation; it does not mutate an existing context later.
+the errorContext label before creation; it does not mutate an existing context later.
 
 ## Context Creation
 
@@ -375,11 +375,11 @@ the command. Duplicating it in the command constructor risks divergence.
 
 The separation should be:
 
-- `ErrorContext` - source origin and fatal escape behavior
+- `ErrorContext` - source errorContext and fatal escape behavior
 - command payload - operation-specific data, such as method name or data path
 - buffer/chain application - routing context, including the chain being applied
 
-If a diagnostic needs both source origin and chain routing, combine
+If a diagnostic needs both source errorContext and chain routing, combine
 `command.errorContext` with the apply-time chain name at the reporting site.
 
 Command diagnostics should provide command-specific details from the command
@@ -389,7 +389,7 @@ payload, not from the `ErrorContext` label. For chain commands this means:
   label, such as `ChainCommand`
 - `chainName`, `operation`, `path`, method name, and similar payload fields
   identify what the command attempted to apply
-- the reporting site combines both, for example source origin plus
+- the reporting site combines both, for example source errorContext plus
   `result.posts.push`
 
 This replaces the legacy `ChainCommand` static-path label special case in
@@ -410,7 +410,7 @@ Only three runtime structures should store `ErrorContext`:
 
 Do not store context on `RuntimePromise`, inheritance/composition/macro callable
 metadata, delayed observation values, or other helper-owned temporary values for
-this refactor. It would be useful to preserve promise origin eventually, but it
+this refactor. It would be useful to preserve promise errorContext eventually, but it
 is a larger refactor. For now, promise errors are reported at the point of
 consumption. Also, repaired errors are not reported, so original promise-source
 reporting is not reliably usable yet.
@@ -544,7 +544,7 @@ meaning and type clear without introducing a large schema layer.
 
 Not allowed:
 
-- helpers using current-buffer context as the source origin of an operation
+- helpers using current-buffer context as the source errorContext of an operation
 - commands omitting their originating context because the buffer has one
 - lookup, wait, snapshot, or mutation paths falling back to parent/root buffer
   context as source-origin context
@@ -612,7 +612,7 @@ reporting.
 Wrapped errors should store their originating compact error context. If
 `handleError(...)`, `createPoison(...)`, or another helper receives both an
 error that already has an error context and a helper argument `ec`, the error's
-existing context wins. The helper argument is only the fallback origin for new
+existing context wins. The helper argument is only the fallback errorContext for new
 errors that do not already carry context.
 
 Prefer passing `errorContext` directly into error constructors and wrapping
@@ -652,7 +652,7 @@ runtime.resolveAll(values, __ec[18], currentBuffer)
 currentBuffer.addCommand(new runtime.DataCommand({ args, errorContext: __ec[21] }), chainName)
 ```
 
-Runtime helpers should not infer source origin from ambient state. If a helper
+Runtime helpers should not infer source errorContext from ambient state. If a helper
 is called by compiler-emitted code, it should receive the operation's compact
 error context and the current command buffer as explicit arguments, or receive
 the context inside the command/value object it receives.
@@ -833,10 +833,12 @@ Before implementation, audit:
 6. Expand `tests/pasync/error-context.js` for command-stored context
    and migrated compiler output.
 
-Phase 4 may leave legacy contexts in compile-time metadata and synchronous
-compiler paths. The important boundary is that async compiler-emitted runtime
-helper calls should no longer need generated `{ lineno, colno,
-errorContextString, path }` objects or positional `handleError(...)` calls.
+Phase 4 may leave legacy contexts in compile-time metadata. Synchronous
+compiler paths are frozen at the Nunjucks compatibility layer and are not part
+of this async error-context refactor. The important boundary is that async
+compiler-emitted runtime helper calls should no longer need generated
+`{ lineno, colno, errorContextString, path }` objects or positional
+`handleError(...)` calls.
 Optional command-buffer display fields such as `loadName`, `targetIdentifier`,
 and `branch` may also be filled in after this migration; they need
 AST-specific display choices rather than broad mechanical rewrites.
@@ -850,33 +852,32 @@ promise-origin context in a later refactor.
 
 Code constructs marked with `TODO(error-context-cleanup)` are temporary
 compatibility or legacy bridges introduced during this migration. Phase 5 owns
-removing those markers and the constructs they describe.
+the structural cleanup from the migration. Remaining async/runtime cleanup items
+are tracked in Phase 6. Synchronous compiler paths are frozen at the Nunjucks
+compatibility layer and must not be rewritten as part of this refactor.
 
 Deletion checklist for `TODO(error-context-cleanup)`:
 
 - legacy object-context support inside `normalizeErrorContext(...)`
 - `compactErrorContext(...)` as an object/positional compatibility converter
-- fallback conversion inside `resolveEffectiveErrorContext(...)`; the stable helper should
-  eventually choose between `error.errorContext` and an already-compact fallback
+- fallback conversion inside `resolveEffectiveErrorContext(...)`; the stable
+  helper should choose between `error.errorContext` and an already-compact
+  fallback
 - positional `RuntimeError(...)`, `RuntimeFatalError(...)`,
-  `createPoison(...)`, and `handleError(...)` context overloads
+  `createPoison(...)`, and `handleError(...)` context overloads for async
+  compiler/runtime call sites
 - `errorContextString` storage and message plumbing after `label` is the only
-  field used by callers/tests
-- the legacy `ErrorContext` object wrapper
-- `normalizeBufferErrorContext(...)` compact/context-shape convenience once
-  compiler-created buffers always pass `{ ec: __ec[index], ...fields }`
-- compile-time inheritance metadata origins that still store legacy
-  `ErrorContext` objects until the metadata/runtime contracts are redesigned
-- synchronous compiler paths that still emit positional `handleError(...)`
-  calls
+  field used by async diagnostics and tests
+- compile-time inheritance metadata should store context indexes, not legacy
+  `ErrorContext` objects. Runtime load/finalization resolves those indexes
+  through the owner artifact's prepared context table. Any remaining legacy
+  object fallback in inheritance tests or hand-built metadata is temporary
+  test scaffolding, not generated output.
 - command constructor `errorContext = null` defaults and any runtime-created
   commands that still lack an owning context
 - optional command-buffer display fields such as `loadName`,
   `targetIdentifier`, and `branch` that were deferred from the mechanical
   Phase 4 call-site migration
-- the temporary runtime inheritance `createBufferErrorContext(...)` helper and
-  `src/runtime/inheritance/error-context.js` bridge file if no final ownership
-  case remains
 - the `linkedParent` constructor naming/concept; it should become a chain
   `linkTarget`, not a third parent relationship
 - the long positional `managedBlock(...)` signature after the temporary
@@ -891,10 +892,13 @@ Deletion checklist for `TODO(error-context-cleanup)`:
    and remove the current `path: ctx.path ?? ctx.errorContextString` fallback
    after all active call sites use compact contexts.
 2. Remove `_createLegacyErrorContext(...)` after compiler output no longer
-   emits object contexts. Keep `_generateErrorContext(...)` as the analysis-time
-   compiler label/index helper, but remove its legacy-only runtime codegen
-   string-label call sites after they are migrated to compact `__ec[index]`
-   contexts. Any remaining compile-time failures should use
+   emits object contexts. This is complete for async inheritance metadata:
+   generated method entries, shared schema entries, super origins, and inherited
+   method dependencies store context indexes and are resolved by runtime through
+   owner prepared tables. Keep `_generateErrorContext(...)` as the
+   analysis-time compiler label/index helper, but remove its legacy-only
+   runtime codegen string-label call sites after they are migrated to compact
+   `__ec[index]` contexts. Any remaining compile-time failures should use
    `_generateErrorContext(...)` or direct `TemplateError` paths as appropriate.
 3. Remove the `ChainCommand` static-path label special case; chain command
    labels become `ChainCommand`, with path/method details coming from command
@@ -909,6 +913,10 @@ Deletion checklist for `TODO(error-context-cleanup)`:
 6. Remove `errorContextString`, expanded object contexts, and temporary legacy
    compatibility adapters once generated code, runtime APIs, tests, and
    precompile fixtures are updated.
+   The legacy `ErrorContext` runtime wrapper, the inheritance
+   `createBufferErrorContext(...)` bridge file, and command-buffer context-shape
+   normalizer have been removed. Remaining expanded object contexts are
+   compatibility inputs in runtime error adapters and hand-built tests.
 7. Re-check `attachErrorContextIfMissing(...)` usage after all wrappers accept
    compact contexts directly. It should either remain a private helper used only
    by `handleError(...)` for already-wrapped errors, or be removed if no longer
@@ -917,10 +925,50 @@ Deletion checklist for `TODO(error-context-cleanup)`:
    refactor for final ownership. Move them to the file/class that owns the
    concept, inline one-off helpers where clearer, and remove migration-only
    helpers instead of leaving them in incidental locations.
-9. Normalize identifier names for error-context values. Parameters and fields
-   that carry an `ErrorContext` should be named `errorContext`, `ec`, or another
-   explicit context name. Rename ambiguous historical names such as `origin`
-   where they actually mean an originating error context.
+9. Keep identifier names explicit for error-context values. Parameters and
+   fields that carry an `ErrorContext` should be named `errorContext`, `ec`, or
+   another explicit context name. Historical `origin` names must not be used
+   where the value is an originating error context.
+
+### Phase 6 - Final Runtime Cleanup
+
+Phase 6 is the final async ErrorContext cleanup phase. It must not modify the
+synchronous Nunjucks-compatible compiler path. Any synchronous positional
+`handleError(...)` calls that remain are intentionally frozen unless a separate
+sync-compiler project is opened.
+
+1. Remove the `ChainCommand` static-path label special case from
+   `_generateErrorContext(...)`. Chain command diagnostics should combine the
+   compact source context with command payload details at reporting sites.
+2. Remove remaining async/runtime positional and object-context adapters:
+   `resolveErrorContextArgs(...)`, `compactErrorContext(...)`, object support in
+   `normalizeErrorContext(...)`, and fallback conversion in
+   `resolveEffectiveErrorContext(...)`, once no async/runtime caller depends on
+   them.
+3. Collapse `RuntimeError(...)`, `RuntimeFatalError(...)`, `createPoison(...)`,
+   and `handleError(...)` to compact-context signatures for async runtime
+   usage. Keep any separate sync compatibility surface isolated from these
+   async helpers.
+4. Remove `errorContextString` aliases from async diagnostics and tests after
+   `label` is the only asserted field.
+5. Remove command constructor `errorContext = null` defaults after every
+   compiler-created and runtime-created command receives an owning context.
+6. Replace hand-built inheritance metadata object error-context test scaffolding
+   with integration tests or index-based fixture helpers, then remove the
+   legacy fallback paths in inheritance finalization.
+7. Fill or explicitly drop deferred optional command-buffer display fields:
+   `loadName`, `targetIdentifier`, and `branch`.
+8. Rename or reframe the `CommandBuffer` constructor's `linkedParent` parameter
+   as a chain `linkTarget`, not a diagnostic or ownership parent.
+9. Simplify the long positional `managedBlock(...)` signature once
+   error-context and trace-parent arguments have settled.
+10. Re-check `attachErrorContextIfMissing(...)` and in-place
+    `PoisonError.errors` mutation in `handleError(...)`; keep only the minimal
+    private behavior needed for already-wrapped errors.
+11. Re-check and regenerate precompile/browser fixtures after final async
+    compatibility adapters are removed.
+12. Evaluate whether `loadEntry(...)` and `createRuntimeOwnerEntry(...)` can be
+    consolidated once inheritance object error-context fallback paths are gone.
 
 ## Tests
 

@@ -67,7 +67,7 @@ function compileProps(src, options = {}) {
 function sharedSchemaEntry(type, options = {}) {
   return {
     type,
-    origin: options.origin || { path: `${type}-shared.owner`, lineno: 1, colno: 1 },
+    errorContext: options.errorContext || { path: `${type}-shared.owner`, lineno: 1, colno: 1 },
     hasDefault: !!options.hasDefault
   };
 }
@@ -88,7 +88,7 @@ describe('Inheritance rebuild', function () {
       const parent = await props.resolveInheritanceParent(null, null, runtime, null);
 
       expect(Object.keys(props).sort()).to.eql(['getErrorContexts', 'inheritanceSpec', 'resolveInheritanceParent', 'root']);
-      expect(parent).to.eql({ parentTemplateOrScript: null, origin: null });
+      expect(parent).to.eql({ parentTemplateOrScript: null, errorContext: null });
     });
 
     it('rejects template extends none through the public template compiler', function () {
@@ -149,7 +149,7 @@ describe('Inheritance rebuild', function () {
       expect(props.inheritanceSpec.setup).to.be(undefined);
       expect(props.inheritanceSpec.inheritedMethodDependencies).to.be(undefined);
       expect(props.resolveInheritanceParent.length).to.be(4);
-      expect(props.inheritanceSpec.methodEntries.build.origin.path).to.be('shape.script');
+      expect(props.inheritanceSpec.methodEntries.build.errorContextIndex).to.be.a('number');
     });
 
     it('emits participant ABI for every participation reason', function () {
@@ -176,7 +176,7 @@ describe('Inheritance rebuild', function () {
 
       expect(props.inheritanceSpec.sharedSchema.$theme.type).to.be('var');
       expect(props.inheritanceSpec.sharedSchema.$theme.hasDefault).to.be(true);
-      expect(props.inheritanceSpec.sharedSchema.$theme.origin.path).to.be('shared-default.script');
+      expect(props.inheritanceSpec.sharedSchema.$theme.errorContextIndex).to.be.a('number');
     });
 
     it('emits structured shared schema entries without defaults', function () {
@@ -187,7 +187,7 @@ describe('Inheritance rebuild', function () {
 
       expect(props.inheritanceSpec.sharedSchema.$theme.type).to.be('var');
       expect(props.inheritanceSpec.sharedSchema.$theme.hasDefault).to.be(false);
-      expect(props.inheritanceSpec.sharedSchema.$theme.origin.path).to.be('shared-no-default.script');
+      expect(props.inheritanceSpec.sharedSchema.$theme.errorContextIndex).to.be.a('number');
     });
 
     it('emits no removed setup/startup constructs for participants', function () {
@@ -196,7 +196,7 @@ describe('Inheritance rebuild', function () {
       removedStartupFragments.forEach((fragment) => {
         expect(source).not.to.contain(fragment);
       });
-      expect(source).to.contain('async function resolveInheritanceParent(env, context, runtime, origin)');
+      expect(source).to.contain('async function resolveInheritanceParent(env, context, runtime, errorContext)');
       expect(source).to.contain('function root(env, context, runtime, cb)');
     });
 
@@ -228,7 +228,7 @@ describe('Inheritance rebuild', function () {
       expect(concreteScript.inheritanceSpec.methodEntries.__constructor__.isConstructor).to.be(true);
       expect(concreteTemplate.inheritanceSpec.methodEntries.__constructor__.isConstructor).to.be(true);
       expect(extendingTemplateWithText.inheritanceSpec.methodEntries.__constructor__.isConstructor).to.be(true);
-      expect(extendingTemplateWithText.inheritanceSpec.methodEntries.__constructor__.origin.path).to.be('compiled.njk');
+      expect(extendingTemplateWithText.inheritanceSpec.methodEntries.__constructor__.errorContextIndex).to.be.a('number');
       expect(declarationOnlyTemplate.inheritanceSpec.methodEntries.__constructor__).to.be(undefined);
     });
 
@@ -239,7 +239,7 @@ describe('Inheritance rebuild', function () {
 
       expect(await props.resolveInheritanceParent(null, null, runtime, null)).to.eql({
         parentTemplateOrScript: null,
-        origin: null
+        errorContext: null
       });
     });
 
@@ -280,7 +280,7 @@ describe('Inheritance rebuild', function () {
 
       expect(source).to.contain('runtime.renderInheritanceParticipantRoot');
       expect(source).to.contain('entryTemplateOrScript: this');
-      expect(source).to.contain('origin: {');
+      expect(source).to.contain('errorContext: __ec[0]');
       expect(source).not.to.contain('runtime.loadInheritanceChain');
       expect(source).not.to.contain('runtime.finalizeInheritanceChain');
       expect(source).not.to.contain('currentInstance.invoke("__constructor__"');
@@ -832,7 +832,7 @@ describe('Inheritance rebuild', function () {
         compile() {},
         inheritanceSpec: { methodEntries: {}, sharedSchema: {}, hasExtends: true },
         async resolveInheritanceParent() {
-          return { parentTemplateOrScript: parent, origin: { path: 'child.njk' } };
+          return { parentTemplateOrScript: parent, errorContext: { path: 'child.njk' } };
         },
         root() {
           throw new Error('child root should not run');
@@ -849,7 +849,7 @@ describe('Inheritance rebuild', function () {
       expect(chain.entries.map((entry) => entry.path)).to.eql(['child.njk', 'parent.njk']);
     });
 
-    it('wraps selected parent compile failures with the selecting extends origin', async function () {
+    it('wraps selected parent compile failures with the selecting extends error context', async function () {
       const parent = Object.freeze({
         path: 'parent.njk',
         compile() {
@@ -863,7 +863,7 @@ describe('Inheritance rebuild', function () {
         async resolveInheritanceParent() {
           return {
             parentTemplateOrScript: parent,
-            origin: {
+            errorContext: {
               lineno: 7,
               colno: 3,
               errorContextString: 'Extends',
@@ -888,7 +888,7 @@ describe('Inheritance rebuild', function () {
       }
     });
 
-    it('adds context path to entry compile failures without an extends origin', async function () {
+    it('adds context path to entry compile failures without an extends error context', async function () {
       const entry = Object.freeze({
         path: 'entry.njk',
         compile() {
@@ -1064,10 +1064,10 @@ describe('Inheritance rebuild', function () {
         name,
         fn: options.fn || function compiledInheritanceMethod() {},
         signature: { argNames: options.argNames || [] },
-        origin: options.origin || { path: `${name}.owner`, lineno: 1, colno: 1 },
+        errorContext: options.errorContext || { path: `${name}.owner`, lineno: 1, colno: 1 },
         isConstructor: !!options.isConstructor,
         super: !!options.super,
-        superOrigin: options.superOrigin || null,
+        superErrorContext: options.superErrorContext || null,
         inheritedMethodDependencies: options.inheritedMethodDependencies || {},
         ownLinkedChains: options.ownLinkedChains || [],
         ownMutatedChains: options.ownMutatedChains || []
@@ -1087,7 +1087,7 @@ describe('Inheritance rebuild', function () {
           hasExtends: !!options.hasExtends
         },
         path,
-        origin: options.origin || { path, lineno: 1, colno: 1 }
+        errorContext: options.errorContext || { path, lineno: 1, colno: 1 }
       };
     }
 
@@ -1245,7 +1245,7 @@ describe('Inheritance rebuild', function () {
         loadedEntry('root.script', { scriptMode: true, methodEntries: { build: rootBuild } })
       ]);
 
-      expect(state.methods.build.origin.path).to.be('build.owner');
+      expect(state.methods.build.errorContext.path).to.be('build.owner');
       expect(state.methods.build.super.fn).to.be(rootBuild.fn);
       expect(state.methods.build.super.name).to.be('build');
     });
@@ -1256,7 +1256,7 @@ describe('Inheritance rebuild', function () {
           loadedEntry('child.script', {
             scriptMode: true,
             methodEntries: {
-              build: compiledMethod('build', { super: true, superOrigin: { path: 'child.script', lineno: 4, colno: 10 } })
+              build: compiledMethod('build', { super: true, superErrorContext: { path: 'child.script', lineno: 4, colno: 10 } })
             }
           })
         ]);
@@ -1329,19 +1329,19 @@ describe('Inheritance rebuild', function () {
           loadedEntry('child.script', {
             scriptMode: true,
             hasExtends: true,
-            sharedSchema: { theme: sharedSchemaEntry('var', { origin: { path: 'child.script', lineno: 1, colno: 1 } }) },
+            sharedSchema: { theme: sharedSchemaEntry('var', { errorContext: { path: 'child.script', lineno: 1, colno: 1 } }) },
             methodEntries: {
               build: compiledMethod('build', {
                 argNames: ['profile'],
                 inheritedMethodDependencies: {
-                  missing: { name: 'missing', origin: { path: 'child.script', lineno: 2, colno: 3 } }
+                  missing: { name: 'missing', errorContext: { path: 'child.script', lineno: 2, colno: 3 } }
                 }
               })
             }
           }),
           loadedEntry('root.script', {
             scriptMode: true,
-            sharedSchema: { theme: sharedSchemaEntry('text', { origin: { path: 'root.script', lineno: 1, colno: 1 } }) },
+            sharedSchema: { theme: sharedSchemaEntry('text', { errorContext: { path: 'root.script', lineno: 1, colno: 1 } }) },
             methodEntries: {
               build: compiledMethod('build', { argNames: ['user'] })
             }
@@ -1352,16 +1352,29 @@ describe('Inheritance rebuild', function () {
         expect(String(error)).to.contain('renames an inherited argument');
         expect(String(error)).to.contain('missing inherited method \'missing\'');
         expect(String(error)).to.contain('shared chain \'theme\' has conflicting types');
+        const missingMethodError = error.errors.find((err) => err.message.includes('missing inherited method'));
+        const sharedConflictError = error.errors.find((err) => err.message.includes('conflicting types'));
+        expect(missingMethodError.path).to.be('child.script');
+        expect(missingMethodError.lineno).to.be(2);
+        expect(missingMethodError.colno).to.be(3);
+        expect(sharedConflictError.path).to.be('root.script');
+        expect(sharedConflictError.lineno).to.be(1);
+        expect(sharedConflictError.colno).to.be(1);
       });
     });
 
     it('reports shared and method collisions across files', function () {
       expect(function () {
         finalizeEntries([
-          loadedEntry('child.njk', { sharedSchema: { card: sharedSchemaEntry('var', { origin: { path: 'child.njk', lineno: 1, colno: 1 } }) } }),
+          loadedEntry('child.njk', { sharedSchema: { card: sharedSchemaEntry('var', { errorContext: { path: 'child.njk', lineno: 1, colno: 1 } }) } }),
           loadedEntry('root.njk', { methodEntries: { card: compiledMethod('card') } })
         ]);
-      }).to.throwException(/shared chain 'card' conflicts with inherited method 'card'/);
+      }).to.throwException((error) => {
+        expect(String(error)).to.contain('shared chain \'card\' conflicts with inherited method \'card\'');
+        expect(error.errors[0].path).to.be('child.njk');
+        expect(error.errors[0].lineno).to.be(1);
+        expect(error.errors[0].colno).to.be(1);
+      });
     });
 
     it('keeps the child-most shared schema declaration and first available default', function () {
@@ -1371,7 +1384,7 @@ describe('Inheritance rebuild', function () {
           hasExtends: true,
           sharedSchema: {
             theme: sharedSchemaEntry('var', {
-              origin: { path: 'child.script', lineno: 2, colno: 1 },
+              errorContext: { path: 'child.script', lineno: 2, colno: 1 },
               hasDefault: false
             })
           }
@@ -1380,7 +1393,7 @@ describe('Inheritance rebuild', function () {
           scriptMode: true,
           sharedSchema: {
             theme: sharedSchemaEntry('var', {
-              origin: { path: 'root.script', lineno: 2, colno: 1 },
+              errorContext: { path: 'root.script', lineno: 2, colno: 1 },
               hasDefault: true
             })
           }
@@ -1388,9 +1401,9 @@ describe('Inheritance rebuild', function () {
       ]);
 
       expect(state.sharedSchema.theme.type).to.be('var');
-      expect(state.sharedSchema.theme.origin.path).to.be('child.script');
+      expect(state.sharedSchema.theme.errorContext.path).to.be('child.script');
       expect(state.sharedSchema.theme.hasDefault).to.be(true);
-      expect(state.sharedSchema.theme.defaultOrigin.path).to.be('root.script');
+      expect(state.sharedSchema.theme.defaultErrorContext.path).to.be('root.script');
     });
 
     it('merges chain footprints across overridden entries', function () {
@@ -1435,13 +1448,13 @@ describe('Inheritance rebuild', function () {
       const entry = state.methods.body;
 
       expect(entry.inheritedMethodDependencies).to.be(undefined);
-      expect(entry.superOrigin).to.be(undefined);
+      expect(entry.superErrorContext).to.be(undefined);
       expect(entry.ownLinkedChains).to.be(undefined);
       expect(entry.ownMutatedChains).to.be(undefined);
       expect(entry.name).to.be('body');
       expect(entry.fn).to.be.a(Function);
       expect(entry.signature).to.eql({ argNames: [] });
-      expect(entry.origin.path).to.be('body.owner');
+      expect(entry.errorContext.path).to.be('body.owner');
       expect(entry.isConstructor).to.be(false);
       expect(entry.ownerEntry.path).to.be('root.njk');
       expect(entry.ownerEntry.isStructuralTemplate).to.be(true);
@@ -1546,6 +1559,34 @@ describe('Inheritance rebuild', function () {
       expect(result).to.be('Ada:guest');
     });
 
+    it('uses method error context for direct invocation argument failures without call-site context', async function () {
+      const participant = inheritanceParticipant('component.script', {
+        scriptMode: true,
+        methodEntries: {
+          greet: compiledMethod('greet', {
+            argNames: ['user'],
+            errorContext: { path: 'component.script', lineno: 7, colno: 5 }
+          })
+        }
+      });
+      const instance = await runtime.InheritanceInstance.create({
+        entryTemplateOrScript: participant,
+        env: {},
+        context: createRuntimeContext(),
+        runtime
+      });
+
+      try {
+        await instance.invoke('greet', ['Ada', 'extra']);
+        throw new Error('expected invocation to fail');
+      } catch (error) {
+        expect(error.name).to.be('RuntimeFatalError');
+        expect(error.path).to.be('component.script');
+        expect(error.lineno).to.be(7);
+        expect(error.colno).to.be(5);
+      }
+    });
+
     it('keeps existing macro keyword argument behavior unchanged', async function () {
       const rendered = await env.renderTemplateString(
         '{% macro greet(user, fallback="guest") %}{{ user }}:{{ fallback }}{% endmacro %}{{ greet("Ada", fallback="friend") }}'
@@ -1644,7 +1685,7 @@ describe('Inheritance rebuild', function () {
       participant.resolveInheritanceParent = async function () {
         return {
           parentTemplateOrScript: parentParticipant,
-          origin: { path: 'component.script', lineno: 1, colno: 1 }
+          errorContext: { path: 'component.script', lineno: 1, colno: 1 }
         };
       };
       const instance = await runtime.InheritanceInstance.create({
@@ -2535,7 +2576,7 @@ describe('Inheritance rebuild', function () {
       expect(script.inheritanceSpec.methodEntries.build.inheritedMethodDependencies.decorate.name).to.be('decorate');
       expect(script.inheritanceSpec.methodEntries.build.inheritedMethodDependencies.build).to.be(undefined);
       expect(script.inheritanceSpec.methodEntries.build.super).to.be(true);
-      expect(script.inheritanceSpec.methodEntries.build.superOrigin.path).to.be('callable-metadata.script');
+      expect(script.inheritanceSpec.methodEntries.build.superErrorContextIndex).to.be.a('number');
     });
 
     it('records root constructor super metadata through callable facts', function () {
@@ -2548,7 +2589,7 @@ describe('Inheritance rebuild', function () {
       script.compile();
 
       expect(script.inheritanceSpec.methodEntries.__constructor__.super).to.be(true);
-      expect(script.inheritanceSpec.methodEntries.__constructor__.superOrigin.path).to.be('root-constructor-super.script');
+      expect(script.inheritanceSpec.methodEntries.__constructor__.superErrorContextIndex).to.be.a('number');
     });
   });
 });
