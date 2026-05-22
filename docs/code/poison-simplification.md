@@ -125,7 +125,10 @@ Consequences:
   boundary body already has one structural catch; throws from sync helpers
   inside a boundary body are automatically caught by that catch.
 - Async boundary bodies in emitted code are **intentionally void** — their
-  output is the side effect of filling a child buffer, not a return value.
+  output is the side effect of filling a child buffer, not a return value as
+  an expression. The boundary promise itself is tracked via
+  `emitLimitedLoopCompletion` for loop-completion ordering, but no calling
+  code consumes the body's return value as an expression result.
 
 ### The environment layer
 
@@ -180,11 +183,24 @@ Sources that currently return **plain Promises** and need `RuntimePromise` wrapp
 
 | Source | File | Async path |
 |---|---|---|
-| Loop iterable (`arr` argument) | `loop.js` | Passed as plain promise to `iterate()` |
-| Loop `maxConcurrency` | `loop.js` | Awaited as plain promise |
-| Template output value | `safe-output.js` | Value promise awaited directly |
-| Deep-assign `root`/`head` | `deep-assign.js` | Awaited as plain promise |
 | `import` / `from import` loading | emitted by `composition.js` | `.then()` chain — not yet `RuntimePromise` |
+| Deep-assign internal async paths | `deep-assign.js` | Awaited as plain promise — audit needed |
+
+`loop.js` and `safe-output.js` do not produce values themselves — they
+receive values that originate at `callWrapAsync`, `memberLookupAsync`, or
+composition load sites, all of which will be `RuntimePromise`-wrapped once
+Phase 2 is complete. The catches in those files need their non-`PoisonError`
+fallback branches **hardened**, not new wrapping added.
+
+### Permanent irreducible async sources
+
+User-supplied **async iterables** (plain objects implementing
+`Symbol.asyncIterator`) are a third category of permanently irreducible
+source alongside user function calls and user generator `.next()` calls. An
+async iterable's `.next()` method can throw any error. It is not and cannot
+be wrapped as `RuntimePromise` — the object's type is opaque to the compiler.
+The three `loop.js` protocol catches that handle these throws are permanently
+irreducible (see §8 irreducible inventory).
 
 ### The RuntimePromise change
 
@@ -442,65 +458,112 @@ engine bug and do not belong in the chain error system.
 
 ## 8. Consumption Points: From Conversion to Assertion
 
-Once the source contract is enforced, every catch block that previously
-converted unknown errors to poison becomes an assertion:
+### Catch-type taxonomy
+
+Not all catch blocks are the same. There are four distinct types:
+
+- **(A) Full assertion** — the catch block is replaced entirely by a bare
+  `throw new RuntimeFatalError(err)`, because the `PoisonError` branch was
+  also just forwarding and can be removed.
+- **(B) Partial assertion** — the catch block stays; only the non-`PoisonError`
+  fallback branch (`return createPoison(err)` or similar) is replaced by
+  `throw new RuntimeFatalError(err)`. The `PoisonError` branch stays because
+  it does real work (forwarding, collecting, routing).
+- **(C) Irreducible** — the catch is needed forever; user code or protocol
+  mechanics can throw anything here regardless of source wrapping.
+- **(D) Intentional aggregator** — the catch is designed to collect ALL errors
+  including non-`PoisonError`. These must **not** become assertions; they are
+  the foundation of the error-collection system.
+
+The prototype pattern for Type B is:
 
 ```javascript
 // Before
 catch (err) {
   if (isPoisonError(err)) return createPoison(err.errors);
-  return createPoison(err);          // ← goes away
+  return createPoison(err);              // ← problem line
 }
 
-// After
+// After (Type B — catch block stays, fallback hardened)
 catch (err) {
   if (isPoisonError(err)) return createPoison(err.errors);
-  throw new RuntimeFatalError(err);  // ← non-PoisonError is a bug
+  throw new RuntimeFatalError(err);      // ← non-PoisonError is a bug
 }
 ```
 
 ### Per-file simplification
 
-**`resolve.js`** (12 catches → 12 assertions)
-All `createPoison(err)` fallback branches become `throw new RuntimeFatalError`.
-The catch structure is preserved; only the fallback branch changes.
+**`resolve.js`** (~10 catches → partial assertions)
+Most catches follow the Type B pattern: `createPoison(err)` fallback branches
+become `throw new RuntimeFatalError`. Note that some catches
+(`resolveValueAndMarkerAsync`, `_resolveSingleArrAsync`) already `throw err`
+for non-`PoisonError` — they are partially hardened already and only need
+the `PoisonError` branch reviewed.
 
-**`call.js`** (4 catches → 2 catches + 2 assertions)
-- Lines 105, 131 — awaiting the `obj` promise and resolving `args` → assertions
-  (both are `RuntimePromise` once sources are wrapped).
-- Lines 84, 161 — the actual `obj.apply(ctx, args)` invocations → **stay as
-  catches** (user functions throw; this is irreducible).
+**`call.js`** (4 catches: 2 Type B + 2 Type C)
+- Lines ~110 and ~133 in `_callWrapAsyncComplex` — await `obj` and
+  `resolveAll(args)`. These catches push errors into a local `errors` array
+  and **continue execution** (they do not re-throw). The catch blocks must
+  stay. Only the non-`PoisonError` fallback branch is hardened (Type B).
+- Lines ~95 and ~174 — the actual `obj.apply(ctx, resolvedArgs)` invocations
+  → **Type C** (user functions throw; irreducible).
 
-**`lookup.js`** (2 catches → 2 assertions)
-Both async path catches → assertions. `lookup` already returns `RuntimePromise`;
-after the conversion change these catches will only ever see `PoisonError`.
+**`lookup.js`** (2 catches → Type B)
+Both async path catches forward `PoisonError` and will only ever see
+`PoisonError` once `RuntimePromise` conversion is active. Non-`PoisonError`
+fallback becomes `RuntimeFatalError`.
 
-**`loop.js`** (8 catches → 3 catches + 5 assertions)
-- `arr` resolution, `maxConcurrency` resolution, and 3 other iterable-resolution
-  catches → assertions once those values are wrapped as `RuntimePromise`.
-- 3 generator `.next()` protocol catches → **stay as catches** (the generator
-  protocol allows `.next()` to throw independently of promise semantics; this
-  is irreducible).
+**`loop.js`** (8 catches across 7 functions)
 
-**`safe-output.js`** (4 catches → 4 assertions)
-All async path catches → assertions once output values are `RuntimePromise`.
+The outer catch in `iterate()` already has partial `RuntimeFatalError`
+behavior (`if (!asyncOptions || isRuntimeFatalError(err)) { throw err; }`).
 
-**`deep-assign.js`** (2 catches → 2 assertions)
+The 8 catches divide as:
 
-**`commands/arguments.js`** (3 catches → 3 assertions)
+| Location | Type | Action |
+|---|---|---|
+| `iterate()` arr-await catch | B | Keep `poisonLoopEffects`; harden non-`PoisonError` branch |
+| `iterate()` maxConcurrency-await catch | B | Same |
+| `iterate()` outer catch | B | Already has `isRuntimeFatalError` guard; harden remaining fallback |
+| `iterateAsyncSequential` `for await..of` catch | C | Irreducible — `for await` drives `.next()` internally; any throw (generator or loop body) emerges here |
+| `iterateAsyncParallel` IIFE catch | C | Irreducible — explicit `iterator.next()` may throw; also catches loop body errors |
+| `iterateAsyncLimited` `getNext` catch | C | Irreducible — explicit `iterator.next()` |
+| `iterateAsyncLimited` `worker` catch | B→A | Routes body errors; loop bodies fill buffers and should not throw; harden to `RuntimeFatalError` |
+| `iterateArrayLimited` `worker` catch | B→A | Same; also has `@todo` comment acknowledging this |
+
+The three async-iterator protocol catches (`iterateAsyncSequential`,
+`iterateAsyncParallel`, `iterateAsyncLimited.getNext`) are irreducible
+because user-supplied async iterables can throw from `.next()` regardless of
+source wrapping. `iterateAsyncSequential` uses `for await..of` (the runtime
+calls `.next()` internally); the other two use explicit `.next()` calls. All
+three represent the same irreducible contract: the generator protocol allows
+`.next()` to throw, and that throw is not a `PoisonError`.
+
+**`safe-output.js`** (4 catches → Type B)
+`_suppressValueAsyncComplex`, `_ensureDefinedAsyncComplex`, and
+`_suppressValueScriptComplex` currently do `throw new PoisonError([contextualizeError(err, ...)])` 
+in their non-`PoisonError` catch branches — a different pattern from the
+`createPoison(err)` fallback seen elsewhere. Under the new model, upstream
+values are `RuntimePromise`-wrapped, so these non-`PoisonError` branches
+become unreachable and can be replaced by `throw new RuntimeFatalError(err)`.
+
+**`deep-assign.js`** (2 catches → Type B)
+
+**`commands/arguments.js`** (3 catches → Type B)
 
 **`sequential-path.js`** (2 catches) and **`sequence-chain.js`** (1 catch)
 These await results of previous sequential operations. Once sequential path
 async results are confirmed to be `RuntimePromise`-wrapped, these become
-assertions. A full audit of the sequential path's async sources is required.
+Type B assertions. A full audit of the sequential path's async sources is
+required.
 
 **`chains/base.js`** (4 catches)
-- `_applyCommand:159` — catches sync throws from `cmd.apply(this)` → **keep**
+- `_applyCommand:159` — catches sync throws from `cmd.apply(this)` → **Type C**
   (command application; irreducible).
-- `finalSnapshot:236` — converts a sync throw to a rejected promise → **keep**
+- `finalSnapshot:236` — converts a sync throw to a rejected promise → **Type C**
   (structural boilerplate).
 - `inspectTargetForErrors:356,370` — inspects a value tree for errors →
-  assertions once all inspected values are `RuntimePromise`.
+  **Type B** once all inspected values are `RuntimePromise`.
 
 ### Command-application catch topology
 
@@ -509,17 +572,18 @@ assertions. A full audit of the sequential path's async sources is required.
 not duplicates. The buffer iterator drives command execution; the chain handles
 the apply internally. Both catches are needed.
 
-### Irreducible catch site inventory
+### Irreducible and aggregator catch inventory
 
-| File | Count | Reason irreducible |
-|---|---|---|
-| `async-boundaries.js` | 3 | Structural catch for all boundary body throws |
-| `command-buffer.js` | 1 | Buffer iterator — command application |
-| `chains/base.js` `_applyCommand` | 1 | Chain-level command application |
-| `call.js` | 2 | User function invocations; user code throws |
-| `loop.js` generator `.next()` | 3 | Generator protocol; `.next()` may throw |
-| `inheritance/instance.js` | 1 | Standalone inheritance entry point |
-| **Total** | **11** | vs current ~35 |
+| File | Count | Type | Reason |
+|---|---|---|---|
+| `async-boundaries.js` | 3 | C | Structural catch for all boundary body throws |
+| `command-buffer.js` | 1 | C | Buffer iterator — command application |
+| `chains/base.js` `_applyCommand` | 1 | C | Chain-level command application |
+| `call.js` user invocations | 2 | C | User function calls; user code throws |
+| `loop.js` async-iterator protocol | 3 | C | `.next()` may throw regardless of source wrapping |
+| `errors.js` `collectErrors` | 3 | D | Intentional error aggregator — must collect any error |
+| `inheritance/instance.js` | 1 | C | Standalone inheritance entry point |
+| **Total** | **14** | | vs current ~35 meaningful conversion sites |
 
 ---
 
@@ -540,16 +604,31 @@ is out of scope for this refactor.
 
 `createObject()` / `createArray()` start background resolution of async
 properties immediately. `resolveObjectPropertiesAsync` walks these containers
-and has its own catches. Under the new model those catches become assertions
-only if all property values are `RuntimePromise`. If property values are plain
-Promises, they need to be wrapped at the point they are set into the container.
-A full audit of all property-setting sites has not been done.
+and has its own catches.
+
+The per-property catches inside `createObject`/`createArray` already use
+`throw new PoisonError([e])` rather than `createPoison(err)`. Under the new
+model, if all property values are `RuntimePromise`, then `e` at those catch
+sites will always be `PoisonError`. `new PoisonError([PoisonError])` is handled
+correctly by the `PoisonError` constructor, which flattens it. No structural
+change is needed at these sites once upstream values are wrapped; they are
+already producing `PoisonError`.
+
+A full audit of all property-setting sites to confirm they produce
+`RuntimePromise` (not plain Promise) has not been done.
 
 ### `peekError` / `collectErrors`
 
-These async utility functions inspect values for embedded errors and have their
-own try/catch blocks for promise inspection. Under the new model those catches
-become assertions. A full audit of all call sites has not been done.
+`collectErrors` in `errors.js` is a **Type D intentional aggregator** (see
+§8 taxonomy). It is explicitly designed to collect any error — `PoisonError`
+or otherwise — from any value, promise, or `RESOLVE_MARKER`-backed container.
+Its catches must not become `RuntimeFatalError` assertions. They are the
+foundation of the "never miss any error" principle.
+
+`peekError` delegates to `collectErrors` and inherits this property.
+
+These functions are correctly classified in the irreducible inventory in §8.
+No changes to their catch logic are required.
 
 ### Sync compilation mode
 
@@ -587,14 +666,16 @@ further changes.
 
 ### Phase 2 — Wrap remaining async sources
 
-For each source identified in §4 as returning a plain Promise:
+For sources still emitting plain Promises:
 
-- `loop.js` — wrap `arr` and `maxConcurrency` as `RuntimePromise` before
-  passing to `iterate()`.
-- `safe-output.js` — wrap output value promises.
-- `deep-assign.js` — wrap `root`/`head` async paths.
+- `deep-assign.js` — wrap internal async paths as `RuntimePromise`.
 - `composition.js` emitted code — restructure `import` and `from import` to
   Pattern 4 with `RuntimePromise` as described in §6.
+
+`loop.js` and `safe-output.js` are consumers, not sources. Their values come
+from `callWrapAsync`, `memberLookupAsync`, and composition load sites, which
+will all be `RuntimePromise`-wrapped after this phase. No wrapping is needed
+inside those files; their catch branches are hardened in Phase 3.
 
 Dev-mode warnings from Phase 1 should go silent as each source is wrapped.
 
