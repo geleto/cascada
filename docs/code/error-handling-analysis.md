@@ -14,11 +14,12 @@ Design reference for refactoring Cascada's async error-handling architecture.
 3. [Execution Flow Structure](#3-execution-flow-structure)
 4. [Poison Sources and the Source Contract](#4-poison-sources-and-the-source-contract)
 5. [Async Execution Patterns](#5-async-execution-patterns)
-6. [Composition and Loading](#6-composition-and-loading)
-7. [Fire-and-Forget Calls](#7-fire-and-forget-calls)
-8. [Consumption Points: From Conversion to Assertion](#8-consumption-points-from-conversion-to-assertion)
-9. [Known Gaps and Exclusions](#9-known-gaps-and-exclusions)
-10. [Migration Path](#10-migration-path)
+6. [Render Fatal State and Early Exit](#6-render-fatal-state-and-early-exit)
+7. [Composition and Loading](#7-composition-and-loading)
+8. [Fire-and-Forget Calls](#8-fire-and-forget-calls)
+9. [Consumption Points: From Conversion to Assertion](#9-consumption-points-from-conversion-to-assertion)
+10. [Known Gaps and Exclusions](#10-known-gaps-and-exclusions)
+11. [Migration Path](#11-migration-path)
 
 ---
 
@@ -121,9 +122,10 @@ Consequences:
   via conditionals that return `PoisonedValue` directly. Async failures are
   returned as `RuntimePromise` so they flow into command arguments and are
   resolved later by the command iterator.
-- Async boundaries are the **only** `await` points in the execution flow. Each
-  boundary body already has one structural catch; throws from sync helpers
-  inside a boundary body are automatically caught by that catch.
+- Awaiting is allowed only at structural value-consumption points: command
+  application, async boundary/control/load work, and value transformation
+  helpers. Async boundary bodies already have one structural catch; throws from
+  sync helpers inside a boundary body are automatically caught by that catch.
 - Async boundary bodies in emitted code are **intentionally void** — their
   output is the side effect of filling a child buffer, not a return value as
   an expression. The boundary promise itself is tracked via
@@ -200,7 +202,7 @@ source alongside user function calls and user generator `.next()` calls. An
 async iterable's `.next()` method can throw any error. It is not and cannot
 be wrapped as `RuntimePromise` — the object's type is opaque to the compiler.
 The three `loop.js` protocol catches that handle these throws are permanently
-irreducible (see §8 irreducible inventory).
+irreducible (see §9 irreducible inventory).
 
 ### The RuntimePromise change
 
@@ -298,7 +300,66 @@ not interact with the caller's buffer.
 
 ---
 
-## 6. Composition and Loading
+## 6. Render Fatal State and Early Exit
+
+Fatal delivery and early exit should be owned by a single render-scoped state
+object created before the top-level async render enters compiled code. This
+state is separate from poison: poison represents value-consumption failure,
+while fatal state represents a render that can no longer produce valid output.
+
+Target API:
+
+```javascript
+renderState.reportFatalError(error)
+renderState.isFatalErrorReported()
+renderState.throwIfFatalErrorReported()
+```
+
+The top-level render promise or callback should settle from this render-owned
+state outside compiled code and outside generic runtime helpers. Compiled roots
+and composition entry points can still receive the callable reporting function
+where needed, but "already reported" state and early-exit behavior should live
+in the render state object.
+
+Use `throwIfFatalErrorReported()` only at coarse async interleaving points:
+
+- before entering async boundary bodies;
+- after awaited boundary work settles and before continuing;
+- before invoking composition roots such as include/import/export roots;
+- before command-buffer command application if command execution would
+  otherwise continue after a fatal render error.
+
+Do not force-await promise values that are intentionally returned for later
+value consumption. Their errors should surface when those values are consumed.
+Do not sprinkle fatal-state checks through ordinary synchronous expression code:
+sync code should be stopped by the nearest coarse check. Review each call site
+before adding it; a function that already returns a promise usually only needs
+the check when it can skip meaningful work at the start or before applying
+user-visible effects.
+
+Do not add a promise-wait abstraction unless a concrete local-hang case proves
+it is needed. Value-consumption failures continue to flow through poison, while
+non-`PoisonError` exceptions observed at async boundaries, command execution,
+and resolve/value-consumption points are fatal runtime errors.
+
+Direct async `getExported(...)` execution is a compatibility case: the method
+returns the exported object synchronously while individual exported values may
+still be promises. In the final architecture, direct export execution should
+create or receive render fatal state before entering the compiled root, rather
+than creating ad hoc local `reportedError`/`reportError` closures.
+
+Focused tests should cover:
+
+- a fatal error in one concurrent branch prevents later async-boundary work
+  from continuing;
+- include/import/export composition roots stop when fatal state is already
+  reported;
+- command-buffer execution does not keep applying user-visible commands after
+  the render is fatal, while required cleanup still runs.
+
+---
+
+## 7. Composition and Loading
 
 ### `include` — already correct (Pattern 2)
 
@@ -394,7 +455,7 @@ handles all component errors.
 
 ---
 
-## 7. Fire-and-Forget Calls
+## 8. Fire-and-Forget Calls
 
 Two structurally distinct sub-cases. Both result in promises whose rejections
 go unobserved; each requires a different fix.
@@ -456,7 +517,7 @@ engine bug and do not belong in the chain error system.
 
 ---
 
-## 8. Consumption Points: From Conversion to Assertion
+## 9. Consumption Points: From Conversion to Assertion
 
 ### Catch-type taxonomy
 
@@ -587,7 +648,7 @@ the apply internally. Both catches are needed.
 
 ---
 
-## 9. Known Gaps and Exclusions
+## 10. Known Gaps and Exclusions
 
 ### Binary operator throws
 
@@ -620,14 +681,14 @@ A full audit of all property-setting sites to confirm they produce
 ### `peekError` / `collectErrors`
 
 `collectErrors` in `errors.js` is a **Type D intentional aggregator** (see
-§8 taxonomy). It is explicitly designed to collect any error — `PoisonError`
+§9 taxonomy). It is explicitly designed to collect any error — `PoisonError`
 or otherwise — from any value, promise, or `RESOLVE_MARKER`-backed container.
 Its catches must not become `RuntimeFatalError` assertions. They are the
 foundation of the "never miss any error" principle.
 
 `peekError` delegates to `collectErrors` and inherits this property.
 
-These functions are correctly classified in the irreducible inventory in §8.
+These functions are correctly classified in the irreducible inventory in §9.
 No changes to their catch logic are required.
 
 ### Sync compilation mode
@@ -637,7 +698,7 @@ propagation are not addressed. They are a separate pipeline.
 
 ---
 
-## 10. Migration Path
+## 11. Migration Path
 
 Each phase is independently testable — the full test suite must pass after
 every phase before proceeding.
@@ -670,7 +731,7 @@ For sources still emitting plain Promises:
 
 - `deep-assign.js` — wrap internal async paths as `RuntimePromise`.
 - `composition.js` emitted code — restructure `import` and `from import` to
-  Pattern 4 with `RuntimePromise` as described in §6.
+  Pattern 4 with `RuntimePromise` as described in §7.
 
 `loop.js` and `safe-output.js` are consumers, not sources. Their values come
 from `callWrapAsync`, `memberLookupAsync`, and composition load sites, which
@@ -689,9 +750,9 @@ Remove the dev-mode warning code once all files are hardened.
 
 ### Phase 4 — Compiler and fire-and-forget cleanup
 
-- Add `callWrapAsyncSink` runtime function (§7, sub-case A).
+- Add `callWrapAsyncSink` runtime function (§8, sub-case A).
 - Update the compiler to emit `callWrapAsyncSink` for `Do` nodes.
-- Apply `markPromiseHandled` to `component.js:151` (§7, sub-case B).
+- Apply `markPromiseHandled` to `component.js:151` (§8, sub-case B).
 - Restructure `from import` IIFEs to `RuntimePromise` `.then()` chains.
 
 ### Phase 5 — Component boundary model (design change)
