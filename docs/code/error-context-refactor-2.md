@@ -120,40 +120,39 @@ reporting callback contract is explicit and error-only.
 
 ## Phase C - Inheritance Metadata And Test Cleanup
 
-1. Establish and verify the inheritance callback invariant: within a single
+1. Establish and verify the inheritance reporting invariant: within a single
    `InheritanceInstance` (including constructor, method, block, component, and
-   super invocations), one fatal/reporting `cb` is used for all error reporting
-   and all prepared error-context tables. Component instances created from an
-   inheritance instance should use the parent instance callback or an
-   intentionally scoped callback, not an arbitrary local callback. Do not move
-   prepared `__ec` tables into compiled-module/global mutable state while
-   entries still embed `cb`; compiled template/script objects can be rendered
-   concurrently.
+   super invocations), one fatal/reporting `reportError` function is used for
+   all error reporting and all prepared error-context tables. Component
+   instances created from an inheritance instance should use the parent instance
+   reporter or an intentionally scoped reporter, not an arbitrary local
+   callback. Do not move prepared `__ec` tables into compiled-module/global
+   mutable state while entries still embed a per-render reporter; compiled
+   template/script objects can be rendered concurrently.
 2. Add and verify `getErrorContexts` support on `Script` instances, matching
    `TemplateRuntime`, so script-based inheritance participants can contribute
    owner artifact tables.
 3. Prepare one compact error-context table per owner template/script entry per
    inheritance instance in `InheritanceInstance.create`, after
-   `finalizeInheritanceChain(...)` returns and while `options.cb` is available.
-   Use the owner artifact path and the instance callback. Do not thread `cb`
-   into `finalizeInheritanceChain(...)`; finalization should remain a generic
-   metadata pass. Treat the entry template/script as just another owner entry so
-   `entryErrorContextTable` can be unified with the same per-owner table binding
-   path.
-4. Clarify or remove the existing `ownerEntry.errorContextTable` prepared with
-   `cb = null` during `loadEntry(...)`. If finalization still needs it for
-   validation diagnostics, document it as finalization-only and keep it separate
-   from the per-instance callback-bearing table. If it is no longer needed,
-   remove it with the legacy fallback cleanup.
+   `finalizeInheritanceChain(...)` returns and while `options.reportError` is
+   available. Use the owner artifact path and the instance reporter. Do not
+   thread `reportError` into `finalizeInheritanceChain(...)`; finalization should
+   remain a generic metadata pass. Treat the entry template/script as just
+   another owner entry so `entryErrorContextTable` can be unified with the same
+   per-owner table binding path.
+4. Keep the existing `ownerEntry.errorContextTable` prepared with
+   `reportError = null` during `loadEntry(...)` as a finalization-only table.
+   It is used for validation diagnostics before an `InheritanceInstance` exists
+   and must stay separate from the per-instance callback-bearing table.
 5. Bind or store each owner prepared table on finalized constructor/method/block
    runtime entries. The raw compiled callable may continue to accept `__ec` as a
    low-level final parameter, but inheritance invocation should not rediscover
    or select a table for each call; the runtime entry should provide its bound
    owner table when it invokes the compiled function. Create the wrapper during
    `InheritanceInstance.create` so it closes over the per-instance
-   callback-bearing table, not the finalization-time `cb = null` table. Remove
-   the explicit table argument from `_invokeFromMethodData(...)`'s call to
-   `methodData.fn(...)` once wrappers provide the callable's owner table.
+   reporter-bearing table, not the finalization-time `reportError = null` table.
+   Remove the explicit table argument from `_invokeFromMethodData(...)`'s call
+   to `methodData.fn(...)` once wrappers provide the callable's owner table.
 6. Remove hot-path owner-table lookup after runtime callable entries carry their
    prepared owner table directly. Delete `getErrorContextTableForMethod(...)`,
    `getErrorContextForMethod(...)`, and `errorContextTablesByOwner` once the
@@ -165,12 +164,14 @@ reporting callback contract is explicit and error-only.
    parameters from `resolveCompiledEntryErrorContext(...)`, including
    object-format fields such as `errorContext` and `superErrorContext` that only
    exist for those tests.
-8. Simplify `getErrorContextCallback(...)` after inheritance legacy object
-   fallbacks are removed. The final helper should only read the compact callback
-   slot.
-9. Evaluate whether `loadEntry(...)` and `createRuntimeOwnerEntry(...)` can be
-   consolidated after item 7 removes the inheritance object error-context
-   fallback paths.
+8. Simplify `getErrorContextReportError(...)` after inheritance legacy object
+   fallbacks are removed. The final helper should only read the compact report
+   callback slot.
+9. Keep `loadEntry(...)` and `createRuntimeOwnerEntry(...)` separate for now:
+   `loadEntry(...)` is loader-owned and prepares finalization-only metadata,
+   while `createRuntimeOwnerEntry(...)` creates frozen finalization entries.
+   Revisit only if a later pass exposes real duplication after the callable ABI
+   cleanup.
 10. Perform a narrow final inheritance naming audit: confirm historical
     `origin` names are gone for originating error contexts, and that remaining
     `errorContext` fields genuinely hold compact source contexts rather than
@@ -182,6 +183,8 @@ reporting callback contract is explicit and error-only.
     while exported values may still be promises; its trailing argument is
     `reportError`, not a Node-style `(err, value)` callback. Resolve direct
     no-reporter `getExported(...)` use as an explicit compatibility case.
+    Generated render/include/import paths must pass `reportError`; do not add
+    defensive null-reporter fallbacks to those internal paths.
 
 ## Follow-Up - Render Fatal State And Early Exit
 
@@ -194,7 +197,33 @@ direct no-reporter `getExported(...)` compatibility path: async
 return the exported object synchronously, and leave individual exported values
 to resolve independently.
 
-## Phase D - Error Taxonomy And Fatal Delivery
+## Phase D - Compiled Callable Error-Context ABI Cleanup
+
+The Phase C runtime binding is correct, but it still needs wrapper functions
+because inherited callables keep the low-level final `__ec` parameter. This
+phase removes that ABI pressure so the runtime metadata binding can shrink
+instead of wrapping solely to append an owner table.
+
+1. Audit the compiled callable ABI for inherited methods, template blocks,
+   constructors, and any macro/caller paths that can participate in inheritance.
+   Identify every place that emits or invokes the final low-level `__ec`
+   parameter.
+2. Replace the final `__ec` parameter with a cleaner ownership model. Prefer a
+   generated callable shape where the owner table is already closed over or
+   otherwise explicitly bound at owner-entry creation, while keeping prepared
+   tables per `InheritanceInstance` so concurrent renders do not share
+   callback-bearing contexts.
+3. Keep per-render `reportError` ownership unchanged: prepared error-context
+   tables must still be created per inheritance instance and must not be stored
+   globally on compiled template/script artifacts.
+4. Remove or materially shrink `bindRuntimeMethodEntry(...)` and related table
+   binding helpers once compiled callables no longer need a runtime wrapper only
+   to append the owner table.
+5. Regenerate precompiled/browser fixtures after the ABI change. This should
+   also remove stale generated `entryErrorContextTable: __ec` fields.
+6. Re-run inheritance, error-context, precompile, and browser fixture tests.
+
+## Phase E - Error Taxonomy And Fatal Delivery
 
 1. Reduce runtime error families to the target three:
    `PoisonError`, `RuntimeError`, and `CompileError`.
@@ -222,7 +251,7 @@ to resolve independently.
 9. Re-check docs and public exports so the error taxonomy is explicit and
    small.
 
-## Phase E - Helper Ownership And Buffer API Cleanup
+## Phase F - Helper Ownership And Buffer API Cleanup
 
 1. Reconcile and either fill or explicitly drop deferred optional
    `bufferBranchContext` display fields. Use the current canonical field names
