@@ -36,8 +36,8 @@ class Script extends Template {
     });
   }
 
-  getExported(ctx, renderCtx, cb) {
-    return AsyncTemplate.prototype.getExported.call(this, ctx, renderCtx, cb);
+  getExported(ctx, renderCtx, reportError) {
+    return AsyncTemplate.prototype.getExported.call(this, ctx, renderCtx, reportError);
   }
 
   compileSource() {

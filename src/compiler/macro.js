@@ -153,7 +153,7 @@ class CompileMacro {
     compiler.emit.line(`runtime.declareBufferChain(${compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
     compiler.buffer.asyncAddValueToBuffer((resultVar) => {
       compiler.emit(
-      `${resultVar} = new runtime.VarCommand({ chainName: '${name}', args: [${funcId}], errorContext: ${compiler.emitErrorContext(node)} })`
+        `${resultVar} = new runtime.VarCommand({ chainName: '${name}', args: [${funcId}], errorContext: ${compiler.emitErrorContext(node)} })`
       );
     }, node, name);
     if (name.charAt(0) !== '_' && compiler.analysis.isParentOwnedDeclarationRootOwned(node._analysis, name)) {

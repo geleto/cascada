@@ -229,7 +229,7 @@ class TemplateRuntime extends Obj {
     return boundExported;
   }
 
-  _invokeRootWithFatalCallback(context, cb = null) {
+  _invokeRootWithFatalCallback(context, reportError) {
     let reported = false;
     let rejectFatal;
     const fatalPromise = new Promise((resolve, reject) => {
@@ -242,15 +242,13 @@ class TemplateRuntime extends Obj {
         return;
       }
       reported = true;
-      if (typeof cb === 'function') {
-        cb(err);
-      }
+      reportError(err);
       rejectFatal(err);
     };
 
     let rootResult;
     try {
-      rootResult = this.rootRenderFunc(this.env, context, globalRuntime, reportFatal, true);
+      rootResult = this.rootRenderFunc(this.env, context, globalRuntime, reportError, true);
     } catch (err) {
       const handled = globalRuntime.handleError(err, 0, 0, 'Root(PosNode)', context.path);
       reportFatal(handled);
@@ -352,31 +350,43 @@ class AsyncTemplateRuntime extends TemplateRuntime {
     });
   }
 
-  getExported(ctx, renderCtx, cb) {
+  getExported(ctx, renderCtx, reportError) {
     if (typeof ctx === 'function') {
-      cb = ctx;
+      reportError = ctx;
       ctx = {};
       renderCtx = null;
     } else if (typeof renderCtx === 'function') {
-      cb = renderCtx;
+      reportError = renderCtx;
       renderCtx = ctx;
     }
 
     this.compile();
 
     const context = this._createContext(ctx, renderCtx, ctx || null);
-    const rootResult = this._invokeRootWithFatalCallback(context, cb);
+    let reportedError = null;
+    if (typeof reportError !== 'function') {
+      reportError = (err) => {
+        if (!err || reportedError) {
+          return;
+        }
+        reportedError = err;
+      };
+    }
+    const rootResult = this._invokeRootWithFatalCallback(context, reportError);
     if (rootResult && typeof rootResult.then === 'function') {
       globalRuntime.markPromiseHandled(rootResult);
+    }
+    if (reportedError) {
+      throw reportedError;
     }
     const exported = context.getExported();
     return exported;
   }
 
-  _renderIncludeText(ctx, renderCtx) {
+  _renderIncludeText(ctx, renderCtx, reportError) {
     this.compile();
     const context = this._createContext(ctx, renderCtx, ctx || null);
-    return this._invokeRootWithFatalCallback(context, null);
+    return this._invokeRootWithFatalCallback(context, reportError);
   }
 
   _getCompiledBlocks() {

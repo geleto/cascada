@@ -492,6 +492,80 @@ describe('error context tracing runtime foundation', () => {
       expect(parentContextPaths).to.contain('parent.njk');
     });
 
+    it('uses one reportError callback when rendering included templates', async () => {
+      const loader = new StringLoader();
+      loader.addTemplate('parent.njk', 'Parent {% include "child.njk" %}');
+      loader.addTemplate('child.njk', 'Child');
+      const env = new AsyncEnvironment(loader);
+      const parent = await env.getTemplate('parent.njk', true, null, false);
+      const child = await env.getTemplate('child.njk', true, null, false);
+      const reporters = [];
+
+      parent.compile();
+      child.compile();
+
+      const parentRoot = parent.rootRenderFunc;
+      parent.rootRenderFunc = function observedParentRoot(envArg, contextArg, runtimeArg, reportError, ...rest) {
+        reporters.push({ path: 'parent.njk', reportError });
+        return parentRoot.call(this, envArg, contextArg, runtimeArg, reportError, ...rest);
+      };
+
+      const childRoot = child.rootRenderFunc;
+      child.rootRenderFunc = function observedChildRoot(envArg, contextArg, runtimeArg, reportError, ...rest) {
+        reporters.push({ path: 'child.njk', reportError });
+        return childRoot.call(this, envArg, contextArg, runtimeArg, reportError, ...rest);
+      };
+
+      const result = await parent.render({});
+
+      expect(result.trim()).to.be('Parent Child');
+      expect(reporters.map((entry) => entry.path)).to.eql(['parent.njk', 'child.njk']);
+      expect(reporters[1].reportError).to.be(reporters[0].reportError);
+    });
+
+    it('reports included template failures through the shared reportError callback once', async () => {
+      const loader = new StringLoader();
+      loader.addTemplate('parent.njk', 'Parent {% include "child.njk" with fail %}');
+      loader.addTemplate('child.njk', '{{ fail() }}');
+      const env = new AsyncEnvironment(loader);
+      const parent = await env.getTemplate('parent.njk', true, null, false);
+      const child = await env.getTemplate('child.njk', true, null, false);
+      const reporters = [];
+      let callbackCount = 0;
+
+      parent.compile();
+      child.compile();
+
+      const parentRoot = parent.rootRenderFunc;
+      parent.rootRenderFunc = function observedParentRoot(envArg, contextArg, runtimeArg, reportError, ...rest) {
+        reporters.push({ path: 'parent.njk', reportError });
+        return parentRoot.call(this, envArg, contextArg, runtimeArg, reportError, ...rest);
+      };
+
+      const childRoot = child.rootRenderFunc;
+      child.rootRenderFunc = function observedChildRoot(envArg, contextArg, runtimeArg, reportError, ...rest) {
+        reporters.push({ path: 'child.njk', reportError });
+        return childRoot.call(this, envArg, contextArg, runtimeArg, reportError, ...rest);
+      };
+
+      const error = await new Promise((resolve) => {
+        parent.render({
+          fail() {
+            throw new Error('included failure');
+          }
+        }, (err) => {
+          callbackCount++;
+          resolve(err);
+        });
+      });
+
+      expect(error).to.be.an(Error);
+      expect(error.message).to.contain('included failure');
+      expect(callbackCount).to.be(1);
+      expect(reporters.map((entry) => entry.path)).to.eql(['parent.njk', 'child.njk']);
+      expect(reporters[1].reportError).to.be(reporters[0].reportError);
+    });
+
     it('emits compact contexts for migrated helper and command call sites', () => {
       const env = new AsyncEnvironment();
       const source = new Script([

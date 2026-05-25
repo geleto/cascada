@@ -172,11 +172,66 @@ reporting callback contract is explicit and error-only.
    consolidated after item 7 removes the inheritance object error-context
    fallback paths.
 10. Perform a narrow final inheritance naming audit: confirm historical
-   `origin` names are gone for originating error contexts, and that remaining
-   `errorContext` fields genuinely hold compact source contexts rather than
-   renamed legacy object-origin payloads.
+    `origin` names are gone for originating error contexts, and that remaining
+    `errorContext` fields genuinely hold compact source contexts rather than
+    renamed legacy object-origin payloads.
+11. Rename runtime-internal async composition parameters that still call the
+    error-only reporter `cb`, including `AsyncTemplateRuntime.getExported(...)`
+    and `Script.getExported(...)`. Async `getExported(...)` should be treated as
+    an internal composition API that returns the exported object synchronously
+    while exported values may still be promises; its trailing argument is
+    `reportError`, not a Node-style `(err, value)` callback. Resolve direct
+    no-reporter `getExported(...)` use as an explicit compatibility case.
 
-## Phase D - Error Taxonomy And Fatal Delivery
+## Phase D - Render Fatal State And Early Exit
+
+1. Introduce a small render fatal-state object so fatal delivery and early exit
+   behavior have one owner instead of being spread across helpers. The target API
+   should stay minimal: `reportFatalError(error)`, `isFatalErrorReported()`, and
+   `throwIfFatalErrorReported()`.
+2. Create the render fatal-state object at the top-level async render boundary,
+   before entering any compiled script/template root. The public render promise
+   or callback should race/settle from this render-owned state outside compiled
+   code and outside generic runtime helpers.
+3. Thread the render fatal-state object through compiled async roots and
+   composition entry points. Compiled code may still receive the callable
+   reporting function where needed, but the shared fatal state should be the
+   owner of "already reported" and early-exit behavior.
+4. Remove the direct no-reporter `AsyncTemplateRuntime.getExported(...)`
+   fallback reporter closure once direct export execution creates or receives a
+   render fatal-state object before entering the compiled root. That fallback is
+   compatibility-only; the final async export path should not create ad hoc
+   `reportedError`/`reportError` closures.
+5. Add `throwIfFatalErrorReported()` at the coarse async interleaving points we
+   identified:
+   - before entering async boundary bodies;
+   - after awaited boundary work settles and before continuing;
+   - before invoking composition roots such as include/import/export roots;
+   - before command-buffer command application if command execution would
+     otherwise continue after a fatal render error.
+   Do not force-await promise values that are intentionally returned for later
+   value consumption; their errors should surface when those values are consumed.
+6. Do not sprinkle fatal-state checks through ordinary synchronous expression
+   code. Code outside async boundaries and value-consumption points is sync-only
+   and should be stopped by the nearest coarse check.
+7. Review each `throwIfFatalErrorReported()` call site before adding it. The
+   best use case is sync/entry code that is about to start more work; a function
+   that already returns a promise usually only needs the check when it can skip
+   meaningful work at the start or before applying user-visible effects.
+8. Do not add a promise-wait abstraction unless a concrete local-hang case proves
+   it is needed. Value-consumption failures should continue to flow through
+   poison, while non-`PoisonError` exceptions observed at async boundaries,
+   command execution, and resolve/value-consumption points should be reported as
+   fatal runtime errors.
+9. Add focused tests for early exit:
+   - a fatal error in one concurrent branch prevents later async-boundary work
+     from continuing;
+   - include/import/export composition roots stop when the shared fatal state is
+     already reported;
+   - command-buffer execution does not keep applying user-visible commands after
+     the render is fatal, while required cleanup still runs.
+
+## Phase E - Error Taxonomy And Fatal Delivery
 
 1. Reduce runtime error families to the target three:
    `PoisonError`, `RuntimeError`, and `CompileError`.
@@ -204,7 +259,7 @@ reporting callback contract is explicit and error-only.
 9. Re-check docs and public exports so the error taxonomy is explicit and
    small.
 
-## Phase E - Helper Ownership And Buffer API Cleanup
+## Phase F - Helper Ownership And Buffer API Cleanup
 
 1. Reconcile and either fill or explicitly drop deferred optional
    `bufferBranchContext` display fields. Use the current canonical field names
@@ -244,6 +299,10 @@ reporting callback contract is explicit and error-only.
 8. Re-check command constructor shape and convert the positional
    `ErrorCommand(errors, errorContext)` signature to a spec object if the
    command API should be uniform after compatibility cleanup.
-9. Perform the terminal precompile/browser fixture pass after final async
+9. Re-check the direct no-reporter `getExported(...)` compatibility path after
+   render fatal state is introduced. Async `getExported(...)` should otherwise
+   receive a render-scoped `reportError`, return the exported object
+   synchronously, and leave individual exported values to resolve independently.
+10. Perform the terminal precompile/browser fixture pass after final async
    compatibility adapters are removed. This closes out fixture churn from the
    refactor and is distinct from incremental fixture updates in earlier phases.
