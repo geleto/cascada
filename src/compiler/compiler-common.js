@@ -100,13 +100,13 @@ class CompilerCommon extends Obj {
     if (!node) {
       return 'null';
     }
-    return `__ec[${this.getErrorContextIndex(node)}]`;
+    const tableExpr = this.inheritance.currentCallableNode
+      ? 'methodData.errorContextTable'
+      : '__ec';
+    return `${tableExpr}[${this.getErrorContextIndex(node)}]`;
   }
 
   getErrorContextIndex(node) {
-    if (!node) {
-      return null;
-    }
     if (node._analysis.errorContextIndex === undefined) {
       this._generateErrorContext(node);
     }

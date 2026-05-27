@@ -723,11 +723,29 @@ class CompileInheritance {
     }
   }
 
-  _withCallableBodyCompile(callableNode, emitBody) {
+  _emitCallableEntrySetup(callableNode, isScriptMethod, invocationPath, callableSignature) {
+    if (isScriptMethod) {
+      this.compiler.return.emitDeclareChain(this.compiler.buffer.currentBuffer);
+    }
+    const payloadOriginalArgsVar = this.compiler._tmpid();
+    this.emit.line(`const ${payloadOriginalArgsVar} = runtime.getInheritanceCallableOriginalArgs(blockPayload);`);
+    this._emitCallableContextSetup(callableNode, isScriptMethod, invocationPath);
+    this._emitCallableEntryParentLinks(callableNode, isScriptMethod);
+    this._emitCallableArgumentChains(callableNode, callableSignature, payloadOriginalArgsVar);
+  }
+
+  _withCallableEntryCompile(callableNode, emitEntry) {
     const savedCallableNode = this.currentCallableNode;
     this.currentCallableNode = callableNode;
-    emitBody();
+    emitEntry();
     this.currentCallableNode = savedCallableNode;
+  }
+
+  _emitInheritedCallableFunction(callableNode, functionName, emitBody) {
+    this.emit.entryFunction(callableNode, functionName, emitBody, {
+      extraParams: INHERITED_CALLABLE_EXTRA_PARAMS,
+      noReturn: true
+    });
   }
 
   _emitCallableEntryReturn(isScriptMethod) {
@@ -746,6 +764,16 @@ class CompileInheritance {
     this.emit.line(`return ${this.compiler.buffer.currentTextChainVar}.finalSnapshot();`);
   }
 
+  _emitCallableEntryCompletion(callableNode, isScriptMethod, constructorRootNode) {
+    if (constructorRootNode && !isScriptMethod) {
+      this._emitTemplateConstructorEntryReturn(constructorRootNode._analysis.inheritance.hasExtends, callableNode);
+    } else if (constructorRootNode && callableNode.isSharedDefaultOnlyConstructor) {
+      this._emitScriptSharedDefaultConstructorEntryReturn(constructorRootNode._analysis.inheritance.hasExtends, callableNode);
+    } else {
+      this._emitCallableEntryReturn(isScriptMethod);
+    }
+  }
+
   _compileCallableEntry(callableNode, functionName = `b_${callableNode.name.value}`, isConstructorEntry = false) {
     const isScriptMethod = this.compiler.scriptMode;
     const constructorRootNode = isConstructorEntry
@@ -760,36 +788,16 @@ class CompileInheritance {
     // This only wires the entry-local command buffer to its immediate parent
     // invocation buffer. Caller-side inherited invocation linking is resolved
     // separately from helper-resolved method metadata at runtime.
-    this.emit.entryFunction(callableNode, functionName, () => {
-      if (isScriptMethod) {
-        this.compiler.return.emitDeclareChain(this.compiler.buffer.currentBuffer);
-      }
-      const payloadOriginalArgsVar = this.compiler._tmpid();
-      this.emit.line(`const ${payloadOriginalArgsVar} = runtime.getInheritanceCallableOriginalArgs(blockPayload);`);
-      this._emitCallableContextSetup(callableNode, isScriptMethod, invocationPath);
-      this._emitCallableEntryParentLinks(callableNode, isScriptMethod);
-      this._emitCallableArgumentChains(callableNode, callableSignature, payloadOriginalArgsVar);
-      if (constructorRootNode) {
-        this.emitRootSharedDeclarations(constructorRootNode);
-      }
-      this._withCallableBodyCompile(callableNode, () => {
+    this._withCallableEntryCompile(callableNode, () => {
+      this._emitInheritedCallableFunction(callableNode, functionName, () => {
+        this._emitCallableEntrySetup(callableNode, isScriptMethod, invocationPath, callableSignature);
+        if (constructorRootNode) {
+          this.emitRootSharedDeclarations(constructorRootNode);
+        }
         this.compiler.compile(callableNode.body, null);
+        this._emitCallableEntryCompletion(callableNode, isScriptMethod, constructorRootNode);
       });
-      if (constructorRootNode && !isScriptMethod) {
-        this._emitTemplateConstructorEntryReturn(constructorRootNode._analysis.inheritance.hasExtends, callableNode);
-      } else if (constructorRootNode && callableNode.isSharedDefaultOnlyConstructor) {
-        this._emitScriptSharedDefaultConstructorEntryReturn(constructorRootNode._analysis.inheritance.hasExtends, callableNode);
-      } else {
-        this._emitCallableEntryReturn(isScriptMethod);
-      }
-    }, {
-      extraParams: INHERITED_CALLABLE_EXTRA_PARAMS,
-      noReturn: true
     });
-  }
-
-  _compileInheritedCallableEntry(callableNode) {
-    this._compileCallableEntry(callableNode);
   }
 
   compileInheritedCallableEntries(node) {
@@ -804,7 +812,7 @@ class CompileInheritance {
         this.compiler.fail(`${callableKind} "${name}" defined more than once.`, callableNode.lineno, callableNode.colno, callableNode);
       }
       callableNames.add(name);
-      this._compileInheritedCallableEntry(callableNode);
+      this._compileCallableEntry(callableNode);
     });
 
     return callables;

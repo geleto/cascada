@@ -106,12 +106,13 @@ function createRuntimeMethodEntry(compiledEntry, ownerEntry, parentEntry, errors
   };
 }
 
-function createRuntimeSharedSchema(entries, errors) {
+function createRuntimeSharedSchema(entries, ownerEntries, errors) {
   const sharedSchema = Object.create(null);
 
-  entries.forEach((entry) => {
+  entries.forEach((entry, index) => {
+    const ownerEntry = ownerEntries[index];
     Object.entries(entry.spec.sharedSchema).forEach(([name, compiledSchemaEntry]) => {
-      const runtimeSchemaEntry = createRuntimeSharedSchemaEntry(compiledSchemaEntry, entry);
+      const runtimeSchemaEntry = createRuntimeSharedSchemaEntry(compiledSchemaEntry, ownerEntry);
       const existingEntry = sharedSchema[name];
       if (existingEntry && existingEntry.type !== runtimeSchemaEntry.type) {
         addFinalizationError(
@@ -264,7 +265,7 @@ function finalizeInheritanceChain(chain, context = null) {
     Object.keys(entry.spec.methodEntries).forEach((name) => methodNames.add(name));
   });
 
-  const sharedSchema = createRuntimeSharedSchema(entries, errors);
+  const sharedSchema = createRuntimeSharedSchema(entries, ownerEntries, errors);
   validateSharedMethodCollisions(sharedSchema, methodNames, errors);
 
   for (let index = entries.length - 1; index >= 0; index--) {

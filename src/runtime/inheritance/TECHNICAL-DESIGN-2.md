@@ -163,7 +163,7 @@ type InheritanceInstanceState = {
   runtimeState: InheritanceRuntimeState,
   env: Environment,
   runtime: object,
-  cb: Function,
+  reportError: Function,
   rootBuffer: CommandBuffer,
   sharedRootBuffer: CommandBuffer,
   context: Context,

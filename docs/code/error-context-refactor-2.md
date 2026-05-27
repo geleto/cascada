@@ -145,14 +145,11 @@ reporting callback contract is explicit and error-only.
    It is used for validation diagnostics before an `InheritanceInstance` exists
    and must stay separate from the per-instance callback-bearing table.
 5. Bind or store each owner prepared table on finalized constructor/method/block
-   runtime entries. The raw compiled callable may continue to accept `__ec` as a
-   low-level final parameter, but inheritance invocation should not rediscover
-   or select a table for each call; the runtime entry should provide its bound
-   owner table when it invokes the compiled function. Create the wrapper during
-   `InheritanceInstance.create` so it closes over the per-instance
-   reporter-bearing table, not the finalization-time `reportError = null` table.
-   Remove the explicit table argument from `_invokeFromMethodData(...)`'s call
-   to `methodData.fn(...)` once wrappers provide the callable's owner table.
+   runtime entries so inheritance invocation does not rediscover or select a
+   table for each call. Phase C first used per-instance wrappers to append the
+   owner table to raw compiled callables; Phase D removed that temporary ABI by
+   storing the table on `methodData.errorContextTable` and emitting inherited
+   callable contexts from that table directly.
 6. Remove hot-path owner-table lookup after runtime callable entries carry their
    prepared owner table directly. The removed lazy lookup helpers
    `getErrorContextTableForMethod(...)`, `getErrorContextForMethod(...)`, and
@@ -200,29 +197,23 @@ to resolve independently.
 
 ## Phase D - Compiled Callable Error-Context ABI Cleanup
 
-The Phase C runtime binding is correct, but it still needs wrapper functions
-because inherited callables keep the low-level final `__ec` parameter. This
-phase removes that ABI pressure so the runtime metadata binding can shrink
-instead of wrapping solely to append an owner table.
+Implemented for inherited callables:
 
-1. Audit the compiled callable ABI for inherited methods, template blocks,
-   constructors, and any macro/caller paths that can participate in inheritance.
-   Identify every place that emits or invokes the final low-level `__ec`
-   parameter.
-2. Replace the final `__ec` parameter with a cleaner ownership model. Prefer a
-   generated callable shape where the owner table is already closed over or
-   otherwise explicitly bound at owner-entry creation, while keeping prepared
-   tables per `InheritanceInstance` so concurrent renders do not share
-   callback-bearing contexts.
-3. Keep per-render `reportError` ownership unchanged: prepared error-context
-   tables must still be created per inheritance instance and must not be stored
-   globally on compiled template/script artifacts.
-4. Remove or materially shrink `bindInheritanceRuntimeState(...)` and related
-   helpers in `bind-instance-metadata.js` once compiled callables no longer need
-   a runtime wrapper only to append the owner table.
-5. Regenerate precompiled/browser fixtures after the ABI change. This should
-   also remove stale generated `entryErrorContextTable: __ec` fields.
-6. Re-run inheritance, error-context, precompile, and browser fixture tests.
+1. Removed the final low-level `__ec` parameter from inherited method, block,
+   and constructor functions. Callable error-context references now read from
+   `methodData.errorContextTable[...]`, so the method metadata owns the table
+   used by the generated callable.
+2. Kept root and parent-resolution `__ec` tables local to their generated
+   functions. Only inherited callable entries use the method-owned table.
+3. Kept per-render `reportError` ownership unchanged. Prepared owner tables are
+   still created per `InheritanceInstance` in `bind-instance-metadata.js` and
+   are not stored globally on compiled template/script artifacts.
+4. Shrunk `bindInheritanceRuntimeState(...)`: bound method entries now store
+   `errorContextTable` directly instead of wrapping `fn(...)` solely to append
+   an owner table argument.
+5. Regenerated precompiled/browser fixtures for the callable ABI shape.
+6. Verified the focused inheritance, component, error-context, and precompile
+   suites.
 
 ## Phase E - Error Taxonomy And Fatal Delivery
 
@@ -288,7 +279,11 @@ instead of wrapping solely to append an owner table.
    helpers instead of leaving them in incidental locations. This includes
    deciding whether `requireCommandErrorContext(...)` belongs in
    `commands/base.js` long term or in a smaller shared runtime validation
-   module.
+   module. Split `_generateErrorContext(...)` so label construction and
+   compiler-table registration are separate, named operations; keep the frozen
+   sync path behavior unchanged while doing so. Remove finalization-only fields
+   such as `errorContextIndex` from bound method entries after the binder has
+   resolved `errorContext` and `errorContextTable`.
 5. Make `contextualizeError(...)` the single runtime error-context wrapper.
    Inline or remove helper wrappers that only forward to it, including
    `contextualize*` helpers that do not add real domain-specific data. Keep
@@ -312,3 +307,7 @@ instead of wrapping solely to append an owner table.
 9. Perform the terminal precompile/browser fixture pass after final async
    compatibility adapters are removed. This closes out fixture churn from the
    refactor and is distinct from incremental fixture updates in earlier phases.
+10. Revisit shared-schema default source locations. Merged shared schema entries
+    currently use the declaration context for both `errorContext` and
+    `defaultErrorContext`; preserving a parent's default initializer location
+    would require a separate compiled `defaultErrorContextIndex` field.

@@ -95,7 +95,7 @@ class CompileEmit {
         const extraParamSource = Array.isArray(extraParams) && extraParams.length > 0
           ? `, ${extraParams.join(', ')}`
           : '';
-        this.line(`function ${name}(env, context, runtime, reportError, parentBuffer = null${extraParamSource}, __ec = null) {`);
+        this.line(`function ${name}(env, context, runtime, reportError, parentBuffer = null${extraParamSource}) {`);
       }
     } else {
       this.line(`function ${name}(env, context, frame, runtime, cb) {`);

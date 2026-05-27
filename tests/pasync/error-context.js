@@ -454,7 +454,9 @@ describe('error context tracing runtime foundation', () => {
 
       expect(source.match(/runtime\.prepareErrorContexts/g)).to.have.length(1);
       expect(source).to.contain('const __ec = getErrorContexts(runtime, context.path, reportError);');
-      expect(source).to.match(/function b_body\(env, context, runtime, reportError, parentBuffer = null.*__ec = null\)/);
+      expect(source).to.match(/function b_body\(env, context, runtime, reportError, parentBuffer = null.*currentInstance\)/);
+      expect(source).not.to.contain('__ec = null');
+      expect(source).to.contain('methodData.errorContextTable[');
     });
 
     it('uses script labels for script-mode load targets', () => {

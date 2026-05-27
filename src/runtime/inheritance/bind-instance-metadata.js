@@ -32,16 +32,13 @@ function bindInheritanceRuntimeState(runtimeState, runtime, reportError) {
       pendingMethods.push(methodData.super);
     }
     const ownerTable = getOwnerErrorContextTable(methodData.ownerEntry, ownerTables, runtime, reportError);
-    const rawFn = methodData.fn;
     boundMethods.set(methodData, {
       ...methodData,
       errorContext: methodData.errorContextIndex == null
         ? methodData.errorContext
         : ownerTable[methodData.errorContextIndex],
-      super: null,
-      fn(...args) {
-        return rawFn.call(this, ...args, ownerTable);
-      }
+      errorContextTable: ownerTable,
+      super: null
     });
   }
 
