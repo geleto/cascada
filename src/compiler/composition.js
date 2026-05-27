@@ -76,7 +76,8 @@ class CompileComposition {
       const exportedId = this.compiler._tmpid();
       this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => {`);
       this.emit.line('  resolvedTemplate.compile();');
-      this.emit.line('  return runtime.resolveSingle(resolvedTemplate.getExported(null, reportError));');
+      this.emit.line('  renderState.throwIfFatalErrorReported();');
+      this.emit.line('  return runtime.resolveSingle(resolvedTemplate.getExported(null, null, renderState));');
       this.emit.line('});');
       this.compiler.buffer.emitLimitedLoopCompletion(exportedId, node);
       this._emitValueImportBinding(target, exportedId, node);
@@ -93,7 +94,8 @@ class CompileComposition {
     this.compiler.compositionPayload.emitContext(importContextVar, importVarsVar, node.withContext);
     this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => {`);
     this.emit.line('  resolvedTemplate.compile();');
-    this.emit.line(`  return runtime.resolveSingle(resolvedTemplate.getExported(${importContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, reportError));`);
+    this.emit.line('  renderState.throwIfFatalErrorReported();');
+    this.emit.line(`  return runtime.resolveSingle(resolvedTemplate.getExported(${importContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, renderState));`);
     this.emit.line('});');
     this.compiler.buffer.emitLimitedLoopCompletion(exportedId, node);
     this._emitValueImportBinding(target, exportedId, node);
@@ -138,7 +140,8 @@ class CompileComposition {
     const bindingIds = [];
     this.emit.line(`let ${exportedId} = runtime.resolveSingle(${importedId}).then((resolvedTemplate) => {`);
     this.emit.line('  resolvedTemplate.compile();');
-    this.emit.line('  return runtime.resolveSingle(resolvedTemplate.getExported(null, reportError));');
+    this.emit.line('  renderState.throwIfFatalErrorReported();');
+    this.emit.line('  return runtime.resolveSingle(resolvedTemplate.getExported(null, null, renderState));');
     this.emit.line('});');
     this._emitAsyncFromImportBindings(node, exportedId, bindingIds);
     this._emitFromImportCompletion(node, exportedId, bindingIds);
@@ -155,7 +158,8 @@ class CompileComposition {
     this.compiler.compositionPayload.emitContext(importContextVar, importVarsVar, node.withContext);
     this.emit.line(`let ${exportedId} = runtime.resolveSingle(${importedId}).then((resolvedTemplate) => {`);
     this.emit.line('  resolvedTemplate.compile();');
-    this.emit.line(`  return runtime.resolveSingle(resolvedTemplate.getExported(${importContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, reportError));`);
+    this.emit.line('  renderState.throwIfFatalErrorReported();');
+    this.emit.line(`  return runtime.resolveSingle(resolvedTemplate.getExported(${importContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, renderState));`);
     this.emit.line('});');
     this._emitAsyncFromImportBindings(node, exportedId, bindingIds);
     this._emitFromImportCompletion(node, exportedId, bindingIds);
@@ -262,8 +266,9 @@ class CompileComposition {
       this.compiler.compositionPayload.emitContext(includeContextVar, includeVarsVar, node.withContext);
 
       this.emit.line(`const ${templateVar}_resolved = await runtime.resolveSingle(${templateVar});`);
+      this.emit.line('renderState.throwIfFatalErrorReported();');
       this.emit.line(`${templateVar}_resolved.compile();`);
-      this.emit.line(`let ${includeTextValue} = ${templateVar}_resolved._renderIncludeText(${includeContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, reportError);`);
+      this.emit.line(`let ${includeTextValue} = ${templateVar}_resolved._renderIncludeText(${includeContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, renderState);`);
       this.emit.line(`${this.compiler.buffer.currentBuffer}.addCommand(new runtime.TextCommand({ chainName: "${this.compiler.buffer.currentTextChainName}", args: [${includeTextValue}], errorContext: ${this.compiler.emitErrorContext(node)} }), "${this.compiler.buffer.currentTextChainName}");`);
       this.compiler.buffer.emitLimitedLoopCompletion(includeTextValue, node);
     });

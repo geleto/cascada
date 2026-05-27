@@ -234,6 +234,20 @@ describe('error context tracing runtime foundation', () => {
     });
   });
 
+  it('render state returns a rejected root race after synchronous fatal report', async () => {
+    const renderState = runtime.createRenderState();
+    const failure = new Error('sync fatal');
+
+    renderState.reportFatalError(failure);
+
+    try {
+      await renderState.raceRootResult('ignored');
+      expect().fail('Expected render-state race to reject');
+    } catch (error) {
+      expect(error).to.be(failure);
+    }
+  });
+
   it('includes command-buffer error context in error info', () => {
     const opEc = [9, 1, 'Output', 'consumer.casc', null];
     const bufferEc = [3, 4, 'If.Condition(FunCall)', 'script.casc', null];
@@ -356,7 +370,9 @@ describe('error context tracing runtime foundation', () => {
     const boundaryEc = [12, 3, 'If.Condition(Symbol)', 'script.casc', null];
     let child = null;
 
-    await runControlFlowBoundary(root, null, null, { path: 'script.casc' }, null, async (currentBuffer) => {
+    const renderState = runtime.createRenderState();
+
+    await runControlFlowBoundary(root, null, null, { path: 'script.casc' }, renderState, async (currentBuffer) => {
       child = currentBuffer;
     }, { ec: boundaryEc, branch: 'then' });
 
@@ -414,7 +430,7 @@ describe('error context tracing runtime foundation', () => {
       expect(source).to.match(/\[3,7,\d+\]/);
       expect(source).to.match(/\[6,7,\d+\]/);
       expect(source).to.match(/\[\d+,\d+,"[^"]+"\]/);
-      expect(source).to.match(/new runtime\.CommandBuffer\(context, null, null, null, null, \{ ec: __ec\[\d+\], branchName: "root" \}\);/);
+      expect(source).to.match(/new runtime\.CommandBuffer\(context, null, null, null, null, \{ ec: __ec\[\d+\], branchName: "root" \}, null, renderState\);/);
     });
 
     it('uses parent-provided semantic labels in generated diagnostics', () => {
@@ -454,7 +470,7 @@ describe('error context tracing runtime foundation', () => {
 
       expect(source.match(/runtime\.prepareErrorContexts/g)).to.have.length(1);
       expect(source).to.contain('const __ec = getErrorContexts(runtime, context.path, reportError);');
-      expect(source).to.match(/function b_body\(env, context, runtime, reportError, parentBuffer = null.*currentInstance\)/);
+      expect(source).to.match(/function b_body\(env, context, runtime, renderState, parentBuffer = null.*currentInstance\)/);
       expect(source).not.to.contain('__ec = null');
       expect(source).to.contain('methodData.errorContextTable[');
     });
@@ -524,7 +540,7 @@ describe('error context tracing runtime foundation', () => {
         env,
         context: child._createContext({ name: 'Ada' }),
         runtime,
-        reportError: () => {}
+        renderState: runtime.createRenderState()
       });
       const result = await instance.invoke('build', ['Ada'], [1, 0, 'Call', 'test.script', null]);
 
@@ -545,15 +561,15 @@ describe('error context tracing runtime foundation', () => {
       child.compile();
 
       const parentRoot = parent.rootRenderFunc;
-      parent.rootRenderFunc = function observedParentRoot(envArg, contextArg, runtimeArg, reportError, ...rest) {
-        reporters.push({ path: 'parent.njk', reportError });
-        return parentRoot.call(this, envArg, contextArg, runtimeArg, reportError, ...rest);
+      parent.rootRenderFunc = function observedParentRoot(envArg, contextArg, runtimeArg, renderState, ...rest) {
+        reporters.push({ path: 'parent.njk', reportError: renderState.reportError });
+        return parentRoot.call(this, envArg, contextArg, runtimeArg, renderState, ...rest);
       };
 
       const childRoot = child.rootRenderFunc;
-      child.rootRenderFunc = function observedChildRoot(envArg, contextArg, runtimeArg, reportError, ...rest) {
-        reporters.push({ path: 'child.njk', reportError });
-        return childRoot.call(this, envArg, contextArg, runtimeArg, reportError, ...rest);
+      child.rootRenderFunc = function observedChildRoot(envArg, contextArg, runtimeArg, renderState, ...rest) {
+        reporters.push({ path: 'child.njk', reportError: renderState.reportError });
+        return childRoot.call(this, envArg, contextArg, runtimeArg, renderState, ...rest);
       };
 
       const result = await parent.render({});
@@ -561,6 +577,58 @@ describe('error context tracing runtime foundation', () => {
       expect(result.trim()).to.be('Parent Child');
       expect(reporters.map((entry) => entry.path)).to.eql(['parent.njk', 'child.njk']);
       expect(reporters[1].reportError).to.be(reporters[0].reportError);
+    });
+
+    it('uses one reportError callback when importing templates', async () => {
+      const loader = new StringLoader();
+      loader.addTemplate('parent.njk', '{% import "child.njk" as child %}{{ child.value }}');
+      loader.addTemplate('child.njk', '{% set value = "Child" %}');
+      const env = new AsyncEnvironment(loader);
+      const parent = await env.getTemplate('parent.njk', true, null, false);
+      const child = await env.getTemplate('child.njk', true, null, false);
+      const reporters = [];
+
+      parent.compile();
+      child.compile();
+
+      const parentRoot = parent.rootRenderFunc;
+      parent.rootRenderFunc = function observedParentRoot(envArg, contextArg, runtimeArg, renderState, ...rest) {
+        reporters.push({ path: 'parent.njk', reportError: renderState.reportError });
+        return parentRoot.call(this, envArg, contextArg, runtimeArg, renderState, ...rest);
+      };
+
+      const childRoot = child.rootRenderFunc;
+      child.rootRenderFunc = function observedChildRoot(envArg, contextArg, runtimeArg, renderState, ...rest) {
+        reporters.push({ path: 'child.njk', reportError: renderState.reportError });
+        return childRoot.call(this, envArg, contextArg, runtimeArg, renderState, ...rest);
+      };
+
+      const result = await parent.render({});
+
+      expect(result.trim()).to.be('Child');
+      expect(reporters.map((entry) => entry.path)).to.eql(['parent.njk', 'child.njk']);
+      expect(reporters[1].reportError).to.be(reporters[0].reportError);
+    });
+
+    it('passes explicit render state through direct getExported execution', async () => {
+      const loader = new StringLoader();
+      loader.addTemplate('exports.njk', '{% set value = "ok" %}');
+      const env = new AsyncEnvironment(loader);
+      const template = await env.getTemplate('exports.njk', true, null, false);
+      const renderState = runtime.createRenderState();
+      let observedRenderState = null;
+
+      template.compile();
+
+      const root = template.rootRenderFunc;
+      template.rootRenderFunc = function observedRoot(envArg, contextArg, runtimeArg, rootRenderState, ...rest) {
+        observedRenderState = rootRenderState;
+        return root.call(this, envArg, contextArg, runtimeArg, rootRenderState, ...rest);
+      };
+
+      template.getExported({}, null, renderState);
+
+      expect(observedRenderState).to.be(renderState);
     });
 
     it('reports included template failures through the shared reportError callback once', async () => {
@@ -577,15 +645,15 @@ describe('error context tracing runtime foundation', () => {
       child.compile();
 
       const parentRoot = parent.rootRenderFunc;
-      parent.rootRenderFunc = function observedParentRoot(envArg, contextArg, runtimeArg, reportError, ...rest) {
-        reporters.push({ path: 'parent.njk', reportError });
-        return parentRoot.call(this, envArg, contextArg, runtimeArg, reportError, ...rest);
+      parent.rootRenderFunc = function observedParentRoot(envArg, contextArg, runtimeArg, renderState, ...rest) {
+        reporters.push({ path: 'parent.njk', reportError: renderState.reportError });
+        return parentRoot.call(this, envArg, contextArg, runtimeArg, renderState, ...rest);
       };
 
       const childRoot = child.rootRenderFunc;
-      child.rootRenderFunc = function observedChildRoot(envArg, contextArg, runtimeArg, reportError, ...rest) {
-        reporters.push({ path: 'child.njk', reportError });
-        return childRoot.call(this, envArg, contextArg, runtimeArg, reportError, ...rest);
+      child.rootRenderFunc = function observedChildRoot(envArg, contextArg, runtimeArg, renderState, ...rest) {
+        reporters.push({ path: 'child.njk', reportError: renderState.reportError });
+        return childRoot.call(this, envArg, contextArg, runtimeArg, renderState, ...rest);
       };
 
       const error = await new Promise((resolve) => {
@@ -604,6 +672,76 @@ describe('error context tracing runtime foundation', () => {
       expect(callbackCount).to.be(1);
       expect(reporters.map((entry) => entry.path)).to.eql(['parent.njk', 'child.njk']);
       expect(reporters[1].reportError).to.be(reporters[0].reportError);
+    });
+
+    it('does not start later include roots after a fatal include report', async () => {
+      const loader = new StringLoader();
+      loader.addTemplate('parent.njk', '{% include "bad.njk" %}{% include "late.njk" %}');
+      loader.addTemplate('bad.njk', 'Bad');
+      loader.addTemplate('late.njk', 'Late');
+      const env = new AsyncEnvironment(loader);
+      const parent = await env.getTemplate('parent.njk', true, null, false);
+      const bad = await env.getTemplate('bad.njk', true, null, false);
+      const late = await env.getTemplate('late.njk', true, null, false);
+      let lateRootCalls = 0;
+
+      parent.compile();
+      bad.compile();
+      late.compile();
+
+      bad.rootRenderFunc = function observedBadRoot(envArg, contextArg, runtimeArg, renderState) {
+        renderState.reportFatalError(new Error('first include failed'));
+        return new Promise(() => {});
+      };
+
+      const lateRoot = late.rootRenderFunc;
+      late.rootRenderFunc = function observedLateRoot(...args) {
+        lateRootCalls++;
+        return lateRoot.apply(this, args);
+      };
+
+      const error = await new Promise((resolve) => {
+        parent.render({}, (err) => resolve(err));
+      });
+
+      expect(error).to.be.an(Error);
+      expect(error.message).to.contain('first include failed');
+      expect(lateRootCalls).to.be(0);
+    });
+
+    it('does not start later import roots after a fatal import report', async () => {
+      const loader = new StringLoader();
+      loader.addTemplate('parent.njk', '{% import "bad.njk" as bad %}{% import "late.njk" as late %}{{ late.value }}');
+      loader.addTemplate('bad.njk', '{% set value = "bad" %}');
+      loader.addTemplate('late.njk', '{% set value = "late" %}');
+      const env = new AsyncEnvironment(loader);
+      const parent = await env.getTemplate('parent.njk', true, null, false);
+      const bad = await env.getTemplate('bad.njk', true, null, false);
+      const late = await env.getTemplate('late.njk', true, null, false);
+      let lateRootCalls = 0;
+
+      parent.compile();
+      bad.compile();
+      late.compile();
+
+      bad.rootRenderFunc = function observedBadRoot(envArg, contextArg, runtimeArg, renderState) {
+        renderState.reportFatalError(new Error('first import failed'));
+        return new Promise(() => {});
+      };
+
+      const lateRoot = late.rootRenderFunc;
+      late.rootRenderFunc = function observedLateRoot(...args) {
+        lateRootCalls++;
+        return lateRoot.apply(this, args);
+      };
+
+      const error = await new Promise((resolve) => {
+        parent.render({}, (err) => resolve(err));
+      });
+
+      expect(error).to.be.an(Error);
+      expect(error.message).to.contain('first import failed');
+      expect(lateRootCalls).to.be(0);
     });
 
     it('emits compact contexts for migrated helper and command call sites', () => {

@@ -11,6 +11,10 @@ import {StringLoader} from '../util.js';
 const TEST_EC = [1, 1, 'Test', 'test.casc', null];
 const TEST_REPORT_ERROR = () => {};
 
+function createTestRenderState(reportError = TEST_REPORT_ERROR) {
+  return runtime.createRenderState(reportError);
+}
+
 function createIdPool() {
   return {
     value: 0,
@@ -222,7 +226,7 @@ describe('Inheritance rebuild', function () {
         expect(source).not.to.contain(fragment);
       });
       expect(source).to.contain('async function resolveInheritanceParent(env, context, runtime, errorContext, reportError)');
-      expect(source).to.contain('function root(env, context, runtime, reportError)');
+      expect(source).to.contain('function root(env, context, runtime, renderState)');
     });
 
     it('emits clean finalized invocation calls for this and super', function () {
@@ -803,7 +807,7 @@ describe('Inheritance rebuild', function () {
         context,
         runtime,
         errorContext: [1, 0, 'Extends', entryName, null],
-        reportError: TEST_REPORT_ERROR
+        renderState: createTestRenderState()
       });
     }
 
@@ -818,7 +822,7 @@ describe('Inheritance rebuild', function () {
         context,
         runtime,
         errorContext: [1, 0, 'Extends', entryName, null],
-        reportError: TEST_REPORT_ERROR
+        renderState: createTestRenderState()
       });
     }
 
@@ -880,7 +884,7 @@ describe('Inheritance rebuild', function () {
         context: createContext(),
         runtime,
         errorContext: [1, 0, 'Extends', 'child.njk', null],
-        reportError: TEST_REPORT_ERROR
+        renderState: createTestRenderState()
       });
 
       expect(chain.entries.map((entry) => entry.path)).to.eql(['child.njk', 'parent.njk']);
@@ -915,7 +919,7 @@ describe('Inheritance rebuild', function () {
           context: createContext({}, 'entry.njk'),
           runtime,
           errorContext: [1, 0, 'Extends', 'child.njk', null],
-          reportError: TEST_REPORT_ERROR
+          renderState: createTestRenderState()
         });
         expect().fail('Expected selected parent compile failure');
       } catch (error) {
@@ -937,11 +941,11 @@ describe('Inheritance rebuild', function () {
         await runtime.loadInheritanceChain({
           templateOrScript: entry,
           env: null,
-        context: createContext({}, 'entry-context.njk'),
-        runtime,
-        errorContext: [4, 2, 'Extends', 'entry-context.njk', null],
-        reportError: TEST_REPORT_ERROR
-      });
+          context: createContext({}, 'entry-context.njk'),
+          runtime,
+          errorContext: [4, 2, 'Extends', 'entry-context.njk', null],
+          renderState: createTestRenderState()
+        });
         expect().fail('Expected entry compile failure');
       } catch (error) {
         expect(String(error)).to.contain('entry compile failed');
@@ -970,7 +974,7 @@ describe('Inheritance rebuild', function () {
         context: createContext({}, 'child.njk'),
         runtime: strictRuntime,
         errorContext: [1, 0, 'Extends', 'child.njk', null],
-        reportError: TEST_REPORT_ERROR
+        renderState: createTestRenderState()
       });
     });
 
@@ -1269,7 +1273,7 @@ describe('Inheritance rebuild', function () {
         },
         runtime,
         errorContext: [1, 0, 'Extends', entryName, null],
-        reportError: TEST_REPORT_ERROR
+        renderState: createTestRenderState()
       });
     }
 
@@ -1283,7 +1287,7 @@ describe('Inheritance rebuild', function () {
         env: localEnv,
         context: entry._createContext(ctx),
         runtime,
-        reportError: TEST_REPORT_ERROR
+        renderState: createTestRenderState()
       });
     }
 
@@ -1297,7 +1301,7 @@ describe('Inheritance rebuild', function () {
         env: localEnv,
         context: entry._createContext(ctx),
         runtime,
-        reportError: TEST_REPORT_ERROR
+        renderState: createTestRenderState()
       });
     }
 
@@ -1613,7 +1617,7 @@ describe('Inheritance rebuild', function () {
         env: {},
         context,
         runtime,
-        reportError: TEST_REPORT_ERROR
+        renderState: createTestRenderState()
       });
 
       expect(participant.compileCalls).to.be(1);
@@ -1627,7 +1631,7 @@ describe('Inheritance rebuild', function () {
         methodEntries: {
           greet: compiledMethod('greet', {
             argNames: ['user'],
-            fn(envArg, contextArg, runtimeArg, reportError, invocationBuffer, payload, renderContext, methodData, currentInstance) {
+            fn(envArg, contextArg, runtimeArg, renderState, invocationBuffer, payload, renderContext, methodData, currentInstance) {
               expect(currentInstance.runtimeState.methods.greet).to.be(methodData);
               expect(invocationBuffer.parent).to.be(currentInstance.sharedRootBuffer);
               return `hello ${payload.originalArgs.user}`;
@@ -1640,7 +1644,7 @@ describe('Inheritance rebuild', function () {
         env: {},
         context: createRuntimeContext(),
         runtime,
-        reportError: TEST_REPORT_ERROR
+        renderState: createTestRenderState()
       });
 
       expect(await instance.invoke('greet', ['Ada'], { path: 'call.script' })).to.be('hello Ada');
@@ -1652,7 +1656,7 @@ describe('Inheritance rebuild', function () {
         methodEntries: {
           greet: compiledMethod('greet', {
             argNames: ['user', 'fallback'],
-            fn(envArg, contextArg, runtimeArg, reportError, invocationBuffer, payload) {
+            fn(envArg, contextArg, runtimeArg, renderState, invocationBuffer, payload) {
               return `${payload.originalArgs.user}:${payload.originalArgs.fallback}`;
             }
           })
@@ -1663,7 +1667,7 @@ describe('Inheritance rebuild', function () {
         env: {},
         context: createRuntimeContext(),
         runtime,
-        reportError: TEST_REPORT_ERROR
+        renderState: createTestRenderState()
       });
 
       const result = await instance.invoke(
@@ -1689,7 +1693,7 @@ describe('Inheritance rebuild', function () {
         env: {},
         context: createRuntimeContext(),
         runtime,
-        reportError: TEST_REPORT_ERROR
+        renderState: createTestRenderState()
       });
 
       try {
@@ -1740,7 +1744,7 @@ describe('Inheritance rebuild', function () {
         scriptMode: true,
         methodEntries: {
           outer: compiledMethod('outer', {
-            fn(envArg, contextArg, runtimeArg, reportError, invocationBuffer, payload, renderContext, methodData, currentInstance) {
+            fn(envArg, contextArg, runtimeArg, renderState, invocationBuffer, payload, renderContext, methodData, currentInstance) {
               outerBuffer = invocationBuffer;
               return currentInstance.invokeFromCurrentBuffer(
                 'inner',
@@ -1752,7 +1756,7 @@ describe('Inheritance rebuild', function () {
             }
           }),
           inner: compiledMethod('inner', {
-            fn(envArg, contextArg, runtimeArg, reportError, invocationBuffer) {
+            fn(envArg, contextArg, runtimeArg, renderState, invocationBuffer) {
               expect(invocationBuffer.parent).to.be(outerBuffer);
               return 'inner';
             }
@@ -1764,7 +1768,7 @@ describe('Inheritance rebuild', function () {
         env: {},
         context: createRuntimeContext(),
         runtime,
-        reportError: TEST_REPORT_ERROR
+        renderState: createTestRenderState()
       });
 
       expect(await instance.invoke('outer', [], { path: 'outer.script' })).to.be('inner');
@@ -1774,7 +1778,7 @@ describe('Inheritance rebuild', function () {
       const child = compiledMethod('build', {
         argNames: ['user'],
         super: true,
-        fn(envArg, contextArg, runtimeArg, reportError, invocationBuffer, payload, renderContext, methodData, currentInstance) {
+        fn(envArg, contextArg, runtimeArg, renderState, invocationBuffer, payload, renderContext, methodData, currentInstance) {
           return currentInstance.invokeSuper(
             methodData,
             [payload.originalArgs.user],
@@ -1786,7 +1790,7 @@ describe('Inheritance rebuild', function () {
       });
       const parent = compiledMethod('build', {
         argNames: ['user'],
-        fn(envArg, contextArg, runtimeArg, reportError, invocationBuffer, payload) {
+        fn(envArg, contextArg, runtimeArg, renderState, invocationBuffer, payload) {
           return payload.originalArgs.user;
         }
       });
@@ -1810,7 +1814,7 @@ describe('Inheritance rebuild', function () {
         env: {},
         context: createRuntimeContext({ user: 'Ada' }),
         runtime,
-        reportError: TEST_REPORT_ERROR
+        renderState: createTestRenderState()
       });
 
       expect(await instance.invoke('build', ['Grace'], { path: 'call.script' })).to.be('Grace');
@@ -1860,7 +1864,7 @@ describe('Inheritance rebuild', function () {
         env: {},
         context: createRuntimeContext(),
         runtime,
-        reportError: TEST_REPORT_ERROR
+        renderState: createTestRenderState()
       });
 
       try {
@@ -2106,7 +2110,7 @@ describe('Inheritance rebuild', function () {
         runtime,
         ownerBuffer,
         bindingName: 'card',
-        reportError: TEST_REPORT_ERROR,
+        renderState: createTestRenderState(),
         errorContext: [1, 1, null, 'main.script', null]
       });
       ownerBuffer.addCommand(new runtime.VarCommand({
@@ -2155,7 +2159,7 @@ describe('Inheritance rebuild', function () {
           ownerContext: createRuntimeContext({}, 'main.script'),
           env: {},
           runtime,
-          reportError: TEST_REPORT_ERROR,
+          renderState: createTestRenderState(),
           errorContext: [1, 1, null, 'main.script', null]
         });
         expect().fail('Expected component creation failure');
@@ -2728,3 +2732,4 @@ describe('Inheritance rebuild', function () {
     });
   });
 });
+

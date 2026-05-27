@@ -8,6 +8,10 @@ import * as runtimeModule from '../../src/runtime/runtime.js';
 
 const TEST_EC = [1, 1, 'Test', 'test.casc', null];
 
+function createTestRenderState(reportError = null) {
+  return runtimeModule.createRenderState(reportError);
+}
+
 function compiledComponentMethod(name, options = {}) {
   return {
     name,
@@ -686,7 +690,7 @@ describe('Phase 8 - Component Observations', function () {
         },
         env: {},
         runtime: runtimeModule,
-        reportError: () => {},
+        renderState: createTestRenderState(),
         context: makeContext('Component.script'),
         rootBuffer: sharedRootBuffer,
         sharedRootBuffer
@@ -1113,7 +1117,7 @@ describe('Phase 8 - Component Lifecycle', function () {
       ownerContext,
       env,
       runtime: runtimeModule,
-      reportError: () => {},
+      renderState: createTestRenderState(),
       errorContext: [2, 1, null, 'Main.script', null]
     });
 
@@ -1180,7 +1184,7 @@ describe('Phase 8 - Component Lifecycle', function () {
       ownerContext,
       env,
       runtime: runtimeModule,
-      reportError: () => {},
+      renderState: createTestRenderState(),
       errorContext: [2, 1, null, 'Main.script', null]
     });
 
@@ -1221,7 +1225,7 @@ describe('Phase 8 - Component Lifecycle', function () {
       ownerContext,
       env: {},
       runtime: runtimeModule,
-      reportError: () => {},
+      renderState: createTestRenderState(),
       ownerBuffer,
       bindingName: 'nsBinding',
       errorContext: [1, 1, null, 'Main.script', null]
@@ -1261,7 +1265,7 @@ describe('Phase 8 - Component Lifecycle', function () {
       },
       env: {},
       runtime: runtimeModule,
-      reportError: () => {},
+      renderState: createTestRenderState(),
       context: { path: 'Component.script' },
       rootBuffer,
       sharedRootBuffer: rootBuffer
@@ -1307,7 +1311,7 @@ describe('Phase 8 - Component Lifecycle', function () {
       ownerContext,
       env: {},
       runtime: runtimeModule,
-      reportError: () => {},
+      renderState: createTestRenderState(),
       ownerBuffer,
       errorContext: [1, 1, null, 'Main.script', null]
     });
@@ -1340,7 +1344,7 @@ describe('Phase 8 - Component Lifecycle', function () {
         ownerContext,
         env: {},
         runtime: runtimeModule,
-        reportError: () => {},
+        renderState: createTestRenderState(),
         ownerBuffer,
         errorContext: [1, 1, null, 'Main.script', null]
       });
@@ -1384,11 +1388,11 @@ describe('Phase 8 - Component Lifecycle', function () {
         ownerContext,
         env: {},
         runtime: runtimeModule,
-        reportError: (error) => {
+        renderState: createTestRenderState((error) => {
           if (error) {
             seenErrors.push(error);
           }
-        },
+        }),
         ownerBuffer,
         errorContext: [1, 1, null, 'Main.script', null]
       });
@@ -1400,3 +1404,4 @@ describe('Phase 8 - Component Lifecycle', function () {
     expect(seenErrors).to.eql([failure]);
   });
 });
+

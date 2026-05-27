@@ -8,7 +8,8 @@ class InheritanceInstance {
     this.runtimeState = options.runtimeState;
     this.env = options.env;
     this.runtime = options.runtime;
-    this.reportError = options.reportError;
+    this.renderState = options.renderState;
+    this.reportError = options.renderState.reportError;
     this.rootBuffer = options.rootBuffer;
     this.sharedRootBuffer = options.sharedRootBuffer;
     this.traceParent = options.traceParent || null;
@@ -28,20 +29,20 @@ class InheritanceInstance {
       null,
       null,
       { ec: options.errorContext, branchName: 'inheritance' },
-      traceParent
+      traceParent,
+      options.renderState
     );
     const sharedRootBuffer = options.sharedRootBuffer || rootBuffer;
-    const reportError = options.reportError;
     const chain = await runtime.loadInheritanceChain({
       templateOrScript: options.entryTemplateOrScript,
       env: options.env,
       context,
       runtime,
       errorContext: options.errorContext ?? null,
-      reportError
+      renderState: options.renderState
     });
     const runtimeState = runtime.finalizeInheritanceChain(chain, context);
-    const boundRuntimeState = runtime.bindInheritanceRuntimeState(runtimeState, runtime, reportError);
+    const boundRuntimeState = runtime.bindInheritanceRuntimeState(runtimeState, runtime, options.renderState.reportError);
 
     Object.entries(boundRuntimeState.sharedSchema).forEach(([name, schemaEntry]) => {
       declareInheritanceSharedChain(sharedRootBuffer, name, schemaEntry.type, context, undefined, schemaEntry.errorContext);
@@ -52,7 +53,7 @@ class InheritanceInstance {
       runtimeState: boundRuntimeState,
       env: options.env,
       runtime,
-      reportError,
+      renderState: options.renderState,
       rootBuffer,
       sharedRootBuffer,
       traceParent,
@@ -91,6 +92,7 @@ class InheritanceInstance {
   }
 
   assertCanInvoke(errorContext = null) {
+    this.renderState.throwIfFatalErrorReported();
     if (this.failure) {
       throw this.failure;
     }
@@ -126,7 +128,8 @@ class InheritanceInstance {
       parentBuffer,
       methodData.mergedMutatedChains,
       { ec: effectiveErrorContext, branchName: methodData.name },
-      traceParent
+      traceParent,
+      this.renderState
     );
     const callablePayload = methodData.isConstructor
       ? null
@@ -145,7 +148,7 @@ class InheritanceInstance {
         this.env,
         context,
         this.runtime,
-        this.reportError,
+        this.renderState,
         invocationBuffer,
         callablePayload,
         renderContext,
@@ -193,13 +196,14 @@ class InheritanceInstance {
   }
 }
 
-async function renderInheritanceParticipantRoot({ entryTemplateOrScript, env, context, runtime, reportError, rootBuffer, errorContext = null }) {
+async function renderInheritanceParticipantRoot({ entryTemplateOrScript, env, context, runtime, renderState, rootBuffer, errorContext = null }) {
+  renderState.throwIfFatalErrorReported();
   const instance = await InheritanceInstance.create({
     entryTemplateOrScript,
     env,
     context,
     runtime,
-    reportError,
+    renderState,
     rootBuffer,
     errorContext
   });

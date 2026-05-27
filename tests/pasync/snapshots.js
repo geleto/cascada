@@ -10,6 +10,7 @@ import {
   CommandBuffer,
   declareBufferChain,
   createPoison,
+  createRenderState,
   isPoisonError,
   linkInheritanceCallableFootprintChains,
   runControlFlowBoundary
@@ -276,7 +277,7 @@ describe('chain.finalSnapshot', function () {
       const parent = new CommandBuffer(context);
       declareBufferChain(parent, 'text', 'text', context, null);
       try {
-        await runControlFlowBoundary(parent, 'text', null, context, () => {}, async () => null);
+        await runControlFlowBoundary(parent, 'text', null, context, createRenderState(), async () => null);
         throw new Error('expected invalid linked chain metadata to fail');
       } catch (err) {
         expect(err.name).to.be('RuntimeFatalError');

@@ -32,15 +32,15 @@ function loadEntry(templateOrScript, errorContext, runtime) {
   });
 }
 
-async function resolveLoadedParent(entry, env, context, runtime, reportError) {
+async function resolveLoadedParent(entry, env, context, runtime, renderState) {
   try {
-    return await entry.templateOrScript.resolveInheritanceParent(env, context, runtime, null, reportError);
+    return await entry.templateOrScript.resolveInheritanceParent(env, context, runtime, null, renderState.reportError);
   } catch (error) {
     throw addLoadErrorContext(error, entry.errorContext, context);
   }
 }
 
-async function loadInheritanceChain({ templateOrScript, env, context, runtime, errorContext = null, reportError }) {
+async function loadInheritanceChain({ templateOrScript, env, context, runtime, errorContext = null, renderState }) {
   const entries = [];
   const seen = new Set();
   let currentTemplateOrScript = templateOrScript;
@@ -66,7 +66,8 @@ async function loadInheritanceChain({ templateOrScript, env, context, runtime, e
     }
     entries.push(entry);
 
-    const parentSelection = await resolveLoadedParent(entry, env, context, runtime, reportError);
+    renderState.throwIfFatalErrorReported();
+    const parentSelection = await resolveLoadedParent(entry, env, context, runtime, renderState);
     currentTemplateOrScript = parentSelection.parentTemplateOrScript;
     selectedByErrorContext = parentSelection.errorContext;
   }

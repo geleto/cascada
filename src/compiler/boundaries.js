@@ -83,7 +83,7 @@ class CompileBoundaries {
     const bufferBranchContextArg = this.compiler.emitBufferBranchContext(errorContextNode);
 
     this.compiler.emit(
-      `let ${controlFlowPromiseId} = runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, reportError, async (currentBuffer) => {`
+      `let ${controlFlowPromiseId} = runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, renderState, async (currentBuffer) => {`
     );
     this.compiler.emit.asyncClosureDepth++;
 
@@ -112,7 +112,7 @@ class CompileBoundaries {
     const bufferBranchContextArg = this.compiler.emitBufferBranchContext(errorContextNode);
 
     this.compiler.emit(
-      `let ${controlFlowPromiseId} = runtime.runWaitedControlFlowBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, reportError, async (currentBuffer) => {`
+      `let ${controlFlowPromiseId} = runtime.runWaitedControlFlowBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, renderState, async (currentBuffer) => {`
     );
     this.compiler.emit.asyncClosureDepth++;
 
@@ -149,7 +149,7 @@ class CompileBoundaries {
     };
 
     const bufferBranchContextArg = this.compiler.emitBufferBranchContext(positionNode);
-    emitCompiler.line('runtime.runRenderBoundary(context, reportError, async (currentBuffer) =>{');
+    emitCompiler.line('runtime.runRenderBoundary(context, renderState, async (currentBuffer) =>{');
     const resultId = this.compiler._tmpid();
 
     const textChainName = this.compiler.buffer.currentTextChainName;
@@ -248,7 +248,7 @@ class CompileBoundaries {
     const bufferBranchContextArg = this.compiler.emitBufferBranchContext(positionNode);
 
     this.compiler.emit.line(
-      `${boundaryPrefix}runtime.runControlFlowBoundary(${parentBufferExpr}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, reportError, async ${callbackParams} => {`
+      `${boundaryPrefix}runtime.runControlFlowBoundary(${parentBufferExpr}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, renderState, async ${callbackParams} => {`
     );
     this.compiler.emit.asyncClosureDepth++;
 
@@ -319,7 +319,7 @@ class CompileBoundaries {
     const bufferBranchContextArg = this.compiler.emitBufferBranchContext(positionNode);
 
     this.compiler.emit(
-      `runtime.runControlFlowBoundary(${outerParentBuffer}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, reportError, async (currentBuffer) => {`
+      `runtime.runControlFlowBoundary(${outerParentBuffer}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, renderState, async (currentBuffer) => {`
     );
     this.compiler.emit.asyncClosureDepth++;
 

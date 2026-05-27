@@ -89,13 +89,15 @@ class CompileEmit {
     this.scopeClosers = '';
     if (this.compiler.asyncMode) {
       if (name === 'root') {
-        this.line(`function ${name}(env, context, runtime, reportError) {`);
+        this.line(`function ${name}(env, context, runtime, renderState) {`);
+        this.line('const reportError = renderState.reportError;');
         this.line('const __ec = getErrorContexts(runtime, context.path, reportError);');
       } else {
         const extraParamSource = Array.isArray(extraParams) && extraParams.length > 0
           ? `, ${extraParams.join(', ')}`
           : '';
-        this.line(`function ${name}(env, context, runtime, reportError, parentBuffer = null${extraParamSource}) {`);
+        this.line(`function ${name}(env, context, runtime, renderState, parentBuffer = null${extraParamSource}) {`);
+        this.line('const reportError = renderState.reportError;');
       }
     } else {
       this.line(`function ${name}(env, context, frame, runtime, cb) {`);
@@ -108,7 +110,7 @@ class CompileEmit {
       const rootBufferBranchContext = this.compiler.emitBufferBranchContext(node, { branchName: name });
       this.line(
         `let ${this.compiler.buffer.currentBuffer} = ` +
-        `new runtime.CommandBuffer(context, null, null, null, null, ${rootBufferBranchContext});`
+        `new runtime.CommandBuffer(context, null, null, null, null, ${rootBufferBranchContext}, null, renderState);`
       );
       if (!this.compiler.scriptMode) {
         this.line(

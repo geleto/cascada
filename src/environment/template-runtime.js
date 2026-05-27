@@ -91,17 +91,8 @@ class TemplateRuntime extends Obj {
       }
     };
 
-    let rootResult;
-    try {
-      rootResult = this.rootRenderFunc(this.env, context, globalRuntime, (err) => {
-        if (err) {
-          report(err);
-        }
-      });
-    } catch (err) {
-      report(globalRuntime.handleError(err, 0, 0, 'Root(PosNode)', context.path));
-      return syncResult;
-    }
+    const renderState = globalRuntime.createRenderState((err) => report(err));
+    const rootResult = this._invokeRootWithRenderState(context, renderState);
 
     const normalized = globalRuntime.normalizeFinalPromise(rootResult);
     if (normalized && typeof normalized.then === 'function') {
@@ -229,39 +220,18 @@ class TemplateRuntime extends Obj {
     return boundExported;
   }
 
-  _invokeRootWithFatalCallback(context, reportError) {
-    let reported = false;
-    let rejectFatal;
-    const fatalPromise = new Promise((resolve, reject) => {
-      rejectFatal = reject;
-    });
-    globalRuntime.markPromiseHandled(fatalPromise);
-
-    const reportFatal = (err) => {
-      if (!err || reported) {
-        return;
-      }
-      reported = true;
-      reportError(err);
-      rejectFatal(err);
-    };
-
+  _invokeRootWithRenderState(context, renderState) {
+    renderState.throwIfFatalErrorReported();
     let rootResult;
     try {
-      rootResult = this.rootRenderFunc(this.env, context, globalRuntime, reportError, true);
+      rootResult = this.rootRenderFunc(this.env, context, globalRuntime, renderState, true);
     } catch (err) {
       const handled = globalRuntime.handleError(err, 0, 0, 'Root(PosNode)', context.path);
-      reportFatal(handled);
+      renderState.reportFatalError(handled);
       return Promise.reject(handled);
     }
 
-    if (rootResult && typeof rootResult.then === 'function') {
-      const raced = Promise.race([rootResult, fatalPromise]);
-      raced.catch(reportFatal);
-      return raced;
-    }
-
-    return rootResult;
+    return renderState.raceRootResult(rootResult);
   }
 
   compile() {
@@ -350,43 +320,35 @@ class AsyncTemplateRuntime extends TemplateRuntime {
     });
   }
 
-  getExported(ctx, renderCtx, reportError) {
+  getExported(ctx, renderCtx, renderState) {
+    // TODO(render-state-cleanup): remove direct callback compatibility once all
+    // export callers pass a RenderState prepared at the render boundary.
     if (typeof ctx === 'function') {
-      reportError = ctx;
+      renderState = globalRuntime.createRenderState(ctx);
       ctx = {};
       renderCtx = null;
     } else if (typeof renderCtx === 'function') {
-      reportError = renderCtx;
+      renderState = globalRuntime.createRenderState(renderCtx);
       renderCtx = ctx;
     }
 
     this.compile();
 
     const context = this._createContext(ctx, renderCtx, ctx || null);
-    let reportedError = null;
-    if (typeof reportError !== 'function') {
-      reportError = (err) => {
-        if (!err || reportedError) {
-          return;
-        }
-        reportedError = err;
-      };
-    }
-    const rootResult = this._invokeRootWithFatalCallback(context, reportError);
+    const activeRenderState = renderState || globalRuntime.createRenderState();
+    const rootResult = this._invokeRootWithRenderState(context, activeRenderState);
     if (rootResult && typeof rootResult.then === 'function') {
       globalRuntime.markPromiseHandled(rootResult);
     }
-    if (reportedError) {
-      throw reportedError;
-    }
+    activeRenderState.throwIfFatalErrorReported();
     const exported = context.getExported();
     return exported;
   }
 
-  _renderIncludeText(ctx, renderCtx, reportError) {
+  _renderIncludeText(ctx, renderCtx, renderState) {
     this.compile();
     const context = this._createContext(ctx, renderCtx, ctx || null);
-    return this._invokeRootWithFatalCallback(context, reportError);
+    return this._invokeRootWithRenderState(context, renderState);
   }
 
   _getCompiledBlocks() {

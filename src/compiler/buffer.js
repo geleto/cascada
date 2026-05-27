@@ -45,7 +45,7 @@ class CompileBuffer {
       const linkedChainsArg = Array.isArray(linkedChains) && linkedChains.length > 0
         ? JSON.stringify(linkedChains)
         : 'null';
-      this.compiler.emit.line(`let ${bufferId} = new runtime.CommandBuffer(context, ${parentArg}, ${linkedChainsArg}, ${parentArg}, null, ${errorContextArg}, ${traceParentArg});`);
+      this.compiler.emit.line(`let ${bufferId} = new runtime.CommandBuffer(context, ${parentArg}, ${linkedChainsArg}, ${parentArg}, null, ${errorContextArg}, ${traceParentArg}, renderState);`);
       if (!this.compiler.scriptMode) {
         this.compiler.emit.line(`let ${textId} = runtime.declareBufferChain(${bufferId}, "${this.currentTextChainName}", "text", context, null);`);
       }

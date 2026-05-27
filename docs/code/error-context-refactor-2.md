@@ -316,7 +316,7 @@ Phase E active taxonomy:
 
 ## Phase F - Render Fatal State And Delivery
 
-Implement the render-owned fatal-state model described in
+Implemented the render-owned fatal-state model described in
 [`error-handling-analysis.md`](error-handling-analysis.md#6-render-fatal-state-and-early-exit).
 This phase owns fatal delivery behavior; it is deliberately separate from
 helper/buffer cleanup because it changes the runtime reporting model rather
@@ -326,30 +326,68 @@ than only removing scaffolding.
    - one shared `reportFatalError(error)` / `reportError(error)` function for a
      render call and its composition participants
    - `isFatalErrorReported()` state
-   - the root/fatal-promise race helpers currently spread across render-root,
-     include, import, and inheritance entry paths
+   - the root-result vs fatal-error race helpers currently spread across
+     render-root, include, import, and inheritance entry paths
 2. Prepare the render-state object at the public render boundary, before
-   compiled root/script execution, and pass the same reporting function through
-   main templates/scripts, includes, imports, components, and inheritance
-   participants.
-3. Keep value-consumption failures on the poison path. Non-`PoisonError`
+   compiled root/script execution. Pass the same render state through main
+   templates/scripts, includes, imports, direct `getExported(...)` execution,
+   components, and inheritance participants.
+3. Use explicit render-state threading for runtime execution ownership:
+   - async boundary helpers (`runControlFlowBoundary(...)`,
+     `runWaitedControlFlowBoundary(...)`, `runRenderBoundary(...)`) receive
+     `renderState` instead of a bare `reportError` callback
+   - generated async roots/callables receive or close over `renderState` so
+     boundary calls can pass it directly; generated code may still use
+     `reportError` as a local alias for `renderState.reportError` where that
+     keeps emitted code readable
+   - keep that alias at compiled root/function boundaries only; runtime APIs
+     should not accept both `renderState` and a separate `reportError`
+     callback for the same execution path
+   - command-buffer execution gets render state through the buffer/runtime
+     execution path so command application can check fatal state without
+     guessing from callbacks
+   - regenerate precompiled/browser fixtures if this changes the compiled ABI
+4. Keep value-consumption failures on the poison path. Non-`PoisonError`
    failures observed at value-consumption boundaries remain fatal runtime
    errors and must not be degraded into poison.
-4. Add early-exit checks only at useful synchronous choke points, such as the
-   start of resolution helpers or async boundary setup. Do not await additional
-   promise values only to check fatal state; if an async boundary returns a
-   promise value, its error should surface when the value is consumed.
-5. Move the root-result vs fatal-error race to the render boundary rather than
-   scattering equivalent races through runtime helpers and compiled code.
-6. Re-evaluate `handleFatal(...)` after render-state delivery is in place. It
-   may become a thin adapter around render state or become unnecessary.
-7. Add tests proving:
+5. Add early-exit checks only at useful synchronous choke points:
+   - before entering async boundary bodies
+   - after awaited boundary work settles, before continuing synchronous work
+   - before invoking composition roots: include, import, export/getExported,
+     component, and inherited participant roots
+   - before command-buffer command application
+   Command-buffer early exit must still finish buffers/chains and unblock
+   pending snapshots; it may skip useful command application, but must not skip
+   cleanup that prevents deadlocks. Apply after-boundary checks only where the
+   helper already awaits boundary work; do not add checks to value-returning
+   async boundaries whose promise/value is intentionally consumed later.
+   Do not await additional promise values only to check fatal state; if an async
+   boundary returns a promise value, its error should surface when the value is
+   consumed.
+6. Re-evaluated `handleFatal(...)` after render-state delivery landed. It has
+   no runtime callers today, and its tested callback-or-throw behavior already
+   participates in render state when the compact context's `reportError` slot
+   came from `renderState.reportError`. Keep it unchanged until Phase G decides
+   whether to remove the helper or keep it as a narrow adapter.
+7. Added tests proving:
    - main render, includes/imports, components, and inherited participants use
      one reporting state per render
+   - direct async `getExported(...)` execution creates or receives render state
+     instead of using an ad hoc local `reportedError` closure
    - fatal delivery reports once even if both a callback path and a returned
      promise observe the same failure
+   - include/import/export composition roots stop before invoking child roots
+     when fatal state has already been reported
    - fatal-state early exit stops useful synchronous work without swallowing
      value-consumption poison
+8. Implemented in this order to keep the change reviewable:
+   - add the render-state object and root/fatal race ownership
+   - migrate public render, include/import/export/getExported, component, and
+     inheritance entry paths to receive/pass render state
+   - migrate async boundary helper signatures and generated calls
+   - add command-buffer early-exit checks with cleanup preserved
+   - re-run/regenerate precompile fixtures if generated ABI changed
+   - only then re-check whether `handleFatal(...)` has a remaining role
 
 ## Phase G - Helper Ownership And Buffer API Cleanup
 
@@ -417,3 +455,24 @@ than only removing scaffolding.
     `isRuntimeFatalError(...)` value-consumption boundary checks, then narrow
     docs/tests/exports to the target user-visible families:
     `PoisonError`, `RuntimeError`, and `CompileError`.
+14. Remove the `TODO(render-state-cleanup)` direct callback compatibility
+    bridge in `AsyncTemplateRuntime.getExported(...)` once all production
+    export callers enter through a render-state owner. Direct export execution
+    should either receive an existing render state or create one explicitly at
+    that boundary, not rebuild the old local callback/reported-error pattern.
+15. Tighten render-state cleanup after behavior has settled:
+    - make `reportFatalError(...)` a void reporter unless a real caller needs
+      the stored error as a return value
+    - avoid the redundant `reportFatalError(...)` call inside
+      `raceRootResult(...)` when the fatal promise rejection already came from
+      the same render state
+    - remove redundant render-state aliases such as `InheritanceInstance.reportError`
+      after internal callers use `this.renderState.reportError` directly
+    - re-check `_stopAfterFatalReport(...)` cleanup for intermediate buffer
+      stack entries and call any missing leave hooks needed for iterator
+      bookkeeping
+    - collapse duplicate adjacent `throwIfFatalErrorReported()` checks at
+      composition/component/inheritance entry points where doing so does not
+      weaken a real boundary
+    - add or keep focused coverage for waited-control-flow cleanup when fatal
+      state is reported while a waited child boundary is settling

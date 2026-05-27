@@ -208,7 +208,7 @@ class CompileInheritance {
     this.emit.line('    env,');
     this.emit.line('    context,');
     this.emit.line('    runtime,');
-    this.emit.line('    reportError,');
+    this.emit.line('    renderState,');
     this.emit.line('    rootBuffer: output,');
     this.emit.line(`    errorContext: ${this.compiler.emitErrorContext(node)}`);
     this.emit.line('}).catch((e) => {');

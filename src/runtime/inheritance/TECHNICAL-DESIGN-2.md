@@ -163,7 +163,7 @@ type InheritanceInstanceState = {
   runtimeState: InheritanceRuntimeState,
   env: Environment,
   runtime: object,
-  reportError: Function,
+  renderState: RenderState,
   rootBuffer: CommandBuffer,
   sharedRootBuffer: CommandBuffer,
   context: Context,
@@ -279,13 +279,14 @@ the lifecycle to `runtime.renderInheritanceParticipantRoot(...)` instead of
 inlining load/finalize/constructor/finish logic:
 
 ```js
-function root(env, context, runtime, reportError) {
+function root(env, context, runtime, renderState) {
+  const reportError = renderState.reportError;
   runtime.renderInheritanceParticipantRoot({
     entryTemplateOrScript: this,
     env,
     context,
     runtime,
-    reportError,
+    renderState,
     rootBuffer: output,
     errorContext: rootErrorContext
   }).catch((err) => reportError(err));

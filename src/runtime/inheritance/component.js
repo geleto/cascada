@@ -103,7 +103,7 @@ async function createComponentInstance(spec) {
     ownerContext,
     env,
     runtime,
-    reportError,
+    renderState,
     ownerBuffer,
     sideChainName = null,
     bindingName = null,
@@ -123,14 +123,15 @@ async function createComponentInstance(spec) {
     payloadContext
   );
   const componentFrame = { ec: errorContext, branchName: bindingName || 'component' };
-  const rootBuffer = new CommandBuffer(componentContext, null, null, null, null, componentFrame, ownerBuffer || null);
-  const sharedRootBuffer = new CommandBuffer(componentContext, null, null, null, null, componentFrame, ownerBuffer || null);
+  renderState.throwIfFatalErrorReported();
+  const rootBuffer = new CommandBuffer(componentContext, null, null, null, null, componentFrame, ownerBuffer || null, renderState);
+  const sharedRootBuffer = new CommandBuffer(componentContext, null, null, null, null, componentFrame, ownerBuffer || null, renderState);
   const instance = await InheritanceInstance.create({
     entryTemplateOrScript: templateOrScript,
     env,
     context: componentContext,
     runtime,
-    reportError,
+    renderState,
     rootBuffer,
     sharedRootBuffer,
     traceParent: ownerBuffer || null,
@@ -141,7 +142,7 @@ async function createComponentInstance(spec) {
     await instance.invokeConstructor(errorContext);
   } catch (error) {
     instance.close(error);
-    reportError(error);
+    renderState.reportFatalError(error);
     throw error;
   }
 
@@ -161,7 +162,7 @@ function startComponentInstance(spec) {
     ownerContext,
     env,
     runtime,
-    reportError,
+    renderState,
     errorContext = null
   } = spec;
   // The user binding is also the internal side-chain lane that orders later
@@ -174,7 +175,7 @@ function startComponentInstance(spec) {
     ownerContext,
     env,
     runtime,
-    reportError,
+    renderState,
     ownerBuffer: currentBuffer,
     sideChainName,
     errorContext

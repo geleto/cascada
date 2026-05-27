@@ -106,7 +106,8 @@ silently.
 The compiled root function is a **plain synchronous function**, not `async`:
 
 ```javascript
-function root(env, context, runtime, reportError) {
+function root(env, context, runtime, renderState) {
+  const reportError = renderState.reportError;
   // Synchronous: adds commands to buffer, calls helpers, fires boundaries
   t_1 = runtime.callWrapAsync(context.lookupScript("fetchUser", ...), ...);
   output.addCommand(new runtime.VarCommand({ args: [t_1] }), 'a');

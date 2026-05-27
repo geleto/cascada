@@ -11,6 +11,7 @@ export * from './chains/sequence-chain.js';
 export * from './chains/sequential-path-chain.js';
 export * from './errors.js';
 export * from './resolve.js';
+export * from './render-state.js';
 export * from './command-buffer.js';
 export * from './frame.js';
 export * from './inheritance/callable.js';

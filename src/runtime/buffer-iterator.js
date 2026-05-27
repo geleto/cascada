@@ -80,6 +80,10 @@ class BufferIterator {
     while (this.stack.length > 0) {
       const cursor = this._currentCursor();
       const buffer = cursor.buffer;
+      if (buffer.renderState && buffer.renderState.isFatalErrorReported()) {
+        this._stopAfterFatalReport();
+        return;
+      }
       const arr = buffer.arrays[this.chainName];
       const nextIndex = cursor.index + 1;
 
@@ -253,6 +257,16 @@ class BufferIterator {
     this._pendingObservables = null;
     this.output = null;
     this._needsAdvance = false;
+  }
+
+  _stopAfterFatalReport() {
+    // Fatal render state owns the reported error. Stop applying later commands
+    // so unrelated buffered work cannot keep running after render failure.
+    this.stack = [];
+    this._setCurrentBuffer(null);
+    this.finished = true;
+    this._releaseFinishedIterator();
+    this._isAdvancing = false;
   }
 
   get chainName() {

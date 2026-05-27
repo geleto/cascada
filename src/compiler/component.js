@@ -47,7 +47,7 @@ class CompileComponent {
     this.emit.line('  ownerContext: context,');
     this.emit.line('  env,');
     this.emit.line('  runtime,');
-    this.emit.line('  reportError,');
+    this.emit.line('  renderState,');
     this.emit.line(`  errorContext: ${this.compiler.emitErrorContext(node)}`);
     this.emit.line('});');
 
