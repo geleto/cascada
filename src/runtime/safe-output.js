@@ -163,7 +163,7 @@ async function _suppressValueAsyncComplex(val, autoescape, errorContext) {
         throw err;
       } else {
         const contextualError = contextualizeError(err, errorContext);
-        throw new PoisonError([contextualError]);
+        throw new PoisonError(contextualError);
       }
     }
 
@@ -179,7 +179,7 @@ async function _suppressValueAsyncComplex(val, autoescape, errorContext) {
         throw err;
       }
       const contextualError = contextualizeError(err, errorContext);
-      throw new PoisonError([contextualError]);
+      throw new PoisonError(contextualError);
     }
 
     return suppressValue(val.join(','), autoescape);
@@ -249,7 +249,7 @@ async function _ensureDefinedAsyncComplex(val, errorContext) {
         throw err;
       } else {
         const contextualError = contextualizeError(err, errorContext);
-        throw new PoisonError([contextualError]);
+        throw new PoisonError(contextualError);
       }
     }
 
@@ -311,7 +311,7 @@ async function _suppressValueScriptComplex(val, autoescape, errorContext) {
       throw err;
     } else {
       const contextualError = contextualizeError(err, errorContext);
-      throw new PoisonError([contextualError]);
+      throw new PoisonError(contextualError);
     }
   }
 

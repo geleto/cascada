@@ -178,9 +178,9 @@ class CompileComposition {
       this.emit.line(`  if(Object.prototype.hasOwnProperty.call(exported, "${importedName}")) {`);
       this.emit.line(`    return exported["${importedName}"];`);
       this.emit.line(`  } else {`);
-      this.emit.line(`    var err = runtime.contextualizeError(new Error("${failMsg}"), ${errorContext}, ${this.compiler.buffer.currentBuffer}); throw err;`);
+      this.emit.line(`    throw runtime.contextualizeError(new Error("${failMsg}"), ${errorContext});`);
       this.emit.line(`  }`);
-      this.emit.line(`} catch(e) { var err = runtime.contextualizeError(e, ${errorContext}, ${this.compiler.buffer.currentBuffer}); throw err; } })();`);
+      this.emit.line(`} catch(e) { throw runtime.contextualizeError(e, ${errorContext}); } })();`);
       bindingIds.push(id);
       this._emitValueImportBinding(alias, id, node);
     });

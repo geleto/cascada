@@ -95,7 +95,7 @@ async function _memberLookupAsyncComplex(obj, val, errorContext, currentBuffer =
   // Collect errors from both inputs (await all promises)
   const errors = await collectErrors([obj, val]);
   if (errors.length > 0) {
-    return createPoison(errors, errorContext, currentBuffer);
+    return createPoison(errors, errorContext);
   }
 
   // Resolve the values
@@ -115,7 +115,7 @@ async function _memberLookupAsyncComplex(obj, val, errorContext, currentBuffer =
     if (isPoisonError(err)) {
       return createPoison(err.errors);
     } else {
-      const contextualError = contextualizeError(err, errorContext, currentBuffer);
+      const contextualError = contextualizeError(err, errorContext);
       return createPoison(contextualError);
     }
   }
@@ -152,7 +152,7 @@ function memberLookupScript(obj, val, errorContext, currentBuffer = null) {
   }
 
   if (obj === undefined || obj === null) {
-    return createPoison(new Error(`Cannot read property ${val} of ${obj}`), errorContext, currentBuffer);
+    return createPoison(new Error(`Cannot read property ${val} of ${obj}`), errorContext);
   }
 
   const value = obj[val];//some APIs (vercel ai result.elementStream) do not like multiple reads
@@ -170,7 +170,7 @@ async function _memberLookupScriptComplex(obj, val, errorContext, currentBuffer 
   // Collect errors from both inputs
   const errors = await collectErrors([obj, val]);
   if (errors.length > 0) {
-    return createPoison(errors, errorContext, currentBuffer);
+    return createPoison(errors, errorContext);
   }
 
   // Resolve the values
@@ -194,7 +194,7 @@ async function _memberLookupScriptComplex(obj, val, errorContext, currentBuffer 
       return createPoison(err.errors);
     } else {
       // Otherwise, it's a native error. Enrich it with template context.
-      const contextualError = contextualizeError(err, errorContext, currentBuffer);
+      const contextualError = contextualizeError(err, errorContext);
       return createPoison(contextualError);
     }
   }

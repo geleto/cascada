@@ -115,8 +115,7 @@ class CompileReturn {
   getSequentialLoopAdvanceCheckChain({ sequentialLoopBody, whileConditionNode, bodyChains }) {
     return sequentialLoopBody &&
       !whileConditionNode &&
-      bodyChains &&
-      bodyChains.has(RETURN_CHAIN_NAME)
+      bodyChains.includes(RETURN_CHAIN_NAME)
       ? RETURN_CHAIN_NAME
       : null;
   }

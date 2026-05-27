@@ -656,7 +656,7 @@ async function iterateObject(arr, loopBody, loopVars, errorContext, effectiveSeq
  */
 function poisonLoopEffects(buffer, asyncOptions, errors, didIterate) {
   // Replace the errors with contextualized errors.
-  errors = errors.map(error => contextualizeError(error, asyncOptions.errorContext, buffer));
+  errors = errors.map(error => contextualizeError(error, asyncOptions.errorContext));
 
   // Poison body chain effects.
   if (asyncOptions.bodyChains && asyncOptions.bodyChains.length > 0) {

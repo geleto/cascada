@@ -10,7 +10,7 @@ function requireInheritanceLoadErrorContext(errorContext) {
 
 function addLoadErrorContext(error, errorContext, context) {
   void context;
-  return contextualizeError(error, requireInheritanceLoadErrorContext(errorContext), null);
+  return contextualizeError(error, requireInheritanceLoadErrorContext(errorContext));
 }
 
 function loadEntry(templateOrScript, errorContext, runtime) {
@@ -19,8 +19,7 @@ function loadEntry(templateOrScript, errorContext, runtime) {
   if (!templateOrScript.inheritanceSpec || !templateOrScript.resolveInheritanceParent) {
     throw contextualizeError(
       new Error('expected an inheritance participant but got a plain template/script'),
-      requireInheritanceLoadErrorContext(errorContext),
-      null
+      requireInheritanceLoadErrorContext(errorContext)
     );
   }
   const errorContextTable = templateOrScript.getErrorContexts(runtime, path, null);
@@ -54,8 +53,7 @@ async function loadInheritanceChain({ templateOrScript, env, context, runtime, e
     if (seen.has(cycleIdentity)) {
       throw contextualizeError(
         new Error(`inheritance cycle detected at ${currentTemplateOrScript.path ?? '<anonymous>'}`),
-        requireInheritanceLoadErrorContext(selectedByErrorContext),
-        null
+        requireInheritanceLoadErrorContext(selectedByErrorContext)
       );
     }
     seen.add(cycleIdentity);

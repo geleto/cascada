@@ -55,16 +55,6 @@ function normalizeOptionalErrorContext(ec) {
   return Array.isArray(ec) ? normalizeErrorContext(ec) : EMPTY_ERROR_CONTEXT_INFO;
 }
 
-// Keep source-origin assignment at the constructor/wrapper boundary. This
-// helper is only for idempotently annotating an already-wrapped error that
-// should not be replaced with a new RuntimeError.
-function attachErrorContextIfMissing(error, ec) {
-  if (Array.isArray(ec) && error && typeof error === 'object' && !error.errorContext) {
-    error.errorContext = ec;
-  }
-  return error;
-}
-
 function resolveEffectiveErrorContext(error, fallback = null) {
   if (error && typeof error === 'object' && error.errorContext) {
     if (Array.isArray(error.errorContext)) {
@@ -410,8 +400,7 @@ function normalizeErrorsWithContext(errors, errorContext = null) {
   }).flat();
 }
 
-function createPoison(errors/* or 1 error */, errorContext = null, currentBuffer = null) {
-  void currentBuffer;
+function createPoison(errors/* or 1 error */, errorContext = null) {
   const normalizedErrors = normalizeErrorsWithContext(errors, errorContext);
   return new PoisonedValue(normalizedErrors);
 }
@@ -514,12 +503,10 @@ async function collectErrors(values) {
  *
  * @param {Error} error - The error to handle
  * @param {Array|null} errorContext - Compact context
- * @param {object|null} currentBuffer - Accepted for the canonical async call shape; stack enrichment is handled by getErrorInfo.
  * @returns {Error} Processed error with position and path information
  * @todo - merge TemplateError and PoisonError
  */
-function contextualizeError(error, errorContext = null, currentBuffer = null) {
-  void currentBuffer;
+function contextualizeError(error, errorContext = null) {
   const fallbackContext = Array.isArray(errorContext) ? errorContext : null;
 
   // Special handling for PoisonError - preserve multiple errors
@@ -543,7 +530,11 @@ function contextualizeError(error, errorContext = null, currentBuffer = null) {
     if (!error.label && context.label) {
       error.label = context.label;
     }
-    attachErrorContextIfMissing(error, effectiveContext);
+    // TODO(error-context-cleanup): remove this late bridge once all wrapped
+    // runtime errors are constructed with their compact context up front.
+    if (Array.isArray(effectiveContext) && !error.errorContext) {
+      error.errorContext = effectiveContext;
+    }
     return error;
   } else {
     // Wrap in RuntimeError
@@ -560,8 +551,8 @@ function handleError(error, lineno = null, colno = null, syncLabel = null, path 
   return contextualizeError(error, errorContext);
 }
 
-function handleFatal(error, ec, currentBuffer = null) {
-  const wrapped = contextualizeError(error, ec, currentBuffer);
+function handleFatal(error, ec) {
+  const wrapped = contextualizeError(error, ec);
   const context = normalizeOptionalErrorContext(resolveEffectiveErrorContext(wrapped, ec));
 
   if (context.reportError) {

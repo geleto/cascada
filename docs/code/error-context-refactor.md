@@ -554,10 +554,11 @@ Not allowed:
 Canonical APIs should accept compact error context entries:
 
 ```js
-contextualizeError(error, ec, currentBuffer)
-createPoison(errors, ec, currentBuffer)
-new RuntimeFatalError(error, ec, currentBuffer)
-handleFatal(error, ec, currentBuffer)
+contextualizeError(error, ec)
+createPoison(errors, ec)
+new RuntimeFatalError(error, ec)
+handleFatal(error, ec)
+getErrorInfo(error, ec, currentBuffer, includeStack)
 ```
 
 The frozen synchronous Nunjucks-compatible compiler path keeps a separate
@@ -568,9 +569,8 @@ handleError(error, lineno, colno, errorContextString, path)
 ```
 
 All runtime helper calls emitted by the compiler should pass compact prepared
-entries from `__ec` plus `currentBuffer`. The compatibility layer should map
-old `errorContextString` to `label` only while old call sites are being
-migrated.
+entries from `__ec`. Command-buffer stack enrichment is a separate
+`getErrorInfo(...)` concern and should not be a side effect of wrapping.
 
 `createPoison(...)` remains plural-capable. The `errors` argument may be a
 single error, a string, a `PoisonError`, or an array, matching current
@@ -616,10 +616,10 @@ The target error families are:
 whether it still adds value now that non-poison runtime errors are fatal by
 default.
 
-`handleFatal(error, ec, currentBuffer)` owns fatal delivery. It wraps through
-`contextualizeError(...)`, reads the effective context's `cb`, reports to `cb`
-when present, and then throws/rethrows the wrapped error. Boundary code should
-prefer this helper over open-coding fatal reporting.
+`handleFatal(error, ec)` owns fatal delivery. It wraps through
+`contextualizeError(...)`, reads the effective context's `reportError`, reports
+to `reportError` when present, and then throws/rethrows the wrapped error.
+Boundary code should prefer this helper over open-coding fatal reporting.
 
 Wrapped errors should store their originating compact error context. If
 `contextualizeError(...)`, `createPoison(...)`, or another helper receives both an
@@ -628,10 +628,10 @@ existing context wins. The helper argument is only the fallback errorContext for
 errors that do not already carry context.
 
 Prefer passing `errorContext` directly into error constructors and wrapping
-helpers. Internal attachment helpers such as `attachErrorContextIfMissing(...)`
-should stay narrow and private: use them only when an error is already wrapped
-and should be annotated idempotently instead of replaced by a new `RuntimeError`.
-Do not let runtime helpers call such mutators casually after the fact.
+helpers. Any remaining late attachment bridge should stay narrow and private:
+use it only when an error is already wrapped and should be annotated
+idempotently instead of replaced by a new `RuntimeError`. Do not let runtime
+helpers call such mutators casually after the fact.
 
 This precedence preserves the original source of the error as it crosses later
 consumption points. Later helpers may add command-buffer trace information, but
@@ -740,10 +740,10 @@ Before implementation, audit:
    while call sites migrate. `prepareErrorContexts(...)` must return fresh
    prepared entries and must not mutate shared label/spec arrays.
 2. Add canonical runtime error paths:
-   `contextualizeError(error, ec, currentBuffer)`,
-   `createPoison(errors, ec, currentBuffer)`, and
-   `RuntimeFatalError(error, ec, currentBuffer)`. Add
-   `handleFatal(error, ec, currentBuffer)` for callback-or-throw fatal
+   `contextualizeError(error, ec)`,
+   `createPoison(errors, ec)`, and
+   `RuntimeFatalError(error, ec)`. Add
+   `handleFatal(error, ec)` for callback-or-throw fatal
    reporting. Preserve plural `createPoison(...)` normalization.
 3. Store originating compact error context on wrapped errors and enforce the
    precedence rule. For `PoisonError`, apply this per contained error, not to
@@ -929,10 +929,9 @@ Deletion checklist for `TODO(error-context-cleanup)`:
    `createBufferBranchContext(...)` bridge file, and command-buffer context-shape
    normalizer have been removed. Remaining expanded object contexts are
    hand-built test scaffolding or frozen sync-path data.
-7. Re-check `attachErrorContextIfMissing(...)` usage after all wrappers accept
-   compact contexts directly. It should either remain a private helper used only
-   by `contextualizeError(...)` for already-wrapped errors, or be removed if no
-   longer needed.
+7. Re-check the late already-wrapped-error attachment bridge after all wrappers
+   accept compact contexts directly. It should remain private to
+   `contextualizeError(...)` or be removed if no longer needed.
 8. Review all helpers, methods, and small bridge functions added during this
    refactor for final ownership. Move them to the file/class that owns the
    concept, inline one-off helpers where clearer, and remove migration-only

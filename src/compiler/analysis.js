@@ -145,7 +145,7 @@ class CompileAnalysis {
         chains.delete(name);
       }
     }
-    return chains;
+    return Array.from(chains);
   }
 
   extractSymbols(targetNode) {

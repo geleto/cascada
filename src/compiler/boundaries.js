@@ -64,10 +64,7 @@ class CompileBoundaries {
       this.compiler.emit.line(';');
       this.compiler.emit.line(`  return await ${resultId};`);
       this.compiler.emit.line('} catch (e) {');
-      this.compiler.emit.line(
-        `  const err = runtime.isPoisonError(e) ? e : new runtime.PoisonError(e, ${errorContextArg});`
-      );
-      this.compiler.emit.line('  throw err;');
+      this.compiler.emit.line(`  throw new runtime.PoisonError(e, ${errorContextArg});`);
       this.compiler.emit.line('}');
       this.compiler.emit.line(`}, ${bufferBranchContextArg})`);
     });

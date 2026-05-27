@@ -199,6 +199,12 @@ class CompilerAsync extends CompilerBaseAsync {
     return result;
   }
 
+  postAnalyzeWhile(node) {
+    return {
+      poisonChains: this.analysis.getChainsUsedFromParent(node.body)
+    };
+  }
+
   compileWhile(node) {
     this.loop.compileAsyncWhile(node);
   }
@@ -271,7 +277,7 @@ class CompilerAsync extends CompilerBaseAsync {
 
   compileSwitch(node) {
     this.buffer._compileAsyncControlFlowBoundary(node, () => {
-      let catchPoisonPos;
+      const poisonChains = node._analysis.poisonChains;
 
       this.emit('try {');
       this.emit('const switchResult = ');
@@ -300,17 +306,20 @@ class CompilerAsync extends CompilerBaseAsync {
 
       const errorContext = this.emitErrorContext(node.expr);
       this.emit('} catch (e) {');
-      this.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.contextualizeError(e, ${errorContext}, ${this.buffer.currentBuffer});`);
-      catchPoisonPos = this.codebuf.length;
-      this.emit('');
-      this.emit('}');
-
-      for (const chainName of (node._analysis.poisonChains ?? [])) {
-        this.emit.insertLine(
-          catchPoisonPos,
-          `    ${this.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(Array.isArray(contextualError) ? contextualError : [contextualError], ${errorContext}), "${chainName}");`
+      if (poisonChains.length === 1) {
+        this.emit.line(
+          `    ${this.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(runtime.contextualizeError(e, ${errorContext}), ${errorContext}), "${poisonChains[0]}");`
         );
+      } else if (poisonChains.length > 1) {
+        const contextualErrorVar = this._tmpid();
+        this.emit(`  const ${contextualErrorVar} = runtime.contextualizeError(e, ${errorContext});`);
+        for (const chainName of poisonChains) {
+          this.emit.line(
+            `    ${this.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(${contextualErrorVar}, ${errorContext}), "${chainName}");`
+          );
+        }
       }
+      this.emit('}');
     }, node.expr);
   }
 
@@ -347,7 +356,7 @@ class CompilerAsync extends CompilerBaseAsync {
     const trueBranchChains = this.analysis.getChainsUsedFromParent(node.body);
     const falseBranchChains = node.else_
       ? this.analysis.getChainsUsedFromParent(node.else_)
-      : new Set();
+      : [];
     return {
       poisonChains: Array.from(new Set([...trueBranchChains, ...falseBranchChains]))
     };
@@ -355,7 +364,7 @@ class CompilerAsync extends CompilerBaseAsync {
 
   compileIf(node) {
     this.buffer._compileAsyncControlFlowBoundary(node, () => {
-      let catchPoisonPos;
+      const poisonChains = node._analysis.poisonChains;
       const condResultId = this._tmpid();
 
       this.emit('try {');
@@ -373,17 +382,20 @@ class CompilerAsync extends CompilerBaseAsync {
 
       const errorContext = this.emitErrorContext(node.cond);
       this.emit('} catch (e) {');
-      this.emit(`  const contextualError = runtime.isPoisonError(e) ? e : runtime.contextualizeError(e, ${errorContext}, ${this.buffer.currentBuffer});`);
-      catchPoisonPos = this.codebuf.length;
-      this.emit('');
-      this.emit('}');
-
-      for (const chainName of (node._analysis.poisonChains ?? [])) {
-        this.emit.insertLine(
-          catchPoisonPos,
-          `    ${this.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(Array.isArray(contextualError) ? contextualError : [contextualError], ${errorContext}), "${chainName}");`
+      if (poisonChains.length === 1) {
+        this.emit.line(
+          `    ${this.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(runtime.contextualizeError(e, ${errorContext}), ${errorContext}), "${poisonChains[0]}");`
         );
+      } else if (poisonChains.length > 1) {
+        const contextualErrorVar = this._tmpid();
+        this.emit(`  const ${contextualErrorVar} = runtime.contextualizeError(e, ${errorContext});`);
+        for (const chainName of poisonChains) {
+          this.emit.line(
+            `    ${this.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(${contextualErrorVar}, ${errorContext}), "${chainName}");`
+          );
+        }
       }
+      this.emit('}');
     }, node.cond);
   }
 

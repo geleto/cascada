@@ -58,7 +58,7 @@ describe('error context tracing runtime foundation', () => {
 
   it('wraps errors with compact context metadata', () => {
     const ec = [3, 7, 'If.Condition(LookupVal)', 'script.casc', null];
-    const wrapped = contextualizeError(new Error('bad condition'), ec, {});
+    const wrapped = contextualizeError(new Error('bad condition'), ec);
 
     expect(wrapped.message).to.contain('(script.casc) [Line 3, Column 7]');
     expect(wrapped.message).to.contain('doing \'If.Condition(LookupVal)\'');
@@ -160,7 +160,7 @@ describe('error context tracing runtime foundation', () => {
 
   it('createPoison accepts plural inputs and compact context', () => {
     const ec = [5, 9, 'Switch.Expression(Symbol)', 'switch.casc', null];
-    const poison = createPoison([new Error('one'), 'two'], ec, {});
+    const poison = createPoison([new Error('one'), 'two'], ec);
 
     expect(isPoison(poison)).to.be(true);
     expect(poison.errors).to.have.length(2);
@@ -218,7 +218,7 @@ describe('error context tracing runtime foundation', () => {
     };
     const ec = [7, 2, 'AsyncBoundary', 'fatal.casc', reportError];
 
-    const wrapped = handleFatal(new Error('fatal failure'), ec, {});
+    const wrapped = handleFatal(new Error('fatal failure'), ec);
 
     expect(reported).to.equal(wrapped);
     expect(wrapped.errorContext).to.eql(ec);
@@ -228,7 +228,7 @@ describe('error context tracing runtime foundation', () => {
   it('handleFatal throws when no context callback is present', () => {
     const ec = [7, 2, 'AsyncBoundary', 'fatal.casc', null];
 
-    expect(() => handleFatal(new Error('fatal failure'), ec, {})).to.throwException(err => {
+    expect(() => handleFatal(new Error('fatal failure'), ec)).to.throwException(err => {
       expect(err.errorContext).to.eql(ec);
       expect(err.message).to.contain('fatal.casc');
     });

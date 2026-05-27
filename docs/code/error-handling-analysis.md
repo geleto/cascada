@@ -70,7 +70,10 @@ are valid for a failing value:
   promise is permitted to carry when it reaches a consumer.
 
 Any other error arriving at a consumption point is a **`RuntimeFatalError`** —
-a bug in the engine, not a data error.
+a bug in the engine, not a data error. A later taxonomy cleanup may fold that
+signal into `RuntimeError` with an explicit fatal marker/property, but the
+fatal-vs-poison distinction must remain mechanically visible at every
+consumption point.
 
 ### What counts as value consumption
 
@@ -89,8 +92,10 @@ A value is consumed at three structural points:
 
 Structural runtime failures that occur outside value consumption — invariant
 violations, missing chain declarations, closed-buffer writes, engine bugs —
-are `RuntimeFatalError`s and must not be converted to poison. Converting them
-would mask the bug and produce incorrect output silently.
+are `RuntimeFatalError`s and must not be converted to poison. A future taxonomy
+cleanup may represent the same state as `RuntimeError` with a fatal marker.
+Converting them to poison would mask the bug and produce incorrect output
+silently.
 
 ---
 

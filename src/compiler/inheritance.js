@@ -212,7 +212,7 @@ class CompileInheritance {
     this.emit.line('    rootBuffer: output,');
     this.emit.line(`    errorContext: ${this.compiler.emitErrorContext(node)}`);
     this.emit.line('}).catch((e) => {');
-    this.emit.line(`  reportError(runtime.contextualizeError(e, ${this.compiler.emitErrorContext(node)}, output));`);
+    this.emit.line(`  reportError(runtime.contextualizeError(e, ${this.compiler.emitErrorContext(node)}));`);
     this.emit.line('  throw e;');
     this.emit.line('});');
   }

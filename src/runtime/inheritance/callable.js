@@ -9,7 +9,7 @@ async function resolveInheritanceParent(env, isScript, target, inheritedErrorCon
   try {
     target = await resolveSingle(target);
   } catch (error) {
-    throw contextualizeError(error, errorContext, null);
+    throw contextualizeError(error, errorContext);
   }
 
   if (target === null || target === undefined) {
