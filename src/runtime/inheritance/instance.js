@@ -13,12 +13,6 @@ class InheritanceInstance {
     this.sharedRootBuffer = options.sharedRootBuffer;
     this.traceParent = options.traceParent || null;
     this.context = options.context;
-    // The error context tables are reused by all loads of a given template or
-    // script, and each render binds them to that render's reportError callback.
-    // We need the table for each owner in the inheritance chain to provide
-    // correct error contexts on method invocation.
-    this.entryErrorContextTable = options.entryErrorContextTable || null;
-    this.errorContextTablesByOwner = new Map();
     this.failure = null;
     this.closed = false;
   }
@@ -37,48 +31,50 @@ class InheritanceInstance {
       traceParent
     );
     const sharedRootBuffer = options.sharedRootBuffer || rootBuffer;
+    const reportError = options.reportError;
     const chain = await runtime.loadInheritanceChain({
       templateOrScript: options.entryTemplateOrScript,
       env: options.env,
       context,
       runtime,
-      errorContext: options.errorContext ?? null
+      errorContext: options.errorContext ?? null,
+      reportError
     });
     const runtimeState = runtime.finalizeInheritanceChain(chain, context);
+    const boundRuntimeState = runtime.bindInheritanceRuntimeState(runtimeState, runtime, reportError);
 
-    Object.entries(runtimeState.sharedSchema).forEach(([name, schemaEntry]) => {
+    Object.entries(boundRuntimeState.sharedSchema).forEach(([name, schemaEntry]) => {
       declareInheritanceSharedChain(sharedRootBuffer, name, schemaEntry.type, context, undefined, schemaEntry.errorContext);
     });
 
     return new InheritanceInstance({
       entryTemplateOrScript: chain.entries[0].templateOrScript,
-      runtimeState,
+      runtimeState: boundRuntimeState,
       env: options.env,
       runtime,
-      reportError: options.reportError ?? function noopReportError() {},
+      reportError,
       rootBuffer,
       sharedRootBuffer,
       traceParent,
-      context,
-      entryErrorContextTable: options.entryErrorContextTable || null
+      context
     });
   }
 
   invoke(methodName, args = [], errorContext = null) {
-    this.assertOpen(errorContext);
+    this.assertCanInvoke(errorContext);
     return this._invokeFromMethodData(this.getMethod(methodName, errorContext), args, errorContext, this.sharedRootBuffer, this.context, this.traceParent);
   }
 
   invokeFromCurrentBuffer(methodName, args, context, currentBuffer, errorContext = null) {
-    this.assertOpen(errorContext);
+    this.assertCanInvoke(errorContext);
     return this._invokeFromMethodData(this.getMethod(methodName, errorContext), args, errorContext, currentBuffer, context, currentBuffer);
   }
 
   invokeSuper(methodData, args, context, currentBuffer, errorContext = null) {
-    this.assertOpen(errorContext);
-    if (!methodData || !methodData.super) {
+    this.assertCanInvoke(errorContext);
+    if (!methodData.super) {
       throw new RuntimeFatalError(
-        `super() in '${methodData ? methodData.name : '<unknown>'}' has no parent implementation`,
+        `super() in '${methodData.name}' has no parent implementation`,
         errorContext
       );
     }
@@ -86,7 +82,7 @@ class InheritanceInstance {
   }
 
   invokeConstructor(errorContext = null) {
-    this.assertOpen(errorContext);
+    this.assertCanInvoke(errorContext);
     const constructorEntry = this.runtimeState.methods.__constructor__ || null;
     if (!constructorEntry) {
       return undefined;
@@ -94,7 +90,7 @@ class InheritanceInstance {
     return this._invokeFromMethodData(constructorEntry, [], errorContext, this.sharedRootBuffer, this.context, this.traceParent);
   }
 
-  assertOpen(errorContext = null) {
+  assertCanInvoke(errorContext = null) {
     if (this.failure) {
       throw this.failure;
     }
@@ -117,41 +113,8 @@ class InheritanceInstance {
     return methodData;
   }
 
-  getErrorContextTableForMethod(methodData, context) {
-    const ownerEntry = methodData.ownerEntry || null;
-    if (!ownerEntry) {
-      return this.entryErrorContextTable;
-    }
-    if (ownerEntry.templateOrScript === this.entryTemplateOrScript && this.entryErrorContextTable) {
-      return this.entryErrorContextTable;
-    }
-    if (this.errorContextTablesByOwner.has(ownerEntry)) {
-      return this.errorContextTablesByOwner.get(ownerEntry);
-    }
-
-    // Create and cache the error context table for this owner entry
-    const ownerTemplateOrScript = ownerEntry.templateOrScript || null;
-    // ownerEntry.path is the source artifact path for parent-owned methods and
-    // blocks. The context path fallback is defensive for synthetic/no-path
-    // owners and should not be used for normal loaded inheritance entries.
-    const ownerPath = ownerEntry.path ?? context.path;
-    const prepared = ownerTemplateOrScript && typeof ownerTemplateOrScript.getErrorContexts === 'function'
-      ? ownerTemplateOrScript.getErrorContexts(this.runtime, ownerPath, this.reportError)
-      : null;
-    this.errorContextTablesByOwner.set(ownerEntry, prepared);
-    return prepared;
-  }
-
-  getErrorContextForMethod(methodData, context) {
-    const table = this.getErrorContextTableForMethod(methodData, context);
-    if (!table || methodData.errorContextIndex == null) {
-      return methodData.errorContext || null;
-    }
-    return table[methodData.errorContextIndex] ?? methodData.errorContext ?? null;
-  }
-
-  async _invokeFromMethodData(methodData, args, errorContext, parentBuffer, context, traceParent = null) {
-    const effectiveErrorContext = errorContext ?? this.getErrorContextForMethod(methodData, context);
+  _invokeFromMethodData(methodData, args, errorContext, parentBuffer, context, traceParent = null) {
+    const effectiveErrorContext = errorContext ?? methodData.errorContext;
     const visibleChains = Array.from(new Set([
       ...methodData.mergedLinkedChains,
       ...methodData.mergedMutatedChains
@@ -176,8 +139,9 @@ class InheritanceInstance {
       };
     const renderContext = methodData.isConstructor ? undefined : context.getRenderContextVariables();
 
+    let result;
     try {
-      return await methodData.fn(
+      result = methodData.fn(
         this.env,
         context,
         this.runtime,
@@ -186,13 +150,31 @@ class InheritanceInstance {
         callablePayload,
         renderContext,
         methodData,
-        this,
-        this.getErrorContextTableForMethod(methodData, context)
+        this
       );
-    } finally {
+    } catch (error) {
+      // Cleanup only: this remains a fatal structural error, but the invocation
+      // owns this child buffer and must close it so linked waiters do not hang.
       invocationBuffer.finish();
-      await invocationBuffer.getFinishedPromise();
+      return invocationBuffer.getFinishedPromise().then(() => {
+        throw error;
+      });
     }
+
+    const finishWithValue = (value) => {
+      invocationBuffer.finish();
+      return invocationBuffer.getFinishedPromise().then(() => value);
+    };
+    const finishWithError = (error) => {
+      invocationBuffer.finish();
+      return invocationBuffer.getFinishedPromise().then(() => {
+        throw error;
+      });
+    };
+
+    return result && typeof result.then === 'function'
+      ? result.then(finishWithValue, finishWithError)
+      : finishWithValue(result);
   }
 
   finishRender(entryResult) {
@@ -211,7 +193,7 @@ class InheritanceInstance {
   }
 }
 
-async function renderInheritanceParticipantRoot({ entryTemplateOrScript, env, context, runtime, reportError, rootBuffer, entryErrorContextTable = null, errorContext = null }) {
+async function renderInheritanceParticipantRoot({ entryTemplateOrScript, env, context, runtime, reportError, rootBuffer, errorContext = null }) {
   const instance = await InheritanceInstance.create({
     entryTemplateOrScript,
     env,
@@ -219,7 +201,6 @@ async function renderInheritanceParticipantRoot({ entryTemplateOrScript, env, co
     runtime,
     reportError,
     rootBuffer,
-    entryErrorContextTable,
     errorContext
   });
   let entryResult;
@@ -227,6 +208,8 @@ async function renderInheritanceParticipantRoot({ entryTemplateOrScript, env, co
     entryResult = await instance.invokeConstructor(errorContext);
     return instance.finishRender(entryResult);
   } catch (error) {
+    // Cleanup only: constructor failures remain fatal, but this adapter owns the
+    // root/shared buffers and must close them so linked waiters do not hang.
     instance.close(error);
     throw error;
   }

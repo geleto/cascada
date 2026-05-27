@@ -53,8 +53,7 @@ Implemented for the async runtime:
    `createPoison(...)`, and async wrapping to compact-context inputs. Async
    runtime code uses `contextualizeError(error, errorContext, currentBuffer)`.
    The frozen sync/Nunjucks compiler path keeps the positional
-   `handleError(error, lineno, colno, label, path)` adapter, isolated behind
-   `compactSyncErrorContext(...)`.
+   `handleError(error, lineno, colno, label, path)` adapter.
 3. Collapsed `ensureDefinedAsync(...)` and its async helper to remove
    positional `lineno` and `colno` arguments. Async safe-output diagnostics use
    compact `errorContext`; synchronous `ensureDefined(...)` stays on the frozen
@@ -133,13 +132,14 @@ reporting callback contract is explicit and error-only.
    `TemplateRuntime`, so script-based inheritance participants can contribute
    owner artifact tables.
 3. Prepare one compact error-context table per owner template/script entry per
-   inheritance instance in `InheritanceInstance.create`, after
-   `finalizeInheritanceChain(...)` returns and while `options.reportError` is
-   available. Use the owner artifact path and the instance reporter. Do not
-   thread `reportError` into `finalizeInheritanceChain(...)`; finalization should
-   remain a generic metadata pass. Treat the entry template/script as just
-   another owner entry so `entryErrorContextTable` can be unified with the same
-   per-owner table binding path.
+   inheritance instance in the `bind-instance-metadata.js` binding pass called
+   from `InheritanceInstance.create`, after `finalizeInheritanceChain(...)`
+   returns and while `options.reportError` is available. Use the owner artifact
+   path and the instance reporter. Do not thread `reportError` into
+   `finalizeInheritanceChain(...)`; `finalize-metadata.js` should remain a
+   generic metadata pass. Treat the entry template/script as just another owner
+   entry so `entryErrorContextTable` can be unified with the same per-owner
+   table binding path.
 4. Keep the existing `ownerEntry.errorContextTable` prepared with
    `reportError = null` during `loadEntry(...)` as a finalization-only table.
    It is used for validation diagnostics before an `InheritanceInstance` exists
@@ -154,19 +154,20 @@ reporting callback contract is explicit and error-only.
    Remove the explicit table argument from `_invokeFromMethodData(...)`'s call
    to `methodData.fn(...)` once wrappers provide the callable's owner table.
 6. Remove hot-path owner-table lookup after runtime callable entries carry their
-   prepared owner table directly. Delete `getErrorContextTableForMethod(...)`,
-   `getErrorContextForMethod(...)`, and `errorContextTablesByOwner` once the
-   pre-bound table path is in place. The benefit is simpler ownership and less
-   invocation plumbing, not primarily performance.
+   prepared owner table directly. The removed lazy lookup helpers
+   `getErrorContextTableForMethod(...)`, `getErrorContextForMethod(...)`, and
+   `errorContextTablesByOwner` must stay gone; future cleanup should shrink the
+   binding wrapper itself rather than reintroduce per-call table selection. The
+   benefit is simpler ownership and less invocation plumbing, not primarily
+   performance.
 7. Replace hand-built inheritance metadata object error-context test
    scaffolding in `tests/pasync/inheritance.js` with integration tests or
-   index-based fixture helpers. Then remove legacy fallback fields and fallback
-   parameters from `resolveCompiledEntryErrorContext(...)`, including
-   object-format fields such as `errorContext` and `superErrorContext` that only
-   exist for those tests.
-8. Simplify `getErrorContextReportError(...)` after inheritance legacy object
-   fallbacks are removed. The final helper should only read the compact report
-   callback slot.
+   index-based fixture helpers. Then remove legacy fallback fields and helper
+   adapters for object-format fields such as `errorContext` and
+   `superErrorContext` that only exist for those tests.
+8. Keep `reportError` as explicit render/inheritance-load state. Do not recover
+   it from an incoming compact error context just to prepare another `__ec`
+   table; inheritance parent resolution should receive `reportError` directly.
 9. Keep `loadEntry(...)` and `createRuntimeOwnerEntry(...)` separate for now:
    `loadEntry(...)` is loader-owned and prepares finalization-only metadata,
    while `createRuntimeOwnerEntry(...)` creates frozen finalization entries.
@@ -216,9 +217,9 @@ instead of wrapping solely to append an owner table.
 3. Keep per-render `reportError` ownership unchanged: prepared error-context
    tables must still be created per inheritance instance and must not be stored
    globally on compiled template/script artifacts.
-4. Remove or materially shrink `bindRuntimeMethodEntry(...)` and related table
-   binding helpers once compiled callables no longer need a runtime wrapper only
-   to append the owner table.
+4. Remove or materially shrink `bindInheritanceRuntimeState(...)` and related
+   helpers in `bind-instance-metadata.js` once compiled callables no longer need
+   a runtime wrapper only to append the owner table.
 5. Regenerate precompiled/browser fixtures after the ABI change. This should
    also remove stale generated `entryErrorContextTable: __ec` fields.
 6. Re-run inheritance, error-context, precompile, and browser fixture tests.
@@ -239,17 +240,34 @@ instead of wrapping solely to append an owner table.
 5. Audit `RuntimeError` construction so non-poison runtime errors are created
    with an explicit source context wherever compiler/runtime ownership can
    provide one. Any remaining `null` context should be intentional and covered.
-6. Decide the final role of the `currentBuffer` parameter on
+6. Remove or shrink the temporary error-context glue cluster once the
+   constructor boundary is canonical:
+   - `EMPTY_ERROR_CONTEXT_INFO` - placeholder for missing async context; delete
+     when missing async context is no longer tolerated.
+   - `normalizeOptionalErrorContext(...)` - migration wrapper for nullable
+     contexts; replace callers with `normalizeErrorContext(...)` once compact
+     context is required.
+   - `attachErrorContextIfMissing(...)` - bridge for already-positioned
+     legacy/sync-shaped errors that lack compact `errorContext`; delete after
+     async runtime errors are always constructed with compact context up front.
+   - `resolveEffectiveErrorContext(...)` - currently mixes the useful compact
+     context precedence rule with legacy/non-array tolerance; shrink it to the
+     final precedence rule or inline that rule into constructors.
+   - `RuntimeFatalError` compatibility surface - remove or reduce to an alias if
+     `RuntimeError` is the only non-poison runtime error type.
+   - `handleError(...)` exposure to async/runtime code - keep isolated for the
+     frozen sync compiler path only.
+7. Decide the final role of the `currentBuffer` parameter on
    `contextualizeError(...)`, `createPoison(...)`, and `handleFatal(...)`.
    Either use it for stack enrichment through `getErrorInfo(...)` or remove it
    from helpers that do not need direct buffer access.
-7. Re-check `PoisonError` handling and remove the in-place mutation of
+8. Re-check `PoisonError` handling and remove the in-place mutation of
    `PoisonError.errors` if it can be replaced with clearer construction without
    changing multiple-error propagation.
-8. Migrate tests that assert `RuntimeFatalError` specifically to the final
+9. Migrate tests that assert `RuntimeFatalError` specifically to the final
    runtime error contract.
-9. Re-check docs and public exports so the error taxonomy is explicit and
-   small.
+10. Re-check docs and public exports so the error taxonomy is explicit and
+    small.
 
 ## Phase F - Helper Ownership And Buffer API Cleanup
 

@@ -19,6 +19,7 @@ import {
   runValueBoundary,
   sequentialContextLookupValue
 } from '../../src/runtime/runtime.js';
+import * as runtime from '../../src/runtime/runtime.js';
 import {AsyncEnvironment} from '../../src/environment/async-environment.js';
 import {Script} from '../../src/environment/script.js';
 import {AsyncTemplate} from '../../src/environment/template.js';
@@ -481,15 +482,52 @@ describe('error context tracing runtime foundation', () => {
       const parentContextPaths = [];
       const getParentErrorContexts = parent.getErrorContexts;
 
-      parent.getErrorContexts = function getObservedErrorContexts(runtime, path, reportError) {
+      parent.getErrorContexts = function getObservedErrorContexts(runtimeArg, path, reportError) {
         parentContextPaths.push(path);
-        return getParentErrorContexts.call(this, runtime, path, reportError);
+        return getParentErrorContexts.call(this, runtimeArg, path, reportError);
       };
 
       const result = await env.renderTemplate('child.njk', { name: 'Ada' });
 
       expect(result.trim()).to.be('Parent Ada');
       expect(parentContextPaths).to.contain('parent.njk');
+    });
+
+    it('prepares script artifact contexts when invoking inherited script methods', async () => {
+      const loader = new StringLoader();
+      loader.addTemplate('parent.script', [
+        'method build(name)',
+        '  return "Parent " + name',
+        'endmethod'
+      ].join('\n'));
+      loader.addTemplate('child.script', [
+        'extends "parent.script"',
+        'method build(name)',
+        '  return super(name)',
+        'endmethod'
+      ].join('\n'));
+      const env = new AsyncEnvironment(loader);
+      const parent = await env.getScript('parent.script', true, null, false);
+      const parentContextPaths = [];
+      const getParentErrorContexts = parent.getErrorContexts;
+
+      parent.getErrorContexts = function getObservedScriptErrorContexts(runtimeArg, path, reportError) {
+        parentContextPaths.push(path);
+        return getParentErrorContexts.call(this, runtimeArg, path, reportError);
+      };
+
+      const child = await env.getScript('child.script', true, null, false);
+      const instance = await runtime.InheritanceInstance.create({
+        entryTemplateOrScript: child,
+        env,
+        context: child._createContext({ name: 'Ada' }),
+        runtime,
+        reportError: () => {}
+      });
+      const result = await instance.invoke('build', ['Ada'], [1, 0, 'Call', 'test.script', null]);
+
+      expect(result).to.be('Parent Ada');
+      expect(parentContextPaths).to.contain('parent.script');
     });
 
     it('uses one reportError callback when rendering included templates', async () => {

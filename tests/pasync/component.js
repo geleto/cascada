@@ -13,10 +13,10 @@ function compiledComponentMethod(name, options = {}) {
     name,
     fn: options.fn || function noopMethod() {},
     signature: { argNames: options.argNames || [] },
-    origin: options.origin || null,
+    errorContextIndex: options.errorContextIndex ?? 0,
     isConstructor: !!options.isConstructor,
-    super: null,
-    superOrigin: null,
+    super: false,
+    superErrorContextIndex: null,
     inheritedMethodDependencies: {},
     ownLinkedChains: [],
     ownMutatedChains: []
@@ -32,6 +32,10 @@ function componentParticipant(path, options = {}) {
       methodEntries: options.methodEntries || {},
       sharedSchema: options.sharedSchema || {},
       hasExtends: false
+    },
+    getErrorContexts(runtimeArg, ownerPath, reportError) {
+      void runtimeArg;
+      return [[1, 1, 'Test', ownerPath ?? path, reportError ?? null]];
     },
     resolveInheritanceParent() {
       return runtimeModule.noInheritanceParent();

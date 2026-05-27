@@ -18,7 +18,7 @@ function getComponentSharedSchemaEntry(instance, chainName, errorContext) {
 }
 
 async function observeComponentSharedChain(instance, observationCommand, errorContext = null, implicitVarRead = false) {
-  instance.assertOpen(errorContext);
+  instance.assertCanInvoke(errorContext);
   if (!observationCommand.isUniversalObservationCommand || !observationCommand.chainName) {
     throw new RuntimeFatalError('Component shared observation requires a universal observational chain command', errorContext);
   }
@@ -141,9 +141,7 @@ async function createComponentInstance(spec) {
     await instance.invokeConstructor(errorContext);
   } catch (error) {
     instance.close(error);
-    if (reportError) {
-      reportError(error);
-    }
+    reportError(error);
     throw error;
   }
 

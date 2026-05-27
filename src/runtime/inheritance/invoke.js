@@ -1,10 +1,13 @@
 import {RuntimeFatalError} from '../errors.js';
 import {getKeywordArgs, numArgs} from '../macro.js';
 
+// Helpers used while invoking inherited callables. This file owns argument
+// frame construction and the generated callable-body buffer links needed to
+// make finalized callable chain footprints visible at the invocation site.
+
 function getInvocationArgs(args) {
-  const sourceArgs = Array.isArray(args) ? args : [];
-  const values = sourceArgs.slice(0, numArgs(sourceArgs));
-  const kwargs = getKeywordArgs(sourceArgs);
+  const values = args.slice(0, numArgs(args));
+  const kwargs = getKeywordArgs(args);
   return { values, kwargs };
 }
 

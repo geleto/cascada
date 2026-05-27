@@ -9,6 +9,7 @@ import * as runtime from '../../src/runtime/runtime.js';
 import {StringLoader} from '../util.js';
 
 const TEST_EC = [1, 1, 'Test', 'test.casc', null];
+const TEST_REPORT_ERROR = () => {};
 
 function createIdPool() {
   return {
@@ -89,7 +90,7 @@ function testErrorContextPath(errorContext) {
 function sharedSchemaEntry(type, options = {}) {
   return {
     type,
-    errorContext: compactTestErrorContext(
+    __testErrorContext: compactTestErrorContext(
       options.errorContext || { path: `${type}-shared.owner`, lineno: 1, colno: 1 }
     ),
     hasDefault: !!options.hasDefault
@@ -109,7 +110,7 @@ describe('Inheritance rebuild', function () {
         scriptMode: true,
         name: 'script-none.script'
       });
-      const parent = await props.resolveInheritanceParent(null, null, runtime, null);
+      const parent = await props.resolveInheritanceParent.call({ path: 'script-none.script' }, null, null, runtime, null, null);
 
       expect(Object.keys(props).sort()).to.eql(['getErrorContexts', 'inheritanceSpec', 'resolveInheritanceParent', 'root']);
       expect(parent).to.eql({ parentTemplateOrScript: null, errorContext: null });
@@ -172,7 +173,7 @@ describe('Inheritance rebuild', function () {
       expect(Object.keys(props.inheritanceSpec).sort()).to.eql(['hasExtends', 'methodEntries', 'sharedSchema']);
       expect(props.inheritanceSpec.setup).to.be(undefined);
       expect(props.inheritanceSpec.inheritedMethodDependencies).to.be(undefined);
-      expect(props.resolveInheritanceParent.length).to.be(4);
+      expect(props.resolveInheritanceParent.length).to.be(5);
       expect(props.inheritanceSpec.methodEntries.build.errorContextIndex).to.be.a('number');
     });
 
@@ -220,7 +221,7 @@ describe('Inheritance rebuild', function () {
       removedStartupFragments.forEach((fragment) => {
         expect(source).not.to.contain(fragment);
       });
-      expect(source).to.contain('async function resolveInheritanceParent(env, context, runtime, errorContext)');
+      expect(source).to.contain('async function resolveInheritanceParent(env, context, runtime, errorContext, reportError)');
       expect(source).to.contain('function root(env, context, runtime, reportError)');
     });
 
@@ -261,7 +262,7 @@ describe('Inheritance rebuild', function () {
         scriptMode: true
       });
 
-      expect(await props.resolveInheritanceParent(null, null, runtime, null)).to.eql({
+      expect(await props.resolveInheritanceParent.call({ path: 'compiled.casc' }, null, null, runtime, null, null)).to.eql({
         parentTemplateOrScript: null,
         errorContext: null
       });
@@ -801,7 +802,8 @@ describe('Inheritance rebuild', function () {
         env: localEnv,
         context,
         runtime,
-        errorContext: [1, 0, 'Extends', entryName, null]
+        errorContext: [1, 0, 'Extends', entryName, null],
+        reportError: TEST_REPORT_ERROR
       });
     }
 
@@ -815,7 +817,8 @@ describe('Inheritance rebuild', function () {
         env: localEnv,
         context,
         runtime,
-        errorContext: [1, 0, 'Extends', entryName, null]
+        errorContext: [1, 0, 'Extends', entryName, null],
+        reportError: TEST_REPORT_ERROR
       });
     }
 
@@ -849,6 +852,9 @@ describe('Inheritance rebuild', function () {
         async resolveInheritanceParent() {
           return runtime.noInheritanceParent();
         },
+        getErrorContexts() {
+          return [];
+        },
         root() {
           throw new Error('parent root should not run');
         }
@@ -860,6 +866,9 @@ describe('Inheritance rebuild', function () {
         async resolveInheritanceParent() {
           return { parentTemplateOrScript: parent, errorContext: [0, 0, null, 'child.njk', null] };
         },
+        getErrorContexts() {
+          return [];
+        },
         root() {
           throw new Error('child root should not run');
         }
@@ -869,7 +878,9 @@ describe('Inheritance rebuild', function () {
         templateOrScript: child,
         env: null,
         context: createContext(),
-        runtime
+        runtime,
+        errorContext: [1, 0, 'Extends', 'child.njk', null],
+        reportError: TEST_REPORT_ERROR
       });
 
       expect(chain.entries.map((entry) => entry.path)).to.eql(['child.njk', 'parent.njk']);
@@ -886,6 +897,9 @@ describe('Inheritance rebuild', function () {
         path: 'child.njk',
         compile() {},
         inheritanceSpec: { methodEntries: {}, sharedSchema: {}, hasExtends: true },
+        getErrorContexts() {
+          return [];
+        },
         async resolveInheritanceParent() {
           return {
             parentTemplateOrScript: parent,
@@ -899,7 +913,9 @@ describe('Inheritance rebuild', function () {
           templateOrScript: child,
           env: null,
           context: createContext({}, 'entry.njk'),
-          runtime
+          runtime,
+          errorContext: [1, 0, 'Extends', 'child.njk', null],
+          reportError: TEST_REPORT_ERROR
         });
         expect().fail('Expected selected parent compile failure');
       } catch (error) {
@@ -921,10 +937,11 @@ describe('Inheritance rebuild', function () {
         await runtime.loadInheritanceChain({
           templateOrScript: entry,
           env: null,
-          context: createContext({}, 'entry-context.njk'),
-          runtime,
-          errorContext: [4, 2, 'Extends', 'entry-context.njk', null]
-        });
+        context: createContext({}, 'entry-context.njk'),
+        runtime,
+        errorContext: [4, 2, 'Extends', 'entry-context.njk', null],
+        reportError: TEST_REPORT_ERROR
+      });
         expect().fail('Expected entry compile failure');
       } catch (error) {
         expect(String(error)).to.contain('entry compile failed');
@@ -951,7 +968,9 @@ describe('Inheritance rebuild', function () {
         templateOrScript: chain.entries[0].templateOrScript,
         env: chain.entries[0].templateOrScript.env,
         context: createContext({}, 'child.njk'),
-        runtime: strictRuntime
+        runtime: strictRuntime,
+        errorContext: [1, 0, 'Extends', 'child.njk', null],
+        reportError: TEST_REPORT_ERROR
       });
     });
 
@@ -1085,10 +1104,7 @@ describe('Inheritance rebuild', function () {
     function compactDependencies(dependencies) {
       return Object.fromEntries(Object.entries(dependencies).map(([name, dependency]) => [
         name,
-        {
-          ...dependency,
-          errorContext: compactTestErrorContext(dependency.errorContext)
-        }
+        { ...dependency }
       ]));
     }
 
@@ -1097,29 +1113,76 @@ describe('Inheritance rebuild', function () {
         name,
         fn: options.fn || function compiledInheritanceMethod() {},
         signature: { argNames: options.argNames || [] },
-        errorContext: compactTestErrorContext(options.errorContext || { path: `${name}.owner`, lineno: 1, colno: 1 }),
+        __testErrorContext: compactTestErrorContext(options.errorContext || { path: `${name}.owner`, lineno: 1, colno: 1 }),
         isConstructor: !!options.isConstructor,
         super: !!options.super,
-        superErrorContext: compactTestErrorContext(options.superErrorContext),
+        __testSuperErrorContext: compactTestErrorContext(options.superErrorContext),
         inheritedMethodDependencies: compactDependencies(options.inheritedMethodDependencies || {}),
         ownLinkedChains: options.ownLinkedChains || [],
         ownMutatedChains: options.ownMutatedChains || []
       };
     }
 
+    function addTestErrorContext(errorContextTable, errorContext) {
+      if (!errorContext) {
+        return null;
+      }
+      errorContextTable.push(compactTestErrorContext(errorContext));
+      return errorContextTable.length - 1;
+    }
+
+    function indexTestMetadata(entrySpec, entryErrorContextTable) {
+      Object.values(entrySpec.methodEntries || {}).forEach((methodEntry) => {
+        if (methodEntry.errorContextIndex == null) {
+          methodEntry.errorContextIndex = addTestErrorContext(entryErrorContextTable, methodEntry.__testErrorContext);
+        }
+        delete methodEntry.__testErrorContext;
+        if (methodEntry.superErrorContextIndex == null) {
+          methodEntry.superErrorContextIndex = addTestErrorContext(entryErrorContextTable, methodEntry.__testSuperErrorContext);
+        }
+        delete methodEntry.__testSuperErrorContext;
+        Object.values(methodEntry.inheritedMethodDependencies || {}).forEach((dependency) => {
+          if (dependency.errorContextIndex == null) {
+            dependency.errorContextIndex = addTestErrorContext(entryErrorContextTable, dependency.errorContext);
+          }
+          delete dependency.errorContext;
+        });
+      });
+
+      Object.values(entrySpec.sharedSchema || {}).forEach((schemaEntry) => {
+        if (schemaEntry.errorContextIndex == null) {
+          schemaEntry.errorContextIndex = addTestErrorContext(entryErrorContextTable, schemaEntry.__testErrorContext);
+        }
+        delete schemaEntry.__testErrorContext;
+      });
+    }
+
     function loadedEntry(path, options = {}) {
+      const spec = {
+        methodEntries: options.methodEntries || {},
+        sharedSchema: options.sharedSchema || {},
+        hasExtends: !!options.hasExtends
+      };
+      const errorContextTable = options.errorContextTable || [];
+      indexTestMetadata(spec, errorContextTable);
       return {
         templateOrScript: {
           path,
           scriptMode: !!options.scriptMode,
-          compile() {}
+          compile() {},
+          getErrorContexts(runtimeArg, ownerPath, reportError) {
+            return errorContextTable.map((entry) => [
+              entry[0],
+              entry[1],
+              entry[2],
+              ownerPath ?? entry[3],
+              reportError ?? null
+            ]);
+          }
         },
-        spec: {
-          methodEntries: options.methodEntries || {},
-          sharedSchema: options.sharedSchema || {},
-          hasExtends: !!options.hasExtends
-        },
+        spec,
         path,
+        errorContextTable,
         errorContext: compactTestErrorContext(options.errorContext || { path, lineno: 1, colno: 1 })
       };
     }
@@ -1156,6 +1219,13 @@ describe('Inheritance rebuild', function () {
     }
 
     function inheritanceParticipant(path, options = {}) {
+      const spec = {
+        methodEntries: options.methodEntries || {},
+        sharedSchema: options.sharedSchema || {},
+        hasExtends: !!options.hasExtends
+      };
+      const errorContextTable = options.errorContextTable || [];
+      indexTestMetadata(spec, errorContextTable);
       const participant = {
         path,
         scriptMode: !!options.scriptMode,
@@ -1163,10 +1233,15 @@ describe('Inheritance rebuild', function () {
         compile() {
           this.compileCalls += 1;
         },
-        inheritanceSpec: {
-          methodEntries: options.methodEntries || {},
-          sharedSchema: options.sharedSchema || {},
-          hasExtends: !!options.hasExtends
+        inheritanceSpec: spec,
+        getErrorContexts(runtimeArg, ownerPath, reportError) {
+          return errorContextTable.map((entry) => [
+            entry[0],
+            entry[1],
+            entry[2],
+            ownerPath ?? entry[3],
+            reportError ?? null
+          ]);
         },
         async resolveInheritanceParent() {
           return runtime.noInheritanceParent();
@@ -1193,7 +1268,8 @@ describe('Inheritance rebuild', function () {
           }
         },
         runtime,
-        errorContext: [1, 0, 'Extends', entryName, null]
+        errorContext: [1, 0, 'Extends', entryName, null],
+        reportError: TEST_REPORT_ERROR
       });
     }
 
@@ -1206,7 +1282,8 @@ describe('Inheritance rebuild', function () {
         entryTemplateOrScript: entry,
         env: localEnv,
         context: entry._createContext(ctx),
-        runtime
+        runtime,
+        reportError: TEST_REPORT_ERROR
       });
     }
 
@@ -1219,7 +1296,8 @@ describe('Inheritance rebuild', function () {
         entryTemplateOrScript: entry,
         env: localEnv,
         context: entry._createContext(ctx),
-        runtime
+        runtime,
+        reportError: TEST_REPORT_ERROR
       });
     }
 
@@ -1534,7 +1612,8 @@ describe('Inheritance rebuild', function () {
         entryTemplateOrScript: participant,
         env: {},
         context,
-        runtime
+        runtime,
+        reportError: TEST_REPORT_ERROR
       });
 
       expect(participant.compileCalls).to.be(1);
@@ -1560,7 +1639,8 @@ describe('Inheritance rebuild', function () {
         entryTemplateOrScript: participant,
         env: {},
         context: createRuntimeContext(),
-        runtime
+        runtime,
+        reportError: TEST_REPORT_ERROR
       });
 
       expect(await instance.invoke('greet', ['Ada'], { path: 'call.script' })).to.be('hello Ada');
@@ -1582,7 +1662,8 @@ describe('Inheritance rebuild', function () {
         entryTemplateOrScript: participant,
         env: {},
         context: createRuntimeContext(),
-        runtime
+        runtime,
+        reportError: TEST_REPORT_ERROR
       });
 
       const result = await instance.invoke(
@@ -1607,7 +1688,8 @@ describe('Inheritance rebuild', function () {
         entryTemplateOrScript: participant,
         env: {},
         context: createRuntimeContext(),
-        runtime
+        runtime,
+        reportError: TEST_REPORT_ERROR
       });
 
       try {
@@ -1681,7 +1763,8 @@ describe('Inheritance rebuild', function () {
         entryTemplateOrScript: participant,
         env: {},
         context: createRuntimeContext(),
-        runtime
+        runtime,
+        reportError: TEST_REPORT_ERROR
       });
 
       expect(await instance.invoke('outer', [], { path: 'outer.script' })).to.be('inner');
@@ -1726,7 +1809,8 @@ describe('Inheritance rebuild', function () {
         entryTemplateOrScript: participant,
         env: {},
         context: createRuntimeContext({ user: 'Ada' }),
-        runtime
+        runtime,
+        reportError: TEST_REPORT_ERROR
       });
 
       expect(await instance.invoke('build', ['Grace'], { path: 'call.script' })).to.be('Grace');
@@ -1775,7 +1859,8 @@ describe('Inheritance rebuild', function () {
         entryTemplateOrScript: participant,
         env: {},
         context: createRuntimeContext(),
-        runtime
+        runtime,
+        reportError: TEST_REPORT_ERROR
       });
 
       try {
@@ -2021,6 +2106,7 @@ describe('Inheritance rebuild', function () {
         runtime,
         ownerBuffer,
         bindingName: 'card',
+        reportError: TEST_REPORT_ERROR,
         errorContext: [1, 1, null, 'main.script', null]
       });
       ownerBuffer.addCommand(new runtime.VarCommand({
@@ -2069,6 +2155,7 @@ describe('Inheritance rebuild', function () {
           ownerContext: createRuntimeContext({}, 'main.script'),
           env: {},
           runtime,
+          reportError: TEST_REPORT_ERROR,
           errorContext: [1, 1, null, 'main.script', null]
         });
         expect().fail('Expected component creation failure');
@@ -2444,7 +2531,14 @@ describe('Inheritance rebuild', function () {
     it('rejects dynamic template extends resolving to no parent through the resolver', async function () {
       const props = compileProps('{% extends parentTemplate %}{% block body %}x{% endblock %}');
       try {
-        await props.resolveInheritanceParent(null, { lookup: () => null, path: 'dynamic-null.njk' }, runtime, null);
+        await props.resolveInheritanceParent.call(
+          { path: 'dynamic-null.njk' },
+          null,
+          { lookup: () => null, path: 'dynamic-null.njk' },
+          runtime,
+          null,
+          null
+        );
         expect().fail('Expected null dynamic template extends to fail');
       } catch (error) {
         expect(String(error)).to.contain('template extends must select a parent template');
@@ -2536,12 +2630,19 @@ describe('Inheritance rebuild', function () {
     it('fails dynamic template extends naturally when context does not provide the target', async function () {
       const props = compileProps('{% extends parentTemplate %}{% block body %}child{% endblock %}');
       try {
-        await props.resolveInheritanceParent(null, {
-          lookup() {
-            return undefined;
+        await props.resolveInheritanceParent.call(
+          { path: 'missing-dynamic.njk' },
+          null,
+          {
+            lookup() {
+              return undefined;
+            },
+            path: 'missing-dynamic.njk'
           },
-          path: 'missing-dynamic.njk'
-        }, runtime, null);
+          runtime,
+          null,
+          null
+        );
         expect().fail('Expected missing dynamic template extends target to fail');
       } catch (error) {
         expect(String(error)).to.contain('template extends must select a parent template');

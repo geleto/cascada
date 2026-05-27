@@ -1,24 +1,29 @@
 import {contextualizeError} from '../errors.js';
 
-function requireLoadErrorContext(errorContext, label) {
+function requireInheritanceLoadErrorContext(errorContext) {
   if (Array.isArray(errorContext)) {
     return errorContext;
   }
   const received = errorContext === null ? 'null' : typeof errorContext;
-  throw new TypeError(`${label} requires a compact errorContext (got ${received})`);
+  throw new TypeError(`inheritance loading requires a compact errorContext (got ${received})`);
 }
 
 function addLoadErrorContext(error, errorContext, context) {
   void context;
-  return contextualizeError(error, requireLoadErrorContext(errorContext, 'inheritance load error'), null);
+  return contextualizeError(error, requireInheritanceLoadErrorContext(errorContext), null);
 }
 
 function loadEntry(templateOrScript, errorContext, runtime) {
   templateOrScript.compile();
   const path = templateOrScript.path ?? null;
-  const errorContextTable = typeof templateOrScript.getErrorContexts === 'function'
-    ? templateOrScript.getErrorContexts(runtime, path, null)
-    : null;
+  if (!templateOrScript.inheritanceSpec || !templateOrScript.resolveInheritanceParent) {
+    throw contextualizeError(
+      new Error('expected an inheritance participant but got a plain template/script'),
+      requireInheritanceLoadErrorContext(errorContext),
+      null
+    );
+  }
+  const errorContextTable = templateOrScript.getErrorContexts(runtime, path, null);
   return Object.freeze({
     templateOrScript,
     spec: templateOrScript.inheritanceSpec,
@@ -28,25 +33,15 @@ function loadEntry(templateOrScript, errorContext, runtime) {
   });
 }
 
-function assertLoadableInheritanceEntry(entry) {
-  if (!entry.spec || !entry.templateOrScript.resolveInheritanceParent) {
-    throw contextualizeError(
-      new Error('expected an inheritance participant but got a plain template/script'),
-      requireLoadErrorContext(entry.errorContext, 'inheritance participant error'),
-      null
-    );
-  }
-}
-
-async function resolveLoadedParent(entry, env, context, runtime) {
+async function resolveLoadedParent(entry, env, context, runtime, reportError) {
   try {
-    return await entry.templateOrScript.resolveInheritanceParent(env, context, runtime, null);
+    return await entry.templateOrScript.resolveInheritanceParent(env, context, runtime, null, reportError);
   } catch (error) {
     throw addLoadErrorContext(error, entry.errorContext, context);
   }
 }
 
-async function loadInheritanceChain({ templateOrScript, env, context, runtime, errorContext = null }) {
+async function loadInheritanceChain({ templateOrScript, env, context, runtime, errorContext = null, reportError }) {
   const entries = [];
   const seen = new Set();
   let currentTemplateOrScript = templateOrScript;
@@ -59,7 +54,7 @@ async function loadInheritanceChain({ templateOrScript, env, context, runtime, e
     if (seen.has(cycleIdentity)) {
       throw contextualizeError(
         new Error(`inheritance cycle detected at ${currentTemplateOrScript.path ?? '<anonymous>'}`),
-        requireLoadErrorContext(selectedByErrorContext, 'inheritance cycle error'),
+        requireInheritanceLoadErrorContext(selectedByErrorContext),
         null
       );
     }
@@ -71,10 +66,9 @@ async function loadInheritanceChain({ templateOrScript, env, context, runtime, e
     } catch (error) {
       throw addLoadErrorContext(error, selectedByErrorContext, context);
     }
-    assertLoadableInheritanceEntry(entry);
     entries.push(entry);
 
-    const parentSelection = await resolveLoadedParent(entry, env, context, runtime);
+    const parentSelection = await resolveLoadedParent(entry, env, context, runtime, reportError);
     currentTemplateOrScript = parentSelection.parentTemplateOrScript;
     selectedByErrorContext = parentSelection.errorContext;
   }

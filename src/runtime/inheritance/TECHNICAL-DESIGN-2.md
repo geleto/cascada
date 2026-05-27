@@ -279,16 +279,16 @@ the lifecycle to `runtime.renderInheritanceParticipantRoot(...)` instead of
 inlining load/finalize/constructor/finish logic:
 
 ```js
-function root(env, context, runtime, cb) {
+function root(env, context, runtime, reportError) {
   runtime.renderInheritanceParticipantRoot({
     entryTemplateOrScript: this,
     env,
     context,
     runtime,
-    cb,
+    reportError,
     rootBuffer: output,
-    origin: rootOrigin
-  }).then((result) => cb(null, result), cb);
+    errorContext: rootErrorContext
+  }).catch((err) => reportError(err));
 }
 ```
 
@@ -478,7 +478,7 @@ helper exports define lifecycle phase boundaries.
 Each inheritance participant has one local resolver:
 
 ```js
-async function resolveInheritanceParent(env, context, runtime, origin)
+async function resolveInheritanceParent(env, context, runtime, errorContext, reportError)
 ```
 
 It evaluates only the current template/script's immediate `extends` selection
@@ -1014,8 +1014,10 @@ existed.
   `create(...)`, `invoke(...)`, internal-current-buffer invocation, super
   invocation, `finishRender(...)`, `close()`, closed-state checks, buffer
   ownership, and direct render completion
-- `finalize.js`: metadata validation, method-table construction, super wiring,
-  shared-schema finalization, footprint merging, runtime-entry pruning
+- `finalize-metadata.js`: metadata validation, method-table construction, super
+  wiring, shared-schema finalization, footprint merging, runtime-entry pruning
+- `bind-instance-metadata.js`: per-instance binding of finalized metadata to the
+  render's prepared error-context tables and reportError callback
 - `invoke.js`: inherited-callable invocation helpers, including argument-frame
   construction and linking finalized callable footprint chains into an
   invocation buffer. It may reuse macro keyword-argument helpers, but it must

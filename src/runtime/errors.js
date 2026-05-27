@@ -55,35 +55,6 @@ function normalizeOptionalErrorContext(ec) {
   return Array.isArray(ec) ? normalizeErrorContext(ec) : EMPTY_ERROR_CONTEXT_INFO;
 }
 
-function getErrorContextReportError(ec) {
-  if (Array.isArray(ec)) {
-    return ec[4] ?? null;
-  }
-  if (ec && typeof ec === 'object') {
-    // TODO(error-context-cleanup): remove legacy object-context callback support
-    // once inheritance origin metadata is compact-only.
-    return ec.reportError ?? ec.cb ?? null;
-  }
-  return null;
-}
-
-// Sync compatibility only. The async compiler/runtime passes compact prepared
-// contexts directly; frozen sync/Nunjucks paths still enter handleError with
-// positional fields.
-function compactSyncErrorContext(lineno = null, colno = null, label = null, path = null) {
-  if (lineno === null && colno === null && label === null && path === null) {
-    return null;
-  }
-
-  return [
-    lineno ?? 0,
-    colno ?? 0,
-    label,
-    path,
-    null
-  ];
-}
-
 // Keep source-origin assignment at the constructor/wrapper boundary. This
 // helper is only for idempotently annotating an already-wrapped error that
 // should not be replaced with a new RuntimeError.
@@ -583,7 +554,10 @@ function contextualizeError(error, errorContext = null, currentBuffer = null) {
 
 // Sync compatibility only. New async/runtime code must use contextualizeError().
 function handleError(error, lineno = null, colno = null, syncLabel = null, path = null) {
-  return contextualizeError(error, compactSyncErrorContext(lineno, colno, syncLabel, path));
+  const errorContext = lineno === null && colno === null && syncLabel === null && path === null
+    ? null
+    : [lineno ?? 0, colno ?? 0, syncLabel, path, null];
+  return contextualizeError(error, errorContext);
 }
 
 function handleFatal(error, ec, currentBuffer = null) {
@@ -687,4 +661,4 @@ function peekError(value) {
   return null;
 }
 
-export { PoisonedValue, PoisonError, RuntimeError, RuntimeFatalError, RuntimePromise, prepareErrorContexts, normalizeErrorContext, getErrorContextReportError, getErrorInfo, createPoison, isPoison, isPoisonError, isRuntimeFatalError, isError, collectErrors, contextualizeError, handleError, handleFatal, peekError, markPromiseHandled };
+export { PoisonedValue, PoisonError, RuntimeError, RuntimeFatalError, RuntimePromise, prepareErrorContexts, normalizeErrorContext, getErrorInfo, createPoison, isPoison, isPoisonError, isRuntimeFatalError, isError, collectErrors, contextualizeError, handleError, handleFatal, peekError, markPromiseHandled };
