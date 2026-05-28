@@ -472,10 +472,15 @@ class CompileLoop {
 
     this.compiler.emit.withScopedSyntax(() => {
       if (parallel) {
-        this.compiler.emit.managedBlock(frame, false, true, (managedFrame, buf) => {
-          this.compiler.compile(node.body, managedFrame);
-          this.compiler.emit.line('next(' + i + ',' + buf + ');');
-        }, undefined, node.body);
+        this.compiler.emit.managedBlock({
+          frame,
+          createScopeRootBuffer: true,
+          analysisNode: node.body,
+          emitFunc: (managedFrame, buf) => {
+            this.compiler.compile(node.body, managedFrame);
+            this.compiler.emit.line('next(' + i + ',' + buf + ');');
+          }
+        });
       } else {
         this.compiler.compile(node.body, frame);
         this.compiler.emit.line('next(' + i + ');');

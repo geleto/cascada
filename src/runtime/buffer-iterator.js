@@ -249,7 +249,7 @@ class BufferIterator {
         output._iterator = null;
       }
     }
-    this.stack = null;
+    this.stack = [];
     this._enteredBuffer = null;
     if (this._pendingObservables) {
       this._pendingObservables.clear();
@@ -262,8 +262,14 @@ class BufferIterator {
   _stopAfterFatalReport() {
     // Fatal render state owns the reported error. Stop applying later commands
     // so unrelated buffered work cannot keep running after render failure.
+    for (const cursor of this.stack) {
+      if (cursor && cursor.buffer) {
+        cursor.buffer.onIteratorLeaveBuffer(this, this.chainName);
+        this._releaseFinishedLane(cursor.buffer);
+      }
+    }
     this.stack = [];
-    this._setCurrentBuffer(null);
+    this._setCurrentBuffer(null, true);
     this.finished = true;
     this._releaseFinishedIterator();
     this._isAdvancing = false;

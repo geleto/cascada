@@ -321,17 +321,6 @@ class AsyncTemplateRuntime extends TemplateRuntime {
   }
 
   getExported(ctx, renderCtx, renderState) {
-    // TODO(render-state-cleanup): remove direct callback compatibility once all
-    // export callers pass a RenderState prepared at the render boundary.
-    if (typeof ctx === 'function') {
-      renderState = globalRuntime.createRenderState(ctx);
-      ctx = {};
-      renderCtx = null;
-    } else if (typeof renderCtx === 'function') {
-      renderState = globalRuntime.createRenderState(renderCtx);
-      renderCtx = ctx;
-    }
-
     this.compile();
 
     const context = this._createContext(ctx, renderCtx, ctx || null);

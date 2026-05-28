@@ -474,19 +474,27 @@ class CompileMacro {
         });
       });
     } else {
-      compiler.emit.managedBlock(null, false, true, (managedFrame, bufferId) => {
-        returnStatement = this._emitCompiledAsyncMacroBody({
-          node,
-          callableSignature,
-          managedFrame,
-          bufferId,
-          args,
-          kwargs,
-          rawCallerVar,
-          allCallersBufferId,
-          hasCallerSupport: macroNeedsCallerSupport
-        });
-      }, null, node.body, node, 'macroParentBuffer');
+      compiler.emit.managedBlock({
+        frame: null,
+        createScopeRootBuffer: true,
+        parentBufferOverride: null,
+        analysisNode: node.body,
+        errorContextNode: node,
+        traceParentOverride: 'macroParentBuffer',
+        emitFunc: (managedFrame, bufferId) => {
+          returnStatement = this._emitCompiledAsyncMacroBody({
+            node,
+            callableSignature,
+            managedFrame,
+            bufferId,
+            args,
+            kwargs,
+            rawCallerVar,
+            allCallersBufferId,
+            hasCallerSupport: macroNeedsCallerSupport
+          });
+        }
+      });
     }
 
     compiler.emit.line(`return ${returnStatement};`);
@@ -537,16 +545,22 @@ class CompileMacro {
     );
 
     let returnStatement;
-    compiler.emit.managedBlock(currFrame, false, true, (managedFrame, bufferId) => {
-      returnStatement = this._emitCompiledSyncMacroBody({
-        node,
-        managedFrame,
-        bufferId,
-        args,
-        kwargs,
-        keepFrame
-      });
-    }, keepFrame ? compiler.buffer.currentBuffer : null, node.body);
+    compiler.emit.managedBlock({
+      frame: currFrame,
+      createScopeRootBuffer: true,
+      parentBufferOverride: keepFrame ? compiler.buffer.currentBuffer : null,
+      analysisNode: node.body,
+      emitFunc: (managedFrame, bufferId) => {
+        returnStatement = this._emitCompiledSyncMacroBody({
+          node,
+          managedFrame,
+          bufferId,
+          args,
+          kwargs,
+          keepFrame
+        });
+      }
+    });
 
     compiler.emit.line(`return ${returnStatement};`);
     compiler.emit.line('}).call(this, frame);');

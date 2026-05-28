@@ -191,9 +191,14 @@ class CompileBoundaries {
       }
     };
 
-    const { bufferId: id } = emitCompiler.managedBlock(frame, false, true, (blockFrame) => {
-      innerBodyFunction.call(this.compiler, blockFrame);
-    }, undefined, node);
+    const { bufferId: id } = emitCompiler.managedBlock({
+      frame,
+      createScopeRootBuffer: true,
+      analysisNode: node,
+      emitFunc: (blockFrame) => {
+        innerBodyFunction.call(this.compiler, blockFrame);
+      }
+    });
     emitCallbackResult(id);
     emitCompiler.line(`return ${id};`);
   }

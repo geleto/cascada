@@ -166,7 +166,16 @@ class CompileEmit {
   // Managed block for direct scope/frame handling (optionally with a scope-root buffer).
   // If createScopeRootBuffer=true, this is a sanctioned scope-root buffer creation
   // site. The callback body is compiled between initialization and caller-managed finalization.
-  managedBlock(frame, createScope = false, createScopeRootBuffer = false, emitFunc = null, parentBufferOverride = undefined, analysisNode = null, errorContextNode = analysisNode, traceParentOverride = undefined) {
+  managedBlock({
+    frame,
+    createScope = false,
+    createScopeRootBuffer = false,
+    emitFunc = null,
+    parentBufferOverride = undefined,
+    analysisNode = null,
+    errorContextNode = analysisNode,
+    traceParentOverride = undefined
+  }) {
     let nextFrame = frame;
     if (createScope) {
       nextFrame = frame.push();

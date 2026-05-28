@@ -74,11 +74,25 @@ class CompilerCommon extends Obj {
   // --- Core Utilities (Needed by Expressions) ---
 
   _generateErrorContext(node, positionNode = node, label = null) {
-    if (!node) return 'UnknownContext';
-    positionNode = positionNode || node;
-    if (positionNode === node && node._analysis?.errorContextPositionNode) {
-      positionNode = node._analysis.errorContextPositionNode;
+    if (!node) {
+      throw new TypeError('_generateErrorContext requires a node');
     }
+    positionNode = this._resolveErrorContextPositionNode(node, positionNode);
+    const finalLabel = this._getErrorContextLabel(node, positionNode, label);
+    if (positionNode === node && label === null && node._analysis && node._analysis.errorContextIndex === undefined) {
+      this._registerErrorContextEntry(node, finalLabel);
+    }
+    return finalLabel;
+  }
+
+  _resolveErrorContextPositionNode(node, positionNode = node) {
+    if (positionNode === node && node._analysis?.errorContextPositionNode) {
+      return node._analysis.errorContextPositionNode;
+    }
+    return positionNode;
+  }
+
+  _getErrorContextLabel(node, positionNode = node, label = null) {
     const parentProvidedOwnerLabel = label || node._analysis?.errorContextLabel || null;
 
     const nodeType = parentProvidedOwnerLabel || node.typename || 'Node';
@@ -86,14 +100,14 @@ class CompilerCommon extends Obj {
     const finalLabel = (!parentProvidedOwnerLabel && (node === positionNode || nodeType === posType))
       ? nodeType
       : `${nodeType}(${posType})`;
-
-    if (positionNode === node && label === null && node._analysis && node._analysis.errorContextIndex === undefined) {
-      const lineno = node.lineno !== undefined ? node.lineno + 1 : 0;
-      const colno = node.colno !== undefined ? node.colno : 0;
-      node.addAnalysis({ errorContextIndex: this.errorContextEntries.length });
-      this.errorContextEntries.push({ lineno, colno, label: finalLabel });
-    }
     return finalLabel;
+  }
+
+  _registerErrorContextEntry(node, label) {
+    const lineno = node.lineno !== undefined ? node.lineno + 1 : 0;
+    const colno = node.colno !== undefined ? node.colno : 0;
+    node.addAnalysis({ errorContextIndex: this.errorContextEntries.length });
+    this.errorContextEntries.push({ lineno, colno, label });
   }
 
   emitErrorContext(node) {

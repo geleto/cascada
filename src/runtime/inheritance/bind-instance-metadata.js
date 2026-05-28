@@ -11,9 +11,11 @@ function getOwnerErrorContextTable(ownerEntry, ownerTables, runtime, reportError
 function bindRuntimeSharedSchemaEntry(schemaEntry, runtime, reportError, ownerTables) {
   const errorContext = getOwnerErrorContextTable(schemaEntry.ownerEntry, ownerTables, runtime, reportError)[schemaEntry.errorContextIndex];
   return Object.freeze({
-    ...schemaEntry,
+    type: schemaEntry.type,
     errorContext,
-    defaultErrorContext: schemaEntry.hasDefault ? errorContext : null
+    ownerEntry: schemaEntry.ownerEntry,
+    defaultErrorContext: schemaEntry.hasDefault ? errorContext : null,
+    hasDefault: schemaEntry.hasDefault
   });
 }
 
@@ -32,11 +34,18 @@ function bindInheritanceRuntimeState(runtimeState, runtime, reportError) {
       pendingMethods.push(methodData.super);
     }
     const ownerTable = getOwnerErrorContextTable(methodData.ownerEntry, ownerTables, runtime, reportError);
+    const errorContext = methodData.errorContextIndex == null
+      ? methodData.errorContext
+      : ownerTable[methodData.errorContextIndex];
     boundMethods.set(methodData, {
-      ...methodData,
-      errorContext: methodData.errorContextIndex == null
-        ? methodData.errorContext
-        : ownerTable[methodData.errorContextIndex],
+      name: methodData.name,
+      fn: methodData.fn,
+      signature: methodData.signature,
+      errorContext,
+      isConstructor: methodData.isConstructor,
+      ownerEntry: methodData.ownerEntry,
+      mergedLinkedChains: methodData.mergedLinkedChains,
+      mergedMutatedChains: methodData.mergedMutatedChains,
       errorContextTable: ownerTable,
       super: null
     });

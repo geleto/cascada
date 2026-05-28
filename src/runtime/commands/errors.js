@@ -7,7 +7,10 @@ class ErrorCommand extends MutatingCommand {
   constructor(errors, errorContext) {
     super();
     this.errorContext = requireCommandErrorContext(errorContext, this.constructor.name);
-    this.errors = Array.isArray(errors) ? errors : [errors || new Error('Command buffer entry produced an unspecified error')];
+    if (errors == null) {
+      throw new TypeError('ErrorCommand requires errors');
+    }
+    this.errors = Array.isArray(errors) ? errors : [errors];
   }
 
   getError() {

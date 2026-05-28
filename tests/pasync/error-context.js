@@ -389,6 +389,7 @@ describe('error context tracing runtime foundation', () => {
 
     expect(command.errorContext).to.eql(ec);
     expect(() => new ErrorCommand([new Error('guard failed')])).to.throwError(/ErrorCommand requires a compact errorContext/);
+    expect(() => new ErrorCommand(null, ec)).to.throwError(/ErrorCommand requires errors/);
   });
 
   it('requires source context for direct text chain invocation', () => {

@@ -16,14 +16,13 @@ class RenderState {
       throw new TypeError('reportFatalError requires an error');
     }
     if (this.error) {
-      return this.error;
+      return;
     }
     this.error = error;
     if (this.onError) {
       this.onError(error);
     }
     this._rejectFatal(error);
-    return error;
   }
 
   isFatalErrorReported() {

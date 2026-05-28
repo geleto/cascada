@@ -9,7 +9,6 @@ class InheritanceInstance {
     this.env = options.env;
     this.runtime = options.runtime;
     this.renderState = options.renderState;
-    this.reportError = options.renderState.reportError;
     this.rootBuffer = options.rootBuffer;
     this.sharedRootBuffer = options.sharedRootBuffer;
     this.traceParent = options.traceParent || null;

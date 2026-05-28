@@ -3,7 +3,7 @@ import {assertChainLaneAvailable, checkFinishedBuffer} from './checks.js';
 import {contextualizeError, RuntimeFatalError} from './errors.js';
 
 class CommandBuffer {
-  constructor(context, parent = null, linkedChains = null, linkedParent = null, linkedMutatedChains = null, bufferBranchContext = null, traceParent = null, renderState = null) {
+  constructor(context, parent = null, linkedChains = null, linkTarget = null, linkedMutatedChains = null, bufferBranchContext = null, traceParent = null, renderState = null) {
     const linkedLaneNames = validateLaneNames(linkedChains, 'linkedChains', context);
     const linkedMutatedLaneNames = validateLaneNames(linkedMutatedChains, 'linkedMutatedChains', context);
 
@@ -35,13 +35,10 @@ class CommandBuffer {
       this._inheritChainAliases(parent._chainAliases);
     }
 
-    // TODO(error-context-cleanup): rename/reframe linkedParent as linkTarget.
-    // It is a chain registration target, not a stored parent link; the
-    // persistent hierarchy links are parent and traceParent.
-    const linkTarget = linkedParent || parent;
-    if (linkTarget && linkedLaneNames) {
+    const effectiveLinkTarget = linkTarget || parent;
+    if (effectiveLinkTarget && linkedLaneNames) {
       for (let i = 0; i < linkedLaneNames.length; i++) {
-        linkTarget.addBuffer(this, linkedLaneNames[i]);
+        effectiveLinkTarget.addBuffer(this, linkedLaneNames[i]);
       }
     }
   }
