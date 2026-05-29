@@ -1,6 +1,5 @@
-import {isPoison, isPoisonError, PoisonError} from '../errors.js';
+import {isPoison, PoisonError} from '../errors.js';
 import {ObservableCommand, MutatingResultCommand, requireCommandErrorContext} from './base.js';
-import {contextualizeErrorsForChain} from './errors.js';
 
 class SequentialPathReadCommand extends ObservableCommand {
   constructor({ chainName, pathKey, operation, repair = false, errorContext }) {
@@ -13,51 +12,7 @@ class SequentialPathReadCommand extends ObservableCommand {
   }
 
   apply(chain) {
-    const existingPoison = chain._getSequentialPathPoisonErrors();
-    if (!this.repair && Array.isArray(existingPoison) && existingPoison.length > 0) {
-      this.rejectResult(new PoisonError(existingPoison.slice()));
-      return;
-    }
-
-    const run = () => {
-      let result;
-      try {
-        result = this.operation();
-      } catch (err) {
-        const errs = isPoisonError(err) ? err.errors : [err];
-        const contextualized = contextualizeErrorsForChain(chain, this.errorContext, errs);
-        this.rejectResult(new PoisonError(contextualized));
-        return;
-      }
-
-      const resolveResultValue = (value) => {
-        if (isPoison(value)) {
-          const errs = Array.isArray(value.errors) ? value.errors : [value];
-          const contextualized = contextualizeErrorsForChain(chain, this.errorContext, errs);
-          this.rejectResult(new PoisonError(contextualized));
-          return;
-        }
-        if (this.repair) {
-          chain._clearSequentialPathPoison();
-        }
-        this.resolveResult(value);
-      };
-
-      const rejectResultError = (err) => {
-        const errs = isPoisonError(err) ? err.errors : [err];
-        const contextualized = contextualizeErrorsForChain(chain, this.errorContext, errs);
-        this.rejectResult(new PoisonError(contextualized));
-      };
-
-      if (result && typeof result.then === 'function') {
-        return Promise.resolve(result).then(resolveResultValue, rejectResultError);
-      }
-
-      resolveResultValue(result);
-      return result;
-    };
-
-    return run();
+    return runSequentialPathOperation(this, chain, false);
   }
 }
 
@@ -81,55 +36,7 @@ class SequentialPathWriteCommand extends MutatingResultCommand {
   }
 
   apply(chain) {
-    const existingPoison = chain._getSequentialPathPoisonErrors();
-    if (!this.repair && Array.isArray(existingPoison) && existingPoison.length > 0) {
-      this.rejectResult(new PoisonError(existingPoison.slice()));
-      return;
-    }
-
-    const run = () => {
-      let result;
-      try {
-        result = this.operation();
-      } catch (err) {
-        const errs = isPoisonError(err) ? err.errors : [err];
-        const contextualized = contextualizeErrorsForChain(chain, this.errorContext, errs);
-        chain._applySequentialPathPoisonErrors(contextualized);
-        this.rejectResult(new PoisonError(contextualized));
-        return;
-      }
-
-      const resolveResultValue = (value) => {
-        if (isPoison(value)) {
-          const errs = Array.isArray(value.errors) ? value.errors : [value];
-          const contextualized = contextualizeErrorsForChain(chain, this.errorContext, errs);
-          chain._applySequentialPathPoisonErrors(contextualized);
-          this.rejectResult(new PoisonError(contextualized));
-          return;
-        }
-        if (this.repair) {
-          chain._clearSequentialPathPoison();
-        }
-        chain._setSequentialPathLastResult(value);
-        this.resolveResult(value);
-      };
-
-      const rejectResultError = (err) => {
-        const errs = isPoisonError(err) ? err.errors : [err];
-        const contextualized = contextualizeErrorsForChain(chain, this.errorContext, errs);
-        chain._applySequentialPathPoisonErrors(contextualized);
-        this.rejectResult(new PoisonError(contextualized));
-      };
-
-      if (result && typeof result.then === 'function') {
-        return Promise.resolve(result).then(resolveResultValue, rejectResultError);
-      }
-
-      resolveResultValue(result);
-      return result;
-    };
-
-    return run();
+    return runSequentialPathOperation(this, chain, true);
   }
 }
 
@@ -140,6 +47,52 @@ class RepairWriteCommand extends SequentialPathWriteCommand {
       repair: true
     });
   }
+}
+
+function runSequentialPathOperation(cmd, chain, isWrite) {
+  const existingPoison = chain._getSequentialPathPoisonError();
+  if (!cmd.repair && existingPoison) {
+    cmd.rejectResult(existingPoison);
+    return;
+  }
+
+  const rejectPoison = (poisonError) => {
+    if (isWrite) {
+      chain._applySequentialPathPoisonError(poisonError);
+    }
+    cmd.rejectResult(poisonError);
+  };
+
+  const resolveValue = (value) => {
+    if (isPoison(value)) {
+      rejectPoison(PoisonError.group(value.errors));
+      return;
+    }
+    if (cmd.repair) {
+      chain._clearSequentialPathPoison();
+    }
+    if (isWrite) {
+      chain._setSequentialPathLastResult(value);
+    }
+    cmd.resolveResult(value);
+  };
+
+  let result;
+  try {
+    result = cmd.operation();
+  } catch (err) {
+    rejectPoison(PoisonError.wrap(err, cmd.errorContext));
+    return;
+  }
+
+  if (result && typeof result.then === 'function') {
+    return Promise.resolve(result).then(resolveValue, (err) => {
+      rejectPoison(PoisonError.wrap(err, cmd.errorContext));
+    });
+  }
+
+  resolveValue(result);
+  return result;
 }
 
 export {SequentialPathReadCommand, RepairReadCommand, SequentialPathWriteCommand, RepairWriteCommand};

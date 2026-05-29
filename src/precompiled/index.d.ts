@@ -1,4 +1,4 @@
-export type TemplateCallback<T> = (err: Error | null, res: T | null) => void;
+export type RenderCallback<T> = (err: CascadaRenderError | Error | null, res: T | null) => void;
 
 export class Loader {}
 
@@ -18,8 +18,8 @@ export class Template {
    */
   constructor(src: PrecompiledTemplateSource, env?: Environment, path?: string, eagerCompile?: boolean);
   render(context?: object): string;
-  render(callback: TemplateCallback<string>): void;
-  render(context: object, callback?: TemplateCallback<string>): void;
+  render(callback: RenderCallback<string>): void;
+  render(context: object, callback?: RenderCallback<string>): void;
 }
 
 export class AsyncTemplate {
@@ -41,12 +41,12 @@ export class Script extends AsyncPrecompiledScript {}
 export class Environment {
   constructor(loaders?: Loader | Loader[], opts?: object);
   render(name: string, context?: object): string;
-  render(name: string, callback: TemplateCallback<string>): void;
-  render(name: string, context: object, callback?: TemplateCallback<string>): void;
+  render(name: string, callback: RenderCallback<string>): void;
+  render(name: string, context: object, callback?: RenderCallback<string>): void;
   renderTemplate(name: string, context?: object): string;
-  renderTemplate(name: string, callback: TemplateCallback<string>): void;
-  renderTemplate(name: string, context: object, callback?: TemplateCallback<string>): void;
-  getTemplate(name: string, eagerCompile?: boolean, parentName?: string, ignoreMissing?: boolean, cb?: TemplateCallback<Template>): Template | void;
+  renderTemplate(name: string, callback: RenderCallback<string>): void;
+  renderTemplate(name: string, context: object, callback?: RenderCallback<string>): void;
+  getTemplate(name: string, eagerCompile?: boolean, parentName?: string, ignoreMissing?: boolean, cb?: RenderCallback<Template>): Template | void;
   addGlobal(name: string, value: any): this;
   addFilter(name: string, func: Function, async?: boolean): this;
   addTest(name: string, func: Function): this;
@@ -80,12 +80,63 @@ export class SafeString {
 
 export function markSafe(val: string): SafeString;
 
-export class TemplateError extends Error {
-  constructor(message: string, lineno: number, colno: number);
-  name: string;
+export interface CompileErrorOptions {
+  lineno?: number | null;
+  colno?: number | null;
+  label?: string | null;
+  path?: string | null;
+  cause?: Error | null;
+}
+
+export class CascadaError extends Error {
   message: string;
   stack: string;
-  cause?: Error | undefined;
-  lineno: number;
-  colno: number;
+  lineno: number | null;
+  colno: number | null;
+  path: string | null;
+  label: string | null;
 }
+
+export class CompileError extends CascadaError {
+  constructor(message: string, options?: CompileErrorOptions);
+  name: string;
+  cause?: Error | undefined;
+}
+
+export type CompactErrorContext = [
+  lineno: number | null,
+  colno: number | null,
+  label: string | null,
+  path: string | null,
+  reportError: ((error: Error) => void) | null
+];
+
+export class RuntimeError extends CascadaError {
+  constructor(cause: string | Error, errorContext: CompactErrorContext);
+  name: string;
+  cause?: Error | undefined;
+  errorContext: CompactErrorContext;
+}
+
+export class PoisonError extends CascadaError {
+  constructor(cause: unknown, errorContext: CompactErrorContext);
+  static create(
+    errors: unknown | unknown[] | PoisonError | PoisonError[] | PoisonErrorGroup,
+    errorContext?: CompactErrorContext
+  ): CascadaPoisonError;
+  errors: [PoisonError];
+  cause: Error;
+  errorContext: CompactErrorContext;
+}
+
+export class PoisonErrorGroup extends CascadaError {
+  constructor(errors: PoisonError | PoisonError[] | Error | Error[], errorContext: CompactErrorContext);
+  name: string;
+  errors: PoisonError[];
+}
+
+export type CascadaPoisonError = PoisonError | PoisonErrorGroup;
+export type CascadaRenderError = CompileError | RuntimeError | CascadaPoisonError;
+
+export function isPoisonError(error: unknown): error is CascadaPoisonError;
+export function isRuntimeError(error: unknown): error is RuntimeError;

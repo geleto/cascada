@@ -1,15 +1,15 @@
-function getOwnerErrorContextTable(ownerEntry, ownerTables, runtime, reportError) {
+function getOwnerErrorContextTable(ownerEntry, ownerTables, runtime, renderState) {
   if (ownerTables.has(ownerEntry)) {
     return ownerTables.get(ownerEntry);
   }
 
-  const table = ownerEntry.templateOrScript.getErrorContexts(runtime, ownerEntry.path ?? null, reportError);
+  const table = ownerEntry.templateOrScript.getErrorContexts(runtime, ownerEntry.path ?? null, renderState);
   ownerTables.set(ownerEntry, table);
   return table;
 }
 
-function bindRuntimeSharedSchemaEntry(schemaEntry, runtime, reportError, ownerTables) {
-  const errorContext = getOwnerErrorContextTable(schemaEntry.ownerEntry, ownerTables, runtime, reportError)[schemaEntry.errorContextIndex];
+function bindRuntimeSharedSchemaEntry(schemaEntry, runtime, renderState, ownerTables) {
+  const errorContext = getOwnerErrorContextTable(schemaEntry.ownerEntry, ownerTables, runtime, renderState)[schemaEntry.errorContextIndex];
   return Object.freeze({
     type: schemaEntry.type,
     errorContext,
@@ -20,8 +20,8 @@ function bindRuntimeSharedSchemaEntry(schemaEntry, runtime, reportError, ownerTa
 }
 
 // Binds finalized metadata to one render/inheritance instance by preparing
-// owner error-context tables with that instance's reportError callback.
-function bindInheritanceRuntimeState(runtimeState, runtime, reportError) {
+// owner error-context tables with that instance's render state.
+function bindInheritanceRuntimeState(runtimeState, runtime, renderState) {
   const ownerTables = new Map();
   const boundMethods = new Map();
   const pendingMethods = Object.values(runtimeState.methods);
@@ -33,7 +33,7 @@ function bindInheritanceRuntimeState(runtimeState, runtime, reportError) {
     if (methodData.super) {
       pendingMethods.push(methodData.super);
     }
-    const ownerTable = getOwnerErrorContextTable(methodData.ownerEntry, ownerTables, runtime, reportError);
+    const ownerTable = getOwnerErrorContextTable(methodData.ownerEntry, ownerTables, runtime, renderState);
     const errorContext = methodData.errorContextIndex == null
       ? methodData.errorContext
       : ownerTable[methodData.errorContextIndex];
@@ -63,7 +63,7 @@ function bindInheritanceRuntimeState(runtimeState, runtime, reportError) {
 
   const sharedSchema = Object.create(null);
   Object.entries(runtimeState.sharedSchema).forEach(([name, schemaEntry]) => {
-    sharedSchema[name] = bindRuntimeSharedSchemaEntry(schemaEntry, runtime, reportError, ownerTables);
+    sharedSchema[name] = bindRuntimeSharedSchemaEntry(schemaEntry, runtime, renderState, ownerTables);
   });
 
   return Object.freeze({

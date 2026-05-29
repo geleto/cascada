@@ -1,5 +1,5 @@
 
-import {RuntimeFatalError} from './errors.js';
+import {RuntimeError} from './errors.js';
 
 /**
  * Check frame balance when popping.
@@ -7,7 +7,7 @@ import {RuntimeFatalError} from './errors.js';
  *
  * @param {Frame} frame - Current frame being popped
  * @param {Frame} parent - Parent frame after pop
- * @throws {RuntimeFatalError} If frame balance is violated
+ * @throws {RuntimeError} If frame balance is violated
  */
 function checkFrameBalance(frame, parent) {
   if (!parent) {
@@ -63,10 +63,15 @@ function assertChainLaneAvailable(buffer, chainName) {
     return;
   }
 
-  throw new RuntimeFatalError(
+  RuntimeError.reportAndThrow(
     `Chain '${chainName}' is visible but this buffer has no linked lane for it`,
-    buffer._context
+    buffer.bufferStackContext
   );
 }
 
-export { assertChainLaneAvailable, checkFrameBalance, checkFinishedBuffer, ensureSequentialPathChain };
+export {
+  assertChainLaneAvailable,
+  checkFrameBalance,
+  checkFinishedBuffer,
+  ensureSequentialPathChain
+};

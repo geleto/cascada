@@ -212,7 +212,9 @@ class CompileInheritance {
     this.emit.line('    rootBuffer: output,');
     this.emit.line(`    errorContext: ${this.compiler.emitErrorContext(node)}`);
     this.emit.line('}).catch((e) => {');
-    this.emit.line(`  reportError(runtime.contextualizeError(e, ${this.compiler.emitErrorContext(node)}));`);
+    this.emit.line('  if (!runtime.isPoisonError(e)) {');
+    this.emit.line(`    renderState.reportAndThrowFatalError(e, ${this.compiler.emitErrorContext(node)});`);
+    this.emit.line('  }');
     this.emit.line('  throw e;');
     this.emit.line('});');
   }
@@ -590,8 +592,8 @@ class CompileInheritance {
   }
 
   _compileExtendsParentResolver(node) {
-    this.emit.line('async function resolveInheritanceParent(env, context, runtime, errorContext, reportError) {');
-    this.emit.line('  const __ec = getErrorContexts(runtime, this.path, reportError);');
+    this.emit.line('async function resolveInheritanceParent(env, context, runtime, errorContext, renderState) {');
+    this.emit.line('  const __ec = getErrorContexts(runtime, this.path, renderState);');
     const inheritanceFacts = node._analysis.inheritance;
     if (!inheritanceFacts.localExtendsNode || inheritanceFacts.localExtendsNode.noParentLiteral) {
       this.emit.line('  return runtime.noInheritanceParent();');
@@ -601,7 +603,7 @@ class CompileInheritance {
 
     const extendsNode = inheritanceFacts.localExtendsNode;
     const errorContextIndex = this.compiler.getErrorContextIndex(extendsNode);
-    this.emit.line(`  const parentErrorContext = errorContext ?? __ec[${errorContextIndex}];`);
+    this.emit.line(`  const parentErrorContext = __ec[${errorContextIndex}];`);
     if (this.isStaticExtendsNode(extendsNode)) {
       // Static targets are known non-null here, so null-target error context is
       // only needed by the dynamic branch.

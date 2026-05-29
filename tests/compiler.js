@@ -793,7 +793,7 @@ const {Template, Environment} = typeof window !== 'undefined'
         expect(templateRender).to.throwException(/Template not found: doesnotexist/);
       });
 
-      it('should include error line in raised TemplateError', function (done) {
+      it('should include error line in raised CompileError', function (done) {
         var tmplStr = [
           '{% set items = ["a", "b",, "c"] %}',
           '{{ items | join(",") }}',
@@ -807,7 +807,7 @@ const {Template, Environment} = typeof window !== 'undefined'
         tmpl.render({}, function (err, res) {
           expect(res).to.be(undefined);
           expect(err.toString()).to.be([
-            'Template/Script render error: (parse-error.njk) [Line 1, Column ' + expectedColumn + ']',
+            'CompileError: (parse-error.njk) [Line 1, Column ' + expectedColumn + ']',
             '  unexpected token: ,',
           ].join('\n'));
           done();

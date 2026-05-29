@@ -225,7 +225,7 @@ describe('Inheritance rebuild', function () {
       removedStartupFragments.forEach((fragment) => {
         expect(source).not.to.contain(fragment);
       });
-      expect(source).to.contain('async function resolveInheritanceParent(env, context, runtime, errorContext, reportError)');
+      expect(source).to.contain('async function resolveInheritanceParent(env, context, runtime, errorContext, renderState)');
       expect(source).to.contain('function root(env, context, runtime, renderState)');
     });
 
@@ -786,7 +786,10 @@ describe('Inheritance rebuild', function () {
         },
         lookupScript(name) {
           if (!(name in values)) {
-            return runtime.createPoison(new Error(`Can not look up unknown variable/function: ${name}`));
+            return runtime.createPoison(runtime.PoisonError.create(
+              `Can not look up unknown variable/function: ${name}`,
+              [1, 1, 'Lookup', path, null]
+            ));
           }
           return values[name];
         },
@@ -1287,7 +1290,8 @@ describe('Inheritance rebuild', function () {
         env: localEnv,
         context: entry._createContext(ctx),
         runtime,
-        renderState: createTestRenderState()
+        renderState: createTestRenderState(),
+        errorContext: TEST_EC
       });
     }
 
@@ -1301,7 +1305,8 @@ describe('Inheritance rebuild', function () {
         env: localEnv,
         context: entry._createContext(ctx),
         runtime,
-        renderState: createTestRenderState()
+        renderState: createTestRenderState(),
+        errorContext: TEST_EC
       });
     }
 
@@ -1378,7 +1383,7 @@ describe('Inheritance rebuild', function () {
         ]);
       }).to.throwException((error) => {
         expect(String(error)).to.contain('super() in \'build\' has no parent implementation');
-        expect(error.errors[0].path).to.be('child.script');
+        expect(error.path).to.be('child.script');
       });
     });
 
@@ -1439,7 +1444,7 @@ describe('Inheritance rebuild', function () {
       }).not.to.throwException();
     });
 
-    it('collects independent renamed-argument, missing reference, and shared schema errors', function () {
+    it('fails fast on the first deterministic finalization error', function () {
       expect(function () {
         finalizeEntries([
           loadedEntry('child.script', {
@@ -1464,18 +1469,10 @@ describe('Inheritance rebuild', function () {
           })
         ]);
       }).to.throwException((error) => {
-        expect(error.errors.length).to.be(3);
-        expect(String(error)).to.contain('renames an inherited argument');
-        expect(String(error)).to.contain('missing inherited method \'missing\'');
         expect(String(error)).to.contain('shared chain \'theme\' has conflicting types');
-        const missingMethodError = error.errors.find((err) => err.message.includes('missing inherited method'));
-        const sharedConflictError = error.errors.find((err) => err.message.includes('conflicting types'));
-        expect(missingMethodError.path).to.be('child.script');
-        expect(missingMethodError.lineno).to.be(2);
-        expect(missingMethodError.colno).to.be(3);
-        expect(sharedConflictError.path).to.be('root.script');
-        expect(sharedConflictError.lineno).to.be(1);
-        expect(sharedConflictError.colno).to.be(1);
+        expect(error.path).to.be('root.script');
+        expect(error.lineno).to.be(1);
+        expect(error.colno).to.be(1);
       });
     });
 
@@ -1487,9 +1484,9 @@ describe('Inheritance rebuild', function () {
         ]);
       }).to.throwException((error) => {
         expect(String(error)).to.contain('shared chain \'card\' conflicts with inherited method \'card\'');
-        expect(error.errors[0].path).to.be('child.njk');
-        expect(error.errors[0].lineno).to.be(1);
-        expect(error.errors[0].colno).to.be(1);
+        expect(error.path).to.be('child.njk');
+        expect(error.lineno).to.be(1);
+        expect(error.colno).to.be(1);
       });
     });
 
@@ -1588,12 +1585,21 @@ describe('Inheritance rebuild', function () {
     });
 
     it('initializes shared sequence targets through declaration', function () {
-      const buffer = new runtime.CommandBuffer({ path: 'shared-sequence.script' }, null, null, null);
+      const buffer = new runtime.CommandBuffer(
+        { path: 'shared-sequence.script' },
+        null,
+        null,
+        null,
+        null,
+        { ec: TEST_EC, branchName: 'test' },
+        null,
+        createTestRenderState()
+      );
       const firstTarget = { name: 'first' };
       const secondTarget = { name: 'second' };
 
-      const chain = runtime.declareInheritanceSharedChain(buffer, 'db', 'sequence', null, firstTarget);
-      runtime.declareInheritanceSharedChain(buffer, 'db', 'sequence', null, secondTarget);
+      const chain = runtime.declareInheritanceSharedChain(buffer, 'db', 'sequence', null, firstTarget, TEST_EC);
+      runtime.declareInheritanceSharedChain(buffer, 'db', 'sequence', null, secondTarget, TEST_EC);
 
       expect(chain._sequenceTarget).to.be(secondTarget);
     });
@@ -1617,7 +1623,8 @@ describe('Inheritance rebuild', function () {
         env: {},
         context,
         runtime,
-        renderState: createTestRenderState()
+        renderState: createTestRenderState(),
+        errorContext: TEST_EC
       });
 
       expect(participant.compileCalls).to.be(1);
@@ -1644,10 +1651,11 @@ describe('Inheritance rebuild', function () {
         env: {},
         context: createRuntimeContext(),
         runtime,
-        renderState: createTestRenderState()
+        renderState: createTestRenderState(),
+        errorContext: TEST_EC
       });
 
-      expect(await instance.invoke('greet', ['Ada'], { path: 'call.script' })).to.be('hello Ada');
+      expect(await instance.invoke('greet', ['Ada'], [1, 1, null, 'call.script', null])).to.be('hello Ada');
     });
 
     it('maps keyword arguments through the inherited callable signature', async function () {
@@ -1667,24 +1675,25 @@ describe('Inheritance rebuild', function () {
         env: {},
         context: createRuntimeContext(),
         runtime,
-        renderState: createTestRenderState()
+        renderState: createTestRenderState(),
+        errorContext: TEST_EC
       });
 
       const result = await instance.invoke(
         'greet',
         ['Ada', runtime.makeKeywordArgs({ fallback: 'guest' })],
-        { path: 'call.script' }
+        [1, 1, null, 'call.script', null]
       );
       expect(result).to.be('Ada:guest');
     });
 
-    it('uses method error context for direct invocation argument failures without call-site context', async function () {
+    it('uses call-site context for direct invocation argument failures', async function () {
       const participant = inheritanceParticipant('component.script', {
         scriptMode: true,
         methodEntries: {
           greet: compiledMethod('greet', {
             argNames: ['user'],
-            errorContext: { path: 'component.script', lineno: 7, colno: 5 }
+            errorContext: [7, 5, null, 'component.script', null]
           })
         }
       });
@@ -1693,17 +1702,18 @@ describe('Inheritance rebuild', function () {
         env: {},
         context: createRuntimeContext(),
         runtime,
-        renderState: createTestRenderState()
+        renderState: createTestRenderState(),
+        errorContext: TEST_EC
       });
 
       try {
-        await instance.invoke('greet', ['Ada', 'extra']);
+        await instance.invoke('greet', ['Ada', 'extra'], [3, 2, null, 'call.script', null]);
         throw new Error('expected invocation to fail');
       } catch (error) {
-        expect(error.name).to.be('RuntimeFatalError');
-        expect(error.path).to.be('component.script');
-        expect(error.lineno).to.be(7);
-        expect(error.colno).to.be(5);
+        expect(error.name).to.be('RuntimeError');
+        expect(error.path).to.be('call.script');
+        expect(error.lineno).to.be(3);
+        expect(error.colno).to.be(2);
       }
     });
 
@@ -1727,7 +1737,7 @@ describe('Inheritance rebuild', function () {
         ].join('\n')
       }, 'component.script');
 
-      expect(await instance.invoke('outer', ['Ada'], { path: 'call.script' })).to.be('Ada');
+      expect(await instance.invoke('outer', ['Ada'], [1, 1, null, 'call.script', null])).to.be('Ada');
     });
 
     it('invokes template blocks through the instance dispatch table', async function () {
@@ -1735,7 +1745,7 @@ describe('Inheritance rebuild', function () {
         'component.njk': '{% block body(user) %}Hello {{ user }}{% endblock %}'
       }, 'component.njk');
 
-      expect(String(await instance.invoke('body', ['Ada'], { path: 'call.njk' }))).to.be('Hello Ada');
+      expect(String(await instance.invoke('body', ['Ada'], [1, 1, null, 'call.njk', null]))).to.be('Hello Ada');
     });
 
     it('links internal inherited calls under the current invocation buffer', async function () {
@@ -1751,7 +1761,7 @@ describe('Inheritance rebuild', function () {
                 [],
                 contextArg,
                 invocationBuffer,
-                { path: 'outer.script' }
+                [1, 1, null, 'outer.script', null]
               );
             }
           }),
@@ -1768,10 +1778,11 @@ describe('Inheritance rebuild', function () {
         env: {},
         context: createRuntimeContext(),
         runtime,
-        renderState: createTestRenderState()
+        renderState: createTestRenderState(),
+        errorContext: TEST_EC
       });
 
-      expect(await instance.invoke('outer', [], { path: 'outer.script' })).to.be('inner');
+      expect(await instance.invoke('outer', [], [1, 1, null, 'outer.script', null])).to.be('inner');
     });
 
     it('invokes super through finalized method data', async function () {
@@ -1784,7 +1795,7 @@ describe('Inheritance rebuild', function () {
             [payload.originalArgs.user],
             contextArg,
             invocationBuffer,
-            { path: 'child.script' }
+            [1, 1, null, 'child.script', null]
           );
         }
       });
@@ -1814,10 +1825,11 @@ describe('Inheritance rebuild', function () {
         env: {},
         context: createRuntimeContext({ user: 'Ada' }),
         runtime,
-        renderState: createTestRenderState()
+        renderState: createTestRenderState(),
+        errorContext: TEST_EC
       });
 
-      expect(await instance.invoke('build', ['Grace'], { path: 'call.script' })).to.be('Grace');
+      expect(await instance.invoke('build', ['Grace'], [1, 1, null, 'call.script', null])).to.be('Grace');
     });
 
     it('lets explicit super arguments preserve parent defaults', async function () {
@@ -1835,7 +1847,7 @@ describe('Inheritance rebuild', function () {
         ].join('\n')
       }, 'child.script');
 
-      expect(await instance.invoke('build', ['Ada'], { path: 'call.script' })).to.be('Ada:guest');
+      expect(await instance.invoke('build', ['Ada'], [1, 1, null, 'call.script', null])).to.be('Ada:guest');
     });
 
     it('does not let an ignored super return replace the caller return value', async function () {
@@ -1854,7 +1866,7 @@ describe('Inheritance rebuild', function () {
         ].join('\n')
       }, 'child.script');
 
-      expect(await instance.invoke('build', ['Ada'], { path: 'call.script' })).to.be('child:Ada');
+      expect(await instance.invoke('build', ['Ada'], [1, 1, null, 'call.script', null])).to.be('child:Ada');
     });
 
     it('fails missing instance methods as fatal structural errors', async function () {
@@ -1864,14 +1876,15 @@ describe('Inheritance rebuild', function () {
         env: {},
         context: createRuntimeContext(),
         runtime,
-        renderState: createTestRenderState()
+        renderState: createTestRenderState(),
+        errorContext: TEST_EC
       });
 
       try {
-        await instance.invoke('missing', [], { path: 'call.script', lineno: 2, colno: 3 });
+        await instance.invoke('missing', [], [2, 3, null, 'call.script', null]);
         throw new Error('expected missing method to fail');
       } catch (error) {
-        expect(error.name).to.be('RuntimeFatalError');
+        expect(error.name).to.be('RuntimeError');
         expect(String(error)).to.contain('missing inherited method \'missing\'');
       }
     });
@@ -2100,7 +2113,16 @@ describe('Inheritance rebuild', function () {
         }
       });
       const ownerContext = createRuntimeContext({}, 'main.script');
-      const ownerBuffer = new runtime.CommandBuffer(ownerContext, null, null, null);
+      const ownerBuffer = new runtime.CommandBuffer(
+        ownerContext,
+        null,
+        null,
+        null,
+        null,
+        { ec: TEST_EC, branchName: 'test' },
+        null,
+        createTestRenderState()
+      );
       runtime.declareBufferChain(ownerBuffer, 'card', 'var', ownerContext, null);
       const instance = await runtime.createComponentInstance({
         componentScriptOrTemplate: participant,
@@ -2124,9 +2146,9 @@ describe('Inheritance rebuild', function () {
       await Promise.resolve();
 
       expect(function () {
-        instance.invoke('ping', [], { path: 'main.script', lineno: 2, colno: 1 });
+        instance.invoke('ping', [], [2, 1, null, 'main.script', null]);
       }).to.throwException((error) => {
-        expect(error).to.be.a(runtime.RuntimeFatalError);
+        expect(error).to.be.a(runtime.RuntimeError);
         expect(error.message).to.contain('cannot accept new operations');
       });
       expect(function () {
@@ -2135,7 +2157,7 @@ describe('Inheritance rebuild', function () {
     });
 
     it('rejects component creation when the constructor fails', async function () {
-      const failure = new runtime.RuntimeFatalError('constructor failed', [1, 1, null, 'component.script', null]);
+      const failure = new runtime.RuntimeError('constructor failed', [1, 1, null, 'component.script', null]);
       const participant = inheritanceParticipant('component.script', {
         scriptMode: true,
         methodEntries: {

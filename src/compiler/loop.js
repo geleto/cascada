@@ -218,6 +218,7 @@ class CompileLoop {
     // Create the single per-iteration runtime loop object. The tmpid variable
     // is reused both for diagnostics and for the exposed loop binding.
     this.compiler.emit.line(`const ${loopMetaVar} = runtime.createLoopBindings(${loopIndex}, ${loopLength}, ${isLast});`);
+    this.compiler.emit.line(`${loopMetaVar}.variables = ${JSON.stringify(loopVars)};`);
 
     const shouldAwaitLoopBody = sequentialLoopBody || hasConcurrencyLimit;
     const parentBufferArg = this.compiler.buffer.currentBuffer;
@@ -267,11 +268,9 @@ class CompileLoop {
           this.compiler.emit.line(';');
           whileErrorContext = this.compiler.emitErrorContext(whileConditionNode);
           this.compiler.emit('} catch (e) {');
-          if (poisonChains.length === 1) {
-            this.compiler.emit.line(`  ${this.compiler.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(runtime.contextualizeError(e, ${whileErrorContext}), ${whileErrorContext}), "${poisonChains[0]}");`);
-          } else if (poisonChains.length > 1) {
+          if (poisonChains.length > 0) {
             const contextualErrorVar = this.compiler._tmpid();
-            this.compiler.emit(`  const ${contextualErrorVar} = runtime.contextualizeError(e, ${whileErrorContext});`);
+            this.compiler.emit(`  const ${contextualErrorVar} = runtime.PoisonError.wrap(e, ${whileErrorContext});`);
             for (const chainName of poisonChains) {
               this.compiler.emit.line(`  ${this.compiler.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(${contextualErrorVar}, ${whileErrorContext}), "${chainName}");`);
             }

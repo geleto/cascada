@@ -3,7 +3,12 @@ import expect from 'expect.js';
 import {AsyncEnvironment} from '../../src/environment/environment.js';
 import * as runtime from '../../src/runtime/runtime.js';
 
-const {createPoison, isPoisonError} = runtime;
+const {createPoison, isPoisonError, PoisonError} = runtime;
+const TEST_EC = [1, 1, 'AsyncIterator.TestInput', 'phase4-async-iterator-errors.js', null];
+
+function createTestPoison(error) {
+  return createPoison(PoisonError.wrap(error, TEST_EC));
+}
 
 describe('Phase 4: Async Iterator Error Handling', () => {
   let env;
@@ -161,7 +166,7 @@ describe('Phase 4: Async Iterator Error Handling', () => {
   // Additional test: Verify runtime no longer poisons writes (Phase 2 does it)
   it('should not poison writes in runtime - compiler handles it', async () => {
     const context = {
-      getPoisonedArray: () => createPoison(new Error('Array evaluation failed'))
+      getPoisonedArray: () => createTestPoison(new Error('Array evaluation failed'))
     };
 
     const script = `
@@ -222,14 +227,12 @@ describe('Phase 4: Async Iterator Error Handling', () => {
 
   // Test 4.8: Generator yields PoisonError object directly (multiple soft errors)
   it('should collect errors when generator yields PoisonError and continue iteration', async () => {
-    const { PoisonError } = runtime;
-
     const context = {
       async *testGen() {
         yield 'a';
-        yield new PoisonError([
-          new Error('Multiple error 1'),
-          new Error('Multiple error 2')
+        yield PoisonError.group([
+          PoisonError.create('Multiple error 1', TEST_EC),
+          PoisonError.create('Multiple error 2', TEST_EC)
         ]);
         yield 'b';
       }

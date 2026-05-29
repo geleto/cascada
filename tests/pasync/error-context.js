@@ -3,17 +3,12 @@ import {
   CommandBuffer,
   ErrorCommand,
   PoisonError,
+  PoisonErrorGroup,
   RuntimeError,
-  RuntimeFatalError,
-  createPoison,
   declareBufferChain,
-  getErrorInfo,
-  contextualizeError,
   guard,
-  handleFatal,
   isPoison,
   memberLookupScript,
-  normalizeErrorContext,
   prepareErrorContexts,
   runControlFlowBoundary,
   runValueBoundary,
@@ -24,6 +19,9 @@ import {AsyncEnvironment} from '../../src/environment/async-environment.js';
 import {Script} from '../../src/environment/script.js';
 import {AsyncTemplate} from '../../src/environment/template.js';
 import {StringLoader} from '../util.js';
+
+const TEST_EC = [1, 1, 'Test', 'test.casc', null];
+const TEST_DIAGNOSTIC_CONTEXT = { ec: TEST_EC, branchName: 'test' };
 
 describe('error context tracing runtime foundation', () => {
   it('prepares compact contexts without mutating shared specs', () => {
@@ -56,57 +54,15 @@ describe('error context tracing runtime foundation', () => {
     expect(second[1]).not.to.be(prepared[1]);
   });
 
-  it('wraps errors with compact context metadata', () => {
-    const ec = [3, 7, 'If.Condition(LookupVal)', 'script.casc', null];
-    const wrapped = contextualizeError(new Error('bad condition'), ec);
+  it('requires compact context when constructing RuntimeError directly', () => {
+    const ec = [1, 1, 'Direct.RuntimeError', 'direct.casc', null];
+    const err = new RuntimeError('plain failure', ec);
 
-    expect(wrapped.message).to.contain('(script.casc) [Line 3, Column 7]');
-    expect(wrapped.message).to.contain('doing \'If.Condition(LookupVal)\'');
-    expect(wrapped.errorContext).to.eql(ec);
-    expect(wrapped.label).to.be('If.Condition(LookupVal)');
-  });
-
-  it('normalizes compact contexts', () => {
-    const reportError = () => {};
-
-    expect(normalizeErrorContext([1, 2, 'LookupVal', 'script.casc', reportError])).to.eql({
-      lineno: 1,
-      colno: 2,
-      label: 'LookupVal',
-      path: 'script.casc',
-      reportError
+    expect(err.message).to.contain('direct.casc');
+    expect(err.errorContext).to.eql(ec);
+    expect(() => new RuntimeError('missing context')).to.throwException((error) => {
+      expect(error.message).to.contain('compact error context');
     });
-    try {
-      normalizeErrorContext(null);
-      expect().fail('Expected normalizeErrorContext to reject null');
-    } catch (err) {
-      expect(err.message).to.contain('compact error context');
-    }
-  });
-
-  it('does not add source metadata when no context is present', () => {
-    const err = new RuntimeError('plain failure');
-
-    expect(err.message).to.equal('plain failure');
-    expect(err.errorContext).to.be(null);
-  });
-
-  it('preserves an existing error context over helper fallback context', () => {
-    const origin = [2, 4, 'FunCall', 'origin.casc', null];
-    const fallback = [9, 1, 'Output', 'consumer.casc', null];
-    const wrapped = contextualizeError(new Error('original failure'), origin);
-    const consumed = contextualizeError(wrapped, fallback);
-
-    expect(consumed).to.equal(wrapped);
-    expect(consumed.errorContext).to.eql(origin);
-    expect(getErrorInfo(consumed, fallback, null, false)).to.eql({
-      lineno: 2,
-      colno: 4,
-      path: 'origin.casc',
-      label: 'FunCall',
-      reportError: null
-    });
-    expect(getErrorInfo(consumed, fallback, null, true).stack).to.eql([]);
   });
 
   it('preserves existing context when RuntimeError wraps an error directly', () => {
@@ -122,65 +78,63 @@ describe('error context tracing runtime foundation', () => {
     expect(wrapped.message).to.contain('doing \'FunCall\'');
   });
 
-  it('stores context on PoisonError contents rather than the wrapper', () => {
+  it('stores source context on PoisonError and preserves it when grouped', () => {
     const origin = [2, 4, 'FunCall', 'origin.casc', null];
-    const fallback = [9, 1, 'Output', 'consumer.casc', null];
-    const poison = new PoisonError([new Error('poisoned')], origin);
+    const poison = PoisonError.create('poisoned', origin);
+    const grouped = new PoisonErrorGroup(poison);
 
-    const cloned = new PoisonError(poison, fallback);
-
-    expect(poison.errorContext).to.be(undefined);
-    expect(poison.errors[0].errorContext).to.eql(origin);
-    expect(cloned.errorContext).to.be(undefined);
-    expect(cloned.errors[0].errorContext).to.eql(origin);
+    expect(poison.errorContext).to.eql(origin);
+    expect(grouped.errorContext).to.eql(origin);
+    expect(grouped.errors[0]).to.be(poison);
   });
 
-  it('applies context precedence per PoisonError contained error', () => {
-    const origin = [4, 2, 'LookupVal', 'origin.casc', null];
-    const fallback = [8, 3, 'For.Iterator(Symbol)', 'consumer.casc', null];
-    const wrapped = contextualizeError(new Error('already wrapped'), origin);
+  it('requires existing poison errors when grouping', () => {
     const raw = new Error('raw');
-    const poison = new PoisonError([wrapped, raw]);
 
-    const handled = contextualizeError(poison, fallback);
-
-    expect(handled.errors[0].errorContext).to.eql(origin);
-    expect(handled.errors[1].errorContext).to.eql(fallback);
-    expect(handled.errors[1].message).to.contain('consumer.casc');
+    expect(() => PoisonError.group([raw])).to.throwException((error) => {
+      expect(error.message).to.contain('existing poison errors');
+    });
   });
 
-  it('does not wrap PoisonError contents when no context exists', () => {
-    const raw = new Error('raw');
-    const poison = new PoisonError([raw]);
-
-    const handled = contextualizeError(poison);
-
-    expect(handled.errors[0]).to.equal(raw);
-  });
-
-  it('createPoison accepts plural inputs and compact context', () => {
+  it('createPoison accepts ready poison errors only', () => {
     const ec = [5, 9, 'Switch.Expression(Symbol)', 'switch.casc', null];
-    const poison = createPoison([new Error('one'), 'two'], ec);
+    const poison = runtime.createPoison(PoisonError.create('one', ec));
 
     expect(isPoison(poison)).to.be(true);
-    expect(poison.errors).to.have.length(2);
+    expect(poison.errors).to.have.length(1);
     expect(poison.errors[0].errorContext).to.eql(ec);
-    expect(poison.errors[1].errorContext).to.eql(ec);
-    expect(poison.errors[1].message).to.contain('two');
   });
 
-  it('applies lookup context to promise input failures', async () => {
+  it('preserves promise input failure origin through lookup consumption', async () => {
     const ec = [8, 12, 'LookupVal', 'lookup.casc', null];
-    const buffer = new CommandBuffer({ path: 'lookup.casc' });
+    const origin = [3, 5, 'Origin', 'origin.casc', null];
+    const buffer = new CommandBuffer({ path: 'lookup.casc' }, null, null, null, null, { ec, branchName: 'lookup' });
+    const inputError = PoisonError.create('lookup failed', origin);
 
     try {
-      await memberLookupScript(Promise.reject(new Error('lookup failed')), 'name', ec, buffer);
+      await memberLookupScript(Promise.reject(inputError), 'name', ec, buffer);
       throw new Error('expected lookup failure');
     } catch (error) {
       const contextualError = error.errors ? error.errors[0] : error;
-      expect(contextualError.errorContext).to.eql(ec);
-      expect(contextualError.message).to.contain('lookup.casc');
-      expect(contextualError.message).to.contain('LookupVal');
+      expect(contextualError.errorContext).to.eql(origin);
+      expect(contextualError.message).to.contain('origin.casc');
+      expect(contextualError.message).to.contain('Origin');
+    }
+  });
+
+  it('uses the call-site context for errors thrown by user functions', async () => {
+    const env = new AsyncEnvironment();
+    env.addGlobal('fail', () => {
+      throw new Error('user poison');
+    });
+
+    try {
+      await env.renderTemplateString('{{ fail() }}');
+      throw new Error('expected poison failure');
+    } catch (error) {
+      expect(error.errors).to.have.length(1);
+      expect(error.errors[0].errorContext[2]).to.be('FunCall');
+      expect(error.errors[0].message).to.contain('FunCall');
     }
   });
 
@@ -201,36 +155,36 @@ describe('error context tracing runtime foundation', () => {
     expect(command.pos).to.be(undefined);
   });
 
-  it('RuntimeFatalError accepts compact context', () => {
+  it('RuntimeError accepts compact context', () => {
     const ec = [6, 10, 'Include.Template', 'include.casc', null];
-    const err = new RuntimeFatalError('include failed', ec, {});
+    const err = new RuntimeError('include failed', ec);
 
-    expect(err.name).to.be('RuntimeFatalError');
+    expect(err.name).to.be('RuntimeError');
     expect(err.errorContext).to.eql(ec);
     expect(err.message).to.contain('(include.casc) [Line 6, Column 10]');
     expect(err.message).to.contain('doing \'Include.Template\'');
   });
 
-  it('handleFatal reports through context callback when present', () => {
-    let reported = null;
-    const reportError = err => {
-      reported = err;
+  it('RuntimeError merges buffer stack metadata with compact context', () => {
+    const ec = [8, 2, 'For', 'loop.casc', null];
+    const bufferStackContext = {
+      ec,
+      branchName: 'body',
+      loop: { index: 1, variables: ['item'] }
     };
-    const ec = [7, 2, 'AsyncBoundary', 'fatal.casc', reportError];
+    const err = RuntimeError.create('loop failed', bufferStackContext);
+    const info = err.getInfo();
 
-    const wrapped = handleFatal(new Error('fatal failure'), ec);
-
-    expect(reported).to.equal(wrapped);
-    expect(wrapped.errorContext).to.eql(ec);
-    expect(wrapped.message).to.contain('fatal.casc');
-  });
-
-  it('handleFatal throws when no context callback is present', () => {
-    const ec = [7, 2, 'AsyncBoundary', 'fatal.casc', null];
-
-    expect(() => handleFatal(new Error('fatal failure'), ec)).to.throwException(err => {
-      expect(err.errorContext).to.eql(ec);
-      expect(err.message).to.contain('fatal.casc');
+    expect(err.errorContext).to.eql(ec);
+    expect(err.context.branchName).to.be('body');
+    expect(err.context.loop).to.eql({ index: 1, variables: ['item'] });
+    expect(info).to.eql({
+      lineno: 8,
+      colno: 2,
+      path: 'loop.casc',
+      label: 'For',
+      branchName: 'body',
+      loop: { index: 1, variables: ['item'] }
     });
   });
 
@@ -257,9 +211,7 @@ describe('error context tracing runtime foundation', () => {
       branchName: 'if-block'
     });
 
-    const info = getErrorInfo(new Error('failure'), opEc, buffer, false);
-
-    expect(info.buffer).to.eql({
+    expect(buffer.getDiagnosticContext()).to.eql({
       lineno: 3,
       colno: 4,
       path: 'script.casc',
@@ -283,16 +235,15 @@ describe('error context tracing runtime foundation', () => {
       first: false,
       last: false,
       revindex: 2,
-      revindex0: 1
+      revindex0: 1,
+      variables: ['item']
     };
     const child = new CommandBuffer({ path: 'script.casc' }, root, null, null, null, {
       ec: childEc,
       loop
     });
 
-    const info = getErrorInfo(new Error('failure'), childEc, child, true);
-
-    expect(info.stack).to.eql([
+    expect(child.getDiagnosticStack()).to.eql([
       {
         lineno: 5,
         colno: 2,
@@ -322,9 +273,7 @@ describe('error context tracing runtime foundation', () => {
       branchName: 'renderCard'
     }, root);
 
-    const info = getErrorInfo(new Error('failure'), macroEc, macro, true);
-
-    expect(info.stack.map(frame => frame.branchName)).to.eql(['renderCard', 'root']);
+    expect(macro.getDiagnosticStack().map(frame => frame.branchName)).to.eql(['renderCard', 'root']);
   });
 
   it('prefers traceParent over parent when building command-buffer stack', () => {
@@ -344,13 +293,100 @@ describe('error context tracing runtime foundation', () => {
       branchName: 'method'
     }, caller);
 
-    const info = getErrorInfo(new Error('failure'), methodEc, method, true);
-
-    expect(info.stack.map(frame => frame.branchName)).to.eql(['method', 'caller']);
+    expect(method.getDiagnosticStack().map(frame => frame.branchName)).to.eql(['method', 'caller']);
   });
 
-  it('stores buffer branch context on runtime value boundaries', async () => {
-    const root = new CommandBuffer({ path: 'script.casc' });
+  it('outputs actual compiled boundary metadata in one stack', async () => {
+    const originalAddCommand = CommandBuffer.prototype.addCommand;
+    const markerBuffers = [];
+    CommandBuffer.prototype.addCommand = function(command, chainName) {
+      if (command instanceof runtime.TextCommand &&
+        command.errorContext &&
+        command.errorContext[2] === 'Symbol' &&
+        this.bufferStackContext) {
+        markerBuffers.push(this);
+      }
+      return originalAddCommand.call(this, command, chainName);
+    };
+
+    try {
+      const env = new AsyncEnvironment();
+      const output = await env.renderTemplateString(
+        '{% macro wrap() %}{{ caller() }}{% endmacro %}' +
+        '{% call wrap() %}' +
+        '{% for item in items %}' +
+        '{% if item.ok %}{{ marker }}{% endif %}' +
+        '{% endfor %}' +
+        '{% endcall %}',
+        {
+          items: [{ ok: true }],
+          marker: Promise.resolve('STACK_MARKER')
+        }
+      );
+
+      expect(output).to.be('STACK_MARKER');
+    } finally {
+      CommandBuffer.prototype.addCommand = originalAddCommand;
+    }
+
+    const markerBuffer = markerBuffers[markerBuffers.length - 1];
+    const stack = markerBuffer.getDiagnosticStack();
+
+    expect(stack).to.eql([
+      {
+        lineno: 1,
+        colno: 96,
+        path: null,
+        label: 'If.Condition(LookupVal)'
+      },
+      {
+        lineno: 1,
+        colno: 66,
+        path: null,
+        label: 'For',
+        loop: {
+          index: 1,
+          index0: 0,
+          first: true,
+          length: 1,
+          last: true,
+          revindex: 1,
+          revindex0: 0,
+          variables: ['item']
+        }
+      },
+      {
+        lineno: 1,
+        colno: 66,
+        path: null,
+        label: 'For'
+      },
+      {
+        lineno: 1,
+        colno: 27,
+        path: null,
+        label: 'FunCall',
+        branchName: 'caller'
+      },
+      {
+        lineno: 1,
+        colno: 3,
+        path: null,
+        label: 'Macro',
+        branchName: 'caller'
+      },
+      {
+        lineno: 1,
+        colno: 0,
+        path: null,
+        label: 'Root',
+        branchName: 'root'
+      }
+    ]);
+  });
+
+  it('stores buffer stack context on runtime value boundaries', async () => {
+    const root = new CommandBuffer({ path: 'script.casc' }, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
     const boundaryEc = [11, 6, 'FunCall', 'script.casc', null];
     let child = null;
 
@@ -359,14 +395,14 @@ describe('error context tracing runtime foundation', () => {
     }, { ec: boundaryEc, loadName: 'include source@(11,6)' });
 
     expect(child.traceParent).to.be(root);
-    expect(child.bufferBranchContext).to.eql({
+    expect(child.bufferStackContext).to.eql({
       ec: boundaryEc,
       loadName: 'include source@(11,6)'
     });
   });
 
-  it('stores buffer branch context on runtime control-flow boundaries', async () => {
-    const root = new CommandBuffer({ path: 'script.casc' });
+  it('stores buffer stack context on runtime control-flow boundaries', async () => {
+    const root = new CommandBuffer({ path: 'script.casc' }, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
     const boundaryEc = [12, 3, 'If.Condition(Symbol)', 'script.casc', null];
     let child = null;
 
@@ -377,7 +413,7 @@ describe('error context tracing runtime foundation', () => {
     }, { ec: boundaryEc, branch: 'then' });
 
     expect(child.traceParent).to.be(root);
-    expect(child.bufferBranchContext).to.eql({
+    expect(child.bufferStackContext).to.eql({
       ec: boundaryEc,
       branch: 'then'
     });
@@ -385,15 +421,15 @@ describe('error context tracing runtime foundation', () => {
 
   it('requires source context on command-buffer error commands', () => {
     const ec = [13, 2, 'Guard.Condition(Symbol)', 'script.casc', null];
-    const command = new ErrorCommand([new Error('guard failed')], ec);
+    const command = new ErrorCommand(PoisonError.create('guard failed', ec), ec);
 
     expect(command.errorContext).to.eql(ec);
-    expect(() => new ErrorCommand([new Error('guard failed')])).to.throwError(/ErrorCommand requires a compact errorContext/);
-    expect(() => new ErrorCommand(null, ec)).to.throwError(/ErrorCommand requires errors/);
+    expect(() => new ErrorCommand(PoisonError.create('guard failed', ec))).to.throwError(/ErrorCommand requires a compact errorContext/);
+    expect(() => new ErrorCommand(null, ec)).to.throwError(/PoisonError\.group expects existing poison errors/);
   });
 
   it('requires source context for direct text chain invocation', () => {
-    const buffer = new CommandBuffer({ path: 'script.casc' });
+    const buffer = new CommandBuffer({ path: 'script.casc' }, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
     const text = declareBufferChain(buffer, 'text', 'text', { path: 'script.casc' }, null);
     const ec = [14, 4, 'Output(Symbol)', 'script.casc', null];
 
@@ -403,7 +439,7 @@ describe('error context tracing runtime foundation', () => {
   });
 
   it('requires source context for guard command helpers', () => {
-    const buffer = new CommandBuffer({ path: 'script.casc' });
+    const buffer = new CommandBuffer({ path: 'script.casc' }, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
     declareBufferChain(buffer, 'text', 'text', { path: 'script.casc' }, null);
 
     expect(() => guard.initChainSnapshots(['text'], buffer, null)).to.throwError(/guard\.initChainSnapshots requires a compact errorContext/);
@@ -424,9 +460,9 @@ describe('error context tracing runtime foundation', () => {
         'return result.snapshot()'
       ].join('\n'), env, 'context-table.casc').compileSource();
 
-      expect(source).to.contain('const __ec = getErrorContexts(runtime, context.path, reportError);');
-      expect(source).to.contain('function getErrorContexts(runtime, path, reportError) {');
-      expect(source).to.contain('return runtime.prepareErrorContexts(path, reportError,');
+      expect(source).to.contain('const __ec = getErrorContexts(runtime, context.path, renderState);');
+      expect(source).to.contain('function getErrorContexts(runtime, path, renderState) {');
+      expect(source).to.contain('return runtime.prepareErrorContexts(path, renderState,');
       expect(source).to.contain('"If.Condition(Symbol)"');
       expect(source).to.match(/\[3,7,\d+\]/);
       expect(source).to.match(/\[6,7,\d+\]/);
@@ -470,7 +506,7 @@ describe('error context tracing runtime foundation', () => {
       ].join('\n'), env, 'block-context.njk').compileSource();
 
       expect(source.match(/runtime\.prepareErrorContexts/g)).to.have.length(1);
-      expect(source).to.contain('const __ec = getErrorContexts(runtime, context.path, reportError);');
+      expect(source).to.contain('const __ec = getErrorContexts(runtime, context.path, renderState);');
       expect(source).to.match(/function b_body\(env, context, runtime, renderState, parentBuffer = null.*currentInstance\)/);
       expect(source).not.to.contain('__ec = null');
       expect(source).to.contain('methodData.errorContextTable[');
@@ -541,6 +577,7 @@ describe('error context tracing runtime foundation', () => {
         env,
         context: child._createContext({ name: 'Ada' }),
         runtime,
+        errorContext: [1, 0, 'Inheritance', 'child.script', null],
         renderState: runtime.createRenderState()
       });
       const result = await instance.invoke('build', ['Ada'], [1, 0, 'Call', 'test.script', null]);

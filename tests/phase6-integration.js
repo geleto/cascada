@@ -3,7 +3,9 @@ import expect from 'expect.js';
 import {AsyncEnvironment} from '../src/environment/environment.js';
 import * as runtime from '../src/runtime/runtime.js';
 
-const {createPoison, isPoisonError} = runtime;
+const {createPoison, isPoisonError, PoisonError} = runtime;
+const TEST_EC = [1, 1, 'LoopPoisonIntegration.TestInput', 'phase6-integration.js', null];
+const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC));
 
 describe('Phase 6: Loop Poison Integration', () => {
   let env;
@@ -24,7 +26,7 @@ describe('Phase 6: Loop Poison Integration', () => {
 
         return result`;
 
-      env.addGlobal('getPoisoned', () => createPoison(new Error('Sync poison')));
+      env.addGlobal('getPoisoned', () => createTestPoison(new Error('Sync poison')));
 
       try {
         await env.renderScriptString(script);
@@ -115,7 +117,7 @@ describe('Phase 6: Loop Poison Integration', () => {
         return result.snapshot()`;
 
       env.addGlobal('getPoisonedData', () => {
-        return createPoison(new Error('Data fetch failed'));
+        return createTestPoison(new Error('Data fetch failed'));
       });
 
       try {
@@ -167,7 +169,7 @@ describe('Phase 6: Loop Poison Integration', () => {
         return result`;
 
       env.addGlobal('getPoisonedArray', () => {
-        return createPoison(new Error('Outer loop poisoned'));
+        return createTestPoison(new Error('Outer loop poisoned'));
       });
 
       try {
@@ -192,7 +194,7 @@ describe('Phase 6: Loop Poison Integration', () => {
         return result`;
 
       env.addGlobal('poisonOnSecond', function (n) {
-        return n === 2 ? createPoison(new Error('Inner poisoned')) : [1, 2, 3];
+        return n === 2 ? createTestPoison(new Error('Inner poisoned')) : [1, 2, 3];
       });
 
       try {
@@ -219,7 +221,7 @@ describe('Phase 6: Loop Poison Integration', () => {
 
       env.addGlobal('softErrorGen', async function* () {
         yield 1;
-        yield createPoison(new Error('Soft error'));
+        yield createTestPoison(new Error('Soft error'));
         yield 2;
       });
 
@@ -271,7 +273,7 @@ describe('Phase 6: Loop Poison Integration', () => {
         return result`;
 
       env.addGlobal('getPoisoned', () => {
-        return createPoison(new Error('Array evaluation failed'));
+        return createTestPoison(new Error('Array evaluation failed'));
       });
 
       try {
@@ -319,7 +321,7 @@ describe('Phase 6: Loop Poison Integration', () => {
         Total: {{ total }}
       `;
 
-      env.addGlobal('getPoisoned', () => createPoison(new Error('Poisoned')));
+      env.addGlobal('getPoisoned', () => createTestPoison(new Error('Poisoned')));
 
       try {
         await env.renderTemplateString(template);
@@ -345,7 +347,7 @@ describe('Phase 6: Loop Poison Integration', () => {
 
         return result.snapshot()`;
 
-      env.addGlobal('getPoisoned', () => createPoison(new Error('Failed')));
+      env.addGlobal('getPoisoned', () => createTestPoison(new Error('Failed')));
 
       try {
         await env.renderScriptString(script);

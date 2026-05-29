@@ -1,9 +1,14 @@
 
 import expect from 'expect.js';
 import {AsyncEnvironment} from '../../src/environment/environment.js';
-import {createPoison, isPoisonError} from '../../src/runtime/runtime.js';
+import {createPoison, isPoisonError, PoisonError} from '../../src/runtime/runtime.js';
 
 (function () {
+  const TEST_EC = [1, 1, 'Iterator.TestInput', 'poison-iterator.njk', null];
+
+  function createTestPoison(error) {
+    return createPoison(PoisonError.wrap(error, TEST_EC));
+  }
 
   describe('Iterator Functions Poison Handling - Integration tests (basic)', () => {
     let env;
@@ -85,7 +90,7 @@ import {createPoison, isPoisonError} from '../../src/runtime/runtime.js';
     // Replaces: 'iterate - poisoned iterable' -> 'should poison branch writes when array is poisoned'
     it('should poison variables written inside a loop over a poisoned iterable', async () => {
       const context = {
-        poisonedItems: createPoison(new Error('Iterable is poisoned'))
+        poisonedItems: createTestPoison(new Error('Iterable is poisoned'))
       };
       const template = `
         {% set total = 0 %}
@@ -108,7 +113,7 @@ import {createPoison, isPoisonError} from '../../src/runtime/runtime.js';
     // Replaces: 'iterate - poisoned iterable' -> 'should execute else branch when iterable is poisoned'
     it('should execute the else block for a loop over a poisoned iterable', async () => {
       const context = {
-        poisonedItems: createPoison(new Error('Iterable is poisoned'))
+        poisonedItems: createTestPoison(new Error('Iterable is poisoned'))
       };
       const template = `
         {% for item in poisonedItems %}
@@ -197,7 +202,7 @@ import {createPoison, isPoisonError} from '../../src/runtime/runtime.js';
     // Replaces: 'iterate - poisoned iterable' -> 'should handle object iteration when object is poisoned'
     it('should poison body if iterating a poisoned object', async () => {
       const context = {
-        poisonedObject: createPoison(new Error('Object is poisoned'))
+        poisonedObject: createTestPoison(new Error('Object is poisoned'))
       };
       const template = `
         {% for key, value in poisonedObject %}
@@ -267,9 +272,9 @@ import {createPoison, isPoisonError} from '../../src/runtime/runtime.js';
       } catch (err) {
         expect(isPoisonError(err)).to.be(true);
         expect(err.errors).to.have.length(2);
-        const messages = err.errors.map(e => e.message).sort();
-        expect(messages[0]).to.contain('Rejected promise error');
-        expect(messages[1]).to.contain('Yielded poison error');
+        const messages = err.errors.map(e => e.message);
+        expect(messages.some(message => message.includes('Rejected promise error'))).to.be(true);
+        expect(messages.some(message => message.includes('Yielded poison error'))).to.be(true);
       }
     });
 
@@ -279,7 +284,7 @@ import {createPoison, isPoisonError} from '../../src/runtime/runtime.js';
         items: ['A', 'B', 'C'],
         processItem(item) {
           if (item === 'B') {
-            return createPoison(new Error('Item B is invalid'));
+            return createTestPoison(new Error('Item B is invalid'));
           }
           return item;
         }
@@ -402,9 +407,9 @@ import {createPoison, isPoisonError} from '../../src/runtime/runtime.js';
       } catch (err) {
         expect(isPoisonError(err)).to.be(true);
         expect(err.errors).to.have.length(2);
-        const messages = err.errors.map(e => e.message).sort();
-        expect(messages[0]).to.contain('Iterator failure after progress');
-        expect(messages[1]).to.contain('Soft failure during iteration');
+        const messages = err.errors.map(e => e.message);
+        expect(messages.some(message => message.includes('Iterator failure after progress'))).to.be(true);
+        expect(messages.some(message => message.includes('Soft failure during iteration'))).to.be(true);
         expect(flags.elseTriggered).to.be(false);
       }
     });
@@ -532,13 +537,13 @@ import {createPoison, isPoisonError} from '../../src/runtime/runtime.js';
     });
 
     // Replaces: 'Error deduplication' -> identical instance should be deduped
-    it('should not deduplicate errors when the exact same error instance is yielded multiple times', async () => {
+    it('should deduplicate the exact same error instance yielded multiple times', async () => {
       const sameError = new Error('This error should only appear once');
       const context = {
         items: [
-          createPoison(sameError),
+          createTestPoison(sameError),
           'good item',
-          createPoison(sameError)
+          createTestPoison(sameError)
         ]
       };
       const template = `{% for item in items %}{{item}}{% endfor %}`;
@@ -548,7 +553,7 @@ import {createPoison, isPoisonError} from '../../src/runtime/runtime.js';
         expect().fail('Render should have thrown a PoisonError');
       } catch (err) {
         expect(isPoisonError(err)).to.be(true);
-        expect(err.errors).to.have.length(2);
+        expect(err.errors).to.have.length(1);
         expect(err.errors[0].message).to.contain('This error should only appear once');
       }
     });
@@ -557,8 +562,8 @@ import {createPoison, isPoisonError} from '../../src/runtime/runtime.js';
     it('should treat distinct error instances as separate entries', async () => {
       const context = {
         items: [
-          createPoison(new Error('Same message')),
-          createPoison(new Error('Same message'))
+          createTestPoison(new Error('Same message')),
+          createTestPoison(new Error('Same message'))
         ]
       };
       const template = `{% for item in items %}{{item}}{% endfor %}`;

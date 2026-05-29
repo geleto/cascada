@@ -1,7 +1,8 @@
 
-import {extend, keys, TemplateError, indexOf} from '../lib.js';
+import {extend, keys, indexOf} from '../lib.js';
+import {CompileError} from '../errors.js';
 import {Obj} from '../object.js';
-import {createPoison, markPromiseHandled} from '../runtime/errors.js';
+import {createPoison, markPromiseHandled, PoisonError} from '../runtime/errors.js';
 
 class ContextExecutionState {
   constructor() {
@@ -58,7 +59,7 @@ class Context extends Obj {
   }
 
   //if the variable is not found, returns a poison value
-  lookupScript(name, errorContext = null) {
+  lookupScript(name, errorContext) {
     // This is one of the most called functions, so optimize for
     // the typical case where the name isn't in the globals
     if (name in this.env.globals && !(name in this.ctx)) {
@@ -67,10 +68,10 @@ class Context extends Obj {
       if (name in this.ctx) {
         return this.ctx[name];
       } else {
-        return createPoison(
-          new Error(`Can not look up unknown variable/function: ${name}`),
+        return createPoison(PoisonError.create(
+          `Can not look up unknown variable/function: ${name}`,
           errorContext
-        );
+        ));
       }
     }
   }
@@ -124,7 +125,7 @@ class Context extends Obj {
       return `${name}(${args})`;
     };
 
-    throw new TemplateError(
+    throw new CompileError(
       `block "${name}" signature mismatch: overriding block declares ${formatContract(overridingContract)} but parent declares ${formatContract(parentContract)}`
     );
   }

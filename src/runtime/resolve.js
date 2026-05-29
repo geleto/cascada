@@ -67,7 +67,7 @@ function normalizeFinalPromise(value) {
     return unwrapResolvedValue(value);
   }
   if (isPoison(value)) {
-    return Promise.reject(new PoisonError(value.errors));
+    return Promise.reject(PoisonError.group(value.errors));
   }
   if (value && typeof value.then === 'function') {
     return Promise.resolve(value).then((resolved) => normalizeFinalPromise(resolved));
@@ -106,7 +106,7 @@ function needsResolution(value) {
 function resolveSingleAsArray(arg) {
   const value = unwrapResolvedValue(arg);
   if (isPoison(value)) {
-    return createPoison(value.errors);
+    return value;
   }
   if (needsResolution(value)) {
     return resolveAllAsync([arg]);
@@ -134,7 +134,7 @@ function resolveDuoAsArray(leftArg, rightArg) {
   }
 
   if (syncErrors.length > 0) {
-    return createPoison(syncErrors);
+    return createPoison(PoisonError.group(syncErrors));
   }
 
   return makeResolvedValue([left, right]);
@@ -157,7 +157,7 @@ function resolveMany(args) {
   }
 
   if (syncErrors.length > 0) {
-    return createPoison(syncErrors);
+    return createPoison(PoisonError.group(syncErrors));
   }
 
   return makeResolvedValue(resolvedArgs);
@@ -167,7 +167,7 @@ async function resolveAllAsync(args) {
   const errors = await collectErrors(args);
 
   if (errors.length > 0) {
-    return createPoison(errors); // Errors already have position info from collectErrors
+    return createPoison(PoisonError.group(errors)); // Errors already have position info from collectErrors
   }
 
   // No errors - proceed with normal resolution (unwrapping)
@@ -200,7 +200,7 @@ async function resolveValueAndMarkerAsync(value) {
       resolved = await resolved;
     } catch (err) {
       if (isPoisonError(err)) {
-        return createPoison(err.errors);
+        return createPoison(err);
       }
       throw err;
     }
@@ -211,7 +211,7 @@ async function resolveValueAndMarkerAsync(value) {
       await resolved[RESOLVE_MARKER];
     } catch (err) {
       if (isPoisonError(err)) {
-        return createPoison(err.errors);
+        return createPoison(err);
       }
       throw err;
     }
@@ -236,7 +236,7 @@ async function resolveObjectPropertiesAsync(marked) {
     await marked[RESOLVE_MARKER];
   } catch (err) {
     if (isPoisonError(err)) {
-      return createPoison(err.errors);
+      return createPoison(err);
     }
     throw err;
   }
@@ -285,9 +285,9 @@ async function resolveSingleAsync(value) {
   } catch (err) {
     // Note: This is called from various contexts; error position added upstream
     if (isPoisonError(err)) {
-      return createPoison(err.errors);
+      return createPoison(err);
     }
-    return createPoison(err);
+    throw err;
   }
 
   // Check if resolved to poison
@@ -300,9 +300,9 @@ async function resolveSingleAsync(value) {
       await resolvedValue[RESOLVE_MARKER];
     } catch (err) {
       if (isPoisonError(err)) {
-        return createPoison(err.errors);
+        return createPoison(err);
       }
-      return createPoison(err);
+      throw err;
     }
   }
 
@@ -330,7 +330,7 @@ async function _resolveSingleArrAsync(value) {
     return [resolved];
   } catch (err) {
     if (isPoisonError(err)) {
-      return createPoison(err.errors);
+      return createPoison(err);
     }
     throw err;
   }
@@ -392,7 +392,7 @@ function createObject(obj) {
       const errors = await collectErrors(promises);
 
       if (errors.length > 0) {
-        throw new PoisonError(errors);
+        throw PoisonError.group(errors);
       }
 
       // All dependencies successful. Apply values.
@@ -403,14 +403,20 @@ function createObject(obj) {
             try {
               obj[key] = await val;
             } catch (e) {
-              throw new PoisonError([e]);
+              if (isPoisonError(e)) {
+                throw e;
+              }
+              throw e;
             }
           } else if (val[RESOLVE_MARKER]) {
             try {
               await val[RESOLVE_MARKER];
               // Note: child object is mutated in place by its own resolver
             } catch (e) {
-              throw new PoisonError([e]);
+              if (isPoisonError(e)) {
+                throw e;
+              }
+              throw e;
             }
           }
         }
@@ -458,7 +464,7 @@ function createArray(arr) {
     const resolver = (async () => {
       const errors = await collectErrors(promises);
       if (errors.length > 0) {
-        throw new PoisonError(errors);
+        throw PoisonError.group(errors);
       }
 
       for (let i = 0; i < arr.length; i++) {
@@ -468,13 +474,19 @@ function createArray(arr) {
             try {
               arr[i] = await val;
             } catch (e) {
-              throw new PoisonError([e]);
+              if (isPoisonError(e)) {
+                throw e;
+              }
+              throw e;
             }
           } else if (val[RESOLVE_MARKER]) {
             try {
               await val[RESOLVE_MARKER];
             } catch (e) {
-              throw new PoisonError([e]);
+              if (isPoisonError(e)) {
+                throw e;
+              }
+              throw e;
             }
           }
         }

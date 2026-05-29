@@ -1,30 +1,30 @@
-export type TemplateCallback<T> = (err: TemplateError | null, res: T | null) => void;
+export type RenderCallback<T> = (err: CascadaRenderError | Error | null, res: T | null) => void;
 export type Callback<E, T> = (err: E | null, res: T | null) => void;
 
 /** @deprecated Use renderTemplate instead */
 export function render(name: string, context?: object): string;
 /** @deprecated Use renderTemplate instead */
-export function render(name: string, callback: TemplateCallback<string>): void;
+export function render(name: string, callback: RenderCallback<string>): void;
 /** @deprecated Use renderTemplate instead */
-export function render(name: string, context: object, callback?: TemplateCallback<string>): void;
+export function render(name: string, context: object, callback?: RenderCallback<string>): void;
 
 /** @deprecated Use renderTemplateAsync instead */
 export function renderAsync(name: string, context?: object): Promise<string>;
 
 export function renderTemplate(name: string, context?: object): string;
-export function renderTemplate(name: string, callback: TemplateCallback<string>): void;
-export function renderTemplate(name: string, context: object, callback?: TemplateCallback<string>): void;
+export function renderTemplate(name: string, callback: RenderCallback<string>): void;
+export function renderTemplate(name: string, context: object, callback?: RenderCallback<string>): void;
 
 /** @deprecated Use renderTemplateString instead */
 export function renderString(src: string, context?: object): string;
 /** @deprecated Use renderTemplateString instead */
-export function renderString(src: string, callback: TemplateCallback<string>): void;
+export function renderString(src: string, callback: RenderCallback<string>): void;
 /** @deprecated Use renderTemplateString instead */
-export function renderString(src: string, context: object, callback?: TemplateCallback<string>): void;
+export function renderString(src: string, context: object, callback?: RenderCallback<string>): void;
 
 export function renderTemplateString(src: string, context?: object): string;
-export function renderTemplateString(src: string, callback: TemplateCallback<string>): void;
-export function renderTemplateString(src: string, context: object, callback?: TemplateCallback<string>): void;
+export function renderTemplateString(src: string, callback: RenderCallback<string>): void;
+export function renderTemplateString(src: string, context: object, callback?: RenderCallback<string>): void;
 export function renderTemplateStringAsync(src: string, context?: object): Promise<string>;
 export function renderScriptString(src: string, context?: object): Promise<Record<string, any> | string | null>;
 
@@ -78,8 +78,8 @@ export class Template {
   constructor(src: string, env?: Environment, path?: string, eagerCompile?: boolean);
   compileSource(): string;
   render(context?: object): string;
-  render(callback: TemplateCallback<string>): void;
-  render(context: object, callback?: TemplateCallback<string>): void;
+  render(callback: RenderCallback<string>): void;
+  render(context: object, callback?: RenderCallback<string>): void;
 }
 
 export class Script {
@@ -134,27 +134,27 @@ export class Environment {
   /** @deprecated Use renderTemplate instead */
   render(name: string, context?: object): string;
   /** @deprecated Use renderTemplate instead */
-  render(name: string, callback: TemplateCallback<string>): void;
+  render(name: string, callback: RenderCallback<string>): void;
   /** @deprecated Use renderTemplate instead */
-  render(name: string, context: object, callback?: TemplateCallback<string>): void;
+  render(name: string, context: object, callback?: RenderCallback<string>): void;
 
   renderTemplate(name: string, context?: object): string;
-  renderTemplate(name: string, callback: TemplateCallback<string>): void;
-  renderTemplate(name: string, context: object, callback?: TemplateCallback<string>): void;
+  renderTemplate(name: string, callback: RenderCallback<string>): void;
+  renderTemplate(name: string, context: object, callback?: RenderCallback<string>): void;
 
   /** @deprecated Use renderTemplateString instead */
   renderString(src: string, context?: object, opts?: RenderOptions): string;
   /** @deprecated Use renderTemplateString instead */
-  renderString(src: string, callback: TemplateCallback<string>): void;
+  renderString(src: string, callback: RenderCallback<string>): void;
   /** @deprecated Use renderTemplateString instead */
-  renderString(src: string, context: object, callback: TemplateCallback<string>): void;
+  renderString(src: string, context: object, callback: RenderCallback<string>): void;
   /** @deprecated Use renderTemplateString instead */
-  renderString(src: string, context: object, opts: RenderOptions, callback: TemplateCallback<string>): void;
+  renderString(src: string, context: object, opts: RenderOptions, callback: RenderCallback<string>): void;
 
   renderTemplateString(src: string, context?: object, opts?: RenderOptions): string;
-  renderTemplateString(src: string, callback: TemplateCallback<string>): void;
-  renderTemplateString(src: string, context: object, callback: TemplateCallback<string>): void;
-  renderTemplateString(src: string, context: object, opts: RenderOptions, callback: TemplateCallback<string>): void;
+  renderTemplateString(src: string, callback: RenderCallback<string>): void;
+  renderTemplateString(src: string, context: object, callback: RenderCallback<string>): void;
+  renderTemplateString(src: string, context: object, opts: RenderOptions, callback: RenderCallback<string>): void;
 
   addFilter(name: string, func: (...args: any[]) => any, async?: boolean): Environment;
   getFilter(name: string): (...args: any[]) => any;
@@ -355,14 +355,68 @@ export class SafeString {
 
 export function markSafe(val: string): SafeString;
 
-export class TemplateError extends Error {
-  constructor(message: string, lineno: number, colno: number);
+export interface CompileErrorOptions {
+  lineno?: number | null;
+  colno?: number | null;
+  label?: string | null;
+  path?: string | null;
+  cause?: Error | null;
+}
 
-  name: string; // always 'Template render error'
+export class CascadaError extends Error {
   message: string;
   stack: string;
-
-  cause?: Error | undefined;
-  lineno: number;
-  colno: number;
+  lineno: number | null;
+  colno: number | null;
+  path: string | null;
+  label: string | null;
 }
+
+export class CompileError extends CascadaError {
+  constructor(message: string, options?: CompileErrorOptions);
+
+  name: string; // always 'CompileError'
+  cause?: Error | undefined;
+}
+
+export type CompactErrorContext = [
+  lineno: number | null,
+  colno: number | null,
+  label: string | null,
+  path: string | null,
+  reportError: ((error: Error) => void) | null
+];
+
+export class RuntimeError extends CascadaError {
+  constructor(cause: string | Error, errorContext: CompactErrorContext);
+
+  name: string; // always 'RuntimeError' or 'RuntimeError: <cause.name>'
+  cause?: Error | undefined;
+  errorContext: CompactErrorContext;
+}
+
+export class PoisonError extends CascadaError {
+  constructor(cause: unknown, errorContext: CompactErrorContext);
+
+  static create(
+    errors: unknown | unknown[] | PoisonError | PoisonError[] | PoisonErrorGroup,
+    errorContext?: CompactErrorContext
+  ): CascadaPoisonError;
+
+  errors: [PoisonError];
+  cause: Error;
+  errorContext: CompactErrorContext;
+}
+
+export class PoisonErrorGroup extends CascadaError {
+  constructor(errors: PoisonError | PoisonError[] | Error | Error[], errorContext: CompactErrorContext);
+
+  name: string; // always 'PoisonErrorGroup'
+  errors: PoisonError[];
+}
+
+export type CascadaPoisonError = PoisonError | PoisonErrorGroup;
+export type CascadaRenderError = CompileError | RuntimeError | CascadaPoisonError;
+
+export function isPoisonError(error: unknown): error is CascadaPoisonError;
+export function isRuntimeError(error: unknown): error is RuntimeError;

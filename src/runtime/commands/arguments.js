@@ -1,9 +1,8 @@
 import {
   isPoison,
-  isPoisonError,
-  isRuntimeFatalError,
+  isRuntimeError,
+  PoisonError,
   createPoison,
-  contextualizeError,
   markPromiseHandled,
 } from '../errors.js';
 import {RESOLVE_MARKER, isResolvedValue, unwrapResolvedValue} from '../resolve.js';
@@ -108,13 +107,10 @@ async function runWithResolvedArgumentsAsync(value, cmd, chain, applyFn) {
 
 function classifyCommandArgumentFailure(chain, cmd, err) {
   void chain;
-  const errors = isPoisonError(err) ? err.errors : [err];
-  const contextualized = errors.map((item) => contextualizeError(item, cmd.errorContext));
-  const fatalRuntimeError = contextualized.find((item) => isRuntimeFatalError(item));
-  if (fatalRuntimeError) {
-    throw fatalRuntimeError;
+  if (isRuntimeError(err)) {
+    throw err;
   }
-  return createPoison(contextualized);
+  return createPoison(PoisonError.wrap(err, cmd.errorContext));
 }
 
 function isHandledDeferredPromise(value) {

@@ -106,27 +106,26 @@ class ChainCommand extends MutatingCommand {
     this.errorContext = requireCommandErrorContext(errorContext, this.constructor.name);
   }
 
-  extractPoisonFromArgs(args = this.arguments) {
-    if (isPoison(args) && Array.isArray(args.errors) && args.errors.length > 0) {
-      return args.errors.slice();
+  getPoisonFromArgs(args = this.arguments) {
+    if (isPoison(args)) {
+      return PoisonError.group(args.errors);
     }
-    if (!Array.isArray(args)) return [];
+    if (!Array.isArray(args)) return null;
     const errors = [];
     for (const arg of args) {
-      if (isPoison(arg) && Array.isArray(arg.errors) && arg.errors.length > 0) {
+      if (isPoison(arg)) {
         errors.push(...arg.errors);
       }
     }
-    return errors;
+    return errors.length > 0 ? PoisonError.group(errors) : null;
   }
 
-  toPoisonValue(errors) {
-    return createPoison(errors);
+  toPoisonValue(poisonError) {
+    return createPoison(poisonError);
   }
 
   getError() {
-    const errors = this.extractPoisonFromArgs();
-    return errors.length > 0 ? new PoisonError(errors) : null;
+    return this.getPoisonFromArgs();
   }
 
   apply(ctx) {

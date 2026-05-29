@@ -140,7 +140,7 @@ Everything inside Cascada can be either a plain value or a promise for that valu
 Runtime value shapes:
 -   **Promises / `RuntimePromise`**: deferred values flowing through expressions, command arguments, chains, and variables until consumed. `RuntimePromise` wraps a native Promise with source-location context so that late rejections still carry the original source position.
 -   **Lazy objects/arrays with `RESOLVE_MARKER`**: `createObject()` / `createArray()` mark containers whose properties/elements may be async. Background resolution starts immediately when the factory is called; consumers await the already-running marker promise. A plain `await value` will not finalize their async properties.
--   **PoisonedValue**: a thenable error container. Detect synchronously with `isPoison(value)` before `await`; it rejects as `PoisonError` if awaited.
+-   **PoisonedValue**: a thenable error container. Detect synchronously with `isPoison(value)` before `await`; it rejects as a `PoisonError` for one failure or `PoisonErrorGroup` for multiple failures if awaited.
 
 Use the runtime `resolve*` helpers (`resolveAll`, `resolveSingle`, `resolveDuo`, `resolveObjectProperties`, etc.) at consumption boundaries for arbitrary Cascada values instead of direct `await` — they know all value shapes and preserve fast paths. Direct `await` and `Promise.resolve` are fine for known internal promises, iterator cleanup, and already-classified native promises. Do not use `Promise.resolve` as a reflex on Cascada values; it collapses thenables and breaks the value-shape system.
 
@@ -161,11 +161,11 @@ Values are awaited only at three semantic points:
    materialization, and object/array property resolution.
 
 At these value-consumption points, promise rejection and existing
-`PoisonedValue`/`PoisonError` inputs are Cascada dataflow errors. The consuming
-site must catch them and surface `PoisonError`/`PoisonedValue` with the
-originating `errorContext`, while continuing to collect independent errors when
-possible. Structural failures outside value consumption are runtime failures and
-should surface as `RuntimeError`/fatal runtime errors. Compiler/analysis
+`PoisonedValue`/poison-error inputs are Cascada dataflow errors. The consuming
+site must preserve the originating error context and surface `PoisonError`,
+`PoisonErrorGroup`, or `PoisonedValue`, while continuing to collect independent
+errors when possible. Structural failures outside value consumption are fatal
+runtime failures and should surface as `RuntimeError`. Compiler/analysis
 failures belong to `CompileError`.
 
 ---
@@ -173,7 +173,7 @@ failures belong to `CompileError`.
 ## Final Output Materialization
 
 -   **`chain.finalSnapshot()`** — waits for the command iterator to finish, then assembles and returns the chain value. Call only after the buffer is fully written; calling early will hang.
--   **`normalizeFinalPromise(value)`** (`resolve.js`) — converts a snapshot to a native Promise; `PoisonedValue` becomes a rejected Promise with `PoisonError`.
+-   **`normalizeFinalPromise(value)`** (`resolve.js`) — converts a snapshot to a native Promise; `PoisonedValue` becomes a rejected Promise with `PoisonError` for one failure or `PoisonErrorGroup` for multiple failures.
 -   **Template rendering** — each written value passes through `safe-output.js`: autoescape, array joining, and poison detection. The final text is assembled from the `text` / `output` chain.
 -   **Script return** — the value of the explicit `return` expression; templates return the fully rendered text string.
 -   **Public APIs** (`renderScriptString`, `renderTemplateString`) — materialize all chains via `finalSnapshot()` and surface chain poison as a rejected render promise.
@@ -184,7 +184,8 @@ failures belong to `CompileError`.
 
 -   **Core Principle**: "Never Miss Any Error." Await all promises and collect all errors before throwing.
 -   **`PoisonedValue`**: *Thenable* object carrying `.errors[]` array. Can be passed synchronously.
--   **`PoisonError`**: `Error` thrown when `PoisonedValue` is awaited.
+-   **`PoisonError`**: individual non-fatal contextual error. Its `cause` is the original JavaScript error when there is one.
+-   **`PoisonErrorGroup`**: aggregate used when multiple poison errors are surfaced together. Its `.errors[]` entries are individual `PoisonError`s. Single-error poison paths surface the individual `PoisonError` directly.
 -   **Detection**:
     -   `isPoison(value)` — Use **before** `await`. Fast, synchronous check. Identifies existing `PoisonedValue` objects; will not `await` a promise to see if it rejects. Ideal for fast-path in Sync-First Hybrid pattern.
     -   `isPoisonError(err)` — Use **in `catch` block**.
@@ -199,7 +200,7 @@ Cascada treats errors as data ("Poison") flowing through the system.
 -   **Contamination:** Any variable/output that would've been modified by a skipped operation/block is automatically Poisoned.
 -   **Value Consumption Errors Become Poison:** When Cascada consumes a value (via `resolve*`, command apply, function-call argument preparation, expression evaluation, condition checks, iteration, or final materialization), rejections/poison are handled as Cascada poison. If ordinary Cascada control flow throws during normal execution, treat it as a real bug; do not normalize it into poison just to continue.
 -   **Returned Chain Poison:** If a chain returned by a script, function, macro, call, method, or similar Cascada construct contains poison, return that poison through Cascada value flow. Public render APIs such as `renderScriptString` materialize that as a rejected promise.
--   **Fatal Runtime Errors:** `RuntimeFatalError` and broken runtime contracts are real failures, not poison data. Async callback-style boundaries that have no awaiting caller should report such failures through `cb(err)` with context.
+-   **Fatal Runtime Errors:** `RuntimeError` and broken runtime contracts are real failures, not poison data. Async callback-style boundaries that have no awaiting caller should report such failures through render state/reporting paths with compact context.
 -   **Context Function Warning:** **DO NOT** pass Poison to context functions (e.g., logging). The function never executes. Use `is error` to check first.
 
 **Propagation Logic by Type:**

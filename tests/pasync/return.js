@@ -1244,6 +1244,9 @@ return made`;
   });
 
   describe('semantic hardening', function () {
+    const TEST_POISON_EC = [1, 1, 'Return.TestInput', 'return.casc', null];
+    const createTestPoison = (error) => runtime.createPoison(runtime.PoisonError.wrap(error, TEST_POISON_EC));
+
     it('returns null for bare return and skips later statements', async function () {
       const events = [];
       const result = await env.renderScriptString([
@@ -1356,7 +1359,7 @@ return made`;
           'record("after")'
         ].join('\n'), {
           poisonValue() {
-            return runtime.createPoison(new Error('poison return'));
+            return createTestPoison(new Error('poison return'));
           },
           record(value) {
             events.push(value);
@@ -1384,7 +1387,7 @@ return made`;
           'record("after")'
         ].join('\n'), {
           poisonValue() {
-            return runtime.createPoison(new Error('guarded poison return'));
+            return createTestPoison(new Error('guarded poison return'));
           },
           record(value) {
             events.push(value);
@@ -1509,7 +1512,7 @@ return made`;
           'return "none"'
         ].join('\n'), {
           poisonValue() {
-            return runtime.createPoison(new Error('parallel poison return'));
+            return createTestPoison(new Error('parallel poison return'));
           }
         });
         expect().fail('Should have thrown');
@@ -1533,7 +1536,7 @@ return made`;
           'return "none"'
         ].join('\n'), {
           poisonValue() {
-            return runtime.createPoison(new Error('each poison return'));
+            return createTestPoison(new Error('each poison return'));
           },
           record(value) {
             events.push(value);

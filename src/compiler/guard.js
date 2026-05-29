@@ -76,7 +76,7 @@ class CompileGuard {
         let chainGuardStateVar = null;
         this.emit.line('');
         if (guardStateVar) {
-          this.emit.line(`const ${guardStateVar} = runtime.guard.init(reportError);`);
+          this.emit.line(`const ${guardStateVar} = runtime.guard.init(renderState, ${guardErrorContext});`);
         }
         guardRepairLinePos = compiler.codebuf.length;
         this.emit.line('');
@@ -96,7 +96,7 @@ class CompileGuard {
           chainGuardStateVar = compiler._tmpid();
           this.emit.insertLine(
             chainGuardInitLinePos,
-            `const ${chainGuardStateVar} = runtime.guard.initChainSnapshots(${JSON.stringify(guardChains)}, ${compiler.buffer.currentBuffer}, reportError, ${guardErrorContext});`
+            `const ${chainGuardStateVar} = runtime.guard.initChainSnapshots(${JSON.stringify(guardChains)}, ${compiler.buffer.currentBuffer}, renderState, ${guardErrorContext});`
           );
         }
 
@@ -110,7 +110,7 @@ class CompileGuard {
           if (node.errorVar) {
             this.emit.line(`runtime.declareBufferChain(${compiler.buffer.currentBuffer}, "${node.errorVar}", "var", context, null);`);
             this.emit.line(
-              `${compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ chainName: '${node.errorVar}', args: [new runtime.PoisonError(${guardErrorsVar})], errorContext: ${compiler.emitErrorContext(node)} }), '${node.errorVar}');`
+              `${compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ chainName: '${node.errorVar}', args: [runtime.PoisonError.group(${guardErrorsVar})], errorContext: ${compiler.emitErrorContext(node)} }), '${node.errorVar}');`
             );
           }
           compiler.compile(node.recoveryBody, null);

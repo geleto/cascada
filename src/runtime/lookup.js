@@ -3,8 +3,8 @@ import {
   createPoison,
   isPoison,
   isPoisonError,
-  contextualizeError,
-  RuntimeFatalError,
+  PoisonError,
+  RuntimeError,
   RuntimePromise,
   collectErrors,
 } from './errors.js';
@@ -74,7 +74,7 @@ function memberLookupAsync(obj, val, errorContext, currentBuffer = null) {
 
   if (objPoison && valPoison) {
     // Both poisoned - merge errors
-    return createPoison([...obj.errors, ...val.errors]);
+    return createPoison(PoisonError.group([...obj.errors, ...val.errors]));
   } else if (objPoison) {
     // Only obj poisoned - return it directly
     return obj;
@@ -93,9 +93,14 @@ function memberLookupAsync(obj, val, errorContext, currentBuffer = null) {
 
 async function _memberLookupAsyncComplex(obj, val, errorContext, currentBuffer = null) {
   // Collect errors from both inputs (await all promises)
-  const errors = await collectErrors([obj, val]);
+  let errors;
+  try {
+    errors = await collectErrors([obj, val]);
+  } catch (err) {
+    RuntimeError.reportAndThrow(err, errorContext);
+  }
   if (errors.length > 0) {
-    return createPoison(errors, errorContext);
+    return createPoison(PoisonError.group(errors));
   }
 
   // Resolve the values
@@ -112,12 +117,7 @@ async function _memberLookupAsyncComplex(obj, val, errorContext, currentBuffer =
 
     return result;
   } catch (err) {
-    if (isPoisonError(err)) {
-      return createPoison(err.errors);
-    } else {
-      const contextualError = contextualizeError(err, errorContext);
-      return createPoison(contextualError);
-    }
+    return createPoison(PoisonError.wrap(err, errorContext));
   }
 }
 
@@ -142,7 +142,7 @@ function memberLookupScript(obj, val, errorContext, currentBuffer = null) {
 
   if (objPoison && valPoison) {
     // Both poisoned - merge errors
-    return createPoison([...obj.errors, ...val.errors]);
+    return createPoison(PoisonError.group([...obj.errors, ...val.errors]));
   } else if (objPoison) {
     // Only obj poisoned - return it directly
     return obj;
@@ -152,7 +152,7 @@ function memberLookupScript(obj, val, errorContext, currentBuffer = null) {
   }
 
   if (obj === undefined || obj === null) {
-    return createPoison(new Error(`Cannot read property ${val} of ${obj}`), errorContext);
+    return createPoison(PoisonError.create(`Cannot read property ${val} of ${obj}`, errorContext));
   }
 
   const value = obj[val];//some APIs (vercel ai result.elementStream) do not like multiple reads
@@ -168,9 +168,14 @@ function memberLookupScript(obj, val, errorContext, currentBuffer = null) {
 
 async function _memberLookupScriptComplex(obj, val, errorContext, currentBuffer = null) {
   // Collect errors from both inputs
-  const errors = await collectErrors([obj, val]);
+  let errors;
+  try {
+    errors = await collectErrors([obj, val]);
+  } catch (err) {
+    RuntimeError.reportAndThrow(err, errorContext);
+  }
   if (errors.length > 0) {
-    return createPoison(errors, errorContext);
+    return createPoison(PoisonError.group(errors));
   }
 
   // Resolve the values
@@ -189,14 +194,7 @@ async function _memberLookupScriptComplex(obj, val, errorContext, currentBuffer 
 
     return result;
   } catch (err) {
-    // If the error is already a PoisonError, propagate it.
-    if (isPoisonError(err)) {
-      return createPoison(err.errors);
-    } else {
-      // Otherwise, it's a native error. Enrich it with template context.
-      const contextualError = contextualizeError(err, errorContext);
-      return createPoison(contextualError);
-    }
+    return createPoison(PoisonError.wrap(err, errorContext));
   }
 }
 
@@ -214,7 +212,7 @@ function _addObservationCommand(targetBuffer, chainName, errorContext, mode) {
   throw new Error(`Unsupported shared-chain observation mode '${mode}'`);
 }
 
-function observeInheritanceSharedChain(name, currentBuffer, errorContext = null, inheritanceStateValue = null, mode = 'snapshot', implicitVarRead = false) {
+function observeInheritanceSharedChain(name, currentBuffer, errorContext, inheritanceStateValue = null, mode = 'snapshot', implicitVarRead = false) {
   if (!currentBuffer || !inheritanceStateValue) {
     return undefined;
   }
@@ -224,14 +222,14 @@ function observeInheritanceSharedChain(name, currentBuffer, errorContext = null,
     const schemaEntry = runtimeSharedSchema[name] ?? null;
     if (!schemaEntry) {
       const sourceName = getSharedSourceName(name);
-      throw new RuntimeFatalError(
+      RuntimeError.reportAndThrow(
         `unknown inherited shared chain '${sourceName}'`,
         errorContext
       );
     }
     if (implicitVarRead && schemaEntry.type && schemaEntry.type !== 'var') {
       const sourceName = getSharedSourceName(name);
-      throw new RuntimeFatalError(
+      RuntimeError.reportAndThrow(
         `Shared chain 'this.${sourceName}' cannot be used as a bare symbol. Use 'this.${sourceName}.snapshot()' instead.`,
         errorContext
       );
@@ -240,7 +238,7 @@ function observeInheritanceSharedChain(name, currentBuffer, errorContext = null,
   }
 
   const sourceName = getSharedSourceName(name);
-  throw new RuntimeFatalError(
+  RuntimeError.reportAndThrow(
     `unknown inherited shared chain '${sourceName}'`,
     errorContext
   );

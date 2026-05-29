@@ -34,17 +34,17 @@ class TextCommand extends ChainCommand {
         chain._setTarget([]);
       }
       const args = Array.isArray(resolvedArgs) ? resolvedArgs : [];
-      const poisonErrors = this.extractPoisonFromArgs(args);
-      if (poisonErrors.length > 0) {
-        chain._target.push(this.toPoisonValue(poisonErrors));
+      const poisonError = this.getPoisonFromArgs(args);
+      if (poisonError) {
+        chain._target.push(this.toPoisonValue(poisonError));
         chain._markStateChanged();
         return;
       }
       if (this.operation === 'set') {
         if (args.length !== 1) {
-          chain._setTarget(this.toPoisonValue([
-            contextualizeChainError(chain, this.errorContext, new Error('text.set() accepts exactly one argument'))
-          ]));
+          chain._setTarget(this.toPoisonValue(
+            contextualizeChainError(this.errorContext, new Error('text.set() accepts exactly one argument'))
+          ));
           return;
         }
         if (this.initializeIfNotSet && Array.isArray(chain._target) && chain._target.length > 0) {
@@ -52,9 +52,9 @@ class TextCommand extends ChainCommand {
         }
         chain._setTarget([]);
       } else if (this.operation !== null) {
-        chain._setTarget(this.toPoisonValue([
-          contextualizeChainError(chain, this.errorContext, new Error(`Unsupported text chain command '${this.operation}'`))
-        ]));
+        chain._setTarget(this.toPoisonValue(
+          contextualizeChainError(this.errorContext, new Error(`Unsupported text chain command '${this.operation}'`))
+        ));
         return;
       }
       if (!this.normalizeArgs) {
@@ -87,11 +87,11 @@ function materializeTextCommandArgs(values, chain, errorContext) {
     return unwrapResolvedValue(resolvedArgs);
   }
   if (isPoison(resolvedArgs)) {
-    throw new PoisonError(resolvedArgs.errors);
+    throw PoisonError.group(resolvedArgs.errors);
   }
   return Promise.resolve(resolvedArgs).then((resolved) => {
     if (isPoison(resolved)) {
-      throw new PoisonError(resolved.errors);
+      throw PoisonError.group(resolved.errors);
     }
     return resolved;
   });
@@ -100,7 +100,7 @@ function materializeTextCommandArgs(values, chain, errorContext) {
 function normalizeMaterializedTextArg(value, chain, errorContext) {
   const throwOnUndefined = isThrowOnUndefinedEnabled(chain);
   if (throwOnUndefined && (value === null || value === undefined)) {
-    throw contextualizeChainError(chain, errorContext, new Error('attempted to output null or undefined value'));
+    throw contextualizeChainError(errorContext, new Error('attempted to output null or undefined value'));
   }
   const autoescape = isAutoescapeEnabled(chain);
   if (isScriptOutputMode(chain)) {
@@ -129,7 +129,6 @@ function appendTextValues(chain, values, errorContext) {
     }
     const argType = Array.isArray(value) ? 'array' : type;
     throw contextualizeChainError(
-      chain,
       errorContext,
       new Error(`Invalid TextCommand argument type '${argType}'. TextCommand only accepts text-like scalar values.`)
     );

@@ -18,14 +18,20 @@ function createIdPool() {
 }
 
 function compile(src, asyncFilters, extensions, name, opts = {}) {
-  const compileOptions = Object.assign({}, opts, { idPool: createIdPool() });
+  const compileOptions = {
+    ...opts,
+    idPool: createIdPool(),
+    sourcePath: opts.sourcePath || opts.templateName || name,
+    templateName: opts.templateName || name
+  };
   const CompilerClass = compileOptions.asyncMode ? CompilerAsync : CompilerSync;
   const compiler = new CompilerClass(name, compileOptions);
 
   const preprocessors = (extensions || []).map(ext => ext.preprocess).filter(Boolean);
   const processedSrc = preprocessors.reduce((currentSrc, processor) => processor(currentSrc), src);
+
   const ast = transform(
-    parse(processedSrc, extensions, opts),
+    parse(processedSrc, extensions, compileOptions),
     asyncFilters,
     name,
     compileOptions

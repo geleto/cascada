@@ -11,9 +11,9 @@ async adapters.
 
 - async compiler/runtime code passes compact prepared error contexts
   (`__ec[index]`) explicitly
-- `normalizeErrorContext(ec)` expects a non-null compact prepared context;
-  callers that still permit no context during migration must handle that before
-  normalization
+- compact context normalization is owned inside runtime error classes/helpers;
+  callers pass non-null compact prepared contexts and do not normalize them
+  directly
 - `contextualizeError(error, errorContext)` is the async runtime
   wrapper for non-poison errors
 - `handleError(error, lineno, colno, label, path)` remains only for the frozen
@@ -21,13 +21,20 @@ async adapters.
 - synchronous positional `handleError(...)` calls must not be rewritten as part
   of this cleanup
 - wrapped errors preserve the first source-origin context assigned to them
-- `PoisonError` stores context on contained errors, not as the wrapper origin
-- async helpers, commands, and buffer branches should receive an originating
+- `PoisonError` is the individual non-fatal contextual error; `PoisonErrorGroup`
+  aggregates individual poison errors and does not invent a consumption origin
+- async helpers, commands, and buffer stackes should receive an originating
   `errorContext`; handling for missing async contexts is temporary cleanup
   scaffolding
 - commands and direct chain invocations receive their source-origin
   `errorContext` explicitly; they must not infer it from the current buffer
-- command buffers use `bufferBranchContext` only for buffer-branch trace
+- value-consumption paths must preserve an incoming error's origin context; they
+  must not attach the consuming lookup/call/loop/output context to an error or
+  poisoned value that already originated elsewhere
+- command-buffer stack stack metadata follows the same source-origin rule:
+  a stack frame's origin is the async/render boundary created for the source
+  operation, not a later value-consumption point
+- command buffers use `bufferStackContext` only for buffer stack trace
   frames, such as root, call, loop, include/render, and condition buffers. It is
   not a fallback source context for commands.
 - command and branch diagnostics must not invent source origin from ambient
@@ -36,8 +43,8 @@ async adapters.
 ## Out Of Scope
 
 - changing the frozen synchronous Nunjucks-compatible compiler path
-- preserving producer-origin context on `RuntimePromise` beyond places where it
-  consumes or reports errors
+- changing `RuntimePromise` beyond preserving the source context it already
+  carries for rejected promise values
 - introducing a class-based `ErrorContext`
 - using command-buffer stack context as a replacement for source-origin context
 
@@ -47,7 +54,7 @@ Implemented for the async runtime:
 
 1. Removed the remaining async/runtime positional and object-context adapters:
    `resolveErrorContextArgs(...)`, `compactErrorContext(...)`, object support in
-   `normalizeErrorContext(...)`, and object fallback conversion in
+   compact context normalization, and object fallback conversion in
    `resolveEffectiveErrorContext(...)`.
 2. Collapsed `RuntimeError(...)`, `RuntimeFatalError(...)`,
    `createPoison(...)`, and async wrapping to compact-context inputs. Async
@@ -220,9 +227,9 @@ Implemented for inherited callables:
 
 Implemented scope:
 
-- Kept `RuntimeFatalError` as the current hard-runtime-error marker. The audit
-  confirmed it is still used by value-consumption boundaries to prevent
-  structural runtime failures from being converted into poison.
+- Phase E kept a separate fatal runtime marker during the audit. Phase I later
+  merged fatal runtime failures into `RuntimeError` itself: every
+  `RuntimeError` is fatal, and every `PoisonError` is non-fatal.
 - Removed the unused `currentBuffer` parameters from
   `contextualizeError(...)`, `createPoison(...)`, and `handleFatal(...)`.
   Command-buffer stack enrichment remains a `getErrorInfo(...)` concern.
@@ -232,18 +239,18 @@ Implemented scope:
 - Audited `handleFatal(...)`: it currently has no runtime callers. Its existing
   callback-or-throw contract is preserved by focused tests, but fatal delivery
   unification belongs with the render fatal-state work rather than this phase.
-- Re-checked `RuntimeFatalError` tests. Tests that assert the fatal-vs-poison
-  distinction remain valid while `RuntimeFatalError` is the active marker.
+- Re-checked fatal runtime tests. Tests now assert the fatal-vs-poison
+  distinction through `RuntimeError` vs `PoisonError`.
 
 End-state taxonomy goal:
 
-The refactor still targets three user-visible error families:
-`PoisonError`, `RuntimeError`, and `CompileError`. Phase E does not complete
-that merge because `RuntimeFatalError` is still the active in-band marker that
-prevents hard runtime failures from being downgraded to poison at
-value-consumption boundaries. The merge is deferred until render fatal-state
-delivery is in place and an equivalent `RuntimeError` fatal marker/property can
-replace all `isRuntimeFatalError(...)` checks without changing behavior.
+The refactor targets three user-visible error families: `PoisonError`,
+`RuntimeError`, and `CompileError`. Phase I completed the fatal runtime merge:
+`RuntimeError` is the fatal runtime family, while `PoisonErrorBase`
+(`PoisonError` plus `PoisonErrorGroup`) remains the non-fatal value/data error
+family. `isRuntimeError(...)` remains as the predicate at the few
+value-consumption guards that still need to spell out the fatal-vs-poison
+distinction.
 
 Phase E active taxonomy:
 
@@ -251,22 +258,19 @@ Phase E active taxonomy:
 | --- | --- |
 | `PoisonedValue` | Value container, not an error family |
 | `PoisonError` | Keep as the only poisoned-value error wrapper |
-| `RuntimeError` | Keep as the only non-poison runtime error family |
-| `RuntimeFatalError` | Keep during this phase as the hard-runtime-error marker; replace only when an equivalent `RuntimeError` fatal marker/property exists |
-| `TemplateError` / compile errors | Move toward `CompileError` naming separately from runtime errors |
+| `RuntimeError` | Fatal runtime error family |
+| `CompileError` | Keep as the compile/load-time error family |
 | `handleError(...)` | Frozen sync compiler adapter only |
 
 1. Done: audit value-consumption boundaries before changing the fatal marker:
    command argument resolution, chain error recording, loop iteration catches,
    async boundary catches, and inheritance/component structural checks. Today
-   `RuntimeFatalError` is the hard-runtime-error discriminator that prevents
+   fatal runtime marker is the hard-runtime-error discriminator that prevents
    broken runtime contracts from being converted into poison at those
    consumption points.
-2. Decision: `RuntimeFatalError` is not redundant yet. Keep it as the
-   hard-runtime-error marker for Phase E unless the same pass introduces an
-   equivalent `RuntimeError` fatal marker/property and updates all
-   `isRuntimeFatalError(...)` call sites without changing fatal-vs-poison
-   behavior.
+2. Done in Phase I: removed the separate `RuntimeFatalError` subclass. Use
+   `RuntimeError` for hard runtime failures, with `isRuntimeError(...)`
+   retained as the predicate name at existing guard sites.
 3. Done: audit all `handleFatal(...)` callers before changing delivery
    behavior. There are no runtime callers; only focused tests exercise its
    current callback-or-throw contract. Do not make it the global fatal delivery
@@ -285,17 +289,16 @@ Phase E active taxonomy:
    - Done: remove `attachErrorContextIfMissing(...)` as a separate helper.
      The remaining late compact-context bridge is now inline and marked at the
      already-wrapped error branch in `contextualizeError(...)`.
-   - Shrink `resolveEffectiveErrorContext(...)` to the final compact-context
-     precedence rule after non-array legacy tolerance is proven dead.
-   - Deferred: keep `handleError(...)` isolated to the frozen sync compiler
-     path; decide in Phase H whether runtime exports should expose it publicly
-     or only through sync internals.
-   - Deferred: remove `EMPTY_ERROR_CONTEXT_INFO` and
-     `normalizeOptionalErrorContext(...)` last, together, after every async path
-     has a guaranteed non-null compact context and all callers can use
-     `normalizeErrorContext(...)` directly.
-   - Revisit `RuntimeFatalError` only after item 2's replacement condition is
-     met.
+   - Done in Phase H: shrink `resolveEffectiveErrorContext(...)` to the final
+     compact-context precedence rule after non-array legacy tolerance is proven
+     dead.
+   - Done in Phase H: keep `handleError(...)` isolated to the frozen sync
+     compiler path and publicly exported for now; final public surface
+     narrowing is Phase J.
+   - Done in Phase H: remove `EMPTY_ERROR_CONTEXT_INFO` and
+     `normalizeOptionalErrorContext(...)` after every compiler-owned async path
+     has a guaranteed non-null compact context.
+   - Done in Phase I: collapse the fatal runtime subclass into `RuntimeError`.
 7. Done: remove the unused `currentBuffer` parameters from `contextualizeError(...)`,
    `createPoison(...)`, and `handleFatal(...)`. Stack enrichment remains a
    `getErrorInfo(error, ec, currentBuffer, includeStack)` concern rather than a
@@ -306,10 +309,8 @@ Phase E active taxonomy:
    `PoisonError` deduplication is idempotent, and note that immutable
    replacement means existing references to the old `PoisonError` object will
    not see newly contextualized contained errors.
-9. Done: review tests that assert `RuntimeFatalError` specifically. Keep tests
-   that verify the fatal-vs-poison distinction while `RuntimeFatalError` remains
-   the marker; migrate only tests that assert subclass identity after a real
-   replacement marker exists.
+9. Done: migrate tests that asserted the separate fatal subclass to assert
+   `RuntimeError`.
 10. Done for current docs: re-check docs and public exports so the active error
     taxonomy is explicit. Public export narrowing is deferred to Phase J after
     strict-context and error-family cleanup.
@@ -365,10 +366,9 @@ than only removing scaffolding.
    boundary returns a promise value, its error should surface when the value is
    consumed.
 6. Re-evaluated `handleFatal(...)` after render-state delivery landed. It has
-   no runtime callers today, and its tested callback-or-throw behavior already
-   participates in render state when the compact context's `reportError` slot
-   came from `renderState.reportError`. Keep it unchanged until Phase I decides
-   whether to remove the helper or keep it as a narrow adapter.
+   no runtime callers today, and fatal delivery is now owned by render state.
+   Phase I removes the helper instead of keeping the old callback-or-throw
+   adapter.
 7. Added tests proving:
    - main render, includes/imports, components, and inherited participants use
      one reporting state per render
@@ -398,11 +398,11 @@ context invariant or changing error-family semantics.
 Prerequisite: Phase F is complete and the render-state tests are passing.
 
 1. Done: reconciled deferred optional
-   `bufferBranchContext` display fields. Use the current canonical field names
+   `bufferStackContext` display fields. Use the current canonical field names
    (`branchName`, `loadName`, `targetIdentifier`, `loop`, `branch`) unless a
    specific field has been deliberately renamed. Re-evaluate the
    `branchName`/`branch` pair in particular: `branchName` currently identifies
-   the buffer branch/root/callable frame, while `branch` identifies conditional
+   the buffer stack/root/callable frame, while `branch` identifies conditional
    direction such as `then` or `case`.
 2. Done: renamed/reframed the `CommandBuffer` constructor's fourth parameter as
    a chain `linkTarget`, not a diagnostic or ownership parent.
@@ -466,93 +466,163 @@ Prerequisite: Phase F is complete and the render-state tests are passing.
 
 ## Phase H - Strict Async Error-Context Invariants
 
-This phase removes nullable-context migration scaffolding after Phase G confirms
-helper ownership and render-state fatal delivery are stable. It should leave
-`normalizeErrorContext(...)` as the only normalization path for non-null compact
-async contexts.
+Implemented strict async error-context cleanup after Phase G confirmed helper
+ownership and render-state fatal delivery were stable. Runtime error classes now
+own compact context normalization internally. Poison aggregation uses
+`PoisonError.create(errors)` for already-originated poison errors and
+`createPoison(errors, errorContext)` at public/source boundaries; operations
+that create a new non-fatal value error at that source use
+`new PoisonError(error, errorContext)` or `new PoisonErrorGroup(errors,
+errorContext)`; fatal runtime errors use `contextualizeError(error,
+errorContext)`.
 
-Prerequisite: Phase G is complete and confirms nullable `errorContext` defaults
-in async helpers and command constructors are eliminated or intentionally
-deferred outside this refactor.
+Prerequisite satisfied: Phase G is complete. Nullable `errorContext` defaults in
+compiler-owned async helpers and command constructors are eliminated or exposed
+as explicit validation failures. Direct runtime invocation/component helper
+compatibility remains marked in code with `TODO(strict-error-context-cleanup)`
+because those helpers are still used manually in tests and are not purely
+compiler-owned entry points.
 
-Before implementation, perform a preflight audit:
+Preflight audit performed:
 
-- grep for every `normalizeOptionalErrorContext(...)` and
+- done: grep for every `normalizeOptionalErrorContext(...)` and
   `EMPTY_ERROR_CONTEXT_INFO` use
-- grep for `errorContext = null`, `errorContext: null`, and nullable
+- done: grep for `errorContext = null`, `errorContext: null`, and nullable
   `errorContext` call paths in async runtime/compiler code
-- grep for `contextualizeError(...)`, `createPoison(...)`, command
+- done: grep for `contextualizeError(...)`, `createPoison(...)`, command
   constructors, and boundary helpers that may still receive null
-- verify that tests do not directly assert `normalizeOptionalErrorContext(...)`
+- done: verify that tests do not directly assert `normalizeOptionalErrorContext(...)`
   behavior or depend on `EMPTY_ERROR_CONTEXT_INFO` field values
-- scan generated/precompiled fixtures for boundary calls that still rely on
-  fallback arguments
-- run the focused error-context, composition, conditional, inheritance,
+- done: scan generated/precompiled fixtures, including the browser precompile
+  fixture, for boundary calls that still rely on fallback arguments. No missing
+  final buffer stack context arguments remain in the current generated output.
+- done: run the focused error-context, composition, conditional, inheritance,
   component, precompile, and CLI suites before removing the fallback helpers
 
-1. Remove fallback handling for missing async error contexts after every async
-   helper, command, and buffer branch has an originating context.
-2. Verify whether `_reportBoundaryError(...)` still has nullable or graceful
-   no-context behavior after Phase F. Remove any remaining boundary fallback
-   arrays or equivalent nullable paths, and remove any remaining
-   `errorContext = null` defaults that hide missing compiler/runtime ownership.
-3. Replace every `normalizeOptionalErrorContext(ec)` call site with
-   `normalizeErrorContext(ec)` after Phase H's invariant guarantees `ec` is
-   non-null, then remove `normalizeOptionalErrorContext(...)` and
-   `EMPTY_ERROR_CONTEXT_INFO` together.
-4. Shrink `resolveEffectiveErrorContext(...)` to the final compact-context
-   precedence rule after non-array legacy tolerance is proven dead.
-5. Remove the remaining inline already-wrapped-error bridge in
-   `contextualizeError(...)`.
-6. Decide whether `handleError(...)` should remain publicly exported or only be
-   reachable through sync internals. Keep the frozen sync compiler path
-   behavior unchanged.
+1. Done: removed the nullable normalization helper cluster:
+   `normalizeOptionalErrorContext(...)`, `EMPTY_ERROR_CONTEXT_INFO`, and the
+   associated `TODO(error-context-cleanup)` markers.
+2. Done: replaced optional normalization at runtime wrapper/reporting sites
+   with internal `internal error-class normalization` calls for non-null compact
+   contexts. `RuntimeError`, `contextualizeError(...)`,
+   `getErrorInfo(...)`, `new PoisonError(error, errorContext)`, and
+   `new PoisonErrorGroup(errors, errorContext)` consume compact context
+   directly. Context-free poison aggregation remains separate as
+   `createPoison(errors)`, and the normalizer is no longer exported as a public
+   runtime helper.
+3. Done: removed boundary no-context tolerance. Async boundary helpers now take
+   a required `bufferStackContext` object, store it on child buffers for stack
+   diagnostics, and use its compact `ec` field when reporting boundary errors.
+4. Done: removed the remaining `resolveEffectiveErrorContext(...)` helper.
+   Runtime wrappers now apply the final precedence rule directly: preserve an
+   existing error-owned context, otherwise use a compact fallback only when the
+   current operation is the error source. Non-array legacy contexts are no
+   longer converted or silently tolerated by normalization.
+5. Done: removed the inline already-wrapped-error bridge in
+   `contextualizeError(...)`; wrapped errors must carry their compact context
+   from construction time or keep their original positional fields.
+6. Done: reinforced the source-origin rule for poison and value-consumption
+   paths. `contextualizeError(PoisonErrorBase, fallbackContext)` preserves the
+   poison unchanged, and consuming lookup/call/loop/output paths no longer
+   attach their local `errorContext` to incoming failed values.
+7. Decision: keep `handleError(...)` publicly exported for now as the frozen
+   sync compiler adapter. Public export narrowing remains Phase J after the
+   fatal-family cleanup.
 
 ## Phase I - Poison And Fatal Error Semantics
 
 This phase contains semantic error-shape work that should not be hidden inside
-general helper cleanup. If the `RuntimeFatalError` merge grows beyond a narrow
-mechanical replacement, split it into its own follow-up phase before
-implementation.
+general helper cleanup.
 
-Prerequisite: Phase H is complete for item 3. Items 1 and 2 may be implemented
-independently after Phase G if they stay behavior-preserving.
+Prerequisite: Phase H is complete for item 4. Items 2 and 3 may be implemented
+independently if they stay behavior-preserving.
 
-1. Re-check `PoisonError` contextualization and replace in-place mutation with
-   immutable construction only if re-running deduplication is behaviorally
-   idempotent and no callers rely on the original `PoisonError` object being
-   updated in place.
-2. Re-check `handleFatal(...)` after helper ownership and strict-context
-   cleanup. If it survives as an adapter, simplify its current double
-   effective-context resolution; if render state owns fatal delivery directly,
-   remove the helper instead.
-3. Complete the error-family merge after render-state and strict-context
-   cleanup. Tentative target: `RuntimeError` gains an `isFatal: true` marker set
-   at construction, and `isRuntimeFatalError(err)` becomes a compatibility
-   predicate for `err instanceof RuntimeError && err.isFatal` until it can be
-   removed. Update all active `isRuntimeFatalError(...)` value-consumption
-   boundary checks atomically: loop iteration boundary (`loop.js`), command
-   argument resolution (`commands/arguments.js`), and chain error recording
-   (`chains/base.js`). Then narrow docs/tests/exports to the target
-   user-visible families: `PoisonError`, `RuntimeError`, and `CompileError`.
+1. Done after the Phase H source-origin cleanup: `contextualizeError(...)` no
+   longer mutates `PoisonError` contents or attaches fallback context to poison
+   at consumption sites. `PoisonError.create(...)` remains the strict
+   aggregate rehydration path for errors that already carry origin context,
+   while `createPoison(errors, errorContext)` is the source-boundary helper for
+   raw failures that are being poisoned at their origin. External/user code
+   should throw ordinary non-poison errors; the call/filter/consumption boundary
+   converts those errors to typed `PoisonError`s with that boundary's source
+   context and the original error preserved as `cause`.
+2. Done: moved shared compact-context normalization and diagnostic message
+   formatting behind the runtime error classes. `PoisonError` owns individual
+   non-fatal context/message construction, `PoisonErrorGroup` owns aggregate
+   error-state construction, and `RuntimeError` owns fatal runtime context
+   construction instead of spreading that work across public helpers.
+3. Done: removed `handleFatal(...)` after strict-context cleanup. Render state
+   now owns fatal delivery, and runtime code reports or throws `RuntimeError`
+   directly through that path.
+4. Done: completed the runtime error-family merge. `RuntimeError` is always
+   fatal, and `PoisonErrorBase` (`PoisonError` plus `PoisonErrorGroup`) is
+   always non-fatal. `isRuntimeError(err)` is a predicate for
+   `err instanceof RuntimeError`. The active fatal
+   guards remain in the loop iteration boundary (`loop.js`), command argument
+   resolution (`commands/arguments.js`), and chain error recording
+   (`chains/base.js`). The separate `RuntimeFatalError` subclass/export is
+   gone, leaving the target runtime families: `PoisonError`, `PoisonErrorGroup`,
+   `RuntimeError`, and `CompileError`.
+5. Done: split the former aggregate-style `PoisonError` shape into typed
+   individual and aggregate poison errors. `PoisonError` is now the individual
+   non-fatal contextual error and the cardinality-aware `PoisonError.create(...)`
+   factory; `PoisonErrorGroup` is the multi-error aggregate; and
+   `PoisonErrorBase` is the shared `instanceof`/type-guard target for both.
+
+## Post-H Follow-Up - Diagnostic Stack Metadata
+
+This is a small diagnostic-quality follow-up after strict-context cleanup. Keep
+the Phase H invariant changes intact; this pass should only refine what
+buffer stack metadata is attached to stack frames and how that metadata is
+named. A diagnostic stack frame's origin is the async/render boundary created
+for the source operation; do not move stack attachment to later value consumers.
+
+1. Revisit the `bufferStackContext` display schema with real compiled stacks:
+   - decide whether `branchName` should be renamed or split so conditional
+     branch direction (`then`, `else`, `case`) is distinct from buffer/frame
+     identity (`root`, `caller`, component binding, macro name)
+   - keep absent metadata absent; do not emit `undefined` display fields
+   - keep loop-specific details inside `loop`, including the loop variable
+     names already added after Phase H
+   - attach function, macro, caller, component, include/import/render, and
+     switch/if details outside the loop object using names that describe the
+     domain concept directly
+2. Add or expand an integration test that captures an actual compiled stack
+   containing representative boundary kinds: root, macro call/caller(), loop,
+   if/switch branch, include/import or render composition, and component
+   creation or component method/observation. Use the test to drive the display
+   schema rather than hand-building simulated stack frames.
+3. After the display schema is settled, update `BUFFER_CONTEXT_OPTIONAL_KEYS`,
+   compiler-emitted `emitBufferStackContext(...)` payloads, and docs together.
+   Avoid changing source-origin error contexts (`ec`) as part of this pass.
 
 ## Phase J - Final Generated Artifacts And Public Surface
 
 This is the terminal cleanup phase. Do not start it until strict-context cleanup
 and error-family semantics have settled.
 
-Prerequisite: Phase H is complete for generated fallback removal, and Phase I
-item 3 is complete before public taxonomy/export narrowing.
+Prerequisite: Phase H has removed the generated boundary fallback, and Phase I
+item 4 is complete.
 
-1. Remove remaining generated/precompiled boundary calls that omit the final
-   buffer-branch context argument after the runtime fallback is removed.
-2. Perform the terminal precompile/browser fixture pass after final async
-   compatibility adapters are removed. This closes out fixture churn from the
+1. Done: re-checked generated/precompiled boundary calls after the final async
+   compatibility adapters are removed. Boundary helper calls should continue to
+   pass the final buffer stack context argument explicitly.
+2. Done: performed the terminal quick-suite pass after final async
+   compatibility adapters were removed. This closes out fixture churn from the
    refactor and is distinct from incremental fixture updates in earlier phases.
-3. Re-check public exports and docs after the strict-context and error-family
-   phases so the final runtime surface matches the target taxonomy. This
-   depends on Phase I item 3; do not remove or hide `RuntimeFatalError` while it
-   is still the active hard-runtime-error marker.
-4. Review `error-context-refactor.md` and other referenced docs for stale
-   terminology not already fixed in-phase, including `cb`, `reportedError`, and
-   old runtime type descriptions.
+3. Done: re-checked public exports, tests, active docs, and TypeScript
+   declarations after the strict-context and error-family phases. The public
+   surface now exports and documents `CascadaError`, `CompileError`,
+   `RuntimeError`, `PoisonErrorBase`, `PoisonError`, `PoisonErrorGroup`,
+   `isPoisonError(...)`, and `isRuntimeError(...)`. Public docs describe
+   render failures as `CompileError | RuntimeError | PoisonError | PoisonErrorGroup`,
+   and `peekError(...)` / `#` as returning `PoisonError | PoisonErrorGroup | null/none`.
+4. Done: reviewed `error-context-refactor.md` and other referenced docs for
+   stale terminology not already fixed in-phase, including `cb`,
+   `reportedError`, old aggregate-style `PoisonError` examples, and old runtime
+   type descriptions. Historical first-stage planning docs are now explicitly
+   marked as historical instead of being rewritten as current guidance.
+5. Revisit `TODO(strict-error-context-cleanup)` direct runtime helper
+   compatibility. Remove the remaining nullable/direct-call contexts if those
+   helpers are made internal-only, or document the direct public contract if
+   they remain supported.

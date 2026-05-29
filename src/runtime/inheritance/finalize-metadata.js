@@ -1,24 +1,8 @@
-import {contextualizeError} from '../errors.js';
+import {RuntimeError} from '../errors.js';
 import {getSharedSourceName} from '../../inheritance/shared-names.js';
 
-// Groups all inheritance metadata validation failures found during finalization.
-class InheritanceFinalizationError extends Error {
-  constructor(errors) {
-    super(errors.length === 1
-      ? errors[0].message
-      : `Multiple inheritance finalization errors (${errors.length}):\n` +
-        errors.map((error, index) => `  ${index + 1}. ${error.message}`).join('\n'));
-    this.name = 'InheritanceFinalizationError';
-    this.errors = errors;
-  }
-}
-
-function addFinalizationError(errors, message, errorContext) {
-  errors.push(contextualizeError(
-    new Error(message),
-    errorContext,
-    null
-  ));
+function failFinalization(message, errorContext) {
+  throw RuntimeError.create(message, errorContext);
 }
 
 function createRuntimeOwnerEntry(entry) {
@@ -64,17 +48,15 @@ function createRootNoopConstructorEntry(ownerEntry) {
   });
 }
 
-function createRuntimeMethodEntry(compiledEntry, ownerEntry, parentEntry, errors) {
+function createRuntimeMethodEntry(compiledEntry, ownerEntry, parentEntry) {
   if (compiledEntry.super && !parentEntry && !compiledEntry.isConstructor) {
-    addFinalizationError(
-      errors,
+    failFinalization(
       `super() in '${compiledEntry.name}' has no parent implementation`,
       ownerEntry.errorContextTable[compiledEntry.superErrorContextIndex]
     );
   }
   if (parentEntry && !hasCompatibleOverrideSignature(compiledEntry, parentEntry)) {
-    addFinalizationError(
-      errors,
+    failFinalization(
       `method '${compiledEntry.name}' renames an inherited argument`,
       ownerEntry.errorContextTable[compiledEntry.errorContextIndex]
     );
@@ -106,7 +88,7 @@ function createRuntimeMethodEntry(compiledEntry, ownerEntry, parentEntry, errors
   };
 }
 
-function createRuntimeSharedSchema(entries, ownerEntries, errors) {
+function createRuntimeSharedSchema(entries, ownerEntries) {
   const sharedSchema = Object.create(null);
 
   entries.forEach((entry, index) => {
@@ -115,12 +97,10 @@ function createRuntimeSharedSchema(entries, ownerEntries, errors) {
       const runtimeSchemaEntry = createRuntimeSharedSchemaEntry(compiledSchemaEntry, ownerEntry);
       const existingEntry = sharedSchema[name];
       if (existingEntry && existingEntry.type !== runtimeSchemaEntry.type) {
-        addFinalizationError(
-          errors,
+        failFinalization(
           `shared chain '${name}' has conflicting types '${existingEntry.type}' and '${runtimeSchemaEntry.type}'`,
           runtimeSchemaEntry.errorContext
         );
-        return;
       }
       if (!existingEntry) {
         sharedSchema[name] = runtimeSchemaEntry;
@@ -151,21 +131,20 @@ function createRuntimeSharedSchemaEntry(compiledSchemaEntry, entry) {
   });
 }
 
-function validateSharedMethodCollisions(sharedSchema, methodNames, errors) {
+function validateSharedMethodCollisions(sharedSchema, methodNames) {
   Object.keys(sharedSchema).forEach((name) => {
     const methodName = getSharedSourceName(name);
     if (!methodNames.has(methodName)) {
       return;
     }
-    addFinalizationError(
-      errors,
+    failFinalization(
       `shared chain '${methodName}' conflicts with inherited method '${methodName}'`,
       sharedSchema[name].errorContext
     );
   });
 }
 
-function validateInheritedMethodDependencies(entries, methodNames, errors) {
+function validateInheritedMethodDependencies(entries, methodNames) {
   entries.forEach((entry) => {
     Object.values(entry.spec.methodEntries).forEach((methodEntry) => {
       const dependencies = methodEntry.inheritedMethodDependencies;
@@ -173,8 +152,7 @@ function validateInheritedMethodDependencies(entries, methodNames, errors) {
         if (methodNames.has(name)) {
           return;
         }
-        addFinalizationError(
-          errors,
+        failFinalization(
           `method '${methodEntry.name}' references missing inherited method '${name}'`,
           entry.errorContextTable[dependencies[name].errorContextIndex]
         );
@@ -250,9 +228,9 @@ function expandMethodDependencyFootprint(entry, dependencyEntriesByEntry, visiti
 }
 
 // Converts a loaded child-to-parent inheritance chain into immutable runtime
-// method and shared-schema metadata, collecting validation errors before throw.
+// method and shared-schema metadata.
 function finalizeInheritanceChain(chain, context = null) {
-  const errors = [];
+  void context;
   const entries = chain.entries;
   const ownerEntries = entries.map(createRuntimeOwnerEntry);
   const methodNames = new Set();
@@ -265,15 +243,15 @@ function finalizeInheritanceChain(chain, context = null) {
     Object.keys(entry.spec.methodEntries).forEach((name) => methodNames.add(name));
   });
 
-  const sharedSchema = createRuntimeSharedSchema(entries, ownerEntries, errors);
-  validateSharedMethodCollisions(sharedSchema, methodNames, errors);
+  const sharedSchema = createRuntimeSharedSchema(entries, ownerEntries);
+  validateSharedMethodCollisions(sharedSchema, methodNames);
 
   for (let index = entries.length - 1; index >= 0; index--) {
     const entry = entries[index];
     const ownerEntry = ownerEntries[index];
     Object.entries(entry.spec.methodEntries).forEach(([name, compiledEntry]) => {
       const parentEntry = parentRuntimeEntriesByName[name];
-      const runtimeEntry = createRuntimeMethodEntry(compiledEntry, ownerEntry, parentEntry, errors);
+      const runtimeEntry = createRuntimeMethodEntry(compiledEntry, ownerEntry, parentEntry);
       parentRuntimeEntriesByName[name] = runtimeEntry;
       runtimeMethodsByName[name] = runtimeEntry;
       runtimeEntries.push(runtimeEntry);
@@ -284,10 +262,7 @@ function finalizeInheritanceChain(chain, context = null) {
     });
   }
 
-  validateInheritedMethodDependencies(entries, methodNames, errors);
-  if (errors.length > 0) {
-    throw new InheritanceFinalizationError(errors);
-  }
+  validateInheritedMethodDependencies(entries, methodNames);
   expandAllMethodDependencyFootprints(runtimeEntries, runtimeMethodsByName, dependencyNamesByEntry);
 
   return Object.freeze({
@@ -296,4 +271,4 @@ function finalizeInheritanceChain(chain, context = null) {
   });
 }
 
-export {InheritanceFinalizationError, finalizeInheritanceChain};
+export {finalizeInheritanceChain};

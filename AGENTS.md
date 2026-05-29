@@ -50,7 +50,7 @@ Language syntax: `docs/cascada/script.md` (authoritative). `docs/cascada/cascada
 
 **Command Buffer (`CommandBuffer`)** — Runtime tree node holding source-ordered commands and child buffers. Compiled async code enqueues into the *current* buffer; the iterator walks depth-first in source order, waiting on unfilled child slots.
 
-**Poison / `PoisonedValue`** — Thenable error container (`.errors[]`). Operations receiving poison are skipped and propagate it. Awaiting throws `PoisonError`. Detect with `isPoison(value)` before `await`; `isPoisonError(err)` in `catch`.
+**Poison / `PoisonedValue`** — Thenable error container (`.errors[]`). Operations receiving poison are skipped and propagate it. Awaiting throws a poison error: a single `PoisonError` for one failure, or `PoisonErrorGroup` for multiple failures. Detect with `isPoison(value)` before `await`; use `isPoisonError(err)` in `catch` because it matches both individual and aggregate poison errors.
 
 **`snapshot()`** — Materializes chain state. `data`/`text`: assembles source-ordered commands into object/string. `var`: fast direct read. Use `return result.snapshot()` to capture named chain output.
 
@@ -159,6 +159,7 @@ Development and tests require Node `>=22`.
 *   ✅ **DO:** Check if value is promise (`if (val && typeof val.then === 'function')`) before `await`. Cheaper than blind `await` on literals.
 *   ✅ **DO:** Distinguish **value consumption** from **normal control-flow/runtime throws**:
     *   If a loop/conditional/include path is **consuming a value** (awaiting a promise, reading a thenable, iterating an async iterator, evaluating an async condition, etc.), failures belong to normal Cascada error flow. Poison the affected writes/effects and do **not** rethrow from that path.
+    *   Error context and diagnostic stack metadata must come from the **source/origin of the error**, never from a later consumption site. For command-buffer diagnostics, a stack frame's origin is the async/render boundary created for the source operation. When consuming an already-failed value or `PoisonedValue`, preserve its existing context, stack, and errors; only attach local `errorContext` or boundary stack metadata when the current operation creates the error.
     *   If the **normal flow itself** throws (invariant violation, bad control-flow contract, unexpected runtime bug, invalid hard precondition), let that error propagate as a real error. Do **not** silently convert it into poison.
     *   Callback-based fire-and-forget runtime boundaries (for example helpers that own async child-buffer cleanup) should still report real errors via `cb(...)` with context, because there may be no awaiting caller on that path.
 *   ✅ **DO:** Treat the current command buffer as the only place where runtime commands are enqueued for an execution point.
@@ -169,14 +170,30 @@ Development and tests require Node `>=22`.
     *   Explicit inheritance/shared observation may use inheritance metadata, but should still enqueue on the current buffer.
     *   Immediate composition capture (`extends ... with ...`) is not an ordered snapshot read and must stay a narrow dedicated primitive.
 
+#### **Runtime Error Model**
+
+*   ✅ **DO:** Keep the three public error roles clear:
+    *   `CompileError` is compile-time/source-position failure.
+    *   `RuntimeError` is fatal runtime/contract failure. Report with `RuntimeError.report(...)` or `RuntimeError.reportAndThrow(...)` when context exists.
+    *   `PoisonError` is non-fatal value failure. It travels inside `PoisonedValue`; awaiting poison throws a poison error.
+*   ✅ **DO:** Use the three explicit poison factories:
+    *   `PoisonError.create(message, errorContext)` for a new engine-created value failure.
+    *   `PoisonError.wrap(error, errorContext)` for one normal JS/user error caught at the source operation.
+    *   `PoisonError.group(poisonErrors)` for grouping existing poison errors only.
+*   ✅ **DO:** Use `createPoison(poisonError)` only with a ready `PoisonError` from `create`, `wrap`, or `group`.
+*   ✅ **DO:** Pass `PoisonError` objects between runtime components. Use `.errors[]` only for `PoisonedValue` storage/inspection or local collection before grouping.
+*   ✅ **DO:** Preserve origin context: when handling existing poison, pass it through or group it; never replace its context with the consumer's context.
+*   ❌ **DON'T:** Put raw `Error`, strings, or arrays directly into `createPoison(...)`, command poison payloads, or chain poison hooks.
+*   ❌ **DON'T:** Convert `RuntimeError` to poison. Fatal runtime errors must stay fatal.
+
 *   ❌ **DON'T:** Reflexively make runtime functions `async`. An `async` function always returns Promise, adding overhead. Only use `async` on helper functions needing `await`.
-*   ❌ **DON'T:** Check `isPoison()` **AFTER** `await`. Architecturally impossible for `await somePromise` to return `PoisonedValue`. Check before awaiting; catch `PoisonError` after awaiting.
+*   ❌ **DON'T:** Check `isPoison()` **AFTER** `await`. Architecturally impossible for `await somePromise` to return `PoisonedValue`. Check before awaiting; catch poison errors with `isPoisonError(err)` after awaiting.
 *   ❌ **DON'T:** Treat `isPoison()` as definitive test for all errors. It's synchronous check for existing `PoisonedValue`, not for whether Promise will reject. For promises, use `try/catch`.
-*   ❌ **DON'T:** `return` `PoisonedValue` from `async` function. **MUST** `throw new PoisonError(...)`. Only non-`async` (or sync-first hybrid) functions can return `PoisonedValue` directly.
+*   ❌ **DON'T:** `return` `PoisonedValue` from an `async` function. **MUST** throw a poison error instead, usually `PoisonError.group(value.errors)` for existing poison or `PoisonError.wrap(error, errorContext)` for a newly caught value failure. Only non-`async` (or sync-first hybrid) functions can return `PoisonedValue` directly.
 *   ❌ **DON'T:** Catch broad runtime errors and turn them into poison "just to keep going". Only value-consumption failures should be normalized into poison/effect poisoning.
 *   ❌ **DON'T:** Short-circuit error collection. Always await ALL promises and collect ALL errors before returning/throwing (**"Never Miss Any Error"** principle).
 *   ❌ **DON'T:** Use `instanceof` for poison detection. Always use `isPoison()` and `isPoisonError()` helpers.
-*   ❌ **DON'T:** Construct `TemplateError` directly in `catch` blocks. Always use idempotent `runtime.handleError(e, ...)`.
+*   ❌ **DON'T:** Construct legacy sync `TemplateError` directly in `catch` blocks. Frozen sync compiler paths use idempotent `runtime.handleError(e, ...)`; async runtime paths use `RuntimeError`, `PoisonError`, or `PoisonErrorGroup` with compact source context.
 *   ❌ **DON'T:** "Fix" missing visibility by reading or waiting on the owner/producer buffer directly.
     *   No ordinary lookup fallback to parent/root buffers.
     *   No "current position" wait on parent/root buffers.

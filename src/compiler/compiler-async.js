@@ -111,7 +111,9 @@ class CompilerAsync extends CompilerBaseAsync {
     const ext = this._tmpid();
     this.emit.line(`let ${ext} = env.getExtension("${node.extName}");`);
     const returnId = this._tmpid();
-    this.emit(`let ${returnId} = `);
+    const errorContext = this.emitErrorContext(positionNode);
+    this.emit.line(`let ${returnId};`);
+    this.emit(`try { ${returnId} = `);
     if (!async) {
       if (!resolveArgs) {
         this.emit(`${ext}["${node.prop}"](context`);
@@ -127,7 +129,13 @@ class CompilerAsync extends CompilerBaseAsync {
     }
     emitCallArgs(ext);
     this.emit(')');
-    this.emit.line(';');
+    this.emit.line('; } catch (e) {');
+    this.emit.line('  if (!runtime.isPoisonError(e) && !runtime.isRuntimeError(e)) {');
+    this.emit.line(`    runtime.RuntimeError.reportAndThrow(e, ${errorContext});`);
+    this.emit.line('  }');
+    this.emit.line('  throw e;');
+    this.emit.line('}');
+    this.emit.line(`if (${returnId} && typeof ${returnId}.then === "function") { ${returnId} = new runtime.RuntimePromise(${returnId}, ${errorContext}); }`);
     const textCmdExpr = this.buffer._emitTemplateTextCommandExpression(returnId, positionNode, true);
     this.emit.line(`${this.buffer.currentBuffer}.addCommand(${textCmdExpr}, "${this.buffer.currentTextChainName}");`);
     this.buffer.emitLimitedLoopCompletion(returnId, positionNode);
@@ -306,13 +314,9 @@ class CompilerAsync extends CompilerBaseAsync {
 
       const errorContext = this.emitErrorContext(node.expr);
       this.emit('} catch (e) {');
-      if (poisonChains.length === 1) {
-        this.emit.line(
-          `    ${this.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(runtime.contextualizeError(e, ${errorContext}), ${errorContext}), "${poisonChains[0]}");`
-        );
-      } else if (poisonChains.length > 1) {
+      if (poisonChains.length > 0) {
         const contextualErrorVar = this._tmpid();
-        this.emit(`  const ${contextualErrorVar} = runtime.contextualizeError(e, ${errorContext});`);
+        this.emit(`  const ${contextualErrorVar} = runtime.PoisonError.wrap(e, ${errorContext});`);
         for (const chainName of poisonChains) {
           this.emit.line(
             `    ${this.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(${contextualErrorVar}, ${errorContext}), "${chainName}");`
@@ -382,13 +386,9 @@ class CompilerAsync extends CompilerBaseAsync {
 
       const errorContext = this.emitErrorContext(node.cond);
       this.emit('} catch (e) {');
-      if (poisonChains.length === 1) {
-        this.emit.line(
-          `    ${this.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(runtime.contextualizeError(e, ${errorContext}), ${errorContext}), "${poisonChains[0]}");`
-        );
-      } else if (poisonChains.length > 1) {
+      if (poisonChains.length > 0) {
         const contextualErrorVar = this._tmpid();
-        this.emit(`  const ${contextualErrorVar} = runtime.contextualizeError(e, ${errorContext});`);
+        this.emit(`  const ${contextualErrorVar} = runtime.PoisonError.wrap(e, ${errorContext});`);
         for (const chainName of poisonChains) {
           this.emit.line(
             `    ${this.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(${contextualErrorVar}, ${errorContext}), "${chainName}");`

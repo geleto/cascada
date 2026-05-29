@@ -1,9 +1,14 @@
 
 import expect from 'expect.js';
 import {AsyncEnvironment} from '../../src/environment/environment.js';
-import {createPoison} from '../../src/runtime/runtime.js';
+import {createPoison, PoisonError} from '../../src/runtime/runtime.js';
 
 (function () {
+  const TEST_EC = [1, 1, 'IteratorIntegration.TestInput', 'poison-iterator-integration.njk', null];
+
+  function createTestPoison(error) {
+    return createPoison(PoisonError.wrap(error, TEST_EC));
+  }
 
   describe('Iterator Poison Integration with Templates', () => {
     let env;
@@ -140,7 +145,7 @@ import {createPoison} from '../../src/runtime/runtime.js';
           const context = {
             async *mixedGenerator() {
               yield 1;
-              yield createPoison(new Error('Value 2 poisoned'));
+              yield createTestPoison(new Error('Value 2 poisoned'));
               yield 3;
             }
           };

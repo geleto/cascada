@@ -920,7 +920,7 @@ if (node.isAsync) {
 const t1 = this._compileExpression(node.value, frame, true, node);
 // await the actual return value — this is the one value the caller receives
 const resolved = await runtime.resolveSingle(t1);
-if (runtime.isPoison(resolved)) { throw new runtime.PoisonError(resolved.errors); }
+if (runtime.isPoison(resolved)) { throw runtime.PoisonError.create(resolved.errors); }
 currentBuffer.finish();
 cb(null, resolved);
 ```

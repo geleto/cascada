@@ -57,7 +57,7 @@ class SequenceObjectChain extends Chain {
         const result = cmd.apply(this);
         if (result && typeof result.then === 'function') {
           return Promise.resolve(result).catch((err) => {
-            this._recordError(err, cmd);
+            cmd.rejectResult(err);
           });
         }
         return result;
@@ -76,6 +76,10 @@ class SequenceObjectChain extends Chain {
 
       return result;
     } catch (err) {
+      if (cmd.isObservable) {
+        cmd.rejectResult(err);
+        return;
+      }
       this._recordError(err, cmd);
     }
   }
@@ -94,14 +98,14 @@ class SequenceObjectChain extends Chain {
       return targetValue.then((resolved) => {
         const target = this._getTarget();
         if (isPoison(target)) {
-          throw new PoisonError(target.errors.slice());
+          throw PoisonError.group(target.errors);
         }
         return this._snapshotFromSequenceTarget(resolved);
       });
     }
     const target = this._getTarget();
     if (isPoison(target)) {
-      throw new PoisonError(target.errors.slice());
+      throw PoisonError.group(target.errors);
     }
     return super._resolveSnapshotCommandResult();
   }

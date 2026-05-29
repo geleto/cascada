@@ -12,19 +12,21 @@ import {
   createPoison,
   createRenderState,
   isPoisonError,
+  PoisonError,
   linkInheritanceCallableFootprintChains,
   runControlFlowBoundary
 } from '../../src/runtime/runtime.js';
 
 const TEST_EC = [1, 1, 'Test', 'test.casc', null];
-const TEST_BRANCH_CONTEXT = { ec: TEST_EC, branchName: 'test' };
+const TEST_DIAGNOSTIC_CONTEXT = { ec: TEST_EC, branchName: 'test' };
+const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC));
 
 describe('chain.finalSnapshot', function () {
   let env;
   let context;
   const createBuffer = (input, ctx, chainName) => {
     const targetName = chainName || 'text';
-    const cb = new CommandBuffer(ctx || null, null);
+    const cb = new CommandBuffer(ctx || null, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
     makeChain(cb, ctx, targetName);
     const addItem = (buffer, item) => {
       if (item instanceof CommandBuffer) {
@@ -32,7 +34,7 @@ describe('chain.finalSnapshot', function () {
         return;
       }
       if (Array.isArray(item)) {
-        const nested = new CommandBuffer(ctx || null, null);
+        const nested = new CommandBuffer(ctx || null, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
         const linkedChain = buffer.getChain(targetName);
         if (linkedChain) {
           nested._installLinkedChain(targetName, linkedChain);
@@ -61,8 +63,8 @@ describe('chain.finalSnapshot', function () {
     return cb;
   };
   const makeChain = (buffer, ctx, chainName) => {
-    if (!buffer.bufferBranchContext) {
-      buffer.bufferBranchContext = TEST_BRANCH_CONTEXT;
+    if (!buffer.bufferStackContext) {
+      buffer.bufferStackContext = TEST_DIAGNOSTIC_CONTEXT;
     }
     const name = chainName || 'text';
     return buffer.getOwnChain(name) || declareBufferChain(buffer, name, name, ctx || null, null);
@@ -71,7 +73,7 @@ describe('chain.finalSnapshot', function () {
     makeChain(buffer, ctx, chainName).finalSnapshot()
   );
   const flattenSequence = (commands, ctx, chainName, sequence) => {
-    const buffer = new CommandBuffer(ctx, null);
+    const buffer = new CommandBuffer(ctx, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
     const sequenceChain = declareBufferChain(buffer, chainName, 'sequence', ctx || null, sequence);
 
     commands.forEach((entry) => buffer.addCommand(entry, chainName));
@@ -103,7 +105,7 @@ describe('chain.finalSnapshot', function () {
 
   describe('buffer entry cleanup', function () {
     it('releases applied command entries after finalSnapshot completes', async function () {
-      const buffer = new CommandBuffer(context, null);
+      const buffer = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       const chain = declareBufferChain(buffer, 'text', 'text', context, null);
 
       buffer.addCommand(new TextCommand({
@@ -124,8 +126,8 @@ describe('chain.finalSnapshot', function () {
     });
 
     it('releases finished child buffers after the iterator leaves them', async function () {
-      const parent = new CommandBuffer(context, null);
-      const child = new CommandBuffer(context, null);
+      const parent = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+      const child = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       const chain = declareBufferChain(parent, 'text', 'text', context, null);
       child._installLinkedChain('text', chain);
 
@@ -152,7 +154,7 @@ describe('chain.finalSnapshot', function () {
     });
 
     it('disposes finished iterator state after completion', async function () {
-      const buffer = new CommandBuffer(context, null);
+      const buffer = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       const chain = declareBufferChain(buffer, 'text', 'text', context, null);
       const iterator = chain._iterator;
 
@@ -170,13 +172,13 @@ describe('chain.finalSnapshot', function () {
       expect(second).to.be('A');
       expect(chain._iterator).to.be(null);
       expect(iterator.finished).to.be(true);
-      expect(iterator.stack).to.be(null);
+      expect(iterator.stack).to.eql([]);
       expect(iterator.output).to.be(null);
       expect(iterator._pendingObservables).to.be(null);
     });
 
     it('clears chain completion promise state after completion', async function () {
-      const buffer = new CommandBuffer(context, null);
+      const buffer = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       const chain = declareBufferChain(buffer, 'text', 'text', context, null);
 
       buffer.addCommand(new TextCommand({
@@ -195,7 +197,7 @@ describe('chain.finalSnapshot', function () {
     });
 
     it('finishes aggregate buffer state after all lanes close', async function () {
-      const buffer = new CommandBuffer(context, null);
+      const buffer = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       const chain = declareBufferChain(buffer, 'text', 'text', context, null);
 
       buffer.addCommand(new TextCommand({
@@ -212,7 +214,7 @@ describe('chain.finalSnapshot', function () {
     });
 
     it('clears resolved sequence promise cache after async sequence target resolution', async function () {
-      const buffer = new CommandBuffer(context, null);
+      const buffer = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       const sequenceChain = declareBufferChain(buffer, 'logger', 'sequence', context, Promise.resolve({
         snapshot() {
           return ['ok'];
@@ -229,7 +231,7 @@ describe('chain.finalSnapshot', function () {
     });
 
     it('creates declared chain lanes and finishes unused lanes', function () {
-      const buffer = new CommandBuffer(context);
+      const buffer = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       const chain = declareBufferChain(buffer, 'unused', 'var', context, null);
 
       expect(buffer.getChain('unused')).to.be(chain);
@@ -243,30 +245,30 @@ describe('chain.finalSnapshot', function () {
     });
 
     it('fails when a linked parent chain has no registered chain object', function () {
-      const parent = new CommandBuffer(context);
+      const parent = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       declareBufferChain(parent, 'text', 'text', context, null);
       delete parent._chains.text;
 
-      expect(() => new CommandBuffer(context, null, ['text'], parent)).to.throwError((err) => {
+      expect(() => new CommandBuffer(context, null, ['text'], parent, null, TEST_DIAGNOSTIC_CONTEXT)).to.throwError((err) => {
         expect(err.message).to.contain('Cannot link chain \'text\' without a registered chain object');
       });
       expect(parent.arrays.text).to.have.length(0);
     });
 
     it('rejects duplicate linked lane metadata', function () {
-      expect(() => new CommandBuffer(context, null, ['text', 'text'], null, null)).to.throwError(/linkedChains contains duplicate chain 'text'/);
-      expect(() => new CommandBuffer(context, null, [42], null, null)).to.throwError(/linkedChains contains a non-string chain name/);
+      expect(() => new CommandBuffer(context, null, ['text', 'text'], null, null, TEST_DIAGNOSTIC_CONTEXT)).to.throwError(/linkedChains contains duplicate chain 'text'/);
+      expect(() => new CommandBuffer(context, null, [42], null, null, TEST_DIAGNOSTIC_CONTEXT)).to.throwError(/linkedChains contains a non-string chain name/);
     });
 
     it('treats repeated lane creation as an invariant failure', function () {
-      const buffer = new CommandBuffer(context);
+      const buffer = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       declareBufferChain(buffer, 'text', 'text', context, null);
 
       expect(() => declareBufferChain(buffer, 'text', 'text', context, null)).to.throwError(/registered more than once/);
     });
 
     it('does not overwrite chain type metadata when duplicate declaration fails', function () {
-      const buffer = new CommandBuffer(context);
+      const buffer = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       declareBufferChain(buffer, 'text', 'text', context, null);
 
       expect(() => declareBufferChain(buffer, 'text', 'var', context, null)).to.throwError(/registered more than once/);
@@ -274,39 +276,39 @@ describe('chain.finalSnapshot', function () {
     });
 
     it('does not hide invalid async-boundary lane metadata', async function () {
-      const parent = new CommandBuffer(context);
+      const parent = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       declareBufferChain(parent, 'text', 'text', context, null);
       try {
-        await runControlFlowBoundary(parent, 'text', null, context, createRenderState(), async () => null);
+        await runControlFlowBoundary(parent, 'text', null, context, createRenderState(), async () => null, { ec: TEST_EC });
         throw new Error('expected invalid linked chain metadata to fail');
       } catch (err) {
-        expect(err.name).to.be('RuntimeFatalError');
+        expect(err.name).to.be('RuntimeError');
         expect(err.message).to.contain('linkedChains must be an array when provided');
       }
     });
 
 
     it('stores linked mutated metadata for construction-time and late links', function () {
-      const parent = new CommandBuffer(context);
+      const parent = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       declareBufferChain(parent, 'text', 'text', context, null);
       declareBufferChain(parent, 'data', 'data', context, null);
 
-      const constructedChild = new CommandBuffer(context, null, ['text'], parent, ['text']);
+      const constructedChild = new CommandBuffer(context, null, ['text'], parent, ['text'], TEST_DIAGNOSTIC_CONTEXT);
       expect(constructedChild.isLinkedMutatedChain('text')).to.be(true);
 
-      const lateLinkedChild = new CommandBuffer(context, null);
-      linkInheritanceCallableFootprintChains(parent, lateLinkedChild, ['text', 'data'], ['data']);
+      const lateLinkedChild = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+      linkInheritanceCallableFootprintChains(parent, lateLinkedChild, ['text', 'data'], ['data'], TEST_EC);
       expect(lateLinkedChild.isLinkedMutatedChain('text')).to.be(false);
       expect(lateLinkedChild.isLinkedMutatedChain('data')).to.be(true);
     });
 
     it('links a child to an already-finished parent chain without structural insertion', function () {
-      const parent = new CommandBuffer(context);
+      const parent = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       const chain = declareBufferChain(parent, 'text', 'text', context, null);
       parent.finish();
 
-      const child = new CommandBuffer(context);
-      linkInheritanceCallableFootprintChains(parent, child, ['text']);
+      const child = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+      linkInheritanceCallableFootprintChains(parent, child, ['text'], null, TEST_EC);
 
       expect(child.getChain('text')).to.be(chain);
       expect(parent.arrays.text).to.be(null);
@@ -314,18 +316,18 @@ describe('chain.finalSnapshot', function () {
     });
 
     it('fails when finishing an unknown lane', function () {
-      const buffer = new CommandBuffer(context);
+      const buffer = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       declareBufferChain(buffer, 'text', 'text', context, null);
 
       expect(() => buffer.finishChain('missing')).to.throwError((err) => {
-        expect(err.name).to.be('RuntimeFatalError');
+        expect(err.name).to.be('RuntimeError');
         expect(err.message).to.contain('Chain \'missing\' is visible but this buffer has no linked lane');
       });
     });
 
     it('finds chains only through local declarations and explicit links', function () {
-      const parent = new CommandBuffer(context, null);
-      const child = new CommandBuffer(context, parent);
+      const parent = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+      const child = new CommandBuffer(context, parent, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       const chain = declareBufferChain(parent, 'text', 'text', context, null);
 
       expect(parent.getChain('text')).to.be(chain);
@@ -339,7 +341,7 @@ describe('chain.finalSnapshot', function () {
     });
 
     it('fails instead of lazily creating a lane when adding to an unlinked chain', function () {
-      const buffer = new CommandBuffer(context);
+      const buffer = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
 
       expect(() => {
         buffer.addCommand(new TextCommand({
@@ -351,7 +353,7 @@ describe('chain.finalSnapshot', function () {
     });
 
     it('fails instead of lazily creating a lane when an iterator enters an unlinked chain', function () {
-      const buffer = new CommandBuffer(context);
+      const buffer = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
 
       expect(() => {
         buffer.onIteratorEnterBuffer({ onBufferFinished() {} }, 'text');
@@ -482,8 +484,8 @@ describe('chain.finalSnapshot', function () {
 
   describe('Error Handling & Edge Cases', function () {
     it('should resolve snapshot at command position before later writes', async function () {
-      const buffer = new CommandBuffer(context, null);
-      buffer.bufferBranchContext = TEST_BRANCH_CONTEXT;
+      const buffer = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+      buffer.bufferStackContext = TEST_DIAGNOSTIC_CONTEXT;
       const textOut = declareBufferChain(buffer, 'text', 'text', context, null);
 
       textOut('A', TEST_EC);
@@ -510,8 +512,8 @@ describe('chain.finalSnapshot', function () {
     });
 
     it('finalSnapshot should wait for owning chain completion', async function () {
-      const buffer = new CommandBuffer(context, null);
-      buffer.bufferBranchContext = TEST_BRANCH_CONTEXT;
+      const buffer = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+      buffer.bufferStackContext = TEST_DIAGNOSTIC_CONTEXT;
       const out = declareBufferChain(buffer, 'text', 'text', context, null);
       out('late', TEST_EC);
 
@@ -527,8 +529,8 @@ describe('chain.finalSnapshot', function () {
     });
 
     it('tracks finished state per chain', async function () {
-      const buffer = new CommandBuffer(context, null);
-      buffer.bufferBranchContext = TEST_BRANCH_CONTEXT;
+      const buffer = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+      buffer.bufferStackContext = TEST_DIAGNOSTIC_CONTEXT;
       const text = declareBufferChain(buffer, 'text', 'text', context, null);
       const data = declareBufferChain(buffer, 'data', 'data', context, null);
 
@@ -588,7 +590,7 @@ describe('chain.finalSnapshot', function () {
     });
 
     it('should reject CommandBuffer values inside TextCommand arguments', async function () {
-      const nested = new CommandBuffer(context, null);
+      const nested = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       declareBufferChain(nested, 'text', 'text', context, null);
       nested.addCommand(new TextCommand({ chainName: 'text', args: ['x'], errorContext: TEST_EC }), 'text');
       const buffer = createBuffer([
@@ -642,7 +644,7 @@ describe('chain.finalSnapshot', function () {
       });
 
       it('should collect poison from text output', async function () {
-        const poison = createPoison(new Error('Output error'));
+        const poison = createTestPoison(new Error('Output error'));
         const arr = ['Valid text', poison, 'More text'];
 
         try {
@@ -650,13 +652,13 @@ describe('chain.finalSnapshot', function () {
           expect().fail('Should have thrown');
         } catch (err) {
           expect(isPoisonError(err)).to.be(true);
-          expect(err.errors[0].message).to.equal('Output error');
+          expect(err.errors[0].message).to.contain('Output error');
         }
       });
 
       it('should collect multiple poisons', async function () {
-        const poison1 = createPoison(new Error('Error 1'));
-        const poison2 = createPoison(new Error('Error 2'));
+        const poison1 = createTestPoison(new Error('Error 1'));
+        const poison2 = createTestPoison(new Error('Error 2'));
         const arr = [poison1, 'text', poison2];
 
         try {
@@ -669,7 +671,7 @@ describe('chain.finalSnapshot', function () {
       });
 
       it('should continue processing after finding poison', async function () {
-        const poison = createPoison(new Error('Early error'));
+        const poison = createTestPoison(new Error('Early error'));
         const arr = [poison, 'Valid', 'Text'];
 
         try {
@@ -682,7 +684,7 @@ describe('chain.finalSnapshot', function () {
       });
 
       it('should collect poison from nested arrays', async function () {
-        const poison = createPoison(new Error('Nested error'));
+        const poison = createTestPoison(new Error('Nested error'));
         const arr = ['text', ['nested', poison, 'more'], 'end'];
 
         try {
@@ -694,7 +696,7 @@ describe('chain.finalSnapshot', function () {
       });
 
       it('should collect poison from arrays with functions', async function () {
-        const poison = createPoison(new Error('Func array error'));
+        const poison = createTestPoison(new Error('Func array error'));
         const arr = [['prefix', poison, (val) => val.toUpperCase()]];
 
         try {
@@ -706,7 +708,7 @@ describe('chain.finalSnapshot', function () {
       });
 
       it('should handle command objects with poisoned args', async function () {
-        const poison = createPoison(new Error('Arg error'));
+        const poison = createTestPoison(new Error('Arg error'));
         const arr = [cmd({
           chainName: 'text',
           args: ['valid', poison],
@@ -741,8 +743,8 @@ describe('chain.finalSnapshot', function () {
 
       it('should deduplicate identical errors', async function () {
         const err = new Error('Duplicate');
-        const poison1 = createPoison(err);
-        const poison2 = createPoison(err);
+        const poison1 = createTestPoison(err);
+        const poison2 = createTestPoison(err);
         const arr = [poison1, poison2];
 
         try {
@@ -755,8 +757,8 @@ describe('chain.finalSnapshot', function () {
       });
 
       it('should keep distinct errors', async function () {
-        const poison1 = createPoison(new Error('Error A'));
-        const poison2 = createPoison(new Error('Error B'));
+        const poison1 = createTestPoison(new Error('Error A'));
+        const poison2 = createTestPoison(new Error('Error B'));
         const arr = [poison1, poison2];
 
         try {
@@ -782,11 +784,11 @@ describe('chain.finalSnapshot', function () {
 
       it('should process entire buffer even with early errors', async function () {
         const errors = [
-          createPoison(new Error('Error 1')),
+          createTestPoison(new Error('Error 1')),
           'valid',
-          createPoison(new Error('Error 2')),
+          createTestPoison(new Error('Error 2')),
           'more valid',
-          createPoison(new Error('Error 3'))
+          createTestPoison(new Error('Error 3'))
         ];
 
         try {
@@ -800,8 +802,8 @@ describe('chain.finalSnapshot', function () {
 
       it('should collect errors from multiple nested levels', async function () {
         const arr = [
-          createPoison(new Error('Level 0')),
-          ['text', createPoison(new Error('Level 1')), [createPoison(new Error('Level 2'))]]
+          createTestPoison(new Error('Level 0')),
+          ['text', createTestPoison(new Error('Level 1')), [createTestPoison(new Error('Level 2'))]]
         ];
 
         try {
@@ -858,7 +860,7 @@ describe('chain.finalSnapshot', function () {
       it('should handle poison in deeply nested structures', async function () {
         const arr = [
           'start',
-          ['level1', ['level2', createPoison(new Error('Deep poison')), 'more level2'], 'more level1'],
+          ['level1', ['level2', createTestPoison(new Error('Deep poison')), 'more level2'], 'more level1'],
           'end'
         ];
 
@@ -884,7 +886,7 @@ describe('chain.finalSnapshot', function () {
       });
 
       it('should handle chain name with poison', async function () {
-        const poison = createPoison(new Error('Focus poison'));
+        const poison = createTestPoison(new Error('Focus poison'));
         const arr = [poison, 'text'];
 
         try {
@@ -1109,3 +1111,4 @@ describe('chain.finalSnapshot', function () {
     });
   });
 });
+

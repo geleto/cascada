@@ -5,6 +5,11 @@ import * as runtime from '../../src/runtime/runtime.js';
 import {isPoisonError} from '../../src/runtime/runtime.js';
 
 (function () {
+  const TEST_EC = [1, 1, 'Poison.TestInput', 'poison-error-recovery.njk', null];
+
+  function createTestPoison(error) {
+    return runtime.createPoison(runtime.PoisonError.wrap(error, TEST_EC));
+  }
 
   describe('Poisoning Tests', () => {
     let env;
@@ -13,7 +18,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
     });
 
     it('should test for error', async () => {
-      const p = Promise.reject(new Error('REJECTED'));
+      const p = createTestPoison(new Error('REJECTED'));
       const output = await env.renderTemplateString('{{ val is error }}', { val: p });
       expect(output).to.equal('true');
     });
@@ -33,7 +38,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
       }
       CustomError.prototype = new Error();
       const err = new CustomError('test error');
-      const p = runtime.createPoison(err, [1, 1, null, null, null]);
+      const p = createTestPoison(err);
 
       const output = await env.renderTemplateString('{{ val is error }}', { val: p });
       expect(output).to.equal('true');
@@ -48,7 +53,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
 
     it('should poison render if LHS of "is" is poisoned', async () => {
       const err = new Error('test error');
-      const p = runtime.createPoison(err, [1, 1, null, null, null]);
+      const p = createTestPoison(err);
       try {
         await env.renderTemplateString('{{ val is defined }}', { val: p });
         expect().fail('Should have thrown');

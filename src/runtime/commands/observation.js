@@ -1,5 +1,4 @@
 import {RETURN_UNSET} from '../markers.js';
-import {contextualizeError} from '../errors.js';
 import {ObservableCommand, MutatingResultCommand, requireCommandErrorContext} from './base.js';
 
 class SnapshotCommand extends ObservableCommand {
@@ -11,20 +10,11 @@ class SnapshotCommand extends ObservableCommand {
   }
 
   apply(chain) {
-    const contextualize = (err) => contextualizeError(err, this.errorContext);
-
     if (!chain) {
-      this.rejectResult(contextualize(new Error('SnapshotCommand requires a chain')));
-      return;
+      throw new Error('SnapshotCommand requires a chain');
     }
 
-    try {
-      return this.settleResult(chain._resolveSnapshotCommandResult(), {
-        mapError: contextualize
-      });
-    } catch (err) {
-      this.rejectResult(contextualize(err));
-    }
+    return this.settleResult(chain._resolveSnapshotCommandResult());
   }
 }
 
@@ -36,18 +26,11 @@ class RawSnapshotCommand extends ObservableCommand {
   }
 
   apply(chain) {
-    const contextualize = (err) => contextualizeError(err, this.errorContext);
-
     if (!chain) {
-      this.rejectResult(contextualize(new Error('RawSnapshotCommand requires a chain')));
-      return;
+      throw new Error('RawSnapshotCommand requires a chain');
     }
 
-    try {
-      this.resolveResult(chain._getTarget());
-    } catch (err) {
-      this.rejectResult(contextualize(err));
-    }
+    this.resolveResult(chain._getTarget());
   }
 }
 
@@ -59,18 +42,11 @@ class ReturnIsUnsetCommand extends ObservableCommand {
   }
 
   apply(chain) {
-    const contextualize = (err) => contextualizeError(err, this.errorContext);
-
     if (!chain) {
-      this.rejectResult(contextualize(new Error('ReturnIsUnsetCommand requires a chain')));
-      return;
+      throw new Error('ReturnIsUnsetCommand requires a chain');
     }
 
-    try {
-      this.resolveResult(chain._getTarget() === RETURN_UNSET);
-    } catch (err) {
-      this.rejectResult(contextualize(err));
-    }
+    this.resolveResult(chain._getTarget() === RETURN_UNSET);
   }
 }
 
@@ -83,22 +59,14 @@ class IsErrorCommand extends ObservableCommand {
   }
 
   apply(chain) {
-    const contextualize = (err) => contextualizeError(err, this.errorContext);
-
     if (!chain) {
-      this.rejectResult(contextualize(new Error('IsErrorCommand requires a chain')));
-      return;
+      throw new Error('IsErrorCommand requires a chain');
     }
 
-    try {
-      const result = chain._isErrorNow();
-      return this.settleResult(result, {
-        mapValue: (value) => !!value,
-        mapError: contextualize
-      });
-    } catch (err) {
-      this.rejectResult(contextualize(err));
-    }
+    const result = chain._isErrorNow();
+    return this.settleResult(result, {
+      mapValue: (value) => !!value
+    });
   }
 }
 
@@ -111,22 +79,14 @@ class GetErrorCommand extends ObservableCommand {
   }
 
   apply(chain) {
-    const contextualize = (err) => contextualizeError(err, this.errorContext);
-
     if (!chain) {
-      this.rejectResult(contextualize(new Error('GetErrorCommand requires a chain')));
-      return;
+      throw new Error('GetErrorCommand requires a chain');
     }
 
-    try {
-      const result = chain._getErrorNow();
-      return this.settleResult(result, {
-        mapValue: (value) => value || null,
-        mapError: contextualize
-      });
-    } catch (err) {
-      this.rejectResult(contextualize(err));
-    }
+    const result = chain._getErrorNow();
+    return this.settleResult(result, {
+      mapValue: (value) => value || null
+    });
   }
 }
 
@@ -138,20 +98,11 @@ class CaptureGuardStateCommand extends ObservableCommand {
   }
 
   apply(chain) {
-    const contextualize = (err) => contextualizeError(err, this.errorContext);
-
     if (!chain) {
-      this.rejectResult(contextualize(new Error('CaptureGuardStateCommand requires a chain')));
-      return;
+      throw new Error('CaptureGuardStateCommand requires a chain');
     }
 
-    try {
-      return this.settleResult(chain._captureGuardState(), {
-        mapError: contextualize
-      });
-    } catch (err) {
-      this.rejectResult(contextualize(err));
-    }
+    return this.settleResult(chain._captureGuardState());
   }
 }
 
@@ -164,20 +115,12 @@ class RestoreGuardStateCommand extends MutatingResultCommand {
   }
 
   apply(chain) {
-    const contextualize = (err) => contextualizeError(err, this.errorContext);
-
     if (!chain) {
       this.resolveResult(undefined);
       return;
     }
 
-    try {
-      return this.settleResult(chain._restoreGuardState(this.target), {
-        mapError: contextualize
-      });
-    } catch (err) {
-      this.rejectResult(contextualize(err));
-    }
+    return this.settleResult(chain._restoreGuardState(this.target));
   }
 }
 

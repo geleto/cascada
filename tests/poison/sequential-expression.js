@@ -1,7 +1,7 @@
 
 import expect from 'expect.js';
 import {AsyncEnvironment} from '../../src/environment/environment.js';
-import {createPoison, isPoison, isPoisonError} from '../../src/runtime/runtime.js';
+import {createPoison, isPoison, isPoisonError, PoisonError} from '../../src/runtime/runtime.js';
 
 /**
  * Integration tests for sequential operations with poisoning system
@@ -16,6 +16,12 @@ import {createPoison, isPoison, isPoisonError} from '../../src/runtime/runtime.j
  */
 
 describe('Sequential Expression Poisoning', function () {
+  const TEST_EC = [1, 1, 'SequentialExpression.TestInput', 'poison-sequential-expression.njk', null];
+
+  function createTestPoison(error) {
+    return createPoison(PoisonError.wrap(error, TEST_EC));
+  }
+
   let env;
 
   beforeEach(function () {
@@ -989,7 +995,7 @@ describe('Sequential Expression Poisoning', function () {
         obj: {
           async getValue() {
             // Simulate an internal operation that returns poison
-            return createPoison(new Error('Internal poison'));
+            return createTestPoison(new Error('Internal poison'));
           }
         }
       };

@@ -1,17 +1,20 @@
 
 import {assertChainLaneAvailable, checkFinishedBuffer} from './checks.js';
-import {contextualizeError, RuntimeFatalError} from './errors.js';
+import {RuntimeError} from './errors.js';
 
 class CommandBuffer {
-  constructor(context, parent = null, linkedChains = null, linkTarget = null, linkedMutatedChains = null, bufferBranchContext = null, traceParent = null, renderState = null) {
-    const linkedLaneNames = validateLaneNames(linkedChains, 'linkedChains', context);
-    const linkedMutatedLaneNames = validateLaneNames(linkedMutatedChains, 'linkedMutatedChains', context);
+  constructor(context, parent = null, linkedChains = null, linkTarget = null, linkedMutatedChains = null, bufferStackContext, traceParent = null, renderState = null) {
+    if (!bufferStackContext || !Array.isArray(bufferStackContext.ec)) {
+      throw new TypeError('CommandBuffer requires bufferStackContext with compact ec');
+    }
+    const linkedLaneNames = validateLaneNames(linkedChains, 'linkedChains', bufferStackContext);
+    const linkedMutatedLaneNames = validateLaneNames(linkedMutatedChains, 'linkedMutatedChains', bufferStackContext);
 
     this._context = context;
     this.parent = parent;
     this.traceParent = traceParent || null;
     this.renderState = renderState || (parent && parent.renderState) || null;
-    this.bufferBranchContext = bufferBranchContext || null;
+    this.bufferStackContext = bufferStackContext;
     this.finished = false;
     this._finishedChains = Object.create(null);
     // Local addressability map. Entries may be owned by this buffer or linked
@@ -49,9 +52,9 @@ class CommandBuffer {
       return null;
     }
     if (resolvedChainName in this.arrays) {
-      throw new RuntimeFatalError(
+      RuntimeError.reportAndThrow(
         `Chain '${resolvedChainName}' was registered more than once on the same CommandBuffer`,
-        this._context
+        this.bufferStackContext
       );
     }
     this.arrays[resolvedChainName] = [];
@@ -91,6 +94,31 @@ class CommandBuffer {
       });
     }
     return this._finishedPromise;
+  }
+
+  getDiagnosticContext() {
+    const { ec, ...metadata } = this.bufferStackContext;
+    return {
+      lineno: ec[0] ?? null,
+      colno: ec[1] ?? null,
+      label: ec[2] ?? null,
+      path: ec[3] ?? null,
+      ...metadata
+    };
+  }
+
+  getDiagnosticStack() {
+    const stack = [];
+    const seen = new Set();
+    let buffer = this;
+
+    while (buffer && !seen.has(buffer)) {
+      seen.add(buffer);
+      stack.push(buffer.getDiagnosticContext());
+      buffer = buffer.traceParent || buffer.parent || null;
+    }
+
+    return stack;
   }
 
   finish() {
@@ -195,13 +223,13 @@ class CommandBuffer {
       const resolvedChainName = this._resolveAliasedChainName(chainName);
       const chain = this.getChainIfExists(resolvedChainName);
       if (!chain) {
-        throw new RuntimeFatalError(
+        RuntimeError.reportAndThrow(
           `Chain '${resolvedChainName}' is unavailable on finished CommandBuffer`,
           cmd.errorContext
         );
       }
       if (!chain._buffer.isChainFinished(resolvedChainName)) {
-        throw new RuntimeFatalError(
+        RuntimeError.reportAndThrow(
           `${cmd.constructor.name} on finished buffer is allowed only if the target chain stream is finished`,
           cmd.errorContext
         );
@@ -209,7 +237,7 @@ class CommandBuffer {
       return this._runObservationCommandOnFinishedBuffer(cmd, resolvedChainName);
     }
 
-    throw new RuntimeFatalError(
+    RuntimeError.reportAndThrow(
       `Adding command '${cmd?.constructor ? cmd.constructor.name : 'unknown'}' is not allowed on a finished CommandBuffer`,
       cmd.errorContext
     );
@@ -222,19 +250,14 @@ class CommandBuffer {
   _runObservationCommandOnFinishedBuffer(cmd, chainName) {
     const chain = this.getChainIfExists(chainName);
     if (!chain) {
-      throw new RuntimeFatalError(
+      RuntimeError.reportAndThrow(
         `Chain '${chainName}' is unavailable on finished CommandBuffer`,
         cmd.errorContext
       );
     }
 
     const applyObservation = () => {
-      try {
-        cmd.apply(chain);
-      } catch (err) {
-        cmd.rejectResult(contextualizeError(err, cmd.errorContext));
-      }
-      return cmd.promise;
+      return chain._applyCommand(cmd) || cmd.promise;
     };
 
     // Finished-buffer observations are allowed only after the target chain stream is complete.
@@ -367,9 +390,9 @@ class CommandBuffer {
   _assertCanInstallLinkedChain(chainName, chain) {
     const resolvedChainName = this._resolveAliasedChainName(chainName);
     if (!chain) {
-      throw new RuntimeFatalError(
+      RuntimeError.reportAndThrow(
         `Cannot link chain '${resolvedChainName}' without a registered chain object`,
-        this._context
+        this.bufferStackContext
       );
     }
     return resolvedChainName;
@@ -377,24 +400,24 @@ class CommandBuffer {
 
 }
 
-function validateLaneNames(laneNames, label, context = null) {
+function validateLaneNames(laneNames, label, bufferStackContext) {
   if (laneNames == null) {
     return null;
   }
   if (!Array.isArray(laneNames)) {
-    throw new RuntimeFatalError(`${label} must be an array when provided`, context);
+    RuntimeError.reportAndThrow(`${label} must be an array when provided`, bufferStackContext);
   }
   const seen = new Set();
   for (let i = 0; i < laneNames.length; i++) {
     const name = laneNames[i];
     if (typeof name !== 'string') {
-      throw new RuntimeFatalError(`${label} contains a non-string chain name`, context);
+      RuntimeError.reportAndThrow(`${label} contains a non-string chain name`, bufferStackContext);
     }
     if (!name) {
-      throw new RuntimeFatalError(`${label} contains an empty chain name`, context);
+      RuntimeError.reportAndThrow(`${label} contains an empty chain name`, bufferStackContext);
     }
     if (seen.has(name)) {
-      throw new RuntimeFatalError(`${label} contains duplicate chain '${name}'`, context);
+      RuntimeError.reportAndThrow(`${label} contains duplicate chain '${name}'`, bufferStackContext);
     }
     seen.add(name);
   }

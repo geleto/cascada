@@ -3,11 +3,11 @@ import {RESOLVE_MARKER} from '../resolve.js';
 
 import {
   PoisonError,
+  RuntimeError,
   isPoison,
   isPoisonError,
-  isRuntimeFatalError,
+  isRuntimeError,
   createPoison,
-  contextualizeError,
 } from '../errors.js';
 import {BufferIterator} from '../buffer-iterator.js';
 
@@ -93,8 +93,8 @@ class Chain {
 
     const errorState = await this._computeTargetErrorState(this._getTarget());
     const hasError = !!(errorState && errorState.hasError);
-    const error = hasError && errorState && errorState.error && Array.isArray(errorState.error.errors)
-      ? new PoisonError(errorState.error.errors.slice())
+    const error = hasError
+      ? errorState.error
       : null;
 
     this._errorStateCache = {
@@ -126,28 +126,28 @@ class Chain {
   }
 
   _setFatalError(err, cmd = null) {
-    this._fatalError = contextualizeError(err, cmd.errorContext);
+    this._fatalError = RuntimeError.report(err, cmd.errorContext);
     this._markStateChanged();
   }
 
   _recordError(err, cmd = null) {
     if (!err) return;
-    if (isRuntimeFatalError(err)) {
+    if (isRuntimeError(err)) {
       this._setFatalError(err, cmd);
       return;
     }
-    const errors = isPoisonError(err) && Array.isArray(err.errors)
-      ? err.errors
-      : [err];
-    this._applyPoisonErrors(contextualizeCommandErrors(this, cmd, errors), cmd);
-  }
-
-  _applyPoisonErrors(errors) {
-    if (!Array.isArray(errors) || errors.length === 0) {
+    if (isPoisonError(err)) {
+      this._applyPoisonError(err, cmd);
       return;
     }
-    const merged = mergePoisonErrors(extractPoisonErrors(this._getTarget()), errors);
-    this._setTarget(createPoison(merged));
+    this._applyPoisonError(PoisonError.wrap(err, cmd.errorContext), cmd);
+  }
+
+  _applyPoisonError(poisonError) {
+    const existingPoison = getPoisonError(this._getTarget());
+    this._setTarget(createPoison(
+      existingPoison ? PoisonError.group([existingPoison, poisonError]) : poisonError
+    ));
   }
 
   _beforeApplyCommand(cmd) {
@@ -156,6 +156,29 @@ class Chain {
 
   _applyCommand(cmd) {
     if (!cmd) return;
+    if (cmd.isObservable) {
+      return this._applyObservableCommand(cmd);
+    }
+    return this._applyMutatingCommand(cmd);
+  }
+
+  _applyObservableCommand(cmd) {
+    try {
+      cmd.resolved = true;
+      this._beforeApplyCommand(cmd);
+      const result = cmd.apply(this);
+      if (result && typeof result.then === 'function') {
+        return Promise.resolve(result).catch((err) => {
+          cmd.rejectResult(RuntimeError.report(err, cmd.errorContext));
+        });
+      }
+      return result;
+    } catch (err) {
+      cmd.rejectResult(RuntimeError.report(err, cmd.errorContext));
+    }
+  }
+
+  _applyMutatingCommand(cmd) {
     try {
       cmd.resolved = true;
       this._beforeApplyCommand(cmd);
@@ -283,7 +306,7 @@ function createCallableChainFacade(chain) {
   });
 }
 
-export { Chain, createCallableChainFacade, cloneSnapshotValue, extractPoisonErrors, mergePoisonErrors, inspectTargetForErrors, contextualizeCommandErrors };
+export { Chain, createCallableChainFacade, cloneSnapshotValue, inspectTargetForErrors };
 
 function cloneSnapshotValue(value) {
   if (Array.isArray(value)) {
@@ -305,25 +328,14 @@ function isPlainObject(value) {
   return value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype;
 }
 
-function extractPoisonErrors(value) {
-  if (isPoison(value) && Array.isArray(value.errors)) {
-    return value.errors;
+function getPoisonError(value) {
+  if (isPoison(value)) {
+    return PoisonError.group(value.errors);
   }
-  if (isPoisonError(value) && Array.isArray(value.errors)) {
-    return value.errors;
+  if (isPoisonError(value)) {
+    return value;
   }
-  return [];
-}
-
-function mergePoisonErrors(existingErrors, nextErrors) {
-  const merged = [];
-  if (Array.isArray(existingErrors) && existingErrors.length > 0) {
-    merged.push(...existingErrors);
-  }
-  if (Array.isArray(nextErrors) && nextErrors.length > 0) {
-    merged.push(...nextErrors);
-  }
-  return merged;
+  return null;
 }
 
 async function inspectTargetForErrors(target) {
@@ -413,17 +425,9 @@ async function inspectTargetForErrors(target) {
     return { hasError: false, error: null };
   }
 
-  const deduped = new PoisonError(errors).errors.slice();
   return {
-    hasError: deduped.length > 0,
-    error: deduped.length > 0 ? new PoisonError(deduped) : null
+    hasError: true,
+    error: PoisonError.group(errors)
   };
 }
 
-function contextualizeCommandErrors(chain, cmd, errors) {
-  void chain;
-  if (!Array.isArray(errors) || errors.length === 0) {
-    return [];
-  }
-  return errors.map((err) => contextualizeError(err, cmd.errorContext));
-}

@@ -7,6 +7,10 @@ import {StringLoader} from '../util.js';
 import * as runtimeModule from '../../src/runtime/runtime.js';
 
 const TEST_EC = [1, 1, 'Test', 'test.casc', null];
+const TEST_BUFFER_STACK_CONTEXT = { ec: TEST_EC, branchName: 'test' };
+const createTestPoison = (message) => runtimeModule.createPoison(
+  runtimeModule.PoisonError.create(message, TEST_EC)
+);
 
 function createTestRenderState(reportError = null) {
   return runtimeModule.createRenderState(reportError);
@@ -281,7 +285,7 @@ describe('Phase 8 - Component Method Calls', function () {
     const env = new AsyncEnvironment(loader);
 
     env.addGlobal('fatalArg', () => Promise.reject(
-      new runtimeModule.RuntimeFatalError('fatal component arg', [1, 1, 'fatalArg()', 'Main.script', null])
+      new runtimeModule.RuntimeError('fatal component arg', [1, 1, 'fatalArg()', 'Main.script', null])
     ));
 
     loader.addTemplate('Component.script', [
@@ -381,7 +385,7 @@ describe('Phase 8 - Component Method Calls', function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
 
-      env.addGlobal('makePoison', (message) => runtimeModule.createPoison(new Error(message)));
+      env.addGlobal('makePoison', createTestPoison);
 
       loader.addTemplate('A.script', [
         'shared var status = "ok"',
@@ -408,7 +412,6 @@ describe('Phase 8 - Component Method Calls', function () {
     });
   });
 });
-
 describe('Phase 8 - Component Observations', function () {
   it('should combine render context and object payload inputs with payload values', async function () {
     const loader = new StringLoader();
@@ -630,7 +633,7 @@ describe('Phase 8 - Component Observations', function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
 
-    env.addGlobal('makePoison', (message) => runtimeModule.createPoison(new Error(message)));
+    env.addGlobal('makePoison', createTestPoison);
 
     loader.addTemplate('Component.script', [
       'shared var status = "ok"',
@@ -672,10 +675,10 @@ describe('Phase 8 - Component Observations', function () {
     });
 
     const ownerContext = makeContext('Main.script');
-    const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null);
+    const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null, null, TEST_BUFFER_STACK_CONTEXT);
     runtimeModule.declareBufferChain(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
 
-    const sharedRootBuffer = new runtimeModule.CommandBuffer(makeContext('Component.script'), null, null, null);
+    const sharedRootBuffer = new runtimeModule.CommandBuffer(makeContext('Component.script'), null, null, null, null, TEST_BUFFER_STACK_CONTEXT);
     runtimeModule.declareBufferChain(sharedRootBuffer, 'status', 'var', ownerContext, null);
 
     ownerBuffer.addCommand(new runtimeModule.VarCommand({
@@ -715,7 +718,7 @@ describe('Phase 8 - Component Observations', function () {
       await observationPromise;
       expect().fail('Expected component observation to reject');
     } catch (error) {
-      expect(error).to.be.a(runtimeModule.RuntimeFatalError);
+      expect(error).to.be.a(runtimeModule.RuntimeError);
       expect(error.message).to.contain('universal observational chain command');
     }
   });
@@ -787,7 +790,7 @@ describe('Phase 8 - Component Observations', function () {
     ]);
 
     expect(outcome.type).to.be('error');
-    expect(runtimeModule.isPoisonError(outcome.error)).to.be(true);
+    expect(outcome.error).to.be.a(runtimeModule.RuntimeError);
     expect(outcome.error.message).to.contain('instance.invoke is not a function');
   });
 
@@ -916,7 +919,6 @@ describe('Phase 8 - Component Observations', function () {
     }
   });
 });
-
 describe('Phase 8 - Component Lifecycle', function () {
   it('should keep constructor work and later method work on the same long-lived component root', async function () {
     const loader = new StringLoader();
@@ -1093,7 +1095,7 @@ describe('Phase 8 - Component Lifecycle', function () {
     });
 
     const ownerContext = makeContext('Main.script');
-    const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null);
+    const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null, null, TEST_BUFFER_STACK_CONTEXT);
     runtimeModule.declareBufferChain(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
 
     const gate = new Promise((resolve) => {
@@ -1173,7 +1175,7 @@ describe('Phase 8 - Component Lifecycle', function () {
     });
 
     const ownerContext = makeContext('Main.script');
-    const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null);
+    const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null, null, TEST_BUFFER_STACK_CONTEXT);
     runtimeModule.declareBufferChain(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
 
     const startupPromise = runtimeModule.startComponentInstance({
@@ -1208,7 +1210,7 @@ describe('Phase 8 - Component Lifecycle', function () {
     });
 
     const ownerContext = makeContext('Main.script');
-    const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null);
+    const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null, null, TEST_BUFFER_STACK_CONTEXT);
     runtimeModule.declareBufferChain(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
 
     const componentInstance = await runtimeModule.createComponentInstance({
@@ -1245,16 +1247,16 @@ describe('Phase 8 - Component Lifecycle', function () {
     expect(() => componentInstance.invoke(
       'ping',
       [],
-      { lineno: 1, colno: 1, path: 'Main.script' }
+      TEST_EC
     )).to.throwException((err) => {
-      expect(err).to.be.a(runtimeModule.RuntimeFatalError);
+      expect(err).to.be.a(runtimeModule.RuntimeError);
       expect(err.message).to.contain('cannot accept new operations');
     });
   });
 
   it('should reject new component operations after the instance is closed', function () {
     const context = { path: 'Component.script' };
-    const rootBuffer = new runtimeModule.CommandBuffer(context, null, null, null);
+    const rootBuffer = new runtimeModule.CommandBuffer(context, null, null, null, null, TEST_BUFFER_STACK_CONTEXT);
     const componentInstance = new runtimeModule.InheritanceInstance({
       entryTemplateOrScript: { path: 'Component.script' },
       runtimeState: {
@@ -1276,9 +1278,9 @@ describe('Phase 8 - Component Lifecycle', function () {
     expect(() => componentInstance.invoke(
       'build',
       [],
-      { lineno: 1, colno: 1, path: 'Main.script' }
+      TEST_EC
     )).to.throwException((err) => {
-      expect(err).to.be.a(runtimeModule.RuntimeFatalError);
+      expect(err).to.be.a(runtimeModule.RuntimeError);
       expect(err.message).to.contain('cannot accept new operations');
     });
   });
@@ -1303,7 +1305,7 @@ describe('Phase 8 - Component Lifecycle', function () {
         };
       }
     };
-    const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null);
+    const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null, null, TEST_BUFFER_STACK_CONTEXT);
 
     await runtimeModule.createComponentInstance({
       componentScriptOrTemplate: componentParticipant('Component.script'),
@@ -1332,7 +1334,7 @@ describe('Phase 8 - Component Lifecycle', function () {
         return { path: nextPath, rootContext, renderCtx };
       }
     };
-    const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null);
+    const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null, null, TEST_BUFFER_STACK_CONTEXT);
 
     try {
       await runtimeModule.createComponentInstance({
@@ -1365,9 +1367,9 @@ describe('Phase 8 - Component Lifecycle', function () {
         return { path: nextPath, rootContext, renderCtx };
       }
     };
-    const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null);
+    const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null, null, TEST_BUFFER_STACK_CONTEXT);
 
-    const failure = new runtimeModule.RuntimeFatalError(
+    const failure = new runtimeModule.RuntimeError(
       'async constructor failed',
       [1, 1, null, 'Component.script', null]
     );

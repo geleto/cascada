@@ -1,5 +1,5 @@
 
-import {createPoison, isPoison, isPoisonError, contextualizeError, RuntimePromise} from './errors.js';
+import {createPoison, isPoison, isPoisonError, RuntimePromise, collectErrors, PoisonError, RuntimeError} from './errors.js';
 import {RESOLVE_MARKER, resolveAll} from './resolve.js';
 
 /**
@@ -58,25 +58,27 @@ function callWrapAsync(obj, name, context, args, errorContext, currentBuffer = n
   } else if (!objPoison && poisonedArgs.length === 1) {
     return poisonedArgs[0]; // Only one arg is poisoned - return it directly
   } else if (objPoison || poisonedArgs.length > 0) {
-    // Multiple sources poisoned - merge all errors
-    const errors = [
-      ...(objPoison ? obj.errors : []),
-      ...poisonedArgs.flatMap(p => p.errors)
-    ];
-    return createPoison(errors); // Errors already have position info from collectErrors
+    const errors = [];
+    if (objPoison) {
+      errors.push(...obj.errors);
+    }
+    for (const arg of poisonedArgs) {
+      errors.push(...arg.errors);
+    }
+    return createPoison(PoisonError.group(errors));
   }
 
   // No errors - validate and call
   if (!obj) {
-    return createPoison(
-      new Error('Unable to call `' + name + '`, which is undefined or falsey'),
+    return createPoison(PoisonError.create(
+      'Unable to call `' + name + '`, which is undefined or falsey',
       errorContext
-    );
+    ));
   } else if (typeof obj !== 'function') {
-    return createPoison(
-      new Error('Unable to call `' + name + '`, which is not a function'),
+    return createPoison(PoisonError.create(
+      'Unable to call `' + name + '`, which is not a function',
       errorContext
-    );
+    ));
   }
 
   try {
@@ -85,13 +87,16 @@ function callWrapAsync(obj, name, context, args, errorContext, currentBuffer = n
 
     const executionContext = isGlobal ? context : context.ctx;
     const result = obj.apply(executionContext, args);
+    if (isPoison(result)) {
+      return result;
+    }
     if (result && typeof result.then === 'function') {// && !isPoison(result)) {
       // add context to the promise that will be applied if it rejects
       return new RuntimePromise(result, errorContext);
     }
     return result;
   } catch (err) {
-    return createPoison(err, errorContext);
+    return createPoison(PoisonError.wrap(err, errorContext));
   }
 }
 
@@ -109,9 +114,7 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
       if (isPoisonError(err)) {
         errors.push(...err.errors);
       } else {
-        // Add context to the error when catching from await
-        const contextualError = contextualizeError(err, errorContext);
-        errors.push(contextualError);
+        RuntimeError.reportAndThrow(err, errorContext);
       }
     }
   } else if (isPoison(obj)) {
@@ -127,31 +130,35 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
 
   let resolvedArgs = args;
   try {
-    resolvedArgs = await resolveAll(args);
+    const argErrors = await collectErrors(args);
+    if (argErrors.length > 0) {
+      errors.push(...argErrors);
+    } else {
+      resolvedArgs = await resolveAll(args);
+    }
   } catch (err) {
     if (isPoisonError(err)) {
       errors.push(...err.errors);
     } else {
-      const contextualError = contextualizeError(err, errorContext);
-      errors.push(contextualError);
+      RuntimeError.reportAndThrow(err, errorContext);
     }
   }
 
   if (errors.length > 0) {
-    return createPoison(errors);
+    return createPoison(PoisonError.group(errors));
   }
 
   // All resolved successfully - validate and call the function
   if (!obj) {
-    return createPoison(
-      new Error('Unable to call `' + name + '`, which is undefined or falsey'),
+    return createPoison(PoisonError.create(
+      'Unable to call `' + name + '`, which is undefined or falsey',
       errorContext
-    );
+    ));
   } else if (typeof obj !== 'function') {
-    return createPoison(
-      new Error('Unable to call `' + name + '`, which is not a function'),
+    return createPoison(PoisonError.create(
+      'Unable to call `' + name + '`, which is not a function',
       errorContext
-    );
+    ));
   }
 
   try {
@@ -160,6 +167,9 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
 
     const executionContext = isGlobal ? context : context.ctx;
     const result = obj.apply(executionContext, resolvedArgs);
+    if (isPoison(result)) {
+      return result;
+    }
 
     // Wrap promise results to preserve error context
     if (result && typeof result.then === 'function') {
@@ -168,7 +178,22 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
 
     return result;
   } catch (err) {
-    return createPoison(err, errorContext);
+    return createPoison(PoisonError.wrap(err, errorContext));
+  }
+}
+
+function envCallWrapAsync(fn, thisArg, args, errorContext) {
+  try {
+    const result = fn.apply(thisArg, args);
+    if (isPoison(result)) {
+      return result;
+    }
+    if (result && typeof result.then === 'function') {
+      return new RuntimePromise(result, errorContext);
+    }
+    return result;
+  } catch (err) {
+    return createPoison(PoisonError.wrap(err, errorContext));
   }
 }
 
@@ -185,4 +210,4 @@ function invokeCallbackExtension(fn, ...args) {
   });
 }
 
-export { callWrap, callWrapAsync, invokeCallbackExtension };
+export { callWrap, callWrapAsync, envCallWrapAsync, invokeCallbackExtension };

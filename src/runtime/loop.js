@@ -5,9 +5,8 @@ import {
   createPoison,
   isPoison,
   isPoisonError,
-  isRuntimeFatalError,
+  isRuntimeError,
   PoisonError,
-  contextualizeError,
 } from './errors.js';
 
 import {VarCommand} from './commands/var.js';
@@ -148,8 +147,9 @@ async function iterateAsyncSequential(arr, loopBody, loopVars, errorContext, ret
       didIterate = true;
 
       if (value instanceof Error) {
-        // Soft error: generator yielded an error. Add context and poison it.
-        value = createPoison(value, errorContext);
+        // Soft error: generator yielded an error. Preserve the yielded error's
+        // own origin when present; otherwise use the iterator source boundary.
+        value = createPoison(PoisonError.wrap(value, errorContext));
       }
 
       let res;
@@ -183,11 +183,10 @@ async function iterateAsyncSequential(arr, loopBody, loopVars, errorContext, ret
       i++;
     }
   } catch (err) {
-    // Hard error: generator threw OR the loopBody threw.
-    // Add error context and re-throw immediately (stop iteration)
-    const contextualError = contextualizeError(err, errorContext);
-    contextualError.didIterate = didIterate;
-    throw contextualError;
+    const poisonError = PoisonError.wrap(err, errorContext);
+    poisonError.didIterate = didIterate;
+    poisonError.errors[poisonError.errors.length - 1].didIterate = didIterate;
+    throw poisonError;
   }
 
   return didIterate;
@@ -230,8 +229,9 @@ async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext) {
           didIterate = true;
           let value = result.value;
           if (value instanceof Error) {
-            // Soft error: generator yielded an error
-            value = createPoison(value, errorContext);
+            // Soft error: generator yielded an error. Preserve the yielded error's
+            // own origin when present; otherwise use the iterator source boundary.
+            value = createPoison(PoisonError.wrap(value, errorContext));
           }
 
           // Resolve the previous iteration's lastPromise
@@ -253,7 +253,7 @@ async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext) {
                 throw new Error('Expected an array for destructuring');
               }
             }
-            loopBody(...value.slice(0, loopVars.length), i, lenPromise, lastPromise);
+            loopBody(...value.slice(0, loopVars.length), i, lenPromise, lastPromise, errorContext);
           }
           i++;
         }
@@ -272,13 +272,11 @@ async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext) {
           lastPromiseResolve(true);
         }
 
-        const rejectionError = new PoisonError(error, errorContext);
+        const rejectionError = PoisonError.wrap(error, errorContext);
         // Preserve the loop-else decision on both the aggregate PoisonError and
         // its leaf error, since callers inspect both shapes in existing paths.
         rejectionError.didIterate = didIterate;
-        if (rejectionError.errors.length > 0) {
-          rejectionError.errors[rejectionError.errors.length - 1].didIterate = didIterate;
-        }
+        rejectionError.errors[rejectionError.errors.length - 1].didIterate = didIterate;
         reject(rejectionError);
       }
     })();
@@ -346,13 +344,14 @@ async function iterateAsyncLimited(arr, loopBody, loopVars, errorContext, limit)
 
       return result.value;
     } catch (err) {
-      // Hard error from iterator.next().
-      // Let iterate(...) handle it via its outer catch.
+      // iterator.next() is a value-consumption boundary: convert raw
+      // generator failures to poison so the loop effects can be poisoned
+      // without aborting unrelated work.
+      const poisonError = PoisonError.wrap(err, errorContext);
+      poisonError.didIterate = didIterate;
+      poisonError.errors[poisonError.errors.length - 1].didIterate = didIterate;
       if (rejectAllScheduled) {
-        if (!isPoisonError(err)) {
-          err.didIterate = didIterate;
-        }
-        rejectAllScheduled(err);
+        rejectAllScheduled(poisonError);
         rejectAllScheduled = null;
       }
       iteratorDone = true;
@@ -364,9 +363,10 @@ async function iterateAsyncLimited(arr, loopBody, loopVars, errorContext, limit)
 
   // Use the same limited body-call helper as arrays
   async function runIteration(i, value) {
-    // Soft error: generator yielded an Error → convert to poison with context
+    // Soft error: generator yielded an Error. Preserve the yielded error's
+    // own origin when present; otherwise use the iterator source boundary.
     if (value instanceof Error) {
-      value = createPoison(value, errorContext);
+      value = createPoison(PoisonError.wrap(value, errorContext));
     }
 
     const res = callLoopBodyLimited(loopBody, loopVars, value, i, undefined, false, errorContext);
@@ -599,7 +599,7 @@ async function iterateObject(arr, loopBody, loopVars, errorContext, effectiveSeq
         let value = arr[key];
         const isLast = i === len - 1;
 
-        const res = loopBody(key, value, i, len, isLast);
+        const res = loopBody(key, value, i, len, isLast, errorContext);
         // In sequential mode we always await the body
         await res;
 
@@ -636,7 +636,7 @@ async function iterateObject(arr, loopBody, loopVars, errorContext, effectiveSeq
         let value = arr[key];
         const isLast = i === len - 1;
 
-        loopBody(key, value, i, len, isLast);
+        loopBody(key, value, i, len, isLast, errorContext);
         // Non-sequential bodies may be async; each body registers its own async block.
         // We deliberately do *not* await loopBody here – same as existing parallel behaviour.
       }
@@ -651,17 +651,14 @@ async function iterateObject(arr, loopBody, loopVars, errorContext, effectiveSeq
  *
  * @param {Object} buffer - The CommandBuffer instance
  * @param {Object} asyncOptions - Options containing write counts and chains
- * @param {Array} errors - Array of error objects to propagate
+ * @param {PoisonError} poisonError - Poison error to propagate
  * @param {boolean} didIterate - Whether any iterations occurred
  */
-function poisonLoopEffects(buffer, asyncOptions, errors, didIterate) {
-  // Replace the errors with contextualized errors.
-  errors = errors.map(error => contextualizeError(error, asyncOptions.errorContext));
-
+function poisonLoopEffects(buffer, asyncOptions, poisonError, didIterate) {
   // Poison body chain effects.
   if (asyncOptions.bodyChains && asyncOptions.bodyChains.length > 0) {
     for (const chainName of asyncOptions.bodyChains) {
-      buffer.addCommand(new ErrorCommand(errors, asyncOptions.errorContext), chainName);
+      buffer.addCommand(new ErrorCommand(poisonError, asyncOptions.errorContext), chainName);
     }
   }
 
@@ -672,7 +669,7 @@ function poisonLoopEffects(buffer, asyncOptions, errors, didIterate) {
   // Poison else chain effects.
   if (asyncOptions.elseChains && asyncOptions.elseChains.length > 0) {
     for (const chainName of asyncOptions.elseChains) {
-      buffer.addCommand(new ErrorCommand(errors, asyncOptions.errorContext), chainName);
+      buffer.addCommand(new ErrorCommand(poisonError, asyncOptions.errorContext), chainName);
     }
   }
 }
@@ -683,7 +680,7 @@ async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOpti
     // Check for synchronous poison first
     if (isPoison(arr)) {
       // Array expression evaluated to poison - poison both body and else
-      poisonLoopEffects(buffer, asyncOptions, arr.errors, false);
+      poisonLoopEffects(buffer, asyncOptions, PoisonError.group(arr.errors), false);
       return; // Early return, else doesn't run
     }
 
@@ -693,8 +690,10 @@ async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOpti
         arr = await arr;
       } catch (err) {
         // Promise rejected - poison both body and else
-        const errors = isPoisonError(err) ? err.errors : [err];
-        poisonLoopEffects(buffer, asyncOptions, errors, false);
+        if (!isPoisonError(err)) {
+          RuntimeError.reportAndThrow(err, errorContext);
+        }
+        poisonLoopEffects(buffer, asyncOptions, err, false);
         return;
       }
     }
@@ -733,8 +732,7 @@ async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOpti
     if (asyncOptions && maxConcurrency !== null && maxConcurrency !== undefined) {
       // 1. If it's a PoisonedValue → whole loop is poisoned
       if (isPoison(maxConcurrency)) {
-        const errors = maxConcurrency.errors || [maxConcurrency];
-        poisonLoopEffects(buffer, asyncOptions, errors, false);
+        poisonLoopEffects(buffer, asyncOptions, PoisonError.group(maxConcurrency.errors), false);
         return;
       }
 
@@ -745,14 +743,15 @@ async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOpti
           // After await, if it was a PoisonedValue, it would have thrown a PoisonError
           // which is caught by the outer catch. Check for poison after await.
           if (isPoison(maxConcurrency)) {
-            const errors = maxConcurrency.errors || [maxConcurrency];
-            poisonLoopEffects(buffer, asyncOptions, errors, false);
+            poisonLoopEffects(buffer, asyncOptions, PoisonError.group(maxConcurrency.errors), false);
             return;
           }
         } catch (err) {
           // Promise rejected - poison both body and else
-          const errors = isPoisonError(err) ? err.errors : [err];
-          poisonLoopEffects(buffer, asyncOptions, errors, false);
+          if (!isPoisonError(err)) {
+            RuntimeError.reportAndThrow(err, errorContext);
+          }
+          poisonLoopEffects(buffer, asyncOptions, err, false);
           return;
         }
       }
@@ -767,7 +766,7 @@ async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOpti
           poisonLoopEffects(
             buffer,
             asyncOptions,
-            [new Error('concurrentLimit must be a positive number or 0 / null / undefined')],
+            PoisonError.create('concurrentLimit must be a positive number or 0 / null / undefined', errorContext),
             false
           );
           return;
@@ -824,13 +823,15 @@ async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOpti
       }
     }
   } catch (err) {
-    if (!asyncOptions || isRuntimeFatalError(err)) {
+    if (!asyncOptions || isRuntimeError(err)) {
       throw err;
     }
-    const errors = isPoisonError(err) ? err.errors : [err];
-    didIterate = errors[errors.length - 1]?.didIterate || false;
+    if (!isPoisonError(err)) {
+      RuntimeError.reportAndThrow(err, errorContext);
+    }
+    didIterate = err.errors[err.errors.length - 1]?.didIterate || false;
     // if we had at least one iteration, we won't poison the else side-effects
-    poisonLoopEffects(buffer, asyncOptions, errors, didIterate);
+    poisonLoopEffects(buffer, asyncOptions, err, didIterate);
     return;
   }
 

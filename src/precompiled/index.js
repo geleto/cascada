@@ -13,4 +13,11 @@ export {
 export {Loader} from '../loader/loader.js';
 export {PrecompiledLoader} from '../loader/precompiled-loader.js';
 export {SafeString, markSafe} from '../runtime/safe-output.js';
-export {TemplateError} from '../lib.js';
+export {CascadaError, CompileError} from '../errors.js';
+export {
+  PoisonError,
+  PoisonErrorGroup,
+  RuntimeError,
+  isPoisonError,
+  isRuntimeError
+} from '../runtime/errors.js';

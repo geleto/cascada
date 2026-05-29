@@ -1,4 +1,4 @@
-import {createPoison} from '../errors.js';
+import {createPoison, PoisonError} from '../errors.js';
 import {TextCommand} from '../commands/text.js';
 import {Chain} from './base.js';
 
@@ -29,14 +29,11 @@ class TextChain extends Chain {
     return result;
   }
 
-  _applyPoisonErrors(errors) {
-    if (!Array.isArray(errors) || errors.length === 0) {
-      return;
-    }
+  _applyPoisonError(poison) {
     if (!Array.isArray(this._target)) {
       this._setTarget([]);
     }
-    this._target.push(createPoison(errors));
+    this._target.push(createPoison(poison));
     this._markStateChanged();
   }
 }

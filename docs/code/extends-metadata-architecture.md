@@ -362,15 +362,10 @@ So:
 This keeps the current conceptual distinction and avoids forcing one mechanism
 to represent two different dispatch rules.
 
-If multiple `super()`/method metadata errors are discovered after the chain is
-loaded, they should be reported together through the runtime fatal-error path
-rather than failing on the first error and hiding the rest.
-
-Implementation should collect these graph-finalization errors into an array and
-throw once after the pass finishes. This mirrors the "no error shall be lost"
-principle for structural metadata: once the chain is available, missing
-`super()` targets, missing `invokedMethods` targets, and invalid metadata shapes
-should all be surfaced together when possible.
+Finalization errors are deterministic structural failures. The implementation
+may fail fast on the first error rather than collecting every independent
+metadata issue, because no user work has started and no cleanup ordering is at
+risk.
 
 ## Meaning of `mergedLinkedChains` / `mergedMutatedChains`
 

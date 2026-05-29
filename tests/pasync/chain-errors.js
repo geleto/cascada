@@ -1,7 +1,7 @@
 
 import expect from 'expect.js';
 import {AsyncEnvironment} from '../../src/environment/environment.js';
-import {createPoison, isPoison, isPoisonError, PoisonError, RuntimeFatalError} from '../../src/runtime/errors.js';
+import {createPoison, isPoison, isPoisonError, PoisonError, RuntimeError} from '../../src/runtime/errors.js';
 import {TextCommand} from '../../src/runtime/commands/text.js';
 import {VarCommand} from '../../src/runtime/commands/var.js';
 import {DataCommand} from '../../src/runtime/commands/data.js';
@@ -21,12 +21,17 @@ import {CommandBuffer} from '../../src/runtime/command-buffer.js';
 import {createArray} from '../../src/runtime/resolve.js';
 
 const TEST_EC = [1, 1, 'Test', 'test.casc', null];
+const TEST_DIAGNOSTIC_CONTEXT = { ec: TEST_EC, branchName: 'test' };
+
+function testError(message) {
+  return PoisonError.create(message, TEST_EC);
+}
 
 describe('chain errors', function () {
   describe('chain commands step2 poison encoding', function () {
-    it('propagates RuntimeFatalError instead of degrading it into poison during argument resolution', async () => {
+    it('propagates RuntimeError instead of degrading it into poison during argument resolution', async () => {
       const output = new TextChain(null, 'text', { path: 'fatal-output.script' }, 'text');
-      const fatal = new RuntimeFatalError('fatal command failure', [1, 1, null, 'fatal-output.script', null]);
+      const fatal = new RuntimeError('fatal command failure', [1, 1, null, 'fatal-output.script', null]);
       const cmd = new TextCommand({
         chainName: 'text',
         args: [Promise.reject(fatal)],
@@ -37,14 +42,14 @@ describe('chain errors', function () {
         await cmd.apply(output);
         expect().fail('Should have thrown');
       } catch (err) {
-        expect(err).to.be.a(RuntimeFatalError);
+        expect(err).to.be.a(RuntimeError);
         expect(err.message).to.contain('fatal command failure');
       }
     });
 
     it('TextCommand encodes poison into target instead of throwing', () => {
       const output = new TextChain(null, 'text', null, 'text');
-      const poison = createPoison([new Error('text poison')]);
+      const poison = createPoison(testError('text poison'));
       const cmd = new TextCommand({ chainName: 'text', args: ['ok', poison], errorContext: TEST_EC });
 
       cmd.apply(output);
@@ -66,7 +71,7 @@ describe('chain errors', function () {
 
     it('DataCommand writes poison to addressed path and allows later repair overwrite', async () => {
       const output = new DataChain(null, 'data', null, 'data');
-      const poison = createPoison([new Error('data poison')]);
+      const poison = createPoison(testError('data poison'));
       const bad = new DataCommand({
         chainName: 'data',
         operation: 'set',
@@ -111,7 +116,7 @@ describe('chain errors', function () {
         }
       };
       const output = new SequenceChain(null, 'seq', null, sequence);
-      const poison = createPoison([new Error('arg poison')]);
+      const poison = createPoison(testError('arg poison'));
       const cmd = new SequenceCallCommand({
         chainName: 'seq',
         methodName: 'exec',
@@ -131,32 +136,32 @@ describe('chain errors', function () {
   });
 
   describe('output target inspection internals', function () {
-    it('surfaces RuntimeFatalError through chain inspection without wrapping it as poison', async () => {
+    it('surfaces RuntimeError through chain inspection without wrapping it as poison', async () => {
       const output = new VarChain(null, 'value', { path: 'fatal-inspection.script' }, 'value');
-      const fatal = new RuntimeFatalError('fatal inspection failure', [2, 3, null, 'fatal-inspection.script', null]);
+      const fatal = new RuntimeError('fatal inspection failure', [2, 3, null, 'fatal-inspection.script', null]);
 
       output._recordError(fatal, { errorContext: TEST_EC });
 
       const result = await output._ensureErrorState();
       expect(result.hasError).to.be(true);
-      expect(result.error).to.be.a(RuntimeFatalError);
+      expect(result.error).to.be.a(RuntimeError);
       expect(result.error.message).to.contain('fatal inspection failure');
     });
 
     it('collects poison from nested arrays/objects/promises', async () => {
       const target = {
-        direct: createPoison([new Error('direct poison')]),
+        direct: createPoison(testError('direct poison')),
         nested: [
-          Promise.resolve(createPoison([new Error('resolved poison')])),
-          Promise.reject(new Error('rejected promise'))
+          Promise.resolve(createPoison(testError('resolved poison'))),
+          Promise.reject(testError('rejected promise'))
         ],
-        wrapped: Promise.reject(new PoisonError([new Error('poison rejection')]))
+        wrapped: Promise.reject(PoisonError.group([testError('poison rejection')]))
       };
 
       const result = await inspectTargetForErrors(target);
 
       expect(result.hasError).to.be(true);
-      expect(result.error).to.be.a(PoisonError);
+      expect(isPoisonError(result.error)).to.be(true);
 
       const messages = result.error.errors.map((err) => err.message).join(' | ');
       expect(messages).to.contain('direct poison');
@@ -168,20 +173,20 @@ describe('chain errors', function () {
     it('collects poison from marker-backed lazy structures', async () => {
       const target = createArray([
         'ok',
-        Promise.reject(new Error('marker rejection'))
+        Promise.reject(testError('marker rejection'))
       ]);
 
       const result = await inspectTargetForErrors(target);
 
       expect(result.hasError).to.be(true);
-      expect(result.error).to.be.a(PoisonError);
+      expect(isPoisonError(result.error)).to.be(true);
       expect(result.error.errors[0].message).to.contain('marker rejection');
     });
 
     it('avoids recursion issues on cyclic plain objects', async () => {
       const target = {};
       target.self = target;
-      target.err = createPoison([new Error('cycle poison')]);
+      target.err = createPoison(testError('cycle poison'));
 
       const result = await inspectTargetForErrors(target);
       expect(result.hasError).to.be(true);
@@ -208,7 +213,7 @@ describe('chain errors', function () {
 
   describe('output observation commands step3', function () {
     it('does not expose observation methods on output facades', async () => {
-      const buffer = new CommandBuffer(null);
+      const buffer = new CommandBuffer(null, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       const out = createChain(buffer, 'out', null, 'data');
 
       expect(out.snapshot).to.be(undefined);
@@ -226,7 +231,7 @@ describe('chain errors', function () {
     `;
 
       const result = await env.renderScriptString(script, {
-        bad: createPoison([new Error('temporary-fail')])
+        bad: createPoison(testError('temporary-fail'))
       });
 
       expect(result.has).to.be(false);
@@ -243,7 +248,7 @@ describe('chain errors', function () {
     `;
 
       const result = await env.renderScriptString(script, {
-        bad: createPoison([new Error('output-fail')])
+        bad: createPoison(testError('output-fail'))
       });
 
       expect(result.has).to.be(true);
@@ -258,7 +263,7 @@ describe('chain errors', function () {
     `;
 
       const result = await env.renderScriptString(script, {
-        bad: createPoison([new Error('peek-output-fail')])
+        bad: createPoison(testError('peek-output-fail'))
       });
 
       expect(result.msg).to.contain('peek-output-fail');

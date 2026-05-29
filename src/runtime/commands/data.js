@@ -1,4 +1,4 @@
-import {isPoison, isPoisonError, createPoison} from '../errors.js';
+import {isPoison, isPoisonError, createPoison, PoisonError} from '../errors.js';
 import {ChainCommand} from './base.js';
 import {runWithResolvedArguments} from './arguments.js';
 import {contextualizeChainError} from './errors.js';
@@ -21,18 +21,18 @@ class DataCommand extends ChainCommand {
       const args = Array.isArray(resolvedArgs) ? resolvedArgs : [];
       const rawPath = args.length > 0 ? args[0] : null;
       const dataPath = (Array.isArray(rawPath) || rawPath === null) ? rawPath : null;
-      const poisonErrors = this.extractPoisonFromArgs(args);
+      const poisonError = this.getPoisonFromArgs(args);
       if (this.operation !== 'set') {
         const existing = readDataValueAtPath(chain._base.data, dataPath);
         if (isPoison(existing) || isPoisonError(existing)) {
-          if (poisonErrors.length > 0) {
-            setDataPoisonAtPath(chain, args, this.toPoisonValue(poisonErrors));
+          if (poisonError) {
+            setDataPoisonAtPath(chain, args, poisonError);
           }
           return;
         }
       }
-      if (poisonErrors.length > 0) {
-        setDataPoisonAtPath(chain, args, this.toPoisonValue(poisonErrors));
+      if (poisonError) {
+        setDataPoisonAtPath(chain, args, poisonError);
         return;
       }
       const method = this.operation ? chain._base[this.operation] : chain._base;
@@ -40,9 +40,7 @@ class DataCommand extends ChainCommand {
         setDataPoisonAtPath(
           chain,
           args,
-          this.toPoisonValue([
-            contextualizeChainError(chain, this.errorContext, new Error(`has no method '${this.operation}'`))
-          ])
+          contextualizeChainError(this.errorContext, new Error(`has no method '${this.operation}'`))
         );
         return;
       }
@@ -62,28 +60,24 @@ class DataCommand extends ChainCommand {
         setDataPoisonAtPath(
           chain,
           args,
-          this.toPoisonValue([
-            contextualizeChainError(chain, this.errorContext, err)
-          ])
+          contextualizeChainError(this.errorContext, err)
         );
       }
     });
   }
 }
 
-function setDataPoisonAtPath(chain, args, poisonValue) {
+function setDataPoisonAtPath(chain, args, poisonError) {
   if (!chain || !chain._base) {
     return;
   }
   const rawPath = Array.isArray(args) && args.length > 0 ? args[0] : null;
   const path = (Array.isArray(rawPath) || rawPath === null) ? rawPath : null;
   const existingValue = readDataValueAtPath(chain._base.data, path);
-  const existingErrors = extractPoisonErrors(existingValue);
-  const newErrors = extractPoisonErrors(poisonValue);
-  const mergedPoison = (existingErrors.length > 0 || newErrors.length > 0)
-    ? createPoison([...existingErrors, ...newErrors])
-    : poisonValue;
-  chain._base.set(path, mergedPoison);
+  const existingPoison = getPoisonError(existingValue);
+  chain._base.set(path, createPoison(
+    existingPoison ? PoisonError.group([existingPoison, poisonError]) : poisonError
+  ));
   chain._setTarget(chain._base.data);
 }
 
@@ -108,14 +102,14 @@ function readDataValueAtPath(root, path) {
   return current;
 }
 
-function extractPoisonErrors(value) {
-  if (isPoison(value) && Array.isArray(value.errors)) {
-    return value.errors;
+function getPoisonError(value) {
+  if (isPoison(value)) {
+    return PoisonError.group(value.errors);
   }
-  if (isPoisonError(value) && Array.isArray(value.errors)) {
-    return value.errors;
+  if (isPoisonError(value)) {
+    return value;
   }
-  return [];
+  return null;
 }
 
 export {DataCommand};

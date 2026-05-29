@@ -6,6 +6,11 @@ import * as runtime from '../../src/runtime/runtime.js';
 import {isPoisonError} from '../../src/runtime/runtime.js';
 
 (function () {
+  const TEST_EC = [1, 1, 'Test.PoisonInput', 'poison-integration.njk', null];
+
+  function createTestPoison(message) {
+    return runtime.createPoison(runtime.PoisonError.create(message, TEST_EC));
+  }
 
   describe('Poisoning integration Tests', () => {
     let env;
@@ -48,7 +53,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
       `;
 
       const context = {
-        input: runtime.createPoison(new Error('macro-template-poison'))
+        input: createTestPoison('macro-template-poison')
       };
 
       try {
@@ -71,7 +76,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
       `;
 
       const context = {
-        input: runtime.createPoison(new Error('macro-script-poison'))
+        input: createTestPoison('macro-script-poison')
       };
 
       try {

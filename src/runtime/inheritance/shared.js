@@ -1,15 +1,15 @@
-import {RuntimeFatalError} from '../errors.js';
+import {RuntimeError} from '../errors.js';
 import {applyChainInitializer} from '../../chain-types.js';
 import {declareBufferChain} from '../chains/index.js';
 
 const claimedSharedDefaults = new WeakSet();
 
-function declareInheritanceSharedChain(buffer, chainName, chainType, context, initializer, errorContext = null) {
+function declareInheritanceSharedChain(buffer, chainName, chainType, context, initializer, errorContext) {
   const hasInitializer = initializer !== undefined;
   const existingChain = buffer.getOwnChain(chainName);
   if (existingChain) {
     if (existingChain.chainType !== chainType) {
-      throw new RuntimeFatalError(
+      RuntimeError.reportAndThrow(
         `shared chain '${chainName}' was declared as '${existingChain.chainType}' and '${chainType}'`,
         errorContext
       );

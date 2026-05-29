@@ -32,7 +32,7 @@
  *      - It waits for all async children to settle.
  *      - Upon completion, it mutates the object in-place, swapping Promises for real values.
  */
-import {isPoison, createPoison} from './errors.js';
+import {isPoison, createPoison, PoisonError} from './errors.js';
 import {resolveAll, RESOLVE_MARKER, createObject, createArray} from './resolve.js';
 
 /**
@@ -141,7 +141,7 @@ function deepAssign(root, segments, value) {
 
   // If strictly sync and we have errors: return combined poison immediately
   if (errors.length > 0 && !isRootAsync && !isHeadAsync) {
-    return createPoison(errors);
+    return createPoison(PoisonError.group(errors));
   }
 
   // If async involved (or errors + async), go async
@@ -192,7 +192,7 @@ async function _deepAssignAsync(rootPromise, headPromise, tail, value) {
 
   // Get child
   if (root === undefined || root === null) {
-    return createPoison(new Error(`Cannot access property '${key}' of undefined or null`));
+    throw new Error(`Cannot access property '${key}' of undefined or null`);
   }
   let child = root[key];
 

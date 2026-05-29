@@ -232,13 +232,10 @@ class CompilerBaseAsync extends CompilerCommon {
       children: testFacts.hasArgs ? [node.left, ...node.right.args.children] : [node.left]
     };
     this._compileAggregate(mergedNode, null, '[', ']', true, true, function (args) {
+      const errorContext = this.emitErrorContext(mergedNode.positionNode);
       this.emit.line(`  const testFunc = ${testFunc};`);
-      this.emit.line(`  if (!testFunc) { throw runtime.contextualizeError(new Error("${failMsg}"), ${this.emitErrorContext(node.right)}); }`);
-      this.emit.line(`  const result = await testFunc.call(context, ${args}[0]`);
-      if (node.right.args && node.right.args.children.length > 0) {
-        this.emit.line(`, ...${args}.slice(1)`);
-      }
-      this.emit.line(');');
+      this.emit.line(`  if (!testFunc) { runtime.RuntimeError.reportAndThrow("${failMsg}", ${errorContext}); }`);
+      this.emit.line(`  const result = await runtime.envCallWrapAsync(testFunc, context, ${args}, ${errorContext});`);
       this.emit.line('  return result === true;');
     }, true);
   }
@@ -322,16 +319,9 @@ class CompilerBaseAsync extends CompilerCommon {
 
   compileFilter(node) {
     this.assertType(node.name, nodes.Symbol);
-    const parts = [
-      function () {
-        this.emit(`env.getFilter("${node.name.value}")`);
-      },
-      ...node.args.children.map((arg) => (function() {
-        this.compile(arg, null);
-      }))
-    ];
-    this._compileResolvedPartList(parts, function (result) {
-      this.emit(`return ${result}[0].call(context, ...${result}.slice(1));`);
+    this._compileAggregate(node.args, null, '[', ']', true, false, function (result) {
+      const errorContext = this.emitErrorContext(node);
+      this.emit(`return runtime.envCallWrapAsync(env.getFilter("${node.name.value}"), context, ${result}, ${errorContext});`);
     }, false);
   }
 
@@ -340,7 +330,8 @@ class CompilerBaseAsync extends CompilerCommon {
     this.assertType(node.name, nodes.Symbol);
     this.emit.line(`let ${symbol} = `);
     this._compileAggregate(node.args, null, '[', ']', true, false, function (result) {
-      this.emit(`return env.getFilter("${node.name.value}").bind(env)(...${result});`);
+      const errorContext = this.emitErrorContext(node);
+      this.emit(`return runtime.envCallWrapAsync(env.getFilter("${node.name.value}"), env, ${result}, ${errorContext});`);
     });
     this.emit(';');
   }

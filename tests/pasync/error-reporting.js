@@ -948,13 +948,13 @@ import * as runtime from '../../src/runtime/runtime.js';
     });
   });
 
-  describe('Manual RuntimeFatalError Simulation', function () {
+  describe('Manual RuntimeError Simulation', function () {
     // NOTE: This test manually simulates logic internal to the compiler/runtime interaction
-    // involving the boundary helpers, Frame, and RuntimeFatalError. It verifies that critical
+    // involving the boundary helpers, Frame, and RuntimeError. It verifies that critical
     // runtime errors (like sequential loop contract violations) are correctly propagated
     // through the returned promise in value-boundary paths.
-    it('should reject with RuntimeFatalError from runValueBoundary', function (done) {
-      // Simulate an async block that throws RuntimeFatalError
+    it('should reject with RuntimeError from runValueBoundary', function (done) {
+      // Simulate an async block that throws RuntimeError
       const fatalMsg = 'Simulated Fatal Error';
 
       // Logic that simulates what happens inside the compiled async IIFE
@@ -965,19 +965,20 @@ import * as runtime from '../../src/runtime/runtime.js';
 
         // Throw our fatal error
         // We pass dummy values for line/col/ctx as this is a simulation
-        throw new runtime.RuntimeFatalError(fatalMsg, [1, 1, 'test execution', 'test.njk', null]);
+        throw new runtime.RuntimeError(fatalMsg, [1, 1, 'test execution', 'test.njk', null]);
       };
 
       runtime.runValueBoundary(
         null,
         null,
         null,
-        asyncBody
+        asyncBody,
+        { ec: [1, 1, 'test execution', 'test.njk', null] }
       ).then(() => {
         done(new Error('runValueBoundary should have rejected'));
       }).catch(err => {
         try {
-          expect(err).to.be.a(runtime.RuntimeFatalError);
+          expect(err).to.be.a(runtime.RuntimeError);
           expect(err.message).to.contain(fatalMsg);
           done();
         } catch (e) {

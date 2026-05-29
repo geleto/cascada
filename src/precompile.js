@@ -1,7 +1,6 @@
 
 import fs from 'fs';
 import path from 'path';
-import {_prettifyError} from './lib.js';
 import {compile} from './compiler/compiler.js';
 import {Environment, AsyncEnvironment} from './environment/environment.js';
 import {precompileGlobal} from './precompile-global.js';
@@ -137,17 +136,13 @@ function _precompile(str, name, env, opts) {
 
   name = name.replace(/\\/g, '/');
 
-  try {
-    const source = opts.isScript ? scriptTranspiler.scriptToTemplate(str) : str;
-    template = compile(source,
-      asyncFilters,
-      extensions,
-      name,
-      { asyncMode: opts.isAsync, scriptMode: opts.isScript, ...env.opts }
-    );
-  } catch (err) {
-    throw _prettifyError(name, false, err);
-  }
+  const source = opts.isScript ? scriptTranspiler.scriptToTemplate(str) : str;
+  template = compile(source,
+    asyncFilters,
+    extensions,
+    name,
+    { asyncMode: opts.isAsync, scriptMode: opts.isScript, ...env.opts }
+  );
 
   return {
     name: name,

@@ -5,6 +5,20 @@ Design reference for refactoring Cascada's async error-handling architecture.
 **Scope:** Async compilation mode only. The legacy sync-mode pipeline (`handleError`,
 `cb(err)` callbacks) is a separate architecture and is not addressed here.
 
+**Current status note:** the source/consumer split in this document remains the
+guiding model, but the strict error-context invariant is now sharper than some
+older examples below: error context and command-buffer diagnostic stack metadata
+belong to the **source/origin** of the error. A later value-consumption point
+must preserve incoming errors and poisoned values unchanged; it must not attach
+its own lookup/call/loop/output context or stack frame. For command-buffer
+diagnostics, a stack frame's origin is the async/render boundary created for the
+source operation. The runtime taxonomy is now individual `PoisonError`s,
+aggregate `PoisonErrorGroup`s, `RuntimeError`, and compile errors; every
+`RuntimeError` is fatal, every poison error is non-fatal, and there is no
+separate `RuntimeFatalError` class. Older examples below may still show the
+transitional aggregate-style `new PoisonError(errors)` shape; current code uses
+`PoisonErrorGroup` for aggregates.
+
 ---
 
 ## Table of Contents
@@ -69,11 +83,10 @@ are valid for a failing value:
 - **`PoisonError`** (async) — the only error type that a rejected user-value
   promise is permitted to carry when it reaches a consumer.
 
-Any other error arriving at a consumption point is a **`RuntimeFatalError`** —
-a bug in the engine, not a data error. A later taxonomy cleanup may fold that
-signal into `RuntimeError` with an explicit fatal marker/property, but the
-fatal-vs-poison distinction must remain mechanically visible at every
-consumption point.
+Any other error arriving at a consumption point is a fatal **`RuntimeError`** —
+a bug in the engine, not a data error. The fatal-vs-poison distinction remains
+mechanically visible through the `isRuntimeError(...)` predicate at
+consumption guards, which currently means `err instanceof RuntimeError`.
 
 ### What counts as value consumption
 
@@ -92,10 +105,8 @@ A value is consumed at three structural points:
 
 Structural runtime failures that occur outside value consumption — invariant
 violations, missing chain declarations, closed-buffer writes, engine bugs —
-are `RuntimeFatalError`s and must not be converted to poison. A future taxonomy
-cleanup may represent the same state as `RuntimeError` with a fatal marker.
-Converting them to poison would mask the bug and produce incorrect output
-silently.
+are fatal `RuntimeError`s and must not be converted to poison. Converting them
+to poison would mask the bug and produce incorrect output silently.
 
 ---
 
@@ -162,8 +173,9 @@ Every value that can fail must satisfy the source contract:
 - **(A) Synchronous failure** — return `PoisonedValue` via a conditional check.
   No try/catch needed or wanted.
 - **(B) Async failure** — wrap the result as `RuntimePromise` before it enters
-  the value graph. `RuntimePromise` converts any non-`PoisonError` rejection to
-  `PoisonError` at the moment the promise is first consumed.
+  the value graph. The wrapper carries the source operation's context so, when
+  the rejection is observed later, any context attached still belongs to the
+  origin rather than the consumer.
 
 ### Synchronous sources (already correct — use conditionals)
 
@@ -212,10 +224,12 @@ irreducible (see §9 irreducible inventory).
 
 ### The RuntimePromise change
 
-`RuntimePromise` currently contextualizes errors (adds source position) when
-`.then()` or `.catch()` is invoked, but does **not** convert them to `PoisonError`.
+`RuntimePromise` contextualizes errors with its stored **source** context when
+`.then()` or `.catch()` is invoked. Even though the rejection may be observed at
+a later consumer, the stored context is the origin context captured when the
+`RuntimePromise` was created.
 
-Required change to `RuntimePromise.then()` and `.catch()`:
+Earlier target shape for `RuntimePromise.then()` and `.catch()` conversion:
 
 ```javascript
 then(onFulfilled, onRejected) {
@@ -230,9 +244,10 @@ then(onFulfilled, onRejected) {
 }
 ```
 
-`catch()` receives the same treatment. This is a **single change to one class**.
-All callers that already return `RuntimePromise` — `callWrapAsync`, `lookupAsync`
-— inherit the conversion automatically and require no further changes.
+`catch()` would receive the same treatment. If this conversion is completed,
+callers that already return `RuntimePromise` inherit it automatically. The
+source-origin rule still applies: the context used here must be the
+`RuntimePromise` source context, not the later consumer's context.
 
 Sources that currently return plain Promises must be changed to return
 `new RuntimePromise(promise, errorContext)` instead.
@@ -400,9 +415,8 @@ Currently emits one raw async IIFE per binding:
 let t_5 = (async () => { try {
   let exported = await t_exportedId;
   if (hasOwn(exported, "helperFunc")) return exported["helperFunc"];
-  var err = runtime.contextualizeError(new Error("cannot import 'helperFunc'"), ...);
-  throw err;
-} catch(e) { var err = runtime.contextualizeError(e, ...); throw err; } })();
+  throw runtime.RuntimeError.create("cannot import 'helperFunc'", ...);
+} catch(e) { throw runtime.RuntimeError.create(e, ...); } })();
 ```
 
 Replace with a `.then()` chain wrapped as `RuntimePromise`. Each binding
@@ -530,11 +544,11 @@ engine bug and do not belong in the chain error system.
 Not all catch blocks are the same. There are four distinct types:
 
 - **(A) Full assertion** — the catch block is replaced entirely by a bare
-  `throw new RuntimeFatalError(err)`, because the `PoisonError` branch was
+  `throw RuntimeError.create(err)`, because the `PoisonError` branch was
   also just forwarding and can be removed.
 - **(B) Partial assertion** — the catch block stays; only the non-`PoisonError`
   fallback branch (`return createPoison(err)` or similar) is replaced by
-  `throw new RuntimeFatalError(err)`. The `PoisonError` branch stays because
+  `throw RuntimeError.create(err)`. The `PoisonError` branch stays because
   it does real work (forwarding, collecting, routing).
 - **(C) Irreducible** — the catch is needed forever; user code or protocol
   mechanics can throw anything here regardless of source wrapping.
@@ -554,7 +568,7 @@ catch (err) {
 // After (Type B — catch block stays, fallback hardened)
 catch (err) {
   if (isPoisonError(err)) return createPoison(err.errors);
-  throw new RuntimeFatalError(err);      // ← non-PoisonError is a bug
+  throw RuntimeError.create(err);      // ← non-PoisonError is a bug
 }
 ```
 
@@ -562,7 +576,7 @@ catch (err) {
 
 **`resolve.js`** (~10 catches → partial assertions)
 Most catches follow the Type B pattern: `createPoison(err)` fallback branches
-become `throw new RuntimeFatalError`. Note that some catches
+become `throw RuntimeError.create(err)`. Note that some catches
 (`resolveValueAndMarkerAsync`, `_resolveSingleArrAsync`) already `throw err`
 for non-`PoisonError` — they are partially hardened already and only need
 the `PoisonError` branch reviewed.
@@ -578,12 +592,12 @@ the `PoisonError` branch reviewed.
 **`lookup.js`** (2 catches → Type B)
 Both async path catches forward `PoisonError` and will only ever see
 `PoisonError` once `RuntimePromise` conversion is active. Non-`PoisonError`
-fallback becomes `RuntimeFatalError`.
+fallback becomes `RuntimeError`.
 
 **`loop.js`** (8 catches across 7 functions)
 
-The outer catch in `iterate()` already has partial `RuntimeFatalError`
-behavior (`if (!asyncOptions || isRuntimeFatalError(err)) { throw err; }`).
+The outer catch in `iterate()` already has partial `RuntimeError`
+behavior (`if (!asyncOptions || isRuntimeError(err)) { throw err; }`).
 
 The 8 catches divide as:
 
@@ -591,11 +605,11 @@ The 8 catches divide as:
 |---|---|---|
 | `iterate()` arr-await catch | B | Keep `poisonLoopEffects`; harden non-`PoisonError` branch |
 | `iterate()` maxConcurrency-await catch | B | Same |
-| `iterate()` outer catch | B | Already has `isRuntimeFatalError` guard; harden remaining fallback |
+| `iterate()` outer catch | B | Already has `isRuntimeError` guard; harden remaining fallback |
 | `iterateAsyncSequential` `for await..of` catch | C | Irreducible — `for await` drives `.next()` internally; any throw (generator or loop body) emerges here |
 | `iterateAsyncParallel` IIFE catch | C | Irreducible — explicit `iterator.next()` may throw; also catches loop body errors |
 | `iterateAsyncLimited` `getNext` catch | C | Irreducible — explicit `iterator.next()` |
-| `iterateAsyncLimited` `worker` catch | B→A | Routes body errors; loop bodies fill buffers and should not throw; harden to `RuntimeFatalError` |
+| `iterateAsyncLimited` `worker` catch | B→A | Routes body errors; loop bodies fill buffers and should not throw; harden to `RuntimeError` |
 | `iterateArrayLimited` `worker` catch | B→A | Same; also has `@todo` comment acknowledging this |
 
 The three async-iterator protocol catches (`iterateAsyncSequential`,
@@ -608,11 +622,11 @@ three represent the same irreducible contract: the generator protocol allows
 
 **`safe-output.js`** (4 catches → Type B)
 `_suppressValueAsyncComplex`, `_ensureDefinedAsyncComplex`, and
-`_suppressValueScriptComplex` currently do `throw new PoisonError([contextualizeError(err, ...)])` 
+`_suppressValueScriptComplex` currently do `throw PoisonError.create([contextualizeError(err, ...)])`
 in their non-`PoisonError` catch branches — a different pattern from the
 `createPoison(err)` fallback seen elsewhere. Under the new model, upstream
 values are `RuntimePromise`-wrapped, so these non-`PoisonError` branches
-become unreachable and can be replaced by `throw new RuntimeFatalError(err)`.
+become unreachable and can be replaced by `throw RuntimeError.create(err)`.
 
 **`deep-assign.js`** (2 catches → Type B)
 
@@ -674,12 +688,12 @@ properties immediately. `resolveObjectPropertiesAsync` walks these containers
 and has its own catches.
 
 The per-property catches inside `createObject`/`createArray` already use
-`throw new PoisonError([e])` rather than `createPoison(err)`. Under the new
-model, if all property values are `RuntimePromise`, then `e` at those catch
-sites will always be `PoisonError`. `new PoisonError([PoisonError])` is handled
-correctly by the `PoisonError` constructor, which flattens it. No structural
+`throw PoisonError.create([e])` rather than `createPoison(err)`. Under the
+new model, if all property values are `RuntimePromise`, then `e` at those catch
+sites will always be a poison error. `PoisonError.create([PoisonError])`
+is handled correctly by the aggregate factory, which flattens it. No structural
 change is needed at these sites once upstream values are wrapped; they are
-already producing `PoisonError`.
+already producing poison aggregates.
 
 A full audit of all property-setting sites to confirm they produce
 `RuntimePromise` (not plain Promise) has not been done.
@@ -689,7 +703,7 @@ A full audit of all property-setting sites to confirm they produce
 `collectErrors` in `errors.js` is a **Type D intentional aggregator** (see
 §9 taxonomy). It is explicitly designed to collect any error — `PoisonError`
 or otherwise — from any value, promise, or `RESOLVE_MARKER`-backed container.
-Its catches must not become `RuntimeFatalError` assertions. They are the
+Its catches must not become `RuntimeError` assertions. They are the
 foundation of the "never miss any error" principle.
 
 `peekError` delegates to `collectErrors` and inherits this property.
@@ -749,7 +763,7 @@ Dev-mode warnings from Phase 1 should go silent as each source is wrapped.
 ### Phase 3 — Harden consumers
 
 Once Phase 2 warnings are gone for a given file, replace the `createPoison(err)`
-fallback in its catch blocks with `throw new RuntimeFatalError(err)`. Do this
+fallback in its catch blocks with `throw RuntimeError.create(err)`. Do this
 file by file, running the test suite after each.
 
 Remove the dev-mode warning code once all files are hardened.
@@ -777,6 +791,6 @@ topology.
 
 - Full `npm run test:node` after every change.
 - Targeted tests in `tests/poison/` for any new assertion paths (confirm that
-  `RuntimeFatalError` is thrown, not `PoisonError`, for engine-level errors).
+  `RuntimeError` is thrown, not `PoisonError`, for engine-level errors).
 - For Phase 5, integration tests covering all inheritance scenarios:
   `extends`, component calls, nested components, `super()`, shared chains.

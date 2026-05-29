@@ -90,14 +90,12 @@ class CompileEmit {
     if (this.compiler.asyncMode) {
       if (name === 'root') {
         this.line(`function ${name}(env, context, runtime, renderState) {`);
-        this.line('const reportError = renderState.reportError;');
-        this.line('const __ec = getErrorContexts(runtime, context.path, reportError);');
+        this.line('const __ec = getErrorContexts(runtime, context.path, renderState);');
       } else {
         const extraParamSource = Array.isArray(extraParams) && extraParams.length > 0
           ? `, ${extraParams.join(', ')}`
           : '';
         this.line(`function ${name}(env, context, runtime, renderState, parentBuffer = null${extraParamSource}) {`);
-        this.line('const reportError = renderState.reportError;');
       }
     } else {
       this.line(`function ${name}(env, context, frame, runtime, cb) {`);
@@ -107,10 +105,10 @@ class CompileEmit {
     }
     // this.Line(`let ${this.compiler.buffer.currentBuffer} = "";`);
     if (this.compiler.asyncMode && name === 'root') {
-      const rootBufferBranchContext = this.compiler.emitBufferBranchContext(node, { branchName: name });
+      const rootBufferStackContext = this.compiler.emitBufferStackContext(node, { branchName: name });
       this.line(
         `let ${this.compiler.buffer.currentBuffer} = ` +
-        `new runtime.CommandBuffer(context, null, null, null, null, ${rootBufferBranchContext}, null, renderState);`
+        `new runtime.CommandBuffer(context, null, null, null, null, ${rootBufferStackContext}, null, renderState);`
       );
       if (!this.compiler.scriptMode) {
         this.line(
@@ -119,15 +117,15 @@ class CompileEmit {
         );
       }
     } else {
-      const managedBufferBranchContext = this.compiler.asyncMode
-        ? this.compiler.emitBufferBranchContext(node, { branchName: name })
+      const managedBufferStackContext = this.compiler.asyncMode
+        ? this.compiler.emitBufferStackContext(node, { branchName: name })
         : null;
       this.compiler.buffer.initManagedBuffer(
         this.compiler.buffer.currentBuffer,
         this.compiler.asyncMode ? 'parentBuffer' : null,
         this.compiler.buffer.currentTextChainVar,
         linkedChains,
-        managedBufferBranchContext,
+        managedBufferStackContext,
         this.compiler.asyncMode ? 'parentBuffer' : 'null'
       );
     }
@@ -202,15 +200,15 @@ class CompileEmit {
         const traceParentArg = traceParentOverride !== undefined
           ? traceParentOverride
           : (parentBufferId || 'null');
-        const managedBufferBranchContext = this.compiler.asyncMode
-          ? this.compiler.emitBufferBranchContext(errorContextNode)
+        const managedBufferStackContext = this.compiler.asyncMode
+          ? this.compiler.emitBufferStackContext(errorContextNode)
           : null;
         this.compiler.buffer.initManagedBuffer(
           bufferId,
           parentBufferId,
           `${bufferId}_textOutputVar`,
           linkedChains,
-          managedBufferBranchContext,
+          managedBufferStackContext,
           traceParentArg
         );
         if (typeof emitFunc === 'function') {

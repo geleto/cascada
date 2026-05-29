@@ -490,7 +490,7 @@ import {AsyncEnvironment} from '../../src/environment/environment.js';
             while state!.shouldContinue()
               result.results.push(state.counter)
             endwhile
-            state.reset()
+            state!.reset()
           endfor
 
           return result.snapshot()`;

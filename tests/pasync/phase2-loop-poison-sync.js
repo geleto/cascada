@@ -1,9 +1,11 @@
 
 import expect from 'expect.js';
 import {AsyncEnvironment} from '../../src/environment/environment.js';
-import {createPoison, isPoisonError} from '../../src/runtime/runtime.js';
+import {createPoison, isPoisonError, PoisonError} from '../../src/runtime/runtime.js';
 
 (function () {
+  const TEST_EC = [1, 1, 'LoopPoison.TestInput', 'phase2-loop-poison-sync.js', null];
+  const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC));
 
   describe('Phase 2: Loop Synchronous Poison Detection', () => {
     let env;
@@ -15,7 +17,7 @@ import {createPoison, isPoisonError} from '../../src/runtime/runtime.js';
     describe('Test 2.1: Synchronous poison in array expression [DEFERRED: Phase 6]', () => {
       it('should not execute loop body and execute else block', async () => {
         env.addGlobal('getPoisonedArray', () => {
-          return createPoison(new Error('Array fetch failed'));
+          return createTestPoison(new Error('Array fetch failed'));
         });
 
         const script = `
@@ -44,7 +46,7 @@ import {createPoison, isPoisonError} from '../../src/runtime/runtime.js';
     describe('Test 2.2: Synchronous poison with body writes', () => {
       it('should poison outer variable instead of leaving unchanged', async () => {
         env.addGlobal('getPoisonedArray', () => {
-          return createPoison(new Error('Cannot fetch items'));
+          return createTestPoison(new Error('Cannot fetch items'));
         });
 
         const script = `
@@ -71,7 +73,7 @@ import {createPoison, isPoisonError} from '../../src/runtime/runtime.js';
     describe('Test 2.3: Synchronous poison with handlers', () => {
       it('should add poison markers to buffer', async () => {
         env.addGlobal('getPoisonedArray', () => {
-          return createPoison(new Error('Data unavailable'));
+          return createTestPoison(new Error('Data unavailable'));
         });
 
         const script = `
@@ -97,7 +99,7 @@ import {createPoison, isPoisonError} from '../../src/runtime/runtime.js';
     describe('Test 2.4: Synchronous poison with both writes and handlers [DEFERRED: Phase 6]', () => {
       it('should handle both poisoning mechanisms', async () => {
         env.addGlobal('getPoisonedArray', () => {
-          return createPoison(new Error('Complete failure'));
+          return createTestPoison(new Error('Complete failure'));
         });
 
         const script = `

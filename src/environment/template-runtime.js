@@ -1,4 +1,4 @@
-import {isObject, isString, _prettifyError, keys} from '../lib.js';
+import {isObject, isString, keys} from '../lib.js';
 import * as globalRuntime from '../runtime/runtime.js';
 import {Frame} from '../runtime/frame.js';
 import {Obj} from '../object.js';
@@ -37,11 +37,7 @@ class TemplateRuntime extends Obj {
     this.path = path;
 
     if (eagerCompile) {
-      try {
-        this._compile();
-      } catch (err) {
-        throw _prettifyError(this.path, this.env.opts.dev, err);
-      }
+      this._compile();
     } else {
       this.compiled = false;
     }
@@ -60,11 +56,10 @@ class TemplateRuntime extends Obj {
     try {
       this.compile();
     } catch (e) {
-      const err = _prettifyError(this.path, this.env.opts.dev, e);
       if (cb) {
-        return callbackAsap(cb, err);
+        return callbackAsap(cb, e);
       }
-      throw err;
+      throw e;
     }
 
     const context = this._createContext(ctx);
@@ -76,10 +71,6 @@ class TemplateRuntime extends Obj {
         return;
       }
       reported = true;
-
-      if (err) {
-        err = _prettifyError(this.path, this.env.opts.dev, err);
-      }
 
       if (cb) {
         callbackAsap(cb, err, res);
@@ -122,11 +113,10 @@ class TemplateRuntime extends Obj {
     try {
       this.compile();
     } catch (e) {
-      const err = _prettifyError(this.path, this.env.opts.dev, e);
       if (cb) {
-        return callbackAsap(cb, err);
+        return callbackAsap(cb, e);
       } else {
-        throw err;
+        throw e;
       }
     }
 
@@ -142,7 +132,6 @@ class TemplateRuntime extends Obj {
       }
 
       if (err) {
-        err = _prettifyError(this.path, this.env.opts.dev, err);
         didError = true;
       }
 
@@ -252,7 +241,10 @@ class TemplateRuntime extends Obj {
       try {
         func = new Function('runtime', source);
       } catch (e) {
-        throw new Error('Error trying to compile ' + this.path + ' ' + e.message);
+        throw new CompileError('Error trying to compile ' + this.path + ' ' + e.message, {
+          path: this.path,
+          cause: e
+        });
       }
       props = func(globalRuntime);
     }
@@ -311,7 +303,6 @@ class AsyncTemplateRuntime extends TemplateRuntime {
     return new Promise((resolve, reject) => {
       super._renderAsync(ctx, (err, res) => {
         if (err) {
-          err = _prettifyError(this.path, this.env.opts.dev, err);
           reject(err);
         } else {
           resolve(res);

@@ -518,13 +518,15 @@ endif
 // CONSTRAINT: `x#` returns `none` when x is not an error — always check `is error` first.
 if failed is error
   var msg = failed#message
-  var origin = failed#source.origin
+  var path = failed#errors[0].path
+  var line = failed#errors[0].lineno
 endif
 
 // [ERR-07] RULE: Error Value shape (peek with #):
-//   #errors — array of { message, name, lineno, colno, path, operation, cause }
-//   #message — concatenation of individual messages
-// Multiple concurrent failures aggregate into a single PoisonError holding all.
+//   #message — aggregate summary
+//   #errors — array of individual PoisonError objects:
+//             { message, name, lineno, colno, path, label, cause }
+// Multiple concurrent failures aggregate into one PoisonErrorGroup holding all.
 
 // [ERR-08] RULE: Functions still receive Error Value arguments — the function can detect/repair.
 function processData(v)
@@ -572,7 +574,7 @@ guard
 recover err
   // out reverted; db! repaired
   db!.rollback()
-  out.error = err#message
+  out.error = err.message
 endguard
 
 // [GUARD-02] RULE: Default `guard` (no selectors) protects:
@@ -602,7 +604,7 @@ guard api!
 endguard
 
 // [GUARD-05] RULE: `recover [err]` runs ONLY if guard finishes poisoned. The optional `err` binds the
-// final PoisonError (use `#` to inspect). Bare `recover` is also valid.
+// final poison error; read `err.message` / `err.errors` directly. Bare `recover` is also valid.
 // If all errors were detected and repaired inside the guard via `is error`, guard is successful — no recovery.
 
 // [GUARD-06] RULE (PERFORMANCE): Variable protection (via `guard *` or explicit names) makes any code

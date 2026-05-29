@@ -1,5 +1,11 @@
 # ErrorContext Refactor
 
+> Historical note: this is the first-stage migration plan. Some examples below
+> intentionally use transitional names such as `RuntimeFatalError`, `cb`, and
+> aggregate-style `new PoisonError(errors)`. For the current runtime taxonomy
+> and compact-context rules, see `error-context-refactor-2.md` and
+> `Error Handling Guide.md`.
+
 This document records the target design for `ErrorContext` and the migration
 plan from the current mixed `(lineno, colno, errorContextString, path)` model.
 
@@ -330,12 +336,12 @@ Rules:
   codegen reads the index from `node._analysis.errorContextIndex`
 - compiler emission helper names should distinguish the two generated shapes:
   `emitErrorContext(node)` emits the raw source-origin reference `__ec[index]`;
-  `emitBufferBranchContext(node, fields)` emits the buffer metadata object
+  `emitBufferStackContext(node, fields)` emits the buffer metadata object
   `{ ec: __ec[index], ...fields }`
 - `_generateErrorContext(node)` is the analysis-time label/index helper. After
   migration, codegen should not call it for runtime error contexts; it should
   use the already-assigned index through `emitErrorContext(...)` or
-  `emitBufferBranchContext(...)`.
+  `emitBufferStackContext(...)`.
 - compile-time error decoration, if needed, should use a small helper that
   consumes the same plain context info rather than an `ErrorContext` instance
 
@@ -459,7 +465,7 @@ not a parent relationship; it is only the chain registration target used while
 creating linked chain lanes. Rename or reframe it as `linkTarget` in a later
 cleanup.
 
-Buffer diagnostics may include extra execution information in addition to the
+buffer stacks may include extra execution information in addition to the
 boundary context:
 
 - loop variable/current item for loops
@@ -840,7 +846,7 @@ Before implementation, audit:
    removed after all runtime-created/bootstrap commands receive an owning
    context.
 5. Use `emitErrorContext(node)` for raw `__ec[index]` references and
-   `emitBufferBranchContext(node, fields)` only for command-buffer branch
+   `emitBufferStackContext(node, fields)` only for command-buffer stack
    metadata objects shaped as `{ ec: __ec[index], ...fields }`.
 6. Expand `tests/pasync/error-context.js` for command-stored context
    and migrated compiler output.
@@ -926,7 +932,7 @@ Deletion checklist for `TODO(error-context-cleanup)`:
    compatibility adapters once generated code, runtime APIs, tests, and
    precompile fixtures are updated.
    The legacy `ErrorContext` runtime wrapper, the inheritance
-   `createBufferBranchContext(...)` bridge file, and command-buffer context-shape
+   `createBufferStackContext(...)` bridge file, and command-buffer context-shape
    normalizer have been removed. Remaining expanded object contexts are
    hand-built test scaffolding or frozen sync-path data.
 7. Re-check the late already-wrapped-error attachment bridge after all wrappers

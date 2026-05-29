@@ -1756,7 +1756,8 @@ var failedUser = fetchUser(999)
 
 if failedUser is error
   var message = failedUser#message
-  var origin = failedUser#source.origin
+  var path = failedUser#errors[0].path
+  var line = failedUser#errors[0].lineno
 endif
 ```
 
@@ -1777,21 +1778,25 @@ endif
 
 #### Anatomy of an Error Value
 
-An Error Value is a rich object designed for easy debugging. Access its properties with the `#` peek operator.
+Peeking returns the poison error for that value, or `none` when the value is
+healthy. A single failure returns a `PoisonError`; multiple failures return a
+`PoisonErrorGroup`. Both shapes have a summary message and an `errors` array of
+individual `PoisonError` objects. Access the poison error with `#`; entries
+inside `errors` are ordinary objects and do not need another `#`.
 
-*   **`errors`**: (array) A list of one or more underlying error objects:
+*   **`message`**: (string) A summary of all individual error messages.
+*   **`errors`**: (array) A list of one or more individual `PoisonError` objects:
     *   **`message`**: (string) The specific error message.
     *   **`name`**: (string) A custom name for business-logic errors (e.g., `'ValidationError'`).
     *   **`lineno`**: (number) The line number where the error occurred.
     *   **`colno`**: (number) The column number.
     *   **`path`**: (string) The script file where the error originated.
-    *   **`operation`**: (string) A description of the internal operation (e.g., `FunCall`, `LookupVal`, `Add`).
+    *   **`label`**: (string) A description of the source operation (e.g., `FunCall`, `LookupVal`, `Add`).
     *   **`cause`**: (object | null) The original JavaScript `Error` object, if applicable.
-*   **`message`**: (string) A summary of all individual error messages.
 
 #### Handling Multiple Concurrent Errors
 
-When multiple operations fail concurrently, their errors are collected into a single `PoisonError` that holds all the original errors.
+When multiple operations fail concurrently, their errors are collected into a single aggregate poison error (`PoisonErrorGroup`) whose `.errors[]` entries are individual `PoisonError`s with their original source locations.
 
 ```javascript
 var user = fetchUser(999)        // fails
@@ -1806,8 +1811,11 @@ if summary is error
   data errorList = []
   each err in summary#errors
     errorList.push({
-      message: err#message,
-      source: err#source.origin
+      message: err.message,
+      path: err.path,
+      line: err.lineno,
+      column: err.colno,
+      label: err.label
     })
   endeach
 
@@ -2030,7 +2038,7 @@ If present, it runs only if the guard finishes poisoned:
 * Guarded `data`, `text`, and `sequence` declarations have already been reverted
 * Guarded sequential paths have already been repaired
 * Guarded variables have already been restored
-* `recover err` binds the final `PoisonError`; read `err.message` for a combined message or inspect `err.errors` in host JavaScript. The variable name is optional; bare `recover` (without a binding) is also valid
+* `recover err` binds the final poison error; read `err.message` for a combined message or inspect `err.errors` in host JavaScript. The variable name is optional; bare `recover` (without a binding) is also valid
 
 > Note: If all errors are detected and repaired inside the guard (using `is error`), the guard is considered successful and no recovery occurs.
 

@@ -1,35 +1,33 @@
-import {createPoison} from '../errors.js';
-import {Chain, mergePoisonErrors} from './base.js';
+import {createPoison, PoisonError} from '../errors.js';
+import {Chain} from './base.js';
 
 class SequentialPathChain extends Chain {
   constructor(buffer, chainName, context, chainType) {
     super(buffer, chainName, context, chainType, true, null);
-    this._sequentialPathPoisonErrors = null;
+    this._sequentialPathPoison = null;
     this._sequentialPathLastResult = undefined;
   }
 
-  _getSequentialPathPoisonErrors() {
-    return this._sequentialPathPoisonErrors ? this._sequentialPathPoisonErrors.slice() : null;
+  _getSequentialPathPoisonError() {
+    return this._sequentialPathPoison;
   }
 
-  _applySequentialPathPoisonErrors(errors) {
-    if (!Array.isArray(errors) || errors.length === 0) {
-      return;
-    }
-
-    const merged = mergePoisonErrors(this._sequentialPathPoisonErrors || [], errors);
-    this._sequentialPathPoisonErrors = merged;
-    this._setTarget(createPoison(merged));
+  _applySequentialPathPoisonError(poisonError) {
+    const mergedPoison = this._sequentialPathPoison
+      ? PoisonError.group([this._sequentialPathPoison, poisonError])
+      : poisonError;
+    this._sequentialPathPoison = mergedPoison;
+    this._setTarget(createPoison(mergedPoison));
   }
 
   _clearSequentialPathPoison() {
-    this._sequentialPathPoisonErrors = null;
+    this._sequentialPathPoison = null;
     this._setTarget(true);
   }
 
   _setSequentialPathLastResult(value) {
     this._sequentialPathLastResult = value;
-    if (!this._sequentialPathPoisonErrors || this._sequentialPathPoisonErrors.length === 0) {
+    if (!this._sequentialPathPoison) {
       this._setTarget(value);
     }
   }
@@ -37,16 +35,14 @@ class SequentialPathChain extends Chain {
   _captureGuardState() {
     return {
       target: this._target,
-      poisonErrors: this._sequentialPathPoisonErrors ? this._sequentialPathPoisonErrors.slice() : null,
+      poisonError: this._sequentialPathPoison,
       lastResult: this._sequentialPathLastResult
     };
   }
 
   _restoreGuardState(state) {
     if (state && typeof state === 'object') {
-      this._sequentialPathPoisonErrors = Array.isArray(state.poisonErrors)
-        ? state.poisonErrors.slice()
-        : null;
+      this._sequentialPathPoison = state.poisonError || null;
       this._sequentialPathLastResult = state.lastResult;
       if (Object.prototype.hasOwnProperty.call(state, 'target')) {
         this._setTarget(state.target);
@@ -54,13 +50,13 @@ class SequentialPathChain extends Chain {
       }
     }
 
-    this._sequentialPathPoisonErrors = null;
+    this._sequentialPathPoison = null;
     this._sequentialPathLastResult = state;
     this._setTarget(state);
   }
 
-  _applyPoisonErrors(errors) {
-    this._applySequentialPathPoisonErrors(errors);
+  _applyPoisonError(poisonError) {
+    this._applySequentialPathPoisonError(poisonError);
   }
 
   _getCurrentResult() {

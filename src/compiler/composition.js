@@ -177,14 +177,21 @@ class CompileComposition {
       const failMsg = `cannot import '${importedName}'`.replace(/"/g, '\\"');
       const errorContext = this.compiler.emitErrorContext(nameNode);
 
-      this.emit.line(`let ${id} = (async () => { try {`);
-      this.emit.line(`  let exported = await ${exportedId};`);
+      this.emit.line(`let ${id} = (async () => {`);
+      this.emit.line(`  let exported;`);
+      this.emit.line(`  try {`);
+      this.emit.line(`    exported = await ${exportedId};`);
+      this.emit.line(`  } catch(e) {`);
+      this.emit.line(`    if (!runtime.isPoisonError(e) && !runtime.isRuntimeError(e)) {`);
+      this.emit.line(`      runtime.RuntimeError.reportAndThrow(e, ${errorContext});`);
+      this.emit.line(`    }`);
+      this.emit.line(`    throw e;`);
+      this.emit.line(`  }`);
       this.emit.line(`  if(Object.prototype.hasOwnProperty.call(exported, "${importedName}")) {`);
       this.emit.line(`    return exported["${importedName}"];`);
-      this.emit.line(`  } else {`);
-      this.emit.line(`    throw runtime.contextualizeError(new Error("${failMsg}"), ${errorContext});`);
       this.emit.line(`  }`);
-      this.emit.line(`} catch(e) { throw runtime.contextualizeError(e, ${errorContext}); } })();`);
+      this.emit.line(`  runtime.RuntimeError.reportAndThrow("${failMsg}", ${errorContext});`);
+      this.emit.line(`})();`);
       bindingIds.push(id);
       this._emitValueImportBinding(alias, id, node);
     });

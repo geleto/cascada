@@ -75,7 +75,7 @@ function default_(val, def, bool) {
 
 function dictsort(val, caseSensitive, by) {
   if (!lib.isObject(val)) {
-    throw new lib.TemplateError('dictsort filter: val must be an object');
+    throw new Error('dictsort filter: val must be an object');
   }
 
   let array = [];
@@ -90,7 +90,7 @@ function dictsort(val, caseSensitive, by) {
   } else if (by === 'value') {
     si = 1;
   } else {
-    throw new lib.TemplateError(
+    throw new Error(
       'dictsort filter: You can only sort by either key or value');
   }
 
@@ -218,7 +218,7 @@ function list(val) {
   } else if (lib.isArray(val)) {
     return val;
   } else {
-    throw new lib.TemplateError('list filter: type not iterable');
+    throw new Error('list filter: type not iterable');
   }
 }
 

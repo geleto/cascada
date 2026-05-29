@@ -107,7 +107,7 @@ Allowed:
 - validate override argument-name compatibility
 - wire owner-relative `super` links
 - compute merged chain footprints
-- collect independent recoverable finalization errors
+- fail fast on deterministic finalization errors
 
 `RuntimeMethodEntry.super` is wired to the nearest parent implementation for
 the same callable name. Finalization must not skip intermediate overrides, and
@@ -1963,7 +1963,7 @@ Goal:
 - evaluate splitting inheritance-specific generated-source emission into an
   `InheritanceEmit` helper owned by `CompileInheritance`; do this only if the
   boundary is pure emission and reduces coupling
-- document or type the `RuntimeFatalError` constructor overload that accepts an
+- document or type the `RuntimeError` constructor overload that accepts an
   error-context object as its second argument, so the parameter name does not
   imply that only a raw line number is valid
 - keep `applyWithResolvedComponentInstance` private to component commands; it
@@ -2057,8 +2057,7 @@ Tests:
   implementation code and cannot be observed through the component binding.
 - Compiled inheritance participants do not accept lifecycle mode flags.
 - Runtime method entries are pruned to execution-time fields.
-- Independent recoverable finalization errors are collected or explicitly
-  documented as immediate fatal.
+- Independent recoverable finalization errors are immediate fatal errors.
 - Compiler ABI metadata violations fail loudly instead of being silently
   repaired.
 - Shared-schema conflict diagnostics retain declaration-origin quality during

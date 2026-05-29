@@ -4,6 +4,11 @@ import {AsyncEnvironment} from '../../src/environment/environment.js';
 import * as runtime from '../../src/runtime/runtime.js';
 
 (function () {
+  const TEST_EC = [1, 1, 'Peek.TestInput', 'peek-operator.njk', null];
+
+  function createTestPoison(error) {
+    return runtime.createPoison(runtime.PoisonError.wrap(error, TEST_EC));
+  }
 
   describe('Peek Operator (#)', () => {
     let env;
@@ -13,7 +18,7 @@ import * as runtime from '../../src/runtime/runtime.js';
 
     it('should peek at a synchronous PoisonedValue', async () => {
       const err = new Error('Basic Error');
-      const poison = runtime.createPoison(err, [1, 1, null, null, null]);
+      const poison = createTestPoison(err);
 
       const template = `
         {% if val is error %}
@@ -26,7 +31,7 @@ import * as runtime from '../../src/runtime/runtime.js';
     });
 
     it('should peek at a rejected Promise', async () => {
-      const p = Promise.reject(new Error('Async Fail'));
+      const p = createTestPoison(new Error('Async Fail'));
 
       const template = `
         {% if val is error %}
@@ -60,7 +65,7 @@ import * as runtime from '../../src/runtime/runtime.js';
 
     it('should access array of errors via #errors', async () => {
       const err = new Error('Sub Error');
-      const poison = runtime.createPoison(err, [1, 1, null, null, null]);
+      const poison = createTestPoison(err);
 
       const template = `
         {% if val is error %}
@@ -101,7 +106,7 @@ import * as runtime from '../../src/runtime/runtime.js';
 
     it('should parse variable# correctly', async () => {
       const err = new Error('Traiing hash');
-      const poison = runtime.createPoison(err, [1, 1, null, null, null]);
+      const poison = createTestPoison(err);
       const template = `
           {% if val is error %}
              {% set errinfo = val# %}
@@ -115,7 +120,7 @@ import * as runtime from '../../src/runtime/runtime.js';
     it('should work with chained property access on peek result', async () => {
       const err = new Error('Detail Error');
       err.name = 'CustomName';
-      const poison = runtime.createPoison(err, [1, 1, null, null, null]);
+      const poison = createTestPoison(err);
 
       const template = `
         {{ val#errors[0].name }}
@@ -126,7 +131,7 @@ import * as runtime from '../../src/runtime/runtime.js';
 
     it('should return none for nested peek on a healthy error object', async () => {
       const err = new Error('Root');
-      const poison = runtime.createPoison(err);
+      const poison = createTestPoison(err);
 
       const template = `
             {% set errObj = val# %}
@@ -139,7 +144,7 @@ import * as runtime from '../../src/runtime/runtime.js';
 
     it('should allow peeking in standard JS expressions', async () => {
       const err = new Error('Expr Error');
-      const poison = runtime.createPoison(err);
+      const poison = createTestPoison(err);
 
       const template = `
         {% set err = val# %}
@@ -158,7 +163,7 @@ import * as runtime from '../../src/runtime/runtime.js';
 
     it('should peek at errors in script block', async () => {
       const err = new Error('Script Error');
-      const poison = runtime.createPoison(err);
+      const poison = createTestPoison(err);
 
       const script = `
         var result = {}
@@ -169,12 +174,12 @@ import * as runtime from '../../src/runtime/runtime.js';
 
         return result`;
       const data = await env.renderScriptString(script, { val: poison });
-      expect(data.msg).to.equal('Script Error');
+      expect(data.msg).to.contain('Script Error');
     });
 
     it('should handle peeking assignments', async () => {
       const err = new Error('Assignment Error');
-      const poison = runtime.createPoison(err);
+      const poison = createTestPoison(err);
 
       const script = `
         var result = {}
@@ -183,13 +188,13 @@ import * as runtime from '../../src/runtime/runtime.js';
 
         return result`;
       const data = await env.renderScriptString(script, { val: poison });
-      expect(data.msg).to.equal('Assignment Error');
+      expect(data.msg).to.contain('Assignment Error');
     });
 
     it('should respect sequencing rules when peeking', async () => {
       // Create a scenario where we peek at a sequenced path
       const err = new Error('Sequence Error');
-      const poison = runtime.createPoison(err);
+      const poison = createTestPoison(err);
       const context = {
         service: {
           action: () => poison

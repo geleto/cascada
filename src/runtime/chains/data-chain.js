@@ -1,7 +1,7 @@
-import {createPoison, isPoison, isPoisonError} from '../errors.js';
+import {createPoison, isPoison, isPoisonError, PoisonError} from '../errors.js';
 import {DataCommand} from '../commands/data.js';
 import {DataChainTarget} from './data-target.js';
-import {Chain, cloneSnapshotValue, mergePoisonErrors} from './base.js';
+import {Chain, cloneSnapshotValue} from './base.js';
 
 class DataChain extends Chain {
   constructor(buffer, chainName, context, chainType) {
@@ -83,19 +83,17 @@ class DataChain extends Chain {
     this._snapshotShared = false;
   }
 
-  _applyPoisonErrors(errors, cmd = null) {
-    if (!Array.isArray(errors) || errors.length === 0) {
-      return;
-    }
-
-    const mergedRootErrors = mergePoisonErrors(extractPoisonErrors(this._getTarget()), errors);
-    const poison = createPoison(mergedRootErrors);
+  _applyPoisonError(poisonError, cmd = null) {
+    const existingPoison = getPoisonError(this._getTarget());
+    const poisonValue = createPoison(
+      existingPoison ? PoisonError.group([existingPoison, poisonError]) : poisonError
+    );
     const rawPath = cmd && Array.isArray(cmd.arguments) && cmd.arguments.length > 0 ? cmd.arguments[0] : null;
     const path = (Array.isArray(rawPath) || rawPath === null) ? rawPath : null;
 
     if (this._base) {
       try {
-        this._base.set(path, poison);
+        this._base.set(path, poisonValue);
         this._setTarget(this._base.data);
         return;
       } catch (err) {
@@ -103,18 +101,18 @@ class DataChain extends Chain {
       }
     }
 
-    this._setTarget(poison);
+    this._setTarget(poisonValue);
   }
 }
 
-function extractPoisonErrors(value) {
-  if (isPoison(value) && Array.isArray(value.errors)) {
-    return value.errors;
+function getPoisonError(value) {
+  if (isPoison(value)) {
+    return PoisonError.group(value.errors);
   }
-  if (isPoisonError(value) && Array.isArray(value.errors)) {
-    return value.errors;
+  if (isPoisonError(value)) {
+    return value;
   }
-  return [];
+  return null;
 }
 
 export {DataChain};

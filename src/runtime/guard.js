@@ -12,17 +12,19 @@ import {
 } from './commands/sequential-path.js';
 import {requireCommandErrorContext} from './commands/base.js';
 
-function init(reportError = null) {
+function init(renderState = null, errorContext) {
+  errorContext = requireCommandErrorContext(errorContext, 'guard.init');
   const guardState = {
     sequenceErrors: [],
     detectionPromises: [],
-    reportError
+    renderState,
+    errorContext
   };
 
   return guardState;
 }
 
-function initChainSnapshots(chainNames = null, buffer = null, reportError = null, errorContext) {
+function initChainSnapshots(chainNames = null, buffer = null, renderState = null, errorContext) {
   errorContext = requireCommandErrorContext(errorContext, 'guard.initChainSnapshots');
   const state = {
     snapshots: Object.create(null),
@@ -30,7 +32,8 @@ function initChainSnapshots(chainNames = null, buffer = null, reportError = null
     sequentialPathChains: [],
     sequenceErrors: [],
     setupPromises: [],
-    reportError
+    renderState,
+    errorContext
   };
 
   const targets = chainNames ?? [];
@@ -91,7 +94,7 @@ async function restoreChains(buffer, chainGuardState, errorContext) {
         chainName,
         target: chainGuardState.snapshots[chainName],
         errorContext
-      }), chainName).catch((err) => reportAndThrow(chainGuardState.reportError, err))
+      }), chainName).catch((err) => chainGuardState.renderState.reportAndThrowFatalError(err, errorContext))
     );
     await Promise.all(restorePromises);
   }
@@ -106,7 +109,7 @@ async function restoreChains(buffer, chainGuardState, errorContext) {
         pathKey: chainName,
         operation: () => true,
         errorContext
-      }), chainName).catch((err) => reportAndThrow(chainGuardState.reportError, err))
+      }), chainName).catch((err) => chainGuardState.renderState.reportAndThrowFatalError(err, errorContext))
     );
     await Promise.all(repairPromises);
   }
@@ -165,7 +168,7 @@ async function collectChainErrors(buffer, allowedChains, errorContext) {
     if (!chainError) {
       continue;
     }
-    if (Array.isArray(chainError.errors) && chainError.errors.length > 0) {
+    if (chainError.errors) {
       allErrors.push(...chainError.errors);
       continue;
     }
@@ -206,14 +209,14 @@ function repairSequenceChains(buffer, guardState, lockNames, errorContext) {
         if (!chainError) {
           return true;
         }
-        if (Array.isArray(chainError.errors) && chainError.errors.length > 0) {
+        if (chainError.errors) {
           guardState.sequenceErrors.push(...chainError.errors);
         } else {
           guardState.sequenceErrors.push(chainError);
         }
         return true;
       })
-      .catch((err) => reportAndThrow(guardState.reportError, err));
+      .catch((err) => guardState.renderState.reportAndThrowFatalError(err, errorContext));
 
     const repairPromise = buffer.addCommand(new RepairWriteCommand({
       chainName: lockName,
@@ -221,7 +224,7 @@ function repairSequenceChains(buffer, guardState, lockNames, errorContext) {
       // Repair is unconditional: clear poison and publish a healthy lock state.
       operation: () => true,
       errorContext
-    }), lockName).catch((err) => reportAndThrow(guardState.reportError, err));
+    }), lockName).catch((err) => guardState.renderState.reportAndThrowFatalError(err, errorContext));
 
     guardState.detectionPromises.push(Promise.all([detectPromise, repairPromise]).then(() => true));
   }
@@ -240,7 +243,7 @@ async function settleSequenceTransactions(chainGuardState, mode) {
       const setupErr = failedSetup.reason instanceof Error
         ? failedSetup.reason
         : new Error(String(failedSetup.reason));
-      reportAndThrow(chainGuardState.reportError, setupErr);
+      chainGuardState.renderState.reportAndThrowFatalError(setupErr, chainGuardState.errorContext);
     }
   }
 
@@ -274,11 +277,3 @@ async function settleSequenceTransactions(chainGuardState, mode) {
 }
 
 export { init, initChainSnapshots, finalizeGuard, repairSequenceChains, restoreChains };
-
-function reportAndThrow(reportError, err) {
-  const normalized = err instanceof Error ? err : new Error(String(err));
-  if (typeof reportError === 'function') {
-    reportError(normalized);
-  }
-  throw normalized;
-}

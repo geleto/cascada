@@ -17,9 +17,9 @@ class VarCommand extends ChainCommand {
     return runWithResolvedArguments(this.arguments, this, chain, (resolvedArgs) => {
       if (!chain) return;
       const args = Array.isArray(resolvedArgs) ? resolvedArgs : [];
-      const poisonErrors = this.extractPoisonFromArgs(args);
-      if (poisonErrors.length > 0) {
-        chain._setTarget(this.toPoisonValue(poisonErrors));
+      const poisonError = this.getPoisonFromArgs(args);
+      if (poisonError) {
+        chain._setTarget(this.toPoisonValue(poisonError));
         return;
       }
       if (args.length === 0) {
@@ -27,9 +27,9 @@ class VarCommand extends ChainCommand {
         return;
       }
       if (args.length > 1) {
-        chain._setTarget(this.toPoisonValue([
-          contextualizeChainError(chain, this.errorContext, new Error('var chain accepts exactly one argument'))
-        ]));
+        chain._setTarget(this.toPoisonValue(
+          contextualizeChainError(this.errorContext, new Error('var chain accepts exactly one argument'))
+        ));
         return;
       }
       if (this.initializeIfNotSet && chain._getTarget() !== undefined) {

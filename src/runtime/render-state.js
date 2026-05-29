@@ -1,19 +1,23 @@
-import {markPromiseHandled} from './errors.js';
+import {isPoisonError, isRuntimeError, markPromiseHandled, RuntimeError} from './errors.js';
 
 class RenderState {
   constructor(onError = null) {
     this.error = null;
     this.onError = onError;
-    this.reportError = this.reportFatalError.bind(this);
     this.fatalPromise = new Promise((_resolve, reject) => {
       this._rejectFatal = reject;
     });
     markPromiseHandled(this.fatalPromise);
   }
 
-  reportFatalError(error) {
+  reportFatalError(error, errorContext) {
     if (!error) {
       throw new TypeError('reportFatalError requires an error');
+    }
+    if (errorContext !== undefined || typeof error === 'string') {
+      error = RuntimeError.create(error, errorContext);
+    } else if (!(error instanceof Error)) {
+      error = new Error(String(error));
     }
     if (this.error) {
       return;
@@ -23,6 +27,16 @@ class RenderState {
       this.onError(error);
     }
     this._rejectFatal(error);
+  }
+
+  reportAndThrowFatalError(error, errorContext) {
+    if (errorContext !== undefined || typeof error === 'string') {
+      error = RuntimeError.create(error, errorContext);
+    } else if (!(error instanceof Error)) {
+      error = new Error(String(error));
+    }
+    this.reportFatalError(error);
+    throw error;
   }
 
   isFatalErrorReported() {
@@ -44,7 +58,9 @@ class RenderState {
     }
     const raced = Promise.race([result, this.fatalPromise]);
     return raced.catch((error) => {
-      this.reportFatalError(error);
+      if (!isPoisonError(error) && !isRuntimeError(error)) {
+        this.reportFatalError(error);
+      }
       throw error;
     });
   }

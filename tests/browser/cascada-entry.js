@@ -6,7 +6,7 @@ export {Environment, AsyncEnvironment, Template, AsyncTemplate, Script} from '..
 export {Loader} from '../../src/loader/loader.js';
 export {WebLoader, PrecompiledLoader} from '../../src/loader/web-loaders.js';
 export {SafeString, markSafe} from '../../src/runtime/safe-output.js';
-export {TemplateError} from '../../src/lib.js';
+export {CompileError} from '../../src/errors.js';
 export {installCompat as installJinjaCompat} from '../../src/language/jinja-compat.js';
 export {loadString, clearStringCache, raceLoaders} from '../../src/loader/loader-utils.js';
 

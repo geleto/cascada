@@ -1,20 +1,17 @@
-import {PoisonError, createPoison, isPoisonError, contextualizeError} from '../errors.js';
+import {PoisonError, createPoison, isPoisonError} from '../errors.js';
 import {MutatingCommand, requireCommandErrorContext} from './base.js';
 
 const contextualizedChainErrorCache = new WeakMap();
 
 class ErrorCommand extends MutatingCommand {
-  constructor(errors, errorContext) {
+  constructor(error, errorContext) {
     super();
     this.errorContext = requireCommandErrorContext(errorContext, this.constructor.name);
-    if (errors == null) {
-      throw new TypeError('ErrorCommand requires errors');
-    }
-    this.errors = Array.isArray(errors) ? errors : [errors];
+    this.error = PoisonError.group(error);
   }
 
   getError() {
-    return new PoisonError(this.errors, this.errorContext);
+    return this.error;
   }
 
   apply(ctx) {
@@ -24,62 +21,42 @@ class ErrorCommand extends MutatingCommand {
 }
 
 class TargetPoisonCommand extends MutatingCommand {
-  constructor({ chainName, errors = null, errorContext }) {
+  constructor({ chainName, error, errorContext }) {
     super();
     this.chainName = chainName;
     this.errorContext = requireCommandErrorContext(errorContext, this.constructor.name);
-    this.errors = Array.isArray(errors) ? errors : [errors || new Error('Command buffer entry produced an unspecified error')];
+    this.error = PoisonError.group(error);
   }
 
   getError() {
-    return new PoisonError(this.errors);
+    return this.error;
   }
 
   apply(chain) {
     if (!chain) {
       return;
     }
-    const contextualizedErrors = contextualizeErrorsForChain(chain, this.errorContext, this.errors);
     const chainType = chain._chainType;
     if (chainType === 'text') {
       if (!Array.isArray(chain._target)) {
         chain._setTarget([]);
       }
-      chain._target.push(createPoison(contextualizedErrors));
+      chain._target.push(createPoison(this.error));
       chain._markStateChanged();
       return;
     }
-    chain._applyPoisonErrors(contextualizedErrors);
+    chain._applyPoisonError(this.error);
   }
 }
 
-function contextualizeErrorsForChain(chain, errorContext, errors) {
-  void chain;
-  if (!Array.isArray(errors) || errors.length === 0) {
-    return [];
-  }
-  const contextualized = [];
-  for (const err of errors) {
-    if (isPoisonError(err) && Array.isArray(err.errors) && err.errors.length > 0) {
-      for (const nested of err.errors) {
-        contextualized.push(contextualizeChainError(chain, errorContext, nested));
-      }
-      continue;
-    }
-    contextualized.push(contextualizeChainError(chain, errorContext, err));
-  }
-  return contextualized;
-}
-
-function contextualizeChainError(chain, errorContext, err) {
-  void chain;
+function contextualizeChainError(errorContext, err) {
   if (err && (typeof err === 'object' || typeof err === 'function')) {
     const cacheKey = errorContext;
     const perError = contextualizedChainErrorCache.get(err);
     if (perError && perError.has(cacheKey)) {
       return perError.get(cacheKey);
     }
-    const wrapped = contextualizeError(err, errorContext);
+    const wrapped = PoisonError.wrap(err, errorContext);
     if (wrapped !== err) {
       const nextPerError = perError || new Map();
       nextPerError.set(cacheKey, wrapped);
@@ -87,7 +64,7 @@ function contextualizeChainError(chain, errorContext, err) {
     }
     return wrapped;
   }
-  return contextualizeError(err, errorContext);
+  return PoisonError.wrap(err, errorContext);
 }
 
-export {ErrorCommand, TargetPoisonCommand, contextualizeErrorsForChain, contextualizeChainError};
+export {ErrorCommand, TargetPoisonCommand, contextualizeChainError};

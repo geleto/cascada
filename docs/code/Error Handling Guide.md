@@ -1,181 +1,68 @@
-# Cascada Error Handling: A Comprehensive Guide
+# Cascada Error Handling Guide
 
-## 1. Core Philosophy: Precise and Developer-Friendly Errors
+This guide describes the current error model. Older migration notes may still
+show transitional names such as `TemplateError`, `RuntimeFatalError`, or
+aggregate-style `new PoisonError(errors)` examples; those are historical.
 
-The primary goal of Cascada's error handling system is to provide developers with the most precise and helpful error messages possible. An error message should always include:
+## Runtime Families
 
-1.  **What** went wrong (the error message).
-2.  **Where** it went wrong (the template path, line number, and column number).
-3.  **Context** about the operation being performed (e.g., "in a `LookupVal`").
+Cascada has three public error families plus the `PoisonedValue` transport:
 
-To achieve this, Cascada employs a sophisticated system that bridges the gap between the compiler (which knows the "where") and the runtime (which knows the "what"). This guide explains the components of this system and the design decisions behind them.
+- **`CompileError`**: compile/load-time failure with source position fields.
+- **`RuntimeError`**: fatal runtime/engine failure. Runtime errors are not
+  collected into poison and must not be converted to non-fatal dataflow errors.
+- **`PoisonError`**: individual non-fatal value/dataflow failure with compact
+  source-origin context. Its `cause` is the original JavaScript error when one
+  exists.
+- **`PoisonErrorGroup`**: aggregate of individual `PoisonError`s. This is what
+  a `PoisonedValue` rejects with when awaited.
 
-## 2. The Three Core Components
+`PoisonedValue` is not an `Error`. It is a thenable container carrying
+`.errors[]` so runtime code can detect poison synchronously with
+`isPoison(value)` before `await`.
 
-Three key constructs form the foundation of our error handling.
+## Source-Origin Rule
 
-### `TemplateError`
-This is the **universal, user-facing error object**. The goal is for every unhandled exception that bubbles up from a template render to be an instance of `TemplateError`. It wraps a standard JavaScript `Error` but enriches it with positional information (`lineno`, `colno`, `path`, etc.).
+Error context belongs to the source operation that created the error, not to a
+later consumer. Consumption paths must preserve an incoming error's context.
 
-### `PoisonError` and `PoisonedValue` (Async Mode Only)
-`PoisonError` is a special error type used exclusively in async mode. Its purpose is to act as a **transport mechanism for one or more `TemplateError`s**.
+- Create a new non-fatal value error at its origin with
+  `new PoisonError(error, errorContext)` or `createPoison(error, errorContext)`.
+- Aggregate already-originated poison errors with
+  `PoisonError.create(errors)`.
+- Create fatal runtime errors with `RuntimeError.create(error, errorContext)`.
+- Do not attach a local consumption `errorContext` to an incoming
+  `PoisonError`, `PoisonErrorGroup`, or `PoisonedValue`.
 
-*   **It is a container:** It holds an `.errors` array of the actual errors that occurred.
-*   **It has no context of its own:** A `PoisonError` should never have a `lineno` or `colno` attached to it. The individual errors inside it must each retain their own unique contextual information.
-*   **It enables "Never Miss Any Error":** It allows us to collect all errors from parallel async operations before throwing, ensuring the developer sees a complete picture of what's wrong.
+The same rule applies to command-buffer diagnostic stacks: stack entries come
+from the buffer/boundary where the async branch was created, not from arbitrary
+later value consumption.
 
-`PoisonedValue` is the thenable counterpart used to propagate poison through the data flow before an `await` forces it to become a thrown `PoisonError`.
+## Sync Path
 
-### `runtime.handleError()`
-This is the central, **idempotent** utility for ensuring any error is correctly formatted. It is the gatekeeper for creating `TemplateError`s. It intelligently handles three types of input:
+The frozen Nunjucks-compatible synchronous compiler path still uses positional
+`handleError(error, lineno, colno, label, path)`. Do not rewrite those call
+sites as part of async error cleanup.
 
-1.  **Raw JavaScript Error (e.g., `TypeError`):** It wraps the raw error in a new `TemplateError`, adding the provided positional context.
-2.  **Existing `TemplateError`:** It recognizes the error has already been handled (by checking for a `.lineno` property) and returns it unmodified, preventing double-wrapping.
-3.  **`PoisonError`:** It recognizes the error is a container and returns it unmodified, preserving the multiple errors within.
+Async code should use compact prepared error contexts and the runtime error
+classes/helpers listed above.
 
-**Fundamental Rule:** Any `catch` block in the runtime or compiled code that needs to process an unknown error `e` **MUST** pass it through `runtime.handleError(e, ...)`.
+## Poison Handling Rules
 
-## 3. The Two Coexisting Systems
+- Check `isPoison(value)` before `await`.
+- In `catch`, use `isPoisonError(err)`; it matches both `PoisonError` and
+  `PoisonErrorGroup`.
+- Non-`async` and sync-first hybrid functions may return `PoisonedValue`
+  directly.
+- `async` functions must throw poison errors instead of returning
+  `PoisonedValue`; use `PoisonError.create(value.errors)` for existing
+  poison.
+- Always collect all independent value errors before returning/throwing:
+  Cascada's poison system follows the "Never Miss Any Error" principle.
 
-Cascada maintains two distinct error handling models that run in parallel: the battle-tested synchronous model inherited from Nunjucks, and a new, more robust model for asynchronous operations.
+## Fatal vs Non-Fatal
 
-### The Synchronous Model ("The Nunjucks Way")
-
-For stability and backward compatibility, the error handling for non-async templates remains unchanged.
-
-*   **Mechanism:** It uses a "global" variable hack. The compiler injects code that updates `lineno` and `colno` variables just before an operation.
-    ```javascript
-    // Compiled Sync Code
-    output += runtime.callWrap(
-      (lineno = 10, colno = 5, frame.lookup("myFunc")), // The hack in action
-      ...
-    );
-    ```
-*   **Error Catching:** A single, top-level `try...catch` block wraps the entire template rendering function. When an error is thrown, this block catches it.
-    ```javascript
-    // In the compiled root function
-    try {
-      // ... all template code ...
-    } catch (e) {
-      // Uses the *last known* values of lineno/colno
-      var err = runtime.handleError(e, lineno, colno, ...);
-      cb(err);
-    }
-    ```
-*   **Why it's preserved:** This model is simple and has been battle-tested for years. While slightly less precise than the async model, its stability is paramount. We avoid changing it to prevent introducing regressions.
-
-### The Asynchronous Model (Cascada Enhancements)
-
-Async operations introduce complexities (like parallel execution and decoupled call stacks) that the sync model cannot handle. The async model is designed for maximum precision and robustness, using a hybrid strategy.
-
-#### Strategy A: "Pass the Context" (For Logic-Domain Errors)
-
-This is the **preferred strategy** for errors that we explicitly check for in our own runtime code.
-
-*   **Problem:** A runtime function like `callWrapAsync` needs to report an error if it's asked to call a non-function. How does it know the `lineno` of that call?
-*   **Solution:** We pass the context directly to the function.
-    1.  **The Compiler** creates a context object from the current node's position.
-    2.  **The Runtime Function** signature is updated to accept this object.
-    3.  When the runtime function needs to create an error, it uses the context it was given.
-
-*   **Example: `callWrapAsync`**
-
-    **Before:**
-    ```javascript
-    // runtime.js
-    function callWrapAsync(obj, name, context, args) {
-      if (typeof obj !== 'function') {
-        // No lineno/colno available!
-        return createPoison(new Error('...'), null, null, null, context.path);
-      }
-      // ...
-    }
-    // compiler.js
-    this.emit(`runtime.callWrapAsync(...)`);
-    ```
-
-    **After:**
-    ```javascript
-    // runtime.js
-    function callWrapAsync(obj, name, context, args, errorContext) {
-      if (typeof obj !== 'function') {
-        // Full context is available!
-        return createPoison(new Error('...'), errorContext.lineno, errorContext.colno, ...);
-      }
-      // ...
-    }
-    // compiler.js
-    const errorContext = this._createErrorContext(node); // Create the context object
-    this.emit(`runtime.callWrapAsync(..., ${JSON.stringify(errorContext)})`);
-    ```
-
-#### Strategy B: "Let it Throw & Catch" (For Native JS Errors on Hot Paths)
-
-This strategy is used sparingly for operations where the error is thrown by the **native JavaScript engine**, especially on performance-critical "hot paths."
-
-*   **Problem:** `memberLookupScriptRaw('foo', null)` is valid. `memberLookupScriptRaw(null, 'foo')` is not. The `null['foo']` operation will cause the JS engine to throw a `TypeError`. We cannot inject our `errorContext` into the native `[]` accessor.
-*   **Rationale:** We could wrap the operation in a `try/catch` *inside* `memberLookupScriptRaw`, but this can de-optimize a very high-frequency operation, penalizing every successful property lookup.
-*   **Solution:** We keep the runtime function lean and fast, letting it throw the native error. The **compiler** then wraps the call site in a `try/catch` block, where the context is known.
-
-*   **Example: `memberLookupScriptRaw`**
-
-    **1. The Lean Runtime Function:**
-    ```javascript
-    // runtime.js - No try/catch for maximum performance
-    function memberLookupScriptRaw(obj, val) {
-      return obj[val]; // May throw native TypeError
-    }
-    ```
-
-    **2. The Compiler's Generated Code:**
-    ```javascript
-    // compiled_template.js
-    try {
-      t_1 = runtime.memberLookupScriptRaw(t_2, "property");
-    } catch (e) {
-      // The catch block has the context from the LookupVal node
-      var err = runtime.handleError(e, 10, 5, "LookupVal", "my_template.njk");
-      // Propagate the enriched error as poison
-      t_1 = createPoison(err);
-    }
-    ```
-
-This hybrid approach gives us the best of both worlds: the clean "Pass the Context" model for most cases, and the high-performance "Let it Throw" model for critical native operations.
-
-## 4. Advanced Context Propagation: Through Data
-
-Sometimes, an error can only be detected long after the initial compile site, in
-a generic command-application path. In these cases, context is propagated
-**through command data structures**.
-
-Chain commands are the main example:
-
-1.  **Compile Time:** The compiler encounters `result.push(...)` at line 20,
-    column 10. It compiles this as a `DataCommand`, not as an immediate
-    JavaScript array mutation. It serializes the position info into the command.
-    ```javascript
-    // compiled_template.js
-    currentBuffer.add(new runtime.DataCommand({
-      chainName: 'result',
-      command: 'push',
-      args: [...],
-      pos: { lineno: 20, colno: 10 } // Context is now data
-    }), 'result');
-    ```
-2.  **Apply Time:** Later, the buffer iterator reaches the command and applies
-    it to the `result` chain.
-3.  **Error Detection:** If the chain command fails while resolving arguments
-    or applying the data operation, it still has the original `pos`.
-4.  **Error Enrichment:** The runtime uses that position to call `handleError`,
-    creating a contextualized error even though the failure happened far away
-    from the compile site.
-
-This powerful pattern ensures that even in decoupled parts of the system, context is never lost.
-
-## 5. Implementation Best Practices
-
-*   **Always use `runtime.handleError`:** Every `catch (e)` block that handles an unknown error must use `handleError` to ensure errors are correctly wrapped and not double-wrapped.
-*   **Scope changes to `asyncMode`:** The legacy sync model should not be altered. All refactoring efforts target the async model.
-*   **"Pass the Context" is the default:** When adding a new runtime function that can fail, prefer adding an `errorContext` parameter.
-*   **"Let it Throw" is for hot-path native errors:** Only use the compiled `try/catch` strategy for high-frequency, native JS operations like property access.
-*   **`PoisonError` is a sacred container:** Never add or modify the context of a `PoisonError` itself. Its value is in preserving the original, individual contexts of the errors it contains.
+Only value-consumption failures become poison. Broken runtime contracts,
+unexpected engine invariants, and structural execution failures are
+`RuntimeError`s and are fatal for the render. Compiler and loader validation
+failures are `CompileError`s.

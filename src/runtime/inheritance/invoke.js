@@ -1,4 +1,4 @@
-import {RuntimeFatalError} from '../errors.js';
+import {RuntimeError} from '../errors.js';
 import {getKeywordArgs, numArgs} from '../macro.js';
 
 // Helpers used while invoking inherited callables. This file owns argument
@@ -22,7 +22,7 @@ function createInheritanceCallableArgumentFrame(
   const kwargs = invocationArgs.kwargs;
 
   if (values.length > argNames.length) {
-    throw new RuntimeFatalError(
+    RuntimeError.reportAndThrow(
       `Inherited callable '${methodData.name}' received too many arguments`,
       errorContext
     );
@@ -43,7 +43,7 @@ function createInheritanceCallableArgumentFrame(
   return argumentFrame;
 }
 
-function linkInheritanceCallableFootprintChains(parentBuffer, currentBuffer, chainNames, linkedMutatedChainNames = null, errorContext = null) {
+function linkInheritanceCallableFootprintChains(parentBuffer, currentBuffer, chainNames, linkedMutatedChainNames = null, errorContext) {
   if (parentBuffer === currentBuffer) {
     return currentBuffer;
   }
@@ -58,7 +58,7 @@ function linkInheritanceCallableFootprintChains(parentBuffer, currentBuffer, cha
       continue;
     }
     if (currentBuffer.hasChain(chainName)) {
-      throw new RuntimeFatalError(
+      RuntimeError.reportAndThrow(
         `Cannot link chain '${chainName}' because the current buffer already has a different chain object`,
         errorContext
       );

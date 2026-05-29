@@ -1,33 +1,32 @@
 import {MutatingResultCommand, requireCommandErrorContext} from '../commands/base.js';
 import {CommandBuffer} from '../command-buffer.js';
-import {RuntimeFatalError, markPromiseHandled} from '../errors.js';
-import {resolveSingle} from '../resolve.js';
+import {RuntimeError, isPoisonError, markPromiseHandled} from '../errors.js';
 import {getSharedSourceName, isPrivateSharedName} from '../../inheritance/shared-names.js';
 import {InheritanceInstance} from './instance.js';
 
-function getComponentSharedSchemaEntry(instance, chainName, errorContext) {
+function requireComponentSharedSchemaEntry(instance, chainName, errorContext) {
   const sourceName = getSharedSourceName(chainName);
   if (isPrivateSharedName(chainName)) {
-    throw new RuntimeFatalError(`Shared chain '${sourceName}' is private and cannot be accessed through a component`, errorContext);
+    RuntimeError.reportAndThrow(`Shared chain '${sourceName}' is private and cannot be accessed through a component`, errorContext);
   }
   const schemaEntry = instance.runtimeState.sharedSchema[chainName] || null;
   if (!schemaEntry) {
-    throw new RuntimeFatalError(`Shared chain '${sourceName}' was not found`, errorContext);
+    RuntimeError.reportAndThrow(`Shared chain '${sourceName}' was not found`, errorContext);
   }
   return schemaEntry;
 }
 
-async function observeComponentSharedChain(instance, observationCommand, errorContext = null, implicitVarRead = false) {
+async function observeComponentSharedChain(instance, observationCommand, errorContext, implicitVarRead = false) {
   instance.assertCanInvoke(errorContext);
   if (!observationCommand.isUniversalObservationCommand || !observationCommand.chainName) {
-    throw new RuntimeFatalError('Component shared observation requires a universal observational chain command', errorContext);
+    RuntimeError.reportAndThrow('Component shared observation requires a universal observational chain command', errorContext);
   }
 
   const chainName = observationCommand.chainName;
-  const schemaEntry = getComponentSharedSchemaEntry(instance, chainName, errorContext);
+  const schemaEntry = requireComponentSharedSchemaEntry(instance, chainName, errorContext);
   if (implicitVarRead && schemaEntry.type !== 'var') {
     const sourceName = getSharedSourceName(chainName);
-    throw new RuntimeFatalError(
+    RuntimeError.reportAndThrow(
       `Shared chain 'this.${sourceName}' cannot be used as a bare symbol. Use 'this.${sourceName}.snapshot()' instead.`,
       errorContext
     );
@@ -50,8 +49,10 @@ class ComponentOperationCommand extends MutatingResultCommand {
 
   apply(chain) {
     return this.settleResultFrom(() => {
-      return applyWithResolvedComponentInstance(chain, (instance) =>
-        instance.invoke(this.methodName, this.args, this.errorContext)
+      return applyWithResolvedComponentInstance(
+        chain,
+        (instance) => instance.invoke(this.methodName, this.args, this.errorContext),
+        this.errorContext
       );
     });
   }
@@ -71,29 +72,39 @@ class ObserveComponentChainCommand extends MutatingResultCommand {
 
   apply(chain) {
     return this.settleResultFrom(() => {
-      return applyWithResolvedComponentInstance(chain, (instance) =>
-        observeComponentSharedChain(
+      return applyWithResolvedComponentInstance(
+        chain,
+        (instance) => observeComponentSharedChain(
           instance,
           this.observationCommand,
           this.errorContext,
           this.implicitVarRead
-        )
+        ),
+        this.errorContext
       );
     });
   }
 }
 
-function applyWithResolvedComponentInstance(chain, fn) {
+function requireComponentInstance(instance, errorContext) {
+  if (!instance || typeof instance.invoke !== 'function') {
+    RuntimeError.reportAndThrow('instance.invoke is not a function', errorContext);
+  }
+  return instance;
+}
+
+function applyWithResolvedComponentInstance(chain, fn, errorContext) {
   const target = chain._target;
   if (target && typeof target.then === 'function') {
     return target.then((instance) => {
+      instance = requireComponentInstance(instance, errorContext);
       // Component startup publishes a promise immediately. Cache the resolved
       // instance on the side-chain so later operations take the direct path.
       chain.setInitialValue(instance);
       return fn(instance);
     });
   }
-  return fn(target);
+  return fn(requireComponentInstance(target, errorContext));
 }
 
 async function createComponentInstance(spec) {
@@ -107,12 +118,19 @@ async function createComponentInstance(spec) {
     ownerBuffer,
     sideChainName = null,
     bindingName = null,
-    errorContext = null
+    errorContext
   } = spec;
   const resolvedSideChainName = sideChainName ?? bindingName;
-  const templateOrScript = await resolveSingle(componentScriptOrTemplate);
+  let templateOrScript = componentScriptOrTemplate;
+  if (templateOrScript && typeof templateOrScript.then === 'function') {
+    try {
+      templateOrScript = await templateOrScript;
+    } catch (error) {
+      RuntimeError.reportAndThrow(error, errorContext);
+    }
+  }
   if (!templateOrScript) {
-    throw new RuntimeFatalError('Component target did not resolve to a script or template', errorContext);
+    RuntimeError.reportAndThrow('Component target did not resolve to a script or template', errorContext);
   }
 
   const payloadContext = { ...(payload ?? {}) };
@@ -142,8 +160,7 @@ async function createComponentInstance(spec) {
     await instance.invokeConstructor(errorContext);
   } catch (error) {
     instance.close(error);
-    renderState.reportFatalError(error);
-    throw error;
+    renderState.reportAndThrowFatalError(error, errorContext);
   }
 
   if (ownerBuffer && resolvedSideChainName) {
@@ -163,7 +180,7 @@ function startComponentInstance(spec) {
     env,
     runtime,
     renderState,
-    errorContext = null
+    errorContext
   } = spec;
   // The user binding is also the internal side-chain lane that orders later
   // component method calls and observations for this instance.
@@ -180,6 +197,12 @@ function startComponentInstance(spec) {
     sideChainName,
     errorContext
   });
+  componentInstancePromise.catch((error) => {
+    if (isPoisonError(error)) {
+      return;
+    }
+    renderState.reportFatalError(error, errorContext);
+  });
   markPromiseHandled(componentInstancePromise);
   chain.setInitialValue(componentInstancePromise);
   return componentInstancePromise;
@@ -191,7 +214,7 @@ function callComponentMethod(spec) {
     currentBuffer,
     methodName,
     args,
-    errorContext = null
+    errorContext
   } = spec;
   const sideChainName = bindingName;
   const command = new ComponentOperationCommand({
@@ -208,7 +231,7 @@ function observeComponentChain(spec) {
     bindingName,
     currentBuffer,
     observationCommand,
-    errorContext = null,
+    errorContext,
     implicitVarRead = false
   } = spec;
   const sideChainName = bindingName || observationCommand.chainName;

@@ -18,11 +18,10 @@ class SequenceCallCommand extends ChainMutatingResultCommand {
     return runWithResolvedArguments(this.arguments, this, chain, (resolvedArgs) => {
       if (!chain) return undefined;
       const args = Array.isArray(resolvedArgs) ? resolvedArgs : [];
-      const poisonErrors = this.extractPoisonFromArgs(args);
-      if (poisonErrors.length > 0) {
-        const err = new PoisonError(poisonErrors);
-        this.rejectResult(err);
-        throw err;
+      const poisonError = this.getPoisonFromArgs(args);
+      if (poisonError) {
+        this.rejectResult(poisonError);
+        throw poisonError;
       }
 
       const execute = (sequenceTarget) => {

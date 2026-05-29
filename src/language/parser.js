@@ -2,7 +2,8 @@
 import * as lexer from './lexer.js';
 import * as nodes from './nodes.js';
 import {Obj} from '../object.js';
-import {TemplateError, indexOf} from '../lib.js';
+import {indexOf} from '../lib.js';
+import {CompileError} from '../errors.js';
 import {RESERVED_DECLARATION_NAMES} from '../compiler/validation.js';
 import {CHAIN_TYPE_FACTS} from '../chain-types.js';
 
@@ -13,6 +14,7 @@ class Parser extends Obj {
     this.breakOnBlocks = null;
     this.dropLeadingWhitespace = false;
     this.scriptMode = !!(opts && opts.scriptMode);
+    this.sourcePath = opts && opts.sourcePath || null;
 
     this.extensions = [];
   }
@@ -74,7 +76,11 @@ class Parser extends Obj {
     if (colno !== undefined) {
       colno += 1;
     }
-    return new TemplateError(msg, lineno, colno);
+    return new CompileError(msg, {
+      lineno,
+      colno,
+      path: this.sourcePath
+    });
   }
 
   fail(msg, lineno, colno) {

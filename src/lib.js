@@ -1,6 +1,4 @@
 
-import {RuntimeError, PoisonError} from './runtime/errors.js';
-
 var ArrayProto = Array.prototype;
 var ObjProto = Object.prototype;
 var escapeMap = {
@@ -21,153 +19,6 @@ function hasOwnProp(obj, k) {
 
 function lookupEscape(ch) {
   return escapeMap[ch];
-}
-
-function _prettifyError(path, withInternals, err) {
-  // Check if this is a PoisonError (contains multiple errors)
-  const isPoisonError = err instanceof PoisonError;
-
-  if (isPoisonError) {
-    // For PoisonError, update path on all contained errors
-    if (err.errors && Array.isArray(err.errors)) {
-      err.errors = err.errors.map(e => {
-        if (e instanceof TemplateError) {
-          e.Update(path);
-          //return e;
-        } else if (!(e instanceof RuntimeError)) {
-          const wrappedErr = new TemplateError(e);
-          wrappedErr.Update(path);
-          e = wrappedErr;
-        }
-        return e;
-      });
-    }
-    return err; // Return PoisonError with updated errors
-  }
-
-  // Regular error handling
-  if (err instanceof RuntimeError) {
-    return err;
-  }
-  if (!err.Update) {
-    // not one of ours, cast it
-    err = new TemplateError(err);
-  }
-  err.Update(path);
-
-  // Unless they marked the dev flag, show them a trace from here
-  if (!withInternals) {
-    const old = err;
-    err = new Error(old.message);
-    err.name = old.name;
-  }
-
-  return err;
-}
-
-
-//@todo - rename to CompileError and use a class that extends Error
-function TemplateError(message, lineno, colno, errorContextString = null) {
-  var err;
-  var cause;
-
-  if (message instanceof Error) {
-    cause = message;
-    message = `${cause.name}: ${cause.message}`;
-  }
-
-  if (Object.setPrototypeOf) {
-    err = new Error(message);
-    Object.setPrototypeOf(err, TemplateError.prototype);
-  } else {
-    err = this;
-    Object.defineProperty(err, 'message', {
-      enumerable: false,
-      writable: true,
-      value: message,
-    });
-  }
-
-  Object.defineProperty(err, 'name', {
-    value: 'Template/Script render error',
-  });
-
-  if (Error.captureStackTrace) {
-    Error.captureStackTrace(err, this.constructor);
-  }
-
-  let getStack;
-
-  if (cause) {
-    const stackDescriptor = Object.getOwnPropertyDescriptor(cause, 'stack');
-    getStack = stackDescriptor && (stackDescriptor.get || (() => stackDescriptor.value));
-    if (!getStack) {
-      getStack = () => cause.stack;
-    }
-  } else {
-    const stack = (new Error(message)).stack;
-    getStack = (() => stack);
-  }
-
-  Object.defineProperty(err, 'stack', {
-    get: () => getStack.call(err),
-  });
-
-  Object.defineProperty(err, 'cause', {
-    value: cause
-  });
-
-  err.lineno = lineno;
-  err.colno = colno;
-  //@todo - rename errorContextString to contextString
-  err.errorContextString = errorContextString;
-  err.firstUpdate = true;
-
-  err.Update = function Update(path) {
-    if (!this.firstUpdate) {
-      return this;
-    }
-    let msg = '';
-
-    // only show path, lineno + colno on first update
-    if (this.firstUpdate) {
-      msg = '(' + (path || 'unknown path') + ')';
-
-      if (this.errorContext) {
-        msg += ` ${this.errorContext}`;
-      }
-      if (this.lineno && this.colno) {
-        msg += ` [Line ${this.lineno}, Column ${this.colno}]`;
-      } else if (this.lineno) {
-        msg += ` [Line ${this.lineno}]`;
-      }
-      if (this.errorContextString) {
-        msg += ` doing '${this.errorContextString}'`;
-      }
-    }
-
-    msg += '\n ';
-    if (this.firstUpdate) {
-      msg += ' ';
-    }
-
-    this.message = msg + (this.message || '');
-    this.firstUpdate = false;
-    return this;
-  };
-
-  return err;
-}
-
-
-if (Object.setPrototypeOf) {
-  Object.setPrototypeOf(TemplateError.prototype, Error.prototype);
-} else {
-  TemplateError.prototype = Object.create(Error.prototype, {
-    constructor: {
-      value: TemplateError,
-    },
-  });
 }
 
 
@@ -410,8 +261,6 @@ function inOperator(key, val) {
 
 export {
   hasOwnProp,
-  _prettifyError,
-  TemplateError,
   escape,
   isFunction,
   isArray,

@@ -7,7 +7,14 @@ export {Environment, AsyncEnvironment, Template, AsyncTemplate, Script} from './
 export {Loader} from './loader/loader.js';
 export {FileSystemLoader, NodeResolveLoader, PrecompiledLoader, WebLoader} from './loader/loaders.js';
 export {SafeString, markSafe} from './runtime/safe-output.js';
-export {TemplateError} from './lib.js';
+export {CascadaError, CompileError} from './errors.js';
+export {
+  PoisonError,
+  PoisonErrorGroup,
+  RuntimeError,
+  isPoisonError,
+  isRuntimeError
+} from './runtime/errors.js';
 export {installCompat as installJinjaCompat} from './language/jinja-compat.js';
 export {
   precompile,

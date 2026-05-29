@@ -3,7 +3,7 @@ import {escape} from '../lib.js';
 import {
   isPoison,
   isPoisonError,
-  contextualizeError,
+  RuntimeError,
   handleError,
   collectErrors,
   PoisonError
@@ -159,28 +159,23 @@ async function _suppressValueAsyncComplex(val, autoescape, errorContext) {
         val = await val;
       }
     } catch (err) {
-      if (isPoisonError(err)) {
-        throw err;
-      } else {
-        const contextualError = contextualizeError(err, errorContext);
-        throw new PoisonError(contextualError);
-      }
+      throw PoisonError.wrap(err, errorContext);
     }
 
   }
 
   // Handle arrays
   if (Array.isArray(val)) {
+    let collectedErrors;
     try {
-      const resolvedArray = await resolveAll(val);
-      val = resolvedArray;
+      collectedErrors = await collectErrors(val);
     } catch (err) {
-      if (isPoisonError(err)) {
-        throw err;
-      }
-      const contextualError = contextualizeError(err, errorContext);
-      throw new PoisonError(contextualError);
+      RuntimeError.reportAndThrow(err, errorContext);
     }
+    if (collectedErrors.length > 0) {
+      throw PoisonError.group(collectedErrors);
+    }
+    val = await resolveAll(val);
 
     return suppressValue(val.join(','), autoescape);
   }
@@ -212,10 +207,7 @@ function ensureDefinedAsync(val, errorContext) {
   // Simple literal value - validate and return synchronously
   if (!val || (typeof val.then !== 'function' && !val[RESOLVE_MARKER] && !Array.isArray(val))) {
     if (val === null || val === undefined) {
-      throw contextualizeError(
-        new Error('attempted to output null or undefined value'),
-        errorContext
-      );
+      RuntimeError.reportAndThrow('attempted to output null or undefined value', errorContext);
     }
     return val;
   }
@@ -228,9 +220,14 @@ async function _ensureDefinedAsyncComplex(val, errorContext) {
   val = normalizeBufferValue(val);
   // Handle arrays with possible poison values
   if (Array.isArray(val)) {
-    const collectedErrors = await collectErrors(val);
+    let collectedErrors;
+    try {
+      collectedErrors = await collectErrors(val);
+    } catch (err) {
+      RuntimeError.reportAndThrow(err, errorContext);
+    }
     if (collectedErrors.length > 0) {
-      throw new PoisonError(collectedErrors);
+      throw PoisonError.group(collectedErrors);
     }
 
     return val;
@@ -245,21 +242,13 @@ async function _ensureDefinedAsyncComplex(val, errorContext) {
         val = await val;
       }
     } catch (err) {
-      if (isPoisonError(err)) {
-        throw err;
-      } else {
-        const contextualError = contextualizeError(err, errorContext);
-        throw new PoisonError(contextualError);
-      }
+      throw PoisonError.wrap(err, errorContext);
     }
 
   }
 
   if (val === null || val === undefined) {
-    throw contextualizeError(
-      new Error('attempted to output null or undefined value'),
-      errorContext
-    );
+    RuntimeError.reportAndThrow('attempted to output null or undefined value', errorContext);
   }
   return val;
 }
@@ -307,12 +296,7 @@ async function _suppressValueScriptComplex(val, autoescape, errorContext) {
       }
     }
   } catch (err) {
-    if (isPoisonError(err)) {
-      throw err;
-    } else {
-      const contextualError = contextualizeError(err, errorContext);
-      throw new PoisonError(contextualError);
-    }
+    throw PoisonError.wrap(err, errorContext);
   }
 
   if (Array.isArray(val)) {

@@ -1,4 +1,4 @@
-import {RuntimeFatalError} from '../errors.js';
+import {RuntimeError} from '../errors.js';
 import {createInheritanceCallableArgumentFrame} from './invoke.js';
 import {declareInheritanceSharedChain} from './shared.js';
 
@@ -37,11 +37,11 @@ class InheritanceInstance {
       env: options.env,
       context,
       runtime,
-      errorContext: options.errorContext ?? null,
+      errorContext: options.errorContext,
       renderState: options.renderState
     });
     const runtimeState = runtime.finalizeInheritanceChain(chain, context);
-    const boundRuntimeState = runtime.bindInheritanceRuntimeState(runtimeState, runtime, options.renderState.reportError);
+    const boundRuntimeState = runtime.bindInheritanceRuntimeState(runtimeState, runtime, options.renderState);
 
     Object.entries(boundRuntimeState.sharedSchema).forEach(([name, schemaEntry]) => {
       declareInheritanceSharedChain(sharedRootBuffer, name, schemaEntry.type, context, undefined, schemaEntry.errorContext);
@@ -60,20 +60,20 @@ class InheritanceInstance {
     });
   }
 
-  invoke(methodName, args = [], errorContext = null) {
+  invoke(methodName, args = [], errorContext) {
     this.assertCanInvoke(errorContext);
-    return this._invokeFromMethodData(this.getMethod(methodName, errorContext), args, errorContext, this.sharedRootBuffer, this.context, this.traceParent);
+    return this._invokeFromMethodData(this.requireMethod(methodName, errorContext), args, errorContext, this.sharedRootBuffer, this.context, this.traceParent);
   }
 
-  invokeFromCurrentBuffer(methodName, args, context, currentBuffer, errorContext = null) {
+  invokeFromCurrentBuffer(methodName, args, context, currentBuffer, errorContext) {
     this.assertCanInvoke(errorContext);
-    return this._invokeFromMethodData(this.getMethod(methodName, errorContext), args, errorContext, currentBuffer, context, currentBuffer);
+    return this._invokeFromMethodData(this.requireMethod(methodName, errorContext), args, errorContext, currentBuffer, context, currentBuffer);
   }
 
-  invokeSuper(methodData, args, context, currentBuffer, errorContext = null) {
+  invokeSuper(methodData, args, context, currentBuffer, errorContext) {
     this.assertCanInvoke(errorContext);
     if (!methodData.super) {
-      throw new RuntimeFatalError(
+      RuntimeError.reportAndThrow(
         `super() in '${methodData.name}' has no parent implementation`,
         errorContext
       );
@@ -81,7 +81,7 @@ class InheritanceInstance {
     return this._invokeFromMethodData(methodData.super, args, errorContext, currentBuffer, context, currentBuffer);
   }
 
-  invokeConstructor(errorContext = null) {
+  invokeConstructor(errorContext) {
     this.assertCanInvoke(errorContext);
     const constructorEntry = this.runtimeState.methods.__constructor__ || null;
     if (!constructorEntry) {
@@ -90,23 +90,23 @@ class InheritanceInstance {
     return this._invokeFromMethodData(constructorEntry, [], errorContext, this.sharedRootBuffer, this.context, this.traceParent);
   }
 
-  assertCanInvoke(errorContext = null) {
+  assertCanInvoke(errorContext) {
     this.renderState.throwIfFatalErrorReported();
     if (this.failure) {
       throw this.failure;
     }
     if (this.closed) {
-      throw new RuntimeFatalError(
+      RuntimeError.reportAndThrow(
         'Inheritance instance is closed and cannot accept new operations',
         errorContext
       );
     }
   }
 
-  getMethod(methodName, errorContext) {
+  requireMethod(methodName, errorContext) {
     const methodData = this.runtimeState.methods[methodName] || null;
     if (!methodData) {
-      throw new RuntimeFatalError(
+      RuntimeError.reportAndThrow(
         `missing inherited method '${methodName}'`,
         errorContext
       );
@@ -115,7 +115,6 @@ class InheritanceInstance {
   }
 
   _invokeFromMethodData(methodData, args, errorContext, parentBuffer, context, traceParent = null) {
-    const effectiveErrorContext = errorContext ?? methodData.errorContext;
     const visibleChains = Array.from(new Set([
       ...methodData.mergedLinkedChains,
       ...methodData.mergedMutatedChains
@@ -126,7 +125,7 @@ class InheritanceInstance {
       visibleChains,
       parentBuffer,
       methodData.mergedMutatedChains,
-      { ec: effectiveErrorContext, branchName: methodData.name },
+      { ec: errorContext, branchName: methodData.name },
       traceParent,
       this.renderState
     );
@@ -136,7 +135,7 @@ class InheritanceInstance {
         originalArgs: createInheritanceCallableArgumentFrame(
           methodData,
           args,
-          effectiveErrorContext
+          errorContext
         )
       };
     const renderContext = methodData.isConstructor ? undefined : context.getRenderContextVariables();
@@ -195,7 +194,7 @@ class InheritanceInstance {
   }
 }
 
-async function renderInheritanceParticipantRoot({ entryTemplateOrScript, env, context, runtime, renderState, rootBuffer, errorContext = null }) {
+async function renderInheritanceParticipantRoot({ entryTemplateOrScript, env, context, runtime, renderState, rootBuffer, errorContext }) {
   renderState.throwIfFatalErrorReported();
   const instance = await InheritanceInstance.create({
     entryTemplateOrScript,

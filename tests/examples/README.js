@@ -1,8 +1,10 @@
 import expect from 'expect.js';
 import {AsyncEnvironment} from '../../src/index.js';
-import {createPoison} from '../../src/runtime/runtime.js';
+import {createPoison, PoisonError} from '../../src/runtime/runtime.js';
 
 const delay = (ms, value) => new Promise(resolve => setTimeout(() => resolve(value), ms));
+const TEST_EC = [1, 1, 'Readme.Example', 'README.js', null];
+const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC));
 
 describe('README examples', function () {
   let env;
@@ -160,7 +162,7 @@ describe('README examples', function () {
     const result = await env.renderScriptString(script, {
       prompt: 'mountain',
       generateImage() {
-        return createPoison(new Error('image service unavailable'));
+        return createTestPoison(new Error('image service unavailable'));
       }
     });
 
@@ -172,7 +174,7 @@ describe('README examples', function () {
     const script = `
       // The '!' on deposit() creates a sequence for the account path.
       account!.deposit(100)
-      var status = account.getStatus()
+      var status = account!.getStatus()
       account!.withdraw(50)
 
       return { status: status, log: account.log }

@@ -2,12 +2,14 @@
 import expect from 'expect.js';
 import {AsyncEnvironment, AsyncTemplate, Script} from '../../src/environment/environment.js';
 import {StringLoader, delay} from '../util.js';
-import {createPoison, isPoisonError, TextCommand, SnapshotCommand, CommandBuffer, declareBufferChain} from '../../src/runtime/runtime.js';
+import {createPoison, isPoisonError, PoisonError, TextCommand, SnapshotCommand, CommandBuffer, declareBufferChain} from '../../src/runtime/runtime.js';
 import * as parser from '../../src/language/parser.js';
 import * as nodes from '../../src/language/nodes.js';
 import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
 
 const TEST_EC = [1, 1, 'Test', 'test.casc', null];
+const TEST_DIAGNOSTIC_CONTEXT = { ec: TEST_EC, branchName: 'test' };
+const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC));
 
 (function () {
 
@@ -1256,7 +1258,7 @@ const TEST_EC = [1, 1, 'Test', 'test.casc', null];
             return '';
           },
           poisonLimit() {
-            return createPoison(new Error('object limit poisoned'));
+            return createTestPoison(new Error('object limit poisoned'));
           }
         };
 
@@ -1924,7 +1926,7 @@ const TEST_EC = [1, 1, 'Test', 'test.casc', null];
             return '';
           },
           poisonLimit() {
-            return createPoison(new Error('outer limit poisoned'));
+            return createTestPoison(new Error('outer limit poisoned'));
           }
         };
 
@@ -1961,7 +1963,7 @@ const TEST_EC = [1, 1, 'Test', 'test.casc', null];
           },
           limitFor(outer) {
             if (outer === 'second') {
-              return createPoison(new Error('inner limit poisoned'));
+              return createTestPoison(new Error('inner limit poisoned'));
             }
             return 2;
           }
@@ -2665,7 +2667,7 @@ const TEST_EC = [1, 1, 'Test', 'test.casc', null];
   describe('CommandBuffer chain alias canonicalization', function () {
     it('maps formal chain names to resolved aliases in addCommand()', function () {
       const ctx = { path: 'alias-add.njk' };
-      const buffer = new CommandBuffer(ctx, null);
+      const buffer = new CommandBuffer(ctx, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       declareBufferChain(buffer, 'loop#4', 'text', ctx, null);
       buffer._setChainAliases({ loop: 'loop#4' });
 
@@ -2681,7 +2683,7 @@ const TEST_EC = [1, 1, 'Test', 'test.casc', null];
 
     it('resolves SnapshotCommand through chain aliases', async function () {
       const ctx = { path: 'alias-snapshot.njk' };
-      const buffer = new CommandBuffer(ctx, null);
+      const buffer = new CommandBuffer(ctx, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       declareBufferChain(buffer, 'loop#4', 'text', ctx, null);
       buffer._setChainAliases({ loop: 'loop#4' });
 
@@ -2701,8 +2703,8 @@ const TEST_EC = [1, 1, 'Test', 'test.casc', null];
 
     it('inherits chain aliases for child buffers linked through addBuffer', function () {
       const ctx = { path: 'alias-child.njk' };
-      const parent = new CommandBuffer(ctx, null);
-      const child = new CommandBuffer(ctx, null);
+      const parent = new CommandBuffer(ctx, null, null, null, null, { ec: TEST_EC, branchName: 'alias-parent' });
+      const child = new CommandBuffer(ctx, null, null, null, null, { ec: TEST_EC, branchName: 'alias-child' });
       parent._setChainAliases({ loop: 'loop#4', someVar: 'someVar#9' });
       declareBufferChain(parent, 'loop#4', 'text', ctx, null);
 
@@ -2721,8 +2723,8 @@ const TEST_EC = [1, 1, 'Test', 'test.casc', null];
 
     it('reuses parent alias map reference when child has no own aliases', function () {
       const ctx = { path: 'alias-reuse.njk' };
-      const parent = new CommandBuffer(ctx, null);
-      const child = new CommandBuffer(ctx, null);
+      const parent = new CommandBuffer(ctx, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+      const child = new CommandBuffer(ctx, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       parent._setChainAliases({ loop: 'loop#4' });
       declareBufferChain(parent, 'loop#4', 'text', ctx, null);
 
@@ -2733,8 +2735,8 @@ const TEST_EC = [1, 1, 'Test', 'test.casc', null];
 
     it('merges parent aliases when child already has own aliases', function () {
       const ctx = { path: 'alias-merge.njk' };
-      const parent = new CommandBuffer(ctx, null);
-      const child = new CommandBuffer(ctx, null);
+      const parent = new CommandBuffer(ctx, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+      const child = new CommandBuffer(ctx, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       parent._setChainAliases({ loop: 'loop#4', shared: 'shared#1' });
       child._setChainAliases({ own: 'own#7', shared: 'shared#9' });
       declareBufferChain(parent, 'loop#4', 'text', ctx, null);
@@ -2749,7 +2751,7 @@ const TEST_EC = [1, 1, 'Test', 'test.casc', null];
 
     it('keeps canonical input names unchanged', function () {
       const ctx = { path: 'alias-canonical.njk' };
-      const buffer = new CommandBuffer(ctx, null);
+      const buffer = new CommandBuffer(ctx, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       declareBufferChain(buffer, 'loop#4', 'text', ctx, null);
       buffer._setChainAliases({ loop: 'loop#4' });
 
@@ -2764,3 +2766,4 @@ const TEST_EC = [1, 1, 'Test', 'test.casc', null];
   });
 
 }());
+

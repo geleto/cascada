@@ -147,11 +147,15 @@ This principle is why error collection code looks "verbose" - we're being thorou
 - **IS a Promise-like object** (thenable)
 - Used to propagate errors through the data flow as VALUES
 
-**PoisonError** - An Error thrown when awaiting a PoisonedValue:
+**PoisonError** - An individual non-fatal contextual error:
 - Extends Error
-- Contains the same `.errors` array
-- Has `[POISON_ERROR_KEY] = true` for detection
-- Used when poison transitions from value to exception
+- Carries compact source-origin context
+- Preserves the original JavaScript error as `cause` when one exists
+
+**PoisonErrorGroup** - An aggregate Error used when multiple poison errors surface together:
+- Extends Error
+- Contains a deduplicated `.errors` array of individual `PoisonError`s
+- Used when multiple poison errors transition from value to exception
 
 ### How They Interact with JavaScript's Async System
 
@@ -163,7 +167,7 @@ class PoisonedValue {
   }
 
   then(onFulfilled, onRejected) {
-    const error = new PoisonError(this.errors);
+    const error = PoisonError.create(this.errors);
     if (onRejected) {
       try {
         return onRejected(error);
@@ -177,7 +181,7 @@ class PoisonedValue {
   }
 }
 
-class PoisonError extends Error {
+class PoisonErrorGroup extends Error {
   constructor(errors) {
     super(buildMessage(errors));
     this.name = 'PoisonError';
@@ -239,7 +243,8 @@ function callWrap(obj, name, context, args) {
 ```javascript
 function suppressValueAsync(val, autoescape) {
   // Sync poison check - return poison directly
-  // When awaited, thenable protocol converts to PoisonError automatically
+  // When awaited, the thenable protocol rejects with PoisonError for one
+  // failure or PoisonErrorGroup for multiple failures.
   if (isPoison(val)) {
     return val;
   }
@@ -254,9 +259,9 @@ function suppressValueAsync(val, autoescape) {
 }
 
 async function _suppressValueAsyncComplex(val, autoescape) {
-  // This MUST throw PoisonError, not return poison
+  // This MUST throw PoisonError/PoisonErrorGroup, not return poison
   if (isPoison(val)) {
-    throw new PoisonError(val.errors);
+    throw PoisonError.create(val.errors);
   }
   // ...
 }
@@ -264,13 +269,14 @@ async function _suppressValueAsyncComplex(val, autoescape) {
 
 **Pattern 3: Pure Async Functions**
 - Declared with `async` keyword
-- MUST throw PoisonError, cannot return PoisonedValue
+- MUST throw PoisonError/PoisonErrorGroup for existing poison or PoisonError for a newly
+  originated value failure; cannot return PoisonedValue
 - Example: `sequentialCallWrap()`, all `_complex` helpers
 
 ```javascript
 async function sequentialCallWrap(...) {
   if (isPoison(val)) {
-    throw new PoisonError(val.errors); // MUST throw
+    throw PoisonError.create(val.errors); // MUST throw
   }
   // ...
 }
@@ -288,19 +294,19 @@ Why? Because PoisonedValue is a thenable (Promise-like object), and JavaScript's
 // 2. Recursively unwraps if result is also thenable
 // 3. Returns final non-thenable value OR throws
 
-// Our PoisonedValue.then() immediately throws:
+// Our PoisonedValue.then() immediately rejects with the poison aggregate:
 then(onFulfilled, onRejected) {
-  throw new PoisonError(this.errors);
+  throw PoisonError.create(this.errors);
 }
 
 // Therefore:
-const result = await poisonValue; // Throws PoisonError
+const result = await poisonValue; // throws PoisonError/PoisonErrorGroup
 // The assignment NEVER happens
 ```
 
 **The Only Two Outcomes of await:**
 1. **Success path**: Returns a non-thenable value (string, number, object, array, etc.)
-2. **Error path**: Throws an error (PoisonError or other Error)
+2. **Error path**: Throws an error (PoisonErrorGroup, PoisonError, or other Error)
 
 **Where to Check:**
 - Check `isPoison(value)` **BEFORE** await (on the thenable itself)
@@ -350,26 +356,26 @@ async function process(val) {
 // Caller:
 try {
   const result = await process(poison);
-  // Never reaches here - throws PoisonError
+  // Never reaches here - throws PoisonError/PoisonErrorGroup
   if (isPoison(result)) { // Never true!
     // ...
   }
 } catch (err) {
-  // PoisonError ends up here
+  // PoisonErrorGroup ends up here
 }
 ```
 
 **Why it fails:**
 - `async` keyword wraps ALL returns in Promise
 - `return poison` becomes `Promise.resolve(poison)`
-- When caller awaits, poison's `.then()` throws PoisonError
+- When caller awaits, poison's `.then()` rejects with `PoisonError`/`PoisonErrorGroup`
 - Result assignment never happens
 
 **✅ CORRECT:**
 ```javascript
 async function process(val) {
   if (isPoison(val)) {
-    throw new PoisonError(val.errors); // Throw directly
+    throw PoisonError.create(val.errors); // Throw directly
   }
   return await doWork(val);
 }
@@ -381,7 +387,7 @@ async function process(val) {
 ```javascript
 async function suppressValueAsync(val, autoescape) {
   if (isPoison(val)) {
-    throw new PoisonError(val.errors);
+    throw PoisonError.create(val.errors);
   }
   // Even for literal "hello", we create a Promise!
   return suppressValue(val, autoescape);
@@ -429,7 +435,7 @@ if (isPoison(result)) {  // IMPOSSIBLE - never true
 **Why this is impossible:**
 - PoisonedValue is a thenable
 - `await` unwraps all thenables by calling `.then()`
-- Our `.then()` throws PoisonError
+- Our `.then()` throws PoisonError/PoisonErrorGroup
 - Therefore `await poisonValue` always throws, never returns
 
 **What actually happens:**
@@ -437,7 +443,7 @@ if (isPoison(result)) {  // IMPOSSIBLE - never true
 // Step by step:
 const poison = createPoison(err);     // Create PoisonedValue
 const result = await poison;           // Calls poison.then(...)
-                                       // which throws PoisonError
+                                       // which throws PoisonError/PoisonErrorGroup
                                        // Execution jumps to catch
 if (isPoison(result)) {               // This line NEVER executes
 ```
@@ -731,13 +737,13 @@ function suppressValueAsync(val, autoescape) {
 You CANNOT return PoisonedValue, MUST throw:
 - Function IS declared with `async`
 - All returns are wrapped in Promise
-- Must throw PoisonError for poison
+- Must throw PoisonError/PoisonErrorGroup for existing poison
 - Example: `sequentialCallWrap()`, `_suppressValueAsyncComplex()`
 
 ```javascript
 async function sequentialCallWrap(...) {
   if (isPoison(val)) {
-    throw new PoisonError(val.errors); // MUST throw
+    throw PoisonError.create(val.errors); // MUST throw
   }
 
   const result = await doWork();
@@ -747,7 +753,7 @@ async function sequentialCallWrap(...) {
 
 **Why you MUST throw:**
 - `return createPoison(err)` becomes `Promise.resolve(poison)`
-- Caller awaits → poison's `.then()` → throws PoisonError
+- Caller awaits → poison's `.then()` → throws PoisonError/PoisonErrorGroup
 - Caller never sees the return value
 - So just throw directly
 
@@ -802,11 +808,11 @@ async function _hybridAsyncComplex(value, options) {
     try {
       value = await value;
     } catch (err) {
-      throw isPoisonError(err) ? err : new PoisonError([err]);
+      throw isPoisonError(err) ? err : new PoisonError(err, errorContext);
     }
 
     if (isPoison(value)) {
-      throw new PoisonError(value.errors);
+      throw PoisonError.create(value.errors);
     }
   }
 
@@ -814,7 +820,7 @@ async function _hybridAsyncComplex(value, options) {
   if (Array.isArray(value)) {
     const errors = await collectErrors(value);
     if (errors.length > 0) {
-      throw new PoisonError(errors);
+      throw PoisonError.create(errors);
     }
     // ... process array
   }
@@ -928,7 +934,7 @@ async function _callWrapAsyncComplex(obj, name, context, args) {
 async function pureAsync(value) {
   // 1. Sync poison check - throw immediately
   if (isPoison(value)) {
-    throw new PoisonError(value.errors);
+    throw PoisonError.create(value.errors);
   }
 
   // 2. Await and catch
@@ -936,7 +942,7 @@ async function pureAsync(value) {
     try {
       value = await value;
     } catch (err) {
-      throw isPoisonError(err) ? err : new PoisonError([err]);
+      throw isPoisonError(err) ? err : new PoisonError(err, errorContext);
     }
   }
 
@@ -946,7 +952,7 @@ async function pureAsync(value) {
       const resolved = await deepResolveArray(value);
       return resolved;
     } catch (err) {
-      throw isPoisonError(err) ? err : new PoisonError([err]);
+      throw isPoisonError(err) ? err : new PoisonError(err, errorContext);
     }
   }
 
@@ -1032,9 +1038,9 @@ async function deepResolveArray(arr) {
 - [ ] Create poison from multiple errors
 - [ ] Verify `isPoison()` detects PoisonedValue correctly
 - [ ] Verify `isPoisonError()` detects thrown error correctly
-- [ ] Test that `await poisonValue` throws PoisonError
-- [ ] Test that `await Promise.resolve(poison)` throws PoisonError
-- [ ] Test that poison.then() throws PoisonError
+- [ ] Test that `await poisonValue` throws PoisonError/PoisonErrorGroup
+- [ ] Test that `await Promise.resolve(poison)` throws PoisonError/PoisonErrorGroup
+- [ ] Test that poison.then() throws PoisonError/PoisonErrorGroup
 - [ ] Test error deduplication works
 
 ### Function Return Type Handling
@@ -1042,15 +1048,15 @@ async function deepResolveArray(arr) {
 - [ ] Test sync-first hybrid returning literal (no Promise wrapper)
 - [ ] Test sync-first hybrid returning rejected promise for poison
 - [ ] Test sync-first hybrid delegating to async helper for complex cases
-- [ ] Test pure async function throwing PoisonError (not returning poison)
-- [ ] Test async helper function throws PoisonError (not returns)
+- [ ] Test pure async function throwing a poison error (not returning poison)
+- [ ] Test async helper function throws a poison error (not returns)
 - [ ] Test mixed sync/async function calls
 
 ### Sync-First Hybrid Pattern
 - [ ] Test literal values return synchronously (no Promise wrapper)
 - [ ] Test poison returns rejected Promise synchronously
 - [ ] Test complex values (arrays/promises) delegate to async helper
-- [ ] Verify helper throws PoisonError not returns poison
+- [ ] Verify helper throws a poison error, not returns poison
 - [ ] Verify no Promise allocation for simple literals
 - [ ] Test performance: sync returns are faster than async
 
@@ -1093,7 +1099,7 @@ async function deepResolveArray(arr) {
 - [ ] Test null/undefined values
 - [ ] Test primitive values (strings, numbers, booleans)
 - [ ] Test functions that return poison (sync functions)
-- [ ] Test async functions that throw PoisonError
+- [ ] Test async functions that throw poison errors
 - [ ] Test Symbol.for() key works across modules (after transpilation)
 - [ ] Test very deeply nested structures
 - [ ] Test circular references (if applicable)
@@ -1122,8 +1128,8 @@ async function deepResolveArray(arr) {
 | Async function result | Pattern 3 | Can't check - will throw | Wrap in try-catch |
 | Before await | All | Is value poison? | `if (isPoison(value))` |
 | After await | All | **Cannot be poison** | Never check - impossible |
-| In catch block | All | Is error PoisonError? | `if (isPoisonError(err))` |
-| Extracting errors | All | From PoisonError | `err.errors` (spread it) |
+| In catch block | All | Is error poison? | `if (isPoisonError(err))` |
+| Extracting errors | All | From PoisonError/PoisonErrorGroup | `err.errors` (spread it) |
 | Extracting errors | All | From PoisonedValue | `value.errors` (spread it) |
 
 ### The Three Function Patterns
@@ -1147,9 +1153,9 @@ Pattern 2: Sync-First Hybrid
 
 Pattern 3: Pure Async
 ├─ IS declared with async
-├─ MUST throw PoisonError, never return PoisonedValue
+├─ MUST throw PoisonError/PoisonErrorGroup, never return PoisonedValue
 ├─ Example: sequentialCallWrap(), _asyncHelper()
-└─ Usage: if (isPoison(val)) throw new PoisonError(...);
+└─ Usage: if (isPoison(val)) throw PoisonError.create(val.errors);
 ```
 
 ### The Fundamental Rules
@@ -1157,7 +1163,7 @@ Pattern 3: Pure Async
 **Rule 1: await CANNOT return PoisonedValue**
 - PoisonedValue is a thenable
 - await unwraps all thenables
-- Our .then() throws PoisonError
+- Our .then() throws PoisonError/PoisonErrorGroup
 - Therefore: await either returns non-poison OR throws
 
 **Rule 2: async functions CANNOT return PoisonedValue synchronously**

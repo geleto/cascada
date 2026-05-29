@@ -2,10 +2,13 @@
 import expect from 'expect.js';
 import {AsyncEnvironment} from '../../src/environment/environment.js';
 import * as runtime from '../../src/runtime/runtime.js';
-import {createPoison, isPoison, isPoisonError} from '../../src/runtime/errors.js';
+import {createPoison, isPoison, isPoisonError, PoisonError} from '../../src/runtime/errors.js';
 import * as transpiler from '../../src/language/script-transpiler.js';
 
 describe('Cascada Script: Variable Path Assignments (set_path)', function () {
+  const TEST_POISON_EC = [1, 1, 'PathAssignment.TestInput', 'path-assignment.casc', null];
+  const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_POISON_EC));
+
   let env;
 
   beforeEach(() => {
@@ -303,27 +306,27 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
     });
 
     it('should propagate poison from root', () => {
-      const poison = createPoison(new Error('Toxic'));
+      const poison = createTestPoison(new Error('Toxic'));
       const result = runtime.deepAssign(poison, ['x'], 1);
 
       // Should result in sync poison
       expect(isPoison(result)).to.be(true);
-      expect(result.errors[0].message).to.be('Toxic');
+      expect(result.errors[0].message).to.contain('Toxic');
     });
 
     it('should propagate poison from key (async reject)', async () => {
       const obj = { x: 1 };
-      const poisonKey = createPoison(new Error('Toxic Key'));
+      const poisonKey = createTestPoison(new Error('Toxic Key'));
 
       // Poison key is identified synchronously
       const result = runtime.deepAssign(obj, [poisonKey], 2);
       expect(isPoison(result)).to.be(true);
-      expect(result.errors[0].message).to.be('Toxic Key');
+      expect(result.errors[0].message).to.contain('Toxic Key');
     });
 
     it('should propagate poison from async resolution', async () => {
       const objPromise = Promise.resolve({ x: 1 });
-      const resultPromise = runtime.deepAssign(objPromise, ['y'], Promise.resolve(createPoison(new Error('Async Toxic'))));
+      const resultPromise = runtime.deepAssign(objPromise, ['y'], Promise.resolve(createTestPoison(new Error('Async Toxic'))));
 
       // Root is async. Result is Promise.
       const result = await resultPromise;
@@ -334,7 +337,7 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
         expect().fail('Should have rejected');
       } catch (e) {
         expect(isPoisonError(e)).to.be(true);
-        expect(e.errors[0].message).to.be('Async Toxic');
+        expect(e.errors[0].message).to.contain('Async Toxic');
       }
     });
 
@@ -357,60 +360,54 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
     });
 
     it('should collect multiple errors from sync inputs', () => {
-      const poison1 = createPoison(new Error('Error 1'));
-      const poison2 = createPoison(new Error('Error 2'));
+      const poison1 = createTestPoison(new Error('Error 1'));
+      const poison2 = createTestPoison(new Error('Error 2'));
       // deepAssign(poison1, [poison2], 1)
       const result = runtime.deepAssign(poison1, [poison2], 1);
 
       expect(isPoison(result)).to.be(true);
       expect(result.errors).to.have.length(2);
-      expect(result.errors[0].message).to.be('Error 1');
-      expect(result.errors[1].message).to.be('Error 2');
+      expect(result.errors[0].message).to.contain('Error 1');
+      expect(result.errors[1].message).to.contain('Error 2');
     });
 
-    it('should collect errors from mixed sync poison and async rejection', async () => {
-      const poison = createPoison(new Error('Sync Error'));
+    it('should treat mixed sync poison and raw async rejection as fatal', async () => {
+      const poison = createTestPoison(new Error('Sync Error'));
       const p = Promise.reject(new Error('Async Error'));
       p.catch(() => { });
 
-      // Root Poison (sync) + Head Promise (async).
-      // isRootAsync = false (poison). isHeadAsync = true (promise).
-      // Logic: !isRootAsync && !isHeadAsync => false.
-      // Goes to async path.
-      // Collects errors from both.
+      // Raw promise rejections are fatal inside runtime value resolution.
+      // Source boundaries should wrap user failures into PoisonError first.
       const resultPromise = runtime.deepAssign(poison, [p], 1);
 
       try {
         await resultPromise;
         expect().fail('Should have rejected');
       } catch (e) {
-        expect(isPoisonError(e)).to.be(true);
-        expect(e.errors).to.have.length(2);
-        const msgs = e.errors.map(err => err.message);
-        expect(msgs).to.contain('Sync Error');
-        expect(msgs).to.contain('Async Error');
+        expect(isPoisonError(e)).to.be(false);
+        expect(e.message).to.contain('Async Error');
       }
     });
 
     it('should collect errors from both root and value (Sync Verify)', function () {
       const error1 = new Error('Root Error');
       const error2 = new Error('Value Error');
-      const root = createPoison(error1);
-      const value = createPoison(error2);
+      const root = createTestPoison(error1);
+      const value = createTestPoison(error2);
 
       const result = runtime.deepAssign(root, ['prop'], value);
 
       expect(isPoison(result)).to.be(true);
       // Lazy: Stop at Root. 1 Error.
       expect(result.errors).to.have.length(1);
-      expect(result.errors[0].message).to.be('Root Error');
+      expect(result.errors[0].message).to.contain('Root Error');
     });
 
     it('should collect errors from both root and value (Async Root, Sync Value Verify)', async function () {
       const error1 = new Error('Root Error');
       const error2 = new Error('Value Error');
-      const rootPromise = Promise.resolve(createPoison(error1));
-      const value = createPoison(error2);
+      const rootPromise = Promise.resolve(createTestPoison(error1));
+      const value = createTestPoison(error2);
 
       const result = runtime.deepAssign(rootPromise, ['prop'], value);
 
@@ -420,22 +417,22 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
       } catch (e) {
         expect(isPoisonError(e)).to.be(true);
         expect(e.errors).to.have.length(1);
-        expect(e.errors[0].message).to.be('Root Error');
+        expect(e.errors[0].message).to.contain('Root Error');
       }
     });
 
     it('should collect errors from both root and value (Sync Root, Async Value Verify)', async function () {
       const error1 = new Error('Root Error');
       const error2 = new Error('Value Error');
-      const root = createPoison(error1);
-      const valuePromise = Promise.resolve(createPoison(error2));
+      const root = createTestPoison(error1);
+      const valuePromise = Promise.resolve(createTestPoison(error2));
 
       // Returns Sync Poison (Root Error)
       const result = runtime.deepAssign(root, ['prop'], valuePromise);
 
       expect(isPoison(result)).to.be(true);
       expect(result.errors).to.have.length(1);
-      expect(result.errors[0].message).to.be('Root Error');
+      expect(result.errors[0].message).to.contain('Root Error');
     });
 
     it('should return value reference if segments is empty', () => {
@@ -713,7 +710,7 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
 
       it('should overwrite synchronous poison without issue (using raw poison value)', async () => {
         const context = {
-          poisonVal: createPoison(new Error('Sync Poison'))
+          poisonVal: createTestPoison(new Error('Sync Poison'))
         };
 
         const res = await evalScript(`
@@ -746,8 +743,8 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
 
       it('should fail entire object if deepAssign has multiple sync errors', async () => {
         const context = {
-          fail1: () => createPoison(new Error('Root')),
-          fail2: () => createPoison(new Error('Key'))
+          fail1: () => createTestPoison(new Error('Root')),
+          fail2: () => createTestPoison(new Error('Key'))
         };
 
         try {
@@ -874,3 +871,4 @@ describe('Cascada Script: Variable Path Assignments (set_path)', function () {
 
   });
 });
+

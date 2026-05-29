@@ -1,6 +1,6 @@
 
 import * as nodes from '../language/nodes.js';
-import {TemplateError} from '../lib.js';
+import {CompileError} from '../errors.js';
 import {Obj} from '../object.js';
 
 import {RESERVED_DECLARATION_NAMES, RESERVED_ASYNC_DECLARATION_NAMES} from './validation.js';
@@ -127,7 +127,7 @@ class CompilerCommon extends Obj {
     return node._analysis.errorContextIndex;
   }
 
-  emitBufferBranchContext(node, fields = {}) {
+  emitBufferStackContext(node, fields = {}) {
     if (!node) {
       return 'null';
     }
@@ -167,8 +167,8 @@ class CompilerCommon extends Obj {
   emitErrorContextHelper() {
     const { labels, specs } = this._buildErrorContextTable();
     this.emit(
-      `function getErrorContexts(runtime, path, reportError) {\n` +
-      `  return runtime.prepareErrorContexts(path, reportError, ${JSON.stringify(labels)}, ${JSON.stringify(specs)});\n` +
+      `function getErrorContexts(runtime, path, renderState) {\n` +
+      `  return runtime.prepareErrorContexts(path, renderState, ${JSON.stringify(labels)}, ${JSON.stringify(specs)});\n` +
       `}\n`
     );
   }
@@ -181,10 +181,19 @@ class CompilerCommon extends Obj {
       colno += 1;
     }
 
-    const errorContext = node ? this._generateErrorContext(node, positionNode || node) : undefined;
+    const label = node
+      ? this._getErrorContextLabel(
+        node,
+        this._resolveErrorContextPositionNode(node, positionNode || node)
+      )
+      : null;
 
-    // Pass context to TemplateError constructor
-    throw new TemplateError(msg, lineno, colno, errorContext);
+    throw new CompileError(msg, {
+      lineno,
+      colno,
+      label,
+      path: this.sourcePath
+    });
   }
 
   _tmpid() {

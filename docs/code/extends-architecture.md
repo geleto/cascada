@@ -324,9 +324,8 @@ Shared chain declaration should only do work when the chain does not yet
 exist. Re-declaring an already existing shared chain with the same type is
 effectively a no-op.
 
-Re-declaring an existing shared chain with a different type is a
-`RuntimeFatalError` as soon as it is detected, then normal fatal handling
-applies.
+Re-declaring an existing shared chain with a different type is a fatal
+`RuntimeError` as soon as it is detected, then normal fatal handling applies.
 
 ## Bootstrap and Finalization
 

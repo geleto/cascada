@@ -12,9 +12,14 @@
 
 import expect from 'expect.js';
 import {AsyncEnvironment} from '../../src/environment/environment.js';
-import {createPoison, isPoisonError} from '../../src/runtime/runtime.js';
+import {createPoison, isPoisonError, PoisonError} from '../../src/runtime/runtime.js';
 
 (function () {
+  const TEST_EC = [1, 1, 'RuntimePromise.TestInput', 'runtime-promise.njk', null];
+
+  function createTestPoison(error) {
+    return createPoison(PoisonError.wrap(error, TEST_EC));
+  }
 
   describe('RuntimePromise Integration Tests', () => {
     let env;
@@ -858,7 +863,7 @@ import {createPoison, isPoisonError} from '../../src/runtime/runtime.js';
 
       const context = {
         db: {
-          badFunc: createPoison(new Error('This function is poisoned')),
+          badFunc: createTestPoison(new Error('This function is poisoned')),
           goodFunc: () => {
             goodFuncCallCount++;
             return 'Success';

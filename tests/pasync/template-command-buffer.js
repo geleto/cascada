@@ -10,6 +10,7 @@ import * as runtime from '../../src/runtime/runtime.js';
 import {transpiler as scriptTranspiler} from '../../src/language/script-transpiler.js';
 
 const TEST_EC = [1, 1, 'Test', 'test.casc', null];
+const TEST_DIAGNOSTIC_CONTEXT = { ec: TEST_EC, branchName: 'test' };
 
 (function () {
   function createIdPool() {
@@ -405,7 +406,7 @@ const TEST_EC = [1, 1, 'Test', 'test.casc', null];
 
     it('should keep inherited text placement boundaries out of shared invocation lanes', async function () {
       const createRootBuffer = () => {
-        const rootBuffer = new runtime.CommandBuffer(null);
+        const rootBuffer = new runtime.CommandBuffer(null, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
         runtime.declareBufferChain(rootBuffer, '__text__', 'text', null, null);
         runtime.declareBufferChain(rootBuffer, 'theme', 'var', null, null);
         rootBuffer.addCommand(new runtime.VarCommand({
@@ -420,8 +421,8 @@ const TEST_EC = [1, 1, 'Test', 'test.casc', null];
       // This sibling buffer represents the incorrect text-placement boundary
       // shape: linking it into the shared lane creates an earlier source-order
       // slot that the invocation snapshot must wait behind.
-      const sharedLaneSibling = new runtime.CommandBuffer(null, null, ['theme'], blockedRoot);
-      const invocationBuffer = new runtime.CommandBuffer(null, null, ['theme'], blockedRoot);
+      const sharedLaneSibling = new runtime.CommandBuffer(null, null, ['theme'], blockedRoot, null, TEST_DIAGNOSTIC_CONTEXT);
+      const invocationBuffer = new runtime.CommandBuffer(null, null, ['theme'], blockedRoot, null, TEST_DIAGNOSTIC_CONTEXT);
       const blockedRead = invocationBuffer.addCommand(new runtime.SnapshotCommand({
         chainName: 'theme',
         errorContext: TEST_EC
@@ -439,8 +440,8 @@ const TEST_EC = [1, 1, 'Test', 'test.casc', null];
       expect(await blockedRead).to.be('dark');
 
       const textRoot = createRootBuffer();
-      const textPlacementBoundary = new runtime.CommandBuffer(null, null, ['__text__'], textRoot);
-      const admittedInvocation = new runtime.CommandBuffer(null, null, ['theme'], textRoot);
+      const textPlacementBoundary = new runtime.CommandBuffer(null, null, ['__text__'], textRoot, null, TEST_DIAGNOSTIC_CONTEXT);
+      const admittedInvocation = new runtime.CommandBuffer(null, null, ['theme'], textRoot, null, TEST_DIAGNOSTIC_CONTEXT);
       const admittedRead = admittedInvocation.addCommand(new runtime.SnapshotCommand({
         chainName: 'theme',
         errorContext: TEST_EC

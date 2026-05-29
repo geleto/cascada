@@ -3,7 +3,9 @@ import expect from 'expect.js';
 import {AsyncEnvironment} from '../src/environment/environment.js';
 import * as runtime from '../src/runtime/runtime.js';
 
-const {createPoison, isPoisonError} = runtime;
+const {createPoison, isPoisonError, PoisonError} = runtime;
+const TEST_EC = [1, 1, 'WhilePoison.TestInput', 'phase5-while-generator.js', null];
+const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC));
 
 describe('Phase 5: While Loop Generator Error Handling', () => {
   let env;
@@ -15,7 +17,7 @@ describe('Phase 5: While Loop Generator Error Handling', () => {
   describe('Test 5.1: Condition evaluates to poison', () => {
     it('should handle poison condition by yielding PoisonError to runtime', async () => {
       const context = {
-        getPoisonedCondition: () => createPoison(new Error('Condition failed'))
+        getPoisonedCondition: () => createTestPoison(new Error('Condition failed'))
       };
 
       const script = `
@@ -42,7 +44,7 @@ describe('Phase 5: While Loop Generator Error Handling', () => {
       const context = {
         getPoisonedCondition: async () => {
           await Promise.resolve();
-          return createPoison(new Error('Async condition failed'));
+          return createTestPoison(new Error('Async condition failed'));
         }
       };
 
@@ -147,7 +149,7 @@ describe('Phase 5: While Loop Generator Error Handling', () => {
 
     it('should handle poison in sequential condition', async () => {
       const context = {
-        obj: createPoison(new Error('Object is poisoned'))
+        obj: createTestPoison(new Error('Object is poisoned'))
       };
 
       const script = `
@@ -251,7 +253,7 @@ describe('Phase 5: While Loop Generator Error Handling', () => {
           this.callCount++;
           if (this.callCount <= 2) return true;
           // Return poison instead of throwing
-          return createPoison(new Error(`Condition poisoned after ${this.callCount - 1} iterations`));
+          return createTestPoison(new Error(`Condition poisoned after ${this.callCount - 1} iterations`));
         }
       };
 
