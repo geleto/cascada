@@ -27,7 +27,7 @@ class InheritanceInstance {
       null,
       null,
       null,
-      { ec: options.errorContext, branchName: 'inheritance' },
+      { ec: options.errorContext, entryName: 'inheritance' },
       traceParent,
       options.renderState
     );
@@ -125,7 +125,7 @@ class InheritanceInstance {
       visibleChains,
       parentBuffer,
       methodData.mergedMutatedChains,
-      { ec: errorContext, branchName: methodData.name },
+      { ec: errorContext, methodName: methodData.name },
       traceParent,
       this.renderState
     );

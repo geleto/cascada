@@ -140,7 +140,7 @@ async function createComponentInstance(spec) {
     ownerContext.getRenderContextVariables(),
     payloadContext
   );
-  const componentFrame = { ec: errorContext, branchName: bindingName || 'component' };
+  const componentFrame = { ec: errorContext, componentName: bindingName || 'component' };
   renderState.throwIfFatalErrorReported();
   const rootBuffer = new CommandBuffer(componentContext, null, null, null, null, componentFrame, ownerBuffer || null, renderState);
   const sharedRootBuffer = new CommandBuffer(componentContext, null, null, null, null, componentFrame, ownerBuffer || null, renderState);

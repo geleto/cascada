@@ -299,10 +299,10 @@ describe('typed poison error contracts', () => {
   it('exposes diagnostic info from runtime context errors', () => {
     const rootEc = [8, 1, 'Root', 'diagnostics.casc', null];
     const childEc = [9, 2, 'Child', 'diagnostics.casc', null];
-    const root = new CommandBuffer({}, null, null, null, null, { ec: rootEc, branchName: 'root' });
+    const root = new CommandBuffer({}, null, null, null, null, { ec: rootEc, entryName: 'root' });
     const child = new CommandBuffer({}, root, null, null, null, {
       ec: childEc,
-      branchName: 'child',
+      methodName: 'child',
       loop: { index: 1, variables: ['item'] }
     });
     const err = RuntimeError.create('diagnostic fatal', child.bufferStackContext);
@@ -313,7 +313,7 @@ describe('typed poison error contracts', () => {
       colno: 2,
       path: 'diagnostics.casc',
       label: 'Child',
-      branchName: 'child',
+      methodName: 'child',
       loop: { index: 1, variables: ['item'] },
       stack: [
         {
@@ -321,7 +321,7 @@ describe('typed poison error contracts', () => {
           colno: 2,
           path: 'diagnostics.casc',
           label: 'Child',
-          branchName: 'child',
+          methodName: 'child',
           loop: { index: 1, variables: ['item'] }
         },
         {
@@ -329,7 +329,7 @@ describe('typed poison error contracts', () => {
           colno: 1,
           path: 'diagnostics.casc',
           label: 'Root',
-          branchName: 'root'
+          entryName: 'root'
         }
       ]
     });

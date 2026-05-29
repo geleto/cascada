@@ -21,7 +21,38 @@ import {AsyncTemplate} from '../../src/environment/template.js';
 import {StringLoader} from '../util.js';
 
 const TEST_EC = [1, 1, 'Test', 'test.casc', null];
-const TEST_DIAGNOSTIC_CONTEXT = { ec: TEST_EC, branchName: 'test' };
+const TEST_DIAGNOSTIC_CONTEXT = { ec: TEST_EC, entryName: 'test' };
+
+async function captureCommandStacks(render, shouldCapture) {
+  const originalAddCommand = CommandBuffer.prototype.addCommand;
+  const markerBuffers = [];
+  CommandBuffer.prototype.addCommand = function(command, chainName) {
+    if (this.bufferStackContext && shouldCapture(command, chainName)) {
+      markerBuffers.push(this);
+    }
+    return originalAddCommand.call(this, command, chainName);
+  };
+
+  let output;
+  try {
+    output = await render();
+  } finally {
+    CommandBuffer.prototype.addCommand = originalAddCommand;
+  }
+
+  return {
+    output,
+    stacks: markerBuffers.map(buffer => buffer.getDiagnosticStack())
+  };
+}
+
+async function captureSymbolTextStacks(render) {
+  return captureCommandStacks(render, (command) =>
+    command instanceof runtime.TextCommand &&
+    command.errorContext &&
+    command.errorContext[2] === 'Symbol'
+  );
+}
 
 describe('error context tracing runtime foundation', () => {
   it('prepares compact contexts without mutating shared specs', () => {
@@ -108,7 +139,7 @@ describe('error context tracing runtime foundation', () => {
   it('preserves promise input failure origin through lookup consumption', async () => {
     const ec = [8, 12, 'LookupVal', 'lookup.casc', null];
     const origin = [3, 5, 'Origin', 'origin.casc', null];
-    const buffer = new CommandBuffer({ path: 'lookup.casc' }, null, null, null, null, { ec, branchName: 'lookup' });
+    const buffer = new CommandBuffer({ path: 'lookup.casc' }, null, null, null, null, { ec, entryName: 'lookup' });
     const inputError = PoisonError.create('lookup failed', origin);
 
     try {
@@ -169,21 +200,21 @@ describe('error context tracing runtime foundation', () => {
     const ec = [8, 2, 'For', 'loop.casc', null];
     const bufferStackContext = {
       ec,
-      branchName: 'body',
+      blockName: 'body',
       loop: { index: 1, variables: ['item'] }
     };
     const err = RuntimeError.create('loop failed', bufferStackContext);
     const info = err.getInfo();
 
     expect(err.errorContext).to.eql(ec);
-    expect(err.context.branchName).to.be('body');
+    expect(err.context.blockName).to.be('body');
     expect(err.context.loop).to.eql({ index: 1, variables: ['item'] });
     expect(info).to.eql({
       lineno: 8,
       colno: 2,
       path: 'loop.casc',
       label: 'For',
-      branchName: 'body',
+      blockName: 'body',
       loop: { index: 1, variables: ['item'] }
     });
   });
@@ -208,7 +239,7 @@ describe('error context tracing runtime foundation', () => {
     const buffer = new CommandBuffer({ path: 'script.casc' }, null, null, null, null, {
       ec: bufferEc,
       branch: 'then',
-      branchName: 'if-block'
+      blockName: 'if-block'
     });
 
     expect(buffer.getDiagnosticContext()).to.eql({
@@ -217,7 +248,7 @@ describe('error context tracing runtime foundation', () => {
       path: 'script.casc',
       label: 'If.Condition(FunCall)',
       branch: 'then',
-      branchName: 'if-block'
+      blockName: 'if-block'
     });
   });
 
@@ -226,7 +257,7 @@ describe('error context tracing runtime foundation', () => {
     const childEc = [5, 2, 'For.Iterator(Symbol)', 'script.casc', null];
     const root = new CommandBuffer({ path: 'script.casc' }, null, null, null, null, {
       ec: rootEc,
-      branchName: 'root'
+      entryName: 'root'
     });
     const loop = {
       index: 2,
@@ -256,7 +287,7 @@ describe('error context tracing runtime foundation', () => {
         colno: 0,
         path: 'script.casc',
         label: 'Root',
-        branchName: 'root'
+        entryName: 'root'
       }
     ]);
   });
@@ -266,14 +297,14 @@ describe('error context tracing runtime foundation', () => {
     const macroEc = [7, 2, 'Macro', 'script.casc', null];
     const root = new CommandBuffer({ path: 'script.casc' }, null, null, null, null, {
       ec: rootEc,
-      branchName: 'root'
+      entryName: 'root'
     });
     const macro = new CommandBuffer({ path: 'script.casc' }, null, null, null, null, {
       ec: macroEc,
-      branchName: 'renderCard'
+      macroName: 'renderCard'
     }, root);
 
-    expect(macro.getDiagnosticStack().map(frame => frame.branchName)).to.eql(['renderCard', 'root']);
+    expect(macro.getDiagnosticStack().map(frame => frame.macroName || frame.entryName)).to.eql(['renderCard', 'root']);
   });
 
   it('prefers traceParent over parent when building command-buffer stack', () => {
@@ -282,67 +313,56 @@ describe('error context tracing runtime foundation', () => {
     const methodEc = [9, 0, 'Method', 'script.casc', null];
     const shared = new CommandBuffer({ path: 'script.casc' }, null, null, null, null, {
       ec: sharedEc,
-      branchName: 'shared'
+      entryName: 'shared'
     });
     const caller = new CommandBuffer({ path: 'script.casc' }, null, null, null, null, {
       ec: callerEc,
-      branchName: 'caller'
+      caller: true
     });
     const method = new CommandBuffer({ path: 'script.casc' }, shared, null, null, null, {
       ec: methodEc,
-      branchName: 'method'
+      methodName: 'method'
     }, caller);
 
-    expect(method.getDiagnosticStack().map(frame => frame.branchName)).to.eql(['method', 'caller']);
+    expect(method.getDiagnosticStack().map(frame => frame.methodName || (frame.caller ? 'caller' : frame.entryName))).to.eql(['method', 'caller']);
   });
 
   it('outputs actual compiled boundary metadata in one stack', async () => {
-    const originalAddCommand = CommandBuffer.prototype.addCommand;
-    const markerBuffers = [];
-    CommandBuffer.prototype.addCommand = function(command, chainName) {
-      if (command instanceof runtime.TextCommand &&
-        command.errorContext &&
-        command.errorContext[2] === 'Symbol' &&
-        this.bufferStackContext) {
-        markerBuffers.push(this);
-      }
-      return originalAddCommand.call(this, command, chainName);
-    };
-
-    try {
+    const { output, stacks } = await captureSymbolTextStacks(async () => {
       const env = new AsyncEnvironment();
-      const output = await env.renderTemplateString(
+      const template = new AsyncTemplate(
         '{% macro wrap() %}{{ caller() }}{% endmacro %}' +
         '{% call wrap() %}' +
         '{% for item in items %}' +
         '{% if item.ok %}{{ marker }}{% endif %}' +
         '{% endfor %}' +
         '{% endcall %}',
+        env,
+        'macro-stack.njk'
+      );
+      return template.render(
         {
           items: [{ ok: true }],
           marker: Promise.resolve('STACK_MARKER')
         }
       );
+    });
 
-      expect(output).to.be('STACK_MARKER');
-    } finally {
-      CommandBuffer.prototype.addCommand = originalAddCommand;
-    }
-
-    const markerBuffer = markerBuffers[markerBuffers.length - 1];
-    const stack = markerBuffer.getDiagnosticStack();
+    expect(output).to.be('STACK_MARKER');
+    const stack = stacks[stacks.length - 1];
 
     expect(stack).to.eql([
       {
         lineno: 1,
         colno: 96,
-        path: null,
-        label: 'If.Condition(LookupVal)'
+        path: 'macro-stack.njk',
+        label: 'If.Condition(LookupVal)',
+        branch: 'then'
       },
       {
         lineno: 1,
         colno: 66,
-        path: null,
+        path: 'macro-stack.njk',
         label: 'For',
         loop: {
           index: 1,
@@ -358,29 +378,177 @@ describe('error context tracing runtime foundation', () => {
       {
         lineno: 1,
         colno: 66,
-        path: null,
-        label: 'For'
+        path: 'macro-stack.njk',
+        label: 'For',
+        loopVariables: ['item']
       },
       {
         lineno: 1,
         colno: 27,
-        path: null,
+        path: 'macro-stack.njk',
         label: 'FunCall',
-        branchName: 'caller'
+        caller: true,
+        callableName: 'caller'
       },
       {
         lineno: 1,
         colno: 3,
-        path: null,
+        path: 'macro-stack.njk',
         label: 'Macro',
-        branchName: 'caller'
+        callerBlock: true,
+        macroName: 'wrap'
       },
       {
         lineno: 1,
         colno: 0,
-        path: null,
+        path: 'macro-stack.njk',
         label: 'Root',
-        branchName: 'root'
+        entryName: 'root'
+      }
+    ]);
+  });
+
+  it('outputs switch boundary metadata in compiled stacks', async () => {
+    const { output, stacks } = await captureSymbolTextStacks(async () => {
+      const env = new AsyncEnvironment();
+      const template = new AsyncTemplate(
+        '{% switch state %}' +
+        '{% case "a" %}{{ marker }}' +
+        '{% default %}no' +
+        '{% endswitch %}',
+        env,
+        'switch-stack.njk'
+      );
+      return template.render(
+        {
+          state: Promise.resolve('a'),
+          marker: Promise.resolve('STACK_MARKER')
+        }
+      );
+    });
+
+    expect(output).to.be('STACK_MARKER');
+    expect(stacks[stacks.length - 1]).to.eql([
+      {
+        lineno: 1,
+        colno: 10,
+        path: 'switch-stack.njk',
+        label: 'Switch.Expression(Symbol)',
+        branch: 'case'
+      },
+      {
+        lineno: 1,
+        colno: 0,
+        path: 'switch-stack.njk',
+        label: 'Root',
+        entryName: 'root'
+      }
+    ]);
+  });
+
+  it('keeps included template path in compiled stack metadata', async () => {
+    const loader = new StringLoader();
+    loader.addTemplate('parent.njk', 'Before {% include "child.njk" with context %} After');
+    loader.addTemplate('child.njk', 'Child {{ marker }}');
+
+    const { output, stacks } = await captureSymbolTextStacks(async () => {
+      const env = new AsyncEnvironment(loader);
+      return env.renderTemplate('parent.njk', {
+        marker: Promise.resolve('STACK_MARKER')
+      });
+    });
+
+    expect(output).to.be('Before Child STACK_MARKER After');
+    expect(stacks[stacks.length - 1]).to.eql([
+      {
+        lineno: 1,
+        colno: 0,
+        path: 'child.njk',
+        label: 'Root',
+        entryName: 'root'
+      }
+    ]);
+  });
+
+  it('outputs capture boundary metadata in compiled stacks', async () => {
+    const { output, stacks } = await captureSymbolTextStacks(async () => {
+      const env = new AsyncEnvironment();
+      const template = new AsyncTemplate(
+        '{% set value %}{{ marker }}{% endset %}{{ value }}',
+        env,
+        'capture-stack.njk'
+      );
+      return template.render({
+        marker: Promise.resolve('STACK_MARKER')
+      });
+    });
+
+    expect(output).to.be('STACK_MARKER');
+    expect(stacks[0]).to.eql([
+      {
+        lineno: 1,
+        colno: 0,
+        path: 'capture-stack.njk',
+        label: 'NodeList',
+        capture: true
+      },
+      {
+        lineno: 1,
+        colno: 0,
+        path: 'capture-stack.njk',
+        label: 'Root',
+        entryName: 'root'
+      }
+    ]);
+  });
+
+  it('keeps imported script function path in compiled stack metadata', async () => {
+    const loader = new StringLoader();
+    loader.addTemplate('lib.script', [
+      'function echo(item)',
+      '  return item',
+      'endfunction'
+    ].join('\n'));
+
+    const { output, stacks } = await captureCommandStacks(async () => {
+      const env = new AsyncEnvironment(loader);
+      const script = new Script([
+        'from "lib.script" import echo',
+        'return echo(marker)'
+      ].join('\n'), env, 'main.script');
+      return script.render({
+        marker: Promise.resolve('STACK_MARKER')
+      });
+    }, (command, chainName) =>
+      command.constructor.name === 'SnapshotCommand' &&
+      chainName === 'item' &&
+      command.errorContext &&
+      command.errorContext[2] === 'Symbol'
+    );
+
+    expect(output).to.be('STACK_MARKER');
+    expect(stacks[stacks.length - 1]).to.eql([
+      {
+        lineno: 1,
+        colno: 4,
+        path: 'lib.script',
+        label: 'Macro',
+        macroName: 'echo',
+        callableName: 'echo'
+      },
+      {
+        lineno: 2,
+        colno: 15,
+        path: 'main.script',
+        label: 'FunCall',
+        callableName: 'echo'
+      },
+      {
+        lineno: 1,
+        colno: 0,
+        path: 'main.script',
+        label: 'Root',
+        entryName: 'root'
       }
     ]);
   });
@@ -467,7 +635,7 @@ describe('error context tracing runtime foundation', () => {
       expect(source).to.match(/\[3,7,\d+\]/);
       expect(source).to.match(/\[6,7,\d+\]/);
       expect(source).to.match(/\[\d+,\d+,"[^"]+"\]/);
-      expect(source).to.match(/new runtime\.CommandBuffer\(context, null, null, null, null, \{ ec: __ec\[\d+\], branchName: "root" \}, null, renderState\);/);
+      expect(source).to.match(/new runtime\.CommandBuffer\(context, null, null, null, null, \{ ec: __ec\[\d+\], entryName: "root" \}, null, renderState\);/);
     });
 
     it('uses parent-provided semantic labels in generated diagnostics', () => {

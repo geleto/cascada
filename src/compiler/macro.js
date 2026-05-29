@@ -23,7 +23,10 @@ class CompileMacro {
     const activeContext = this.currentCallerBindingContext;
     const argsId = compiler._tmpid();
     const errorContext = compiler.emitErrorContext(node);
-    const callerBufferStackContext = compiler.emitBufferStackContext(node, { branchName: 'caller' });
+    const callerBufferStackContext = compiler.emitBufferStackContext(node, {
+      caller: true,
+      callableName: compiler._describeCallableTarget(node.name)
+    });
 
     // Direct caller() must register its invocation buffer and __caller__
     // waits in the current boundary, not from a later .then.
@@ -217,7 +220,10 @@ class CompileMacro {
     const invocationArgsId = compiler._tmpid();
     const invocationFinishedId = compiler._tmpid();
     const invocationResultId = compiler._tmpid();
-    const callerBufferStackContext = compiler.emitBufferStackContext(positionNode, { branchName: 'caller' });
+    const callerBufferStackContext = compiler.emitBufferStackContext(positionNode, {
+      caller: true,
+      callableName: compiler._describeCallableTarget(positionNode.name)
+    });
 
     // See docs/code/caller.md for the full caller-boundary architecture.
     // The macro body can use caller(), but a particular invocation only has a
@@ -240,7 +246,10 @@ class CompileMacro {
 
   _emitMacroCallerSetup({ node, bufferId, rawCallerVar, allCallersBufferId }) {
     const compiler = this.compiler;
-    const callerBufferStackContext = compiler.emitBufferStackContext(node, { branchName: 'caller' });
+    const callerBufferStackContext = compiler.emitBufferStackContext(node, {
+      callerBlock: true,
+      macroName: node.name.value
+    });
     compiler.emit.line(`let ${rawCallerVar} = kwargs.caller;`);
     compiler.emit.line(`let ${allCallersBufferId} = null;`);
     // __caller__ records when each invocation child buffer has finished
@@ -481,6 +490,10 @@ class CompileMacro {
         analysisNode: node.body,
         errorContextNode: node,
         traceParentOverride: 'macroParentBuffer',
+        bufferStackContextFields: {
+          macroName: node.name.value,
+          callableName: node.name.value
+        },
         emitFunc: (managedFrame, bufferId) => {
           returnStatement = this._emitCompiledAsyncMacroBody({
             node,

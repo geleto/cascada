@@ -35,6 +35,7 @@ class CompileLoop {
     const loopVarNames = Array.isArray(options.loopVarNames) ? options.loopVarNames : null;
     const sourcePositionNode = options.sourcePositionNode || node.arr;
     const parentWaitedChainName = this.compiler.buffer.currentWaitedChainName;
+    const loopVars = this._collectLoopVars(node, loopVarNames);
 
     this.compiler.buffer._compileAsyncControlFlowBoundary(node, () => {
       const arr = this.compiler._tmpid();
@@ -58,7 +59,6 @@ class CompileLoop {
         });
       }
 
-      const loopVars = this._collectLoopVars(node, loopVarNames);
       const loopBodyFuncId = this.compiler._tmpid();
       this.compiler.emit(`let ${loopBodyFuncId} = `);
       const hasConcurrentLimit = Boolean(node.concurrentLimit);
@@ -115,7 +115,7 @@ class CompileLoop {
         this.compiler.buffer.emitLimitedLoopCompletion(iteratePromiseId, node);
       }
       this.compiler.emit.line(`await ${iteratePromiseId};`);
-    });
+    }, node, { loopVariables: loopVars });
   }
 
   compileAsyncFor(node) {

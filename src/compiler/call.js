@@ -246,7 +246,7 @@ class CompileCall {
     const compiler = this.compiler;
     compiler.boundaries.compileValueBoundary(compiler.buffer, node, (n) => {
       compiler._emitAsyncDynamicCall(n, 'currentBuffer');
-    });
+    }, node, { callableName: compiler._describeCallableTarget(node.name) });
     return true;
   }
 

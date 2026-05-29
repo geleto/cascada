@@ -300,6 +300,7 @@ class CompilerAsync extends CompilerBaseAsync {
         this.emit(': ');
 
         if (c.body.children.length) {
+          this.emit(`${this.buffer.currentBuffer}.bufferStackContext.branch = "case";`);
           this.compile(c.body, null);
           this.emit.line('break;');
         }
@@ -307,6 +308,7 @@ class CompilerAsync extends CompilerBaseAsync {
 
       if (node.default) {
         this.emit('default: ');
+        this.emit(`${this.buffer.currentBuffer}.bufferStackContext.branch = "default";`);
         this.compile(node.default, null);
       }
 
@@ -377,8 +379,10 @@ class CompilerAsync extends CompilerBaseAsync {
       this.emit(';');
       this.emit('');
       this.emit(`if (${condResultId}) {`);
+      this.emit(`${this.buffer.currentBuffer}.bufferStackContext.branch = "then";`);
       this.compile(node.body, null);
       this.emit('} else {');
+      this.emit(`${this.buffer.currentBuffer}.bufferStackContext.branch = "else";`);
       if (node.else_) {
         this.compile(node.else_, null);
       }
@@ -420,7 +424,8 @@ class CompilerAsync extends CompilerBaseAsync {
       function() {
         this.compile(node.body, null);
       },
-      node.body
+      node.body,
+      { capture: true }
     );
   }
 
