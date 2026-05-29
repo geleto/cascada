@@ -87,6 +87,79 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
         expect(err.message).to.contain('macro-script-poison');
       }
     });
+
+    it('should treat RuntimeError thrown inside a macro body as fatal', async () => {
+      const fatal = runtime.RuntimeError.create(
+        'macro structural failure',
+        [1, 1, 'Macro.FatalSource', 'macro-fatal.njk', null]
+      );
+      env.addGlobal('fatalMacroOperation', () => {
+        throw fatal;
+      });
+
+      const template = `
+        {% macro render() %}
+          {{ fatalMacroOperation() }}
+        {% endmacro %}
+        {{ render() }}
+      `;
+
+      try {
+        await env.renderTemplateString(template);
+        expect().fail('Should have thrown fatal RuntimeError');
+      } catch (err) {
+        expect(runtime.isRuntimeError(err)).to.be(true);
+        expect(runtime.isPoisonError(err)).to.be(false);
+        expect(err).to.be(fatal);
+      }
+    });
+
+    it('should poison normal operation failures inside a macro body at the operation source', async () => {
+      env.addGlobal('failInMacro', () => {
+        throw new Error('macro operation failed');
+      });
+
+      const template = `
+        {% macro render() %}
+          {{ failInMacro() }}
+        {% endmacro %}
+        {{ render() }}
+      `;
+
+      try {
+        await env.renderTemplateString(template);
+        expect().fail('Should have thrown poison');
+      } catch (err) {
+        expect(runtime.isPoisonError(err)).to.be(true);
+        expect(err.errors).to.have.length(1);
+        expect(err.errors[0].message).to.contain('macro operation failed');
+        expect(err.errors[0].label).to.be('FunCall');
+      }
+    });
+
+    it('should propagate caller poison through macro call blocks without turning it fatal', async () => {
+      env.addGlobal('callerFailure', () => {
+        throw new Error('caller failed');
+      });
+
+      const template = `
+        {% macro wrap() %}
+          before {{ caller() }} after
+        {% endmacro %}
+        {% call wrap() %}
+          {{ callerFailure() }}
+        {% endcall %}
+      `;
+
+      try {
+        await env.renderTemplateString(template);
+        expect().fail('Should have thrown poison');
+      } catch (err) {
+        expect(runtime.isPoisonError(err)).to.be(true);
+        expect(runtime.isRuntimeError(err)).to.be(false);
+        expect(err.message).to.contain('caller failed');
+      }
+    });
   });
 
   describe('Error propagation in templates', () => {
@@ -162,8 +235,10 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         // Should contain information about errors
-        expect(err.message).to.match(/First failure|Second failure/);
+        expect(err.message).to.contain('First failure');
+        expect(err.message).to.contain('Second failure');
       }
     });
 
@@ -223,7 +298,9 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.match(/Item 1 error|Item 2 error/);
+        expect(isPoisonError(err)).to.be(true);
+        expect(err.message).to.contain('Item 1 error');
+        expect(err.message).to.contain('Item 2 error');
       }
     });
 
@@ -248,9 +325,12 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         // Should contain multiple error messages
         const message = err.message;
-        expect(message).to.match(/Name error/);
+        expect(message).to.contain('Name error 1');
+        expect(message).to.contain('Name error 2');
+        expect(message).to.contain('Name error 3');
       }
     });
 
@@ -274,6 +354,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Condition error');
       }
     });
@@ -291,6 +372,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Filter error');
       }
     });
@@ -311,6 +393,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Poisoned content');
       }
     });
@@ -336,6 +419,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Inner macro error');
       }
     });
@@ -361,6 +445,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown PoisonError');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Value fetch failed');
       }
     });
@@ -379,6 +464,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown PoisonError');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Error 1');
         expect(err.message).to.contain('Error 2');
         // Verify both errors collected (not short-circuited)
@@ -389,15 +475,14 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
       const template = `{{ obj.method(123) }}`;
 
       const context = {
-        obj: (async () => {
-          throw new Error('Object fetch failed');
-        })()
+        obj: createTestPoison('Object fetch failed')
       };
 
       try {
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown PoisonError');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Object fetch failed');
       }
     });
@@ -417,6 +502,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown PoisonError');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Inner failed');
       }
     });
@@ -435,6 +521,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown PoisonError');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Data 1 failed');
         expect(err.message).to.contain('Data 2 failed');
         expect(err.message).to.contain('Data 3 failed');
@@ -448,7 +535,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
       const context = {
         validValue: 'Hello',
         anotherValid: 'World',
-        poisonValue: (async () => { throw new Error('Poison value failed'); })(),
+        poisonValue: createTestPoison('Poison value failed'),
         combine: (a, b, c) => `${a} ${b} ${c}`
       };
 
@@ -456,6 +543,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown PoisonError');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Poison value failed');
       }
     });
@@ -491,6 +579,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown PoisonError');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Condition failed');
       }
     });
@@ -519,6 +608,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown PoisonError');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(falseCalled).to.be(false);
         expect(trueCalled).to.be(false);
       }
@@ -541,6 +631,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown PoisonError');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Function failed');
       }
     });
@@ -565,6 +656,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown PoisonError');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Function failed');
       }
     });
@@ -590,6 +682,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown PoisonError');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Inner condition failed');
       }
     });
@@ -618,6 +711,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown PoisonError');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Inner condition failed');
       }
     });
@@ -641,6 +735,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown PoisonError');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         expect(err.message).to.contain('Condition failed');
       }
     });
@@ -670,18 +765,17 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
         await env.renderTemplateString(template, context);
         expect().fail('Should have thrown PoisonError');
       } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
         // Should at least have the condition error
         expect(err.message).to.contain('Condition failed');
       }
     });
 
-    //later fix ('should poison loop variables when while condition is poison')
-    it('should poison if body variables when condition is poison', async () => {
-      //Temp test for comparing
+    it('should poison variables assigned only inside a skipped poisoned if body', async () => {
       const script = `
         var i = 0
         if poisonCond()
-          i = 1 //i + 1
+          i = i + 1
         endif
 
         return { value: i is error }`;
