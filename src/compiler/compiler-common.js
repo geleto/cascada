@@ -45,6 +45,7 @@ class CompilerCommon extends Obj {
       ? options.sourcePath
       : (typeof options.templateName === 'string' ? options.templateName : undefined);
     this.errorContextEntries = [];
+    this.errorContextTableBuilt = false;
     this.inBlock = false;
 
     this.sequential = new CompileSequential(this);
@@ -77,19 +78,14 @@ class CompilerCommon extends Obj {
     if (!node) {
       throw new TypeError('_generateErrorContext requires a node');
     }
-    positionNode = this._resolveErrorContextPositionNode(node, positionNode);
-    const finalLabel = this._getErrorContextLabel(node, positionNode, label);
-    if (positionNode === node && label === null && node._analysis && node._analysis.errorContextIndex === undefined) {
-      this._registerErrorContextEntry(node, finalLabel);
+    const resolvedPositionNode = positionNode === node && node._analysis?.errorContextPositionNode
+      ? node._analysis.errorContextPositionNode
+      : positionNode;
+    const finalLabel = this._getErrorContextLabel(node, resolvedPositionNode, label);
+    if (label === null && node._analysis && node._analysis.errorContextIndex === undefined) {
+      this._registerErrorContextEntry(node, finalLabel, resolvedPositionNode);
     }
     return finalLabel;
-  }
-
-  _resolveErrorContextPositionNode(node, positionNode = node) {
-    if (positionNode === node && node._analysis?.errorContextPositionNode) {
-      return node._analysis.errorContextPositionNode;
-    }
-    return positionNode;
   }
 
   _getErrorContextLabel(node, positionNode = node, label = null) {
@@ -103,9 +99,12 @@ class CompilerCommon extends Obj {
     return finalLabel;
   }
 
-  _registerErrorContextEntry(node, label) {
-    const lineno = node.lineno !== undefined ? node.lineno + 1 : 0;
-    const colno = node.colno !== undefined ? node.colno : 0;
+  _registerErrorContextEntry(node, label, positionNode = node) {
+    if (this.errorContextTableBuilt) {
+      throw new Error('Cannot register error context after the error context table has been emitted');
+    }
+    const lineno = positionNode.lineno !== undefined ? positionNode.lineno + 1 : 0;
+    const colno = positionNode.colno !== undefined ? positionNode.colno : 0;
     node.addAnalysis({ errorContextIndex: this.errorContextEntries.length });
     this.errorContextEntries.push({ lineno, colno, label });
   }
@@ -127,12 +126,12 @@ class CompilerCommon extends Obj {
     return node._analysis.errorContextIndex;
   }
 
-  emitBufferStackContext(node, fields = {}) {
+  emitBufferStackContext(node, stackMetadata = {}) {
     if (!node) {
-      return 'null';
+      throw new TypeError('emitBufferStackContext requires a node');
     }
     const parts = [`ec: ${this.emitErrorContext(node)}`];
-    for (const [key, value] of Object.entries(fields)) {
+    for (const [key, value] of Object.entries(stackMetadata)) {
       if (value !== undefined && value !== null) {
         parts.push(`${key}: ${JSON.stringify(value)}`);
       }
@@ -166,6 +165,7 @@ class CompilerCommon extends Obj {
 
   emitErrorContextHelper() {
     const { labels, specs } = this._buildErrorContextTable();
+    this.errorContextTableBuilt = true;
     this.emit(
       `function getErrorContexts(runtime, path, renderState) {\n` +
       `  return runtime.prepareErrorContexts(path, renderState, ${JSON.stringify(labels)}, ${JSON.stringify(specs)});\n` +
@@ -184,7 +184,7 @@ class CompilerCommon extends Obj {
     const label = node
       ? this._getErrorContextLabel(
         node,
-        this._resolveErrorContextPositionNode(node, positionNode || node)
+        positionNode || node._analysis?.errorContextPositionNode || node
       )
       : null;
 
@@ -351,6 +351,54 @@ class CompilerCommon extends Obj {
           : node.value.toString();
       default: {
         const label = node._analysis?.errorContextLabel || node.typename || 'unknown';
+        return `${label} expression`;
+      }
+    }
+  }
+
+  _describeCallSignature(callableNode, argsNode) {
+    return `${this._describeCallableTarget(callableNode)}(${this._describeCallArguments(argsNode).join(', ')})`;
+  }
+
+  _describeMacroSignature(name, parameterNames) {
+    return `${name}(${parameterNames.join(', ')})`;
+  }
+
+  _describeCallArguments(argsNode) {
+    if (!argsNode || !argsNode.children) {
+      return [];
+    }
+    const descriptions = [];
+    argsNode.children.forEach((arg) => {
+      if (arg instanceof nodes.KeywordArgs) {
+        arg.children.forEach((pair) => {
+          if (pair.key instanceof nodes.Symbol) {
+            descriptions.push(`${pair.key.value}=${this._describeExpression(pair.value)}`);
+          }
+        });
+        return;
+      }
+      descriptions.push(this._describeExpression(arg));
+    });
+    return descriptions;
+  }
+
+  _describeExpression(node) {
+    if (!node) {
+      return 'expression';
+    }
+    switch (node.typename) {
+      case 'Symbol':
+      case 'LookupVal':
+      case 'FunCall':
+      case 'Literal':
+        return this._describeCallableTarget(node);
+      case 'Array':
+        return '[...]';
+      case 'Dict':
+        return '{...}';
+      default: {
+        const label = node._analysis?.errorContextLabel || node.typename || 'expression';
         return `${label} expression`;
       }
     }

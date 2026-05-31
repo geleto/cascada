@@ -88,9 +88,17 @@ export interface CompileErrorOptions {
   cause?: Error | null;
 }
 
+export type DiagnosticContext = {
+  lineno: number | null;
+  colno: number | null;
+  label: string | null;
+  path: string | null;
+};
+
 export class CascadaError extends Error {
   message: string;
   stack: string;
+  context: DiagnosticContext | RuntimeDiagnosticContext;
   lineno: number | null;
   colno: number | null;
   path: string | null;
@@ -101,6 +109,9 @@ export class CompileError extends CascadaError {
   constructor(message: string, options?: CompileErrorOptions);
   name: string;
   cause?: Error | undefined;
+  context: DiagnosticContext;
+  description: string;
+  fullMessage: string;
 }
 
 export type CompactErrorContext = [
@@ -108,34 +119,41 @@ export type CompactErrorContext = [
   colno: number | null,
   label: string | null,
   path: string | null,
-  reportError: ((error: Error) => void) | null
+  renderState: unknown | null
 ];
 
+export type RuntimeErrorContext = CompactErrorContext | ({ ec: CompactErrorContext } & Record<string, unknown>);
+
+export type RuntimeDiagnosticContext = DiagnosticContext & Record<string, unknown>;
+
 export class RuntimeError extends CascadaError {
-  constructor(cause: string | Error, errorContext: CompactErrorContext);
+  constructor(cause: string | Error, context: RuntimeErrorContext);
   name: string;
   cause?: Error | undefined;
-  errorContext: CompactErrorContext;
+  context: RuntimeDiagnosticContext;
+  description: string;
+  fullMessage: string;
 }
 
 export class PoisonError extends CascadaError {
-  constructor(cause: unknown, errorContext: CompactErrorContext);
-  static create(
-    errors: unknown | unknown[] | PoisonError | PoisonError[] | PoisonErrorGroup,
-    errorContext?: CompactErrorContext
-  ): CascadaPoisonError;
-  errors: [PoisonError];
+  constructor(cause: unknown, context: RuntimeErrorContext);
+  static create(message: string, context: RuntimeErrorContext): PoisonError;
+  static wrap(error: unknown, context: RuntimeErrorContext): CascadaPoisonError;
+  static group(errors: PoisonError | PoisonError[] | PoisonErrorGroup): CascadaPoisonError;
+  errors: PoisonError[];
   cause: Error;
-  errorContext: CompactErrorContext;
+  context: RuntimeDiagnosticContext;
+  description: string;
+  fullMessage: string;
 }
 
-export class PoisonErrorGroup extends CascadaError {
-  constructor(errors: PoisonError | PoisonError[] | Error | Error[], errorContext: CompactErrorContext);
+export class PoisonErrorGroup extends PoisonError {
+  constructor(errors: PoisonError | PoisonError[] | PoisonErrorGroup);
   name: string;
   errors: PoisonError[];
 }
 
-export type CascadaPoisonError = PoisonError | PoisonErrorGroup;
+export type CascadaPoisonError = PoisonError;
 export type CascadaRenderError = CompileError | RuntimeError | CascadaPoisonError;
 
 export function isPoisonError(error: unknown): error is CascadaPoisonError;

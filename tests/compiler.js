@@ -807,8 +807,8 @@ const {Template, Environment} = typeof window !== 'undefined'
         tmpl.render({}, function (err, res) {
           expect(res).to.be(undefined);
           expect(err.toString()).to.be([
-            'CompileError: (parse-error.njk) [Line 1, Column ' + expectedColumn + ']',
-            '  unexpected token: ,',
+            'CompileError: unexpected token: ,',
+            '(parse-error.njk) [Line 1, Column ' + expectedColumn + ']',
           ].join('\n'));
           done();
         });

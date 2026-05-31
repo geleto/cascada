@@ -246,9 +246,10 @@ End-state taxonomy goal:
 
 The refactor targets three user-visible error families: `PoisonError`,
 `RuntimeError`, and `CompileError`. Phase I completed the fatal runtime merge:
-`RuntimeError` is the fatal runtime family, while `PoisonErrorBase`
-(`PoisonError` plus `PoisonErrorGroup`) remains the non-fatal value/data error
-family. `isRuntimeError(...)` remains as the predicate at the few
+`RuntimeError` is the fatal runtime family, while `PoisonError`
+(`PoisonError` plus `PoisonErrorGroup`, since `PoisonErrorGroup extends
+PoisonError`) remains the non-fatal value/data error family.
+`isRuntimeError(...)` remains as the predicate at the few
 value-consumption guards that still need to spell out the fatal-vs-poison
 distinction.
 
@@ -522,9 +523,9 @@ Preflight audit performed:
    `contextualizeError(...)`; wrapped errors must carry their compact context
    from construction time or keep their original positional fields.
 6. Done: reinforced the source-origin rule for poison and value-consumption
-   paths. `contextualizeError(PoisonErrorBase, fallbackContext)` preserves the
-   poison unchanged, and consuming lookup/call/loop/output paths no longer
-   attach their local `errorContext` to incoming failed values.
+   paths. Contextualizing an existing `PoisonError` preserves it unchanged, and
+   consuming lookup/call/loop/output paths no longer attach their local
+   `errorContext` to incoming failed values.
 7. Decision: keep `handleError(...)` publicly exported for now as the frozen
    sync compiler adapter. Public export narrowing remains Phase J after the
    fatal-family cleanup.
@@ -555,8 +556,8 @@ independently if they stay behavior-preserving.
    now owns fatal delivery, and runtime code reports or throws `RuntimeError`
    directly through that path.
 4. Done: completed the runtime error-family merge. `RuntimeError` is always
-   fatal, and `PoisonErrorBase` (`PoisonError` plus `PoisonErrorGroup`) is
-   always non-fatal. `isRuntimeError(err)` is a predicate for
+   fatal, and `PoisonError` (`PoisonError` plus `PoisonErrorGroup`) is always
+   non-fatal. `isRuntimeError(err)` is a predicate for
    `err instanceof RuntimeError`. The active fatal
    guards remain in the loop iteration boundary (`loop.js`), command argument
    resolution (`commands/arguments.js`), and chain error recording
@@ -565,9 +566,9 @@ independently if they stay behavior-preserving.
    `RuntimeError`, and `CompileError`.
 5. Done: split the former aggregate-style `PoisonError` shape into typed
    individual and aggregate poison errors. `PoisonError` is now the individual
-   non-fatal contextual error and the cardinality-aware `PoisonError.create(...)`
-   factory; `PoisonErrorGroup` is the multi-error aggregate; and
-   `PoisonErrorBase` is the shared `instanceof`/type-guard target for both.
+   non-fatal contextual error; `PoisonErrorGroup` is the multi-error aggregate
+   and extends `PoisonError`, making `PoisonError` the shared
+   `instanceof`/type-guard target for both.
 
 ## Post-H Follow-Up - Diagnostic Stack Metadata
 
@@ -613,7 +614,7 @@ item 4 is complete.
 3. Done: re-checked public exports, tests, active docs, and TypeScript
    declarations after the strict-context and error-family phases. The public
    surface now exports and documents `CascadaError`, `CompileError`,
-   `RuntimeError`, `PoisonErrorBase`, `PoisonError`, `PoisonErrorGroup`,
+   `RuntimeError`, `PoisonError`, `PoisonErrorGroup`,
    `isPoisonError(...)`, and `isRuntimeError(...)`. Public docs describe
    render failures as `CompileError | RuntimeError | PoisonError | PoisonErrorGroup`,
    and `peekError(...)` / `#` as returning `PoisonError | PoisonErrorGroup | null/none`.

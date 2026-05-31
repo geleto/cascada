@@ -125,7 +125,11 @@ class InheritanceInstance {
       visibleChains,
       parentBuffer,
       methodData.mergedMutatedChains,
-      { ec: errorContext, methodName: methodData.name },
+      {
+        ec: errorContext,
+        methodName: methodData.name,
+        methodSignature: `${methodData.name}(${methodData.signature.argNames.join(', ')})`
+      },
       traceParent,
       this.renderState
     );

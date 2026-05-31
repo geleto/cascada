@@ -479,9 +479,9 @@ import {createPoison, isPoisonError, PoisonError} from '../../src/runtime/runtim
       } catch (err) {
         expect(isPoisonError(err)).to.be(true);
         expect(err.errors).to.have.length(2);
-        const messages = err.errors.map(e => e.message).sort();
-        expect(messages[0]).to.contain('Poison from generator');
-        expect(messages[1]).to.contain('Async processing error');
+        const messages = err.errors.map(e => e.message).join('\n');
+        expect(messages).to.contain('Poison from generator');
+        expect(messages).to.contain('Async processing error');
       }
     });
 

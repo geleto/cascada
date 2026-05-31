@@ -2,7 +2,6 @@
 import {escape} from '../lib.js';
 import {
   isPoison,
-  isPoisonError,
   RuntimeError,
   handleError,
   collectErrors,

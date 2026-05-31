@@ -7,6 +7,7 @@ import {
   isPoisonError,
   isRuntimeError,
   PoisonError,
+  RuntimeError,
 } from './errors.js';
 
 import {VarCommand} from './commands/var.js';

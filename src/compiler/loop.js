@@ -224,7 +224,9 @@ class CompileLoop {
     const parentBufferArg = this.compiler.buffer.currentBuffer;
     const linkedChainsArg = this.compiler.emit.getLinkedChainsArg(node);
     const linkedMutatedChainsArg = this.compiler.emit.getLinkedMutatedChainsArg(node);
-    const loopInfoArg = `{ ec: ${errorContextVar}, loop: ${loopMetaVar} }`;
+    // The iteration label is runtime metadata because each loop frame also
+    // carries runtime-only loop bindings such as index/length/variables.
+    const loopInfoArg = `{ ec: ${errorContextVar}, label: "Iteration", loop: ${loopMetaVar} }`;
     this.compiler.emit(
       `return runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, renderState, async (currentBuffer) => {`
     );

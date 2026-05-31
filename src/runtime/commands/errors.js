@@ -1,4 +1,4 @@
-import {PoisonError, createPoison, isPoisonError} from '../errors.js';
+import {PoisonError, createPoison} from '../errors.js';
 import {MutatingCommand, requireCommandErrorContext} from './base.js';
 
 const contextualizedChainErrorCache = new WeakMap();

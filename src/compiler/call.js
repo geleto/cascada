@@ -244,9 +244,13 @@ class CompileCall {
     }
 
     const compiler = this.compiler;
+    const stackFields = {
+      callableName: compiler._describeCallableTarget(node.name),
+      callSignature: compiler._describeCallSignature(node.name, node.args)
+    };
     compiler.boundaries.compileValueBoundary(compiler.buffer, node, (n) => {
       compiler._emitAsyncDynamicCall(n, 'currentBuffer');
-    }, node, { callableName: compiler._describeCallableTarget(node.name) });
+    }, node, stackFields);
     return true;
   }
 

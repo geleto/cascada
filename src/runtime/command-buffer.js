@@ -14,7 +14,7 @@ class CommandBuffer {
     this.parent = parent;
     this.traceParent = traceParent || null;
     this.renderState = renderState || (parent && parent.renderState) || null;
-    this.bufferStackContext = bufferStackContext;
+    this.bufferStackContext = { ...bufferStackContext };
     this.finished = false;
     this._finishedChains = Object.create(null);
     // Local addressability map. Entries may be owned by this buffer or linked
@@ -44,6 +44,11 @@ class CommandBuffer {
         effectiveLinkTarget.addBuffer(this, linkedLaneNames[i]);
       }
     }
+
+    Object.defineProperty(this.bufferStackContext, 'diagnosticStack', {
+      configurable: true,
+      get: () => this.getDiagnosticStack()
+    });
   }
 
   _createLane(chainName) {
@@ -97,11 +102,16 @@ class CommandBuffer {
   }
 
   getDiagnosticContext() {
-    const { ec, ...metadata } = this.bufferStackContext;
+    const { ec, label, ...metadata } = this.bufferStackContext;
+    delete metadata.diagnosticStack;
+    delete metadata.lineno;
+    delete metadata.colno;
+    delete metadata.path;
+    delete metadata.renderState;
     return {
       lineno: ec[0] ?? null,
       colno: ec[1] ?? null,
-      label: ec[2] ?? null,
+      label: label ?? ec[2] ?? null,
       path: ec[3] ?? null,
       ...metadata
     };

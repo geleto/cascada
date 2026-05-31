@@ -1,6 +1,17 @@
 
 import {POISON_KEY, RESOLVE_MARKER} from './markers.js';
 import {CascadaError} from '../errors.js';
+import {
+  formatDiagnosticInfo,
+  formatDiagnosticMessage,
+  formatNumberedDiagnostic
+} from './error-format.js';
+
+class NormalizedPoisonGroupState {
+  constructor(state) {
+    this.state = state;
+  }
+}
 
 // Internal promises are sometimes observed through an owning command/chain
 // instead of by the promise object itself. Mark those promises handled so delayed
@@ -22,6 +33,10 @@ function prepareErrorContexts(path, renderState, labels, specs) {
   ]);
 }
 
+function isBufferStackContext(context) {
+  return context && !Array.isArray(context) && Array.isArray(context.ec);
+}
+
 /**
  * PoisonedValue: An inspectable error container that can be detected synchronously
  * and automatically rejects when awaited.
@@ -37,7 +52,7 @@ function prepareErrorContexts(path, renderState, labels, specs) {
  */
 class PoisonedValue {
   constructor(errors) {
-    this.errors = PoisonErrorBase._normalizeErrors(errors);
+    this.errors = PoisonError._normalizeErrors(errors);
     this[POISON_KEY] = true;
   }
 
@@ -81,7 +96,7 @@ class PoisonedValue {
 
 class RuntimeContextError extends CascadaError {
   static _normalizeContext(errorContext) {
-    const bufferStackContext = isStackContext(errorContext)
+    const bufferStackContext = isBufferStackContext(errorContext)
       ? errorContext
       : null;
     const ec = bufferStackContext ? bufferStackContext.ec : errorContext;
@@ -101,51 +116,143 @@ class RuntimeContextError extends CascadaError {
       return context;
     }
 
-    const { ec: _ec, ...bufferStackMetadata } = bufferStackContext;
-    return { ...context, ...bufferStackMetadata };
+    // The compact ec remains the authority for source position and render
+    // state. Stack metadata may intentionally provide a display label override
+    // such as "Iteration", but other base fields are ignored here.
+    const {
+      ec: _ec,
+      diagnosticStack: _diagnosticStack,
+      lineno,
+      colno,
+      path,
+      renderState,
+      label,
+      ...bufferStackMetadata
+    } = bufferStackContext;
+
+    return {
+      ...context,
+      ...bufferStackMetadata,
+      label: label ?? context.label
+    };
   }
 
   constructor(name, message, errorContext, options = {}) {
     const {
       normalizedContext = null,
       storedErrorContext = errorContext,
+      diagnosticName = name,
+      diagnosticHeaderLines = null,
+      diagnosticFullHeaderLines = diagnosticHeaderLines,
       ...errorOptions
     } = options;
     const context = normalizedContext || RuntimeContextError._normalizeContext(errorContext);
+    const description = message || '';
+    const compactMessage = formatDiagnosticMessage(diagnosticName, description, context, {
+      headerLines: diagnosticHeaderLines
+    });
+    const diagnosticStack = RuntimeContextError._getDiagnosticStack(errorContext);
+    const fullMessage = formatDiagnosticMessage(diagnosticName, description, context, {
+      headerLines: diagnosticFullHeaderLines,
+      stack: diagnosticStack
+    });
 
-    super(name, message, context, errorOptions);
+    super(name, compactMessage, context, { ...errorOptions, formatContext: false });
     this.context = context;
-    this.errorContext = storedErrorContext;
+    this._errorContext = storedErrorContext;
+    this.description = description;
+    this.fullMessage = fullMessage;
   }
 
   getInfo(options = {}) {
-    return RuntimeContextError.getInfo(this, this.errorContext, options);
+    return RuntimeContextError.getInfo(this, this._errorContext, options);
+  }
+
+  formatInfo(options = {}) {
+    return RuntimeContextError.formatInfo(this, this._errorContext, options);
   }
 
   static getInfo(error, fallbackContext, options = {}) {
     const { stackBuffer = null } = options;
-    const effectiveContext = error && error.errorContext ? error.errorContext : fallbackContext;
+    const effectiveContext = error && error._errorContext ? error._errorContext : fallbackContext;
     if (!effectiveContext) {
       throw new Error('RuntimeContextError.getInfo requires an error with origin context or a compact fallback context');
     }
     const contextInput = error && error.bufferStackContext
       ? error.bufferStackContext
       : effectiveContext;
-    const { renderState, ...info } = RuntimeContextError._normalizeContext(contextInput);
+    const info = RuntimeContextError._normalizeContext(contextInput);
+    delete info.renderState;
 
     if (stackBuffer) {
       info.stack = stackBuffer.getDiagnosticStack();
+    } else if (isBufferStackContext(contextInput) && Array.isArray(contextInput.diagnosticStack)) {
+      info.stack = contextInput.diagnosticStack;
     }
 
     return info;
   }
+
+  static formatInfo(error, fallbackContext, options = {}) {
+    return formatDiagnosticInfo(RuntimeContextError.getInfo(error, fallbackContext, options));
+  }
+
+  static _getDiagnosticStack(errorContext) {
+    return isBufferStackContext(errorContext) && Array.isArray(errorContext.diagnosticStack)
+      ? errorContext.diagnosticStack
+      : null;
+  }
 }
 
-// Exported intentionally as the common instanceof target for individual and
-// aggregate poison errors. Runtime code should prefer isPoisonError(...).
-class PoisonErrorBase extends RuntimeContextError {
+function throwIfRuntimeError(error) {
+  if (isRuntimeError(error)) {
+    throw error;
+  }
+}
+
+class PoisonError extends RuntimeContextError {
+  constructor(cause, errorContext, normalizedContext = RuntimeContextError._normalizeContext(errorContext)) {
+    const source = cause instanceof Error ? cause : new Error(String(cause));
+    super('PoisonError', source.message, normalizedContext, {
+      cause: source,
+      normalizedContext,
+      storedErrorContext: errorContext,
+      diagnosticName: 'PoisonError'
+    });
+    if (new.target === PoisonError) {
+      this.errors = [this];
+      if (source.stack) {
+        this.stack = source.stack;
+      }
+      const reserved = new Set(['name', 'stack', 'message', 'cause']);
+      for (const key of Object.keys(source)) {
+        if (!reserved.has(key) && this[key] === undefined) {
+          this[key] = source[key];
+        }
+      }
+    }
+  }
+
   static _normalizeErrors(errors) {
-    return PoisonErrorGroup._normalizePoisonErrors(errors);
+    if (isPoisonError(errors)) {
+      errors = errors.errors;
+    } else if (!Array.isArray(errors)) {
+      reportRuntimeContractError(
+        'PoisonError.group expects existing poison errors',
+        errors && errors._errorContext
+      );
+    }
+    const normalized = PoisonError._deduplicateAndFlatten(errors);
+    return normalized.map(err => {
+      throwIfRuntimeError(err);
+      if (!isPoisonError(err)) {
+        reportRuntimeContractError(
+          'PoisonError.group expects existing poison errors',
+          err._errorContext
+        );
+      }
+      return err;
+    });
   }
 
   static _deduplicateAndFlatten(errors) {
@@ -177,35 +284,6 @@ class PoisonErrorBase extends RuntimeContextError {
 
     return result;
   }
-}
-
-function throwIfRuntimeError(error) {
-  if (isRuntimeError(error)) {
-    throw error;
-  }
-}
-
-class PoisonError extends PoisonErrorBase {
-  constructor(cause, errorContext, normalizedContext = RuntimeContextError._normalizeContext(errorContext)) {
-    const source = cause instanceof Error ? cause : new Error(String(cause));
-    super(source.name || 'PoisonError', source.message, normalizedContext, {
-      cause: source,
-      normalizedContext,
-      storedErrorContext: errorContext
-    });
-    this.errors = [this];
-
-    if (source.stack) {
-      this.stack = source.stack;
-    }
-
-    const reserved = new Set(['name', 'stack', 'message', 'cause']);
-    for (const key of Object.keys(source)) {
-      if (!reserved.has(key) && this[key] === undefined) {
-        this[key] = source[key];
-      }
-    }
-  }
 
   static create(message, errorContext) {
     if (typeof message !== 'string') {
@@ -223,29 +301,40 @@ class PoisonError extends PoisonErrorBase {
   }
 
   static group(errors) {
-    const poisonErrors = PoisonErrorBase._normalizeErrors(errors);
-    const state = PoisonErrorGroup._buildState(poisonErrors);
+    const poisonErrors = PoisonError._normalizeErrors(errors);
+    const state = PoisonErrorGroup._buildStateFromNormalizedErrors(poisonErrors);
     if (state.errors.length === 1) {
       return state.errors[0];
     }
-    return new PoisonErrorGroup(state.errors);
+    return PoisonErrorGroup._fromState(state);
   }
 }
 
 /**
- * Error thrown when one or more operations are poisoned.
- * Contains deduplicated array of original poison errors.
+ * Error thrown when multiple operations are poisoned.
+ * Extends PoisonError so instanceof PoisonError is true for both types.
+ * Exposes the same interface: cause/lineno/colno/path/label come from the
+ * first child error; errors[] holds all individual PoisonErrors.
  */
-class PoisonErrorGroup extends PoisonErrorBase {
-  constructor(errors) {
-    const sourceStack = errors instanceof PoisonErrorGroup ? errors.stack : null;
-    const normalized = PoisonErrorBase._normalizeErrors(errors);
-    const state = PoisonErrorGroup._buildState(
-      normalized,
-      sourceStack
-    );
-    super('PoisonErrorGroup', state.message, state.errorContext, {
-      normalizedContext: state.context
+class PoisonErrorGroup extends PoisonError {
+  constructor(input) {
+    const state = input instanceof NormalizedPoisonGroupState
+      ? input.state
+      : PoisonErrorGroup._buildStateFromNormalizedErrors(
+        PoisonError._normalizeErrors(input),
+        input instanceof PoisonErrorGroup ? input.stack : null
+      );
+    const firstError = state.errors[0];
+    super(firstError.cause, firstError._errorContext, state.context);
+
+    this.name = 'PoisonErrorGroup';
+    this.description = state.description;
+    this.message = formatDiagnosticMessage('PoisonErrorGroup', state.description, state.context, {
+      headerLines: state.messageLines
+    });
+    this.fullMessage = formatDiagnosticMessage('PoisonErrorGroup', state.description, state.context, {
+      headerLines: state.fullMessageLines,
+      stack: RuntimeContextError._getDiagnosticStack(firstError._errorContext)
     });
     this.errors = state.errors;
     if (state.stack) {
@@ -253,66 +342,51 @@ class PoisonErrorGroup extends PoisonErrorBase {
     }
   }
 
-  static _normalizePoisonErrors(errors) {
-    if (isPoisonError(errors)) {
-      errors = errors.errors;
-    } else if (!Array.isArray(errors)) {
-      reportRuntimeContractError(
-        'PoisonError.group expects existing poison errors',
-        errors && errors.errorContext
-      );
-    }
-    const normalized = PoisonErrorBase._deduplicateAndFlatten(errors);
-    return normalized.map(err => {
-      throwIfRuntimeError(err);
-      if (!isPoisonError(err)) {
-        reportRuntimeContractError(
-          'PoisonError.group expects existing poison errors',
-          err.errorContext
-        );
-      }
-      return err;
-    });
+  static _fromState(state) {
+    return new PoisonErrorGroup(new NormalizedPoisonGroupState(state));
   }
 
-  static _buildState(normalizedErrors, sourceStack = null) {
-    const deduped = PoisonErrorBase._deduplicateAndFlatten(normalizedErrors);
+  static _buildStateFromNormalizedErrors(normalizedErrors, sourceStack = null) {
+    const deduped = normalizedErrors;
     if (deduped.length === 0) {
       throw new Error('PoisonErrorGroup requires at least one poison error');
     }
-    const message = deduped.length === 1
-      ? deduped[0].message
-      : `Multiple errors occurred (${deduped.length}):\n` +
-      deduped.map((e, i) => `  ${i + 1}. ${e.message}`).join('\n');
+    const errorLabel = deduped.length === 1 ? 'error' : 'errors';
+    const description = `Multiple errors occurred (${deduped.length})`;
+    const messageLines = [
+      `PoisonErrorGroup (${deduped.length} ${errorLabel}):`,
+      ...deduped.map((error, index) => formatNumberedDiagnostic(index, error.message))
+    ];
+    const fullMessageLines = [
+      `PoisonErrorGroup (${deduped.length} ${errorLabel}):`,
+      ...deduped.map((error, index) => formatNumberedDiagnostic(index, error.fullMessage))
+    ];
     const stacks = deduped.map(e => e.stack).filter(Boolean);
     const allSame = stacks.length > 0 && stacks.every(s => s === stacks[0]);
-    if (!deduped[0].errorContext) {
+    if (!deduped[0]._errorContext) {
       throw new Error('PoisonErrorGroup requires origin context');
     }
 
     return {
-      message,
+      description,
+      messageLines,
+      fullMessageLines,
       errors: deduped,
-      errorContext: deduped[0].errorContext,
-      context: RuntimeContextError._normalizeContext(deduped[0].errorContext),
+      errorContext: deduped[0]._errorContext,
+      context: RuntimeContextError._normalizeContext(deduped[0]._errorContext),
       stack: sourceStack || (allSame ? stacks[0] : null)
     };
   }
 }
 
-/**
- * Runtime error with position and context information.
- */
-function isStackContext(context) {
-  return context && !Array.isArray(context) && Array.isArray(context.ec);
-}
-
 function resolveRuntimeErrorContext(cause, context) {
-  const bufferStackContext = isStackContext(context)
+  const bufferStackContext = isBufferStackContext(context)
     ? context
     : null;
-  const errorContext = cause && cause.errorContext
-    ? cause.errorContext
+  const errorContext = cause && cause._errorContext
+    ? cause._errorContext
+    : cause && cause.errorContext
+      ? cause.errorContext
     : (bufferStackContext ? bufferStackContext.ec : context);
   return {
     errorContext,
@@ -327,7 +401,7 @@ class RuntimeError extends RuntimeContextError {
     if (message instanceof RuntimeError) {
       return message;
     }
-    if (!context && !(message && message.errorContext)) {
+    if (!context && !(message && (message._errorContext || message.errorContext))) {
       throw new Error('RuntimeError.create requires an error context');
     }
     return new RuntimeError(message, context);
@@ -359,7 +433,8 @@ class RuntimeError extends RuntimeContextError {
     super(runtimeName, runtimeMessage, contextInput, {
       cause,
       normalizedContext: context,
-      storedErrorContext: errorContext
+      storedErrorContext: errorContext,
+      diagnosticName: 'RuntimeError'
     });
     if (bufferStackContext) {
       this.bufferStackContext = bufferStackContext;
@@ -464,7 +539,7 @@ function createPoison(poisonError) {
   if (!isPoisonError(poisonError)) {
     reportRuntimeContractError(
       'createPoison expects PoisonError.wrap(...) or PoisonError.group(...)',
-      poisonError && poisonError.errorContext
+      poisonError && poisonError._errorContext
     );
   }
   return new PoisonedValue(poisonError.errors);
@@ -484,7 +559,7 @@ function isPoison(value) {
  * Check if an error is a PoisonError.
  */
 function isPoisonError(error) {
-  return error instanceof PoisonErrorBase;
+  return error instanceof PoisonError;
 }
 
 function isRuntimeError(error) {
@@ -545,7 +620,7 @@ async function collectErrors(values) {
     }
   }
 
-  return PoisonErrorBase._deduplicateAndFlatten(errors);
+  return PoisonError._deduplicateAndFlatten(errors);
 }
 
 function collectThrownError(errors, err) {
@@ -591,4 +666,4 @@ function peekError(value) {
   return null;
 }
 
-export { PoisonedValue, PoisonError, PoisonErrorGroup, RuntimeError, RuntimePromise, prepareErrorContexts, createPoison, isPoison, isPoisonError, isRuntimeError, isError, collectErrors, handleError, peekError, markPromiseHandled };
+export { PoisonedValue, PoisonError, PoisonErrorGroup, RuntimeError, RuntimeContextError, RuntimePromise, prepareErrorContexts, createPoison, isPoison, isPoisonError, isRuntimeError, isError, collectErrors, handleError, peekError, markPromiseHandled };

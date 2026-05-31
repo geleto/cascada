@@ -18,6 +18,7 @@ import * as runtime from '../../src/runtime/runtime.js';
 import {AsyncEnvironment} from '../../src/environment/async-environment.js';
 import {Script} from '../../src/environment/script.js';
 import {AsyncTemplate} from '../../src/environment/template.js';
+import {CompileError} from '../../src/errors.js';
 import {StringLoader} from '../util.js';
 
 const TEST_EC = [1, 1, 'Test', 'test.casc', null];
@@ -42,7 +43,10 @@ async function captureCommandStacks(render, shouldCapture) {
 
   return {
     output,
-    stacks: markerBuffers.map(buffer => buffer.getDiagnosticStack())
+    stacks: markerBuffers.map(buffer => buffer.getDiagnosticStack()),
+    messages: markerBuffers.map(buffer =>
+      runtime.RuntimeContextError.formatInfo(null, buffer.bufferStackContext, { stackBuffer: buffer })
+    )
   };
 }
 
@@ -90,7 +94,14 @@ describe('error context tracing runtime foundation', () => {
     const err = new RuntimeError('plain failure', ec);
 
     expect(err.message).to.contain('direct.casc');
-    expect(err.errorContext).to.eql(ec);
+    expect(err.context).to.eql({
+      lineno: 1,
+      colno: 1,
+      label: 'Direct.RuntimeError',
+      path: 'direct.casc',
+      renderState: null
+    });
+    expect(err.errorContext).to.be(undefined);
     expect(() => new RuntimeError('missing context')).to.throwException((error) => {
       expect(error.message).to.contain('compact error context');
     });
@@ -100,13 +111,38 @@ describe('error context tracing runtime foundation', () => {
     const origin = [2, 4, 'FunCall', 'origin.casc', null];
     const fallback = [9, 1, 'Output', 'consumer.casc', null];
     const err = new Error('original failure');
-    err.errorContext = origin;
+    err._errorContext = origin;
 
     const wrapped = new RuntimeError(err, fallback);
 
-    expect(wrapped.errorContext).to.eql(origin);
+    expect(wrapped.context.path).to.be('origin.casc');
+    expect(wrapped.context.label).to.be('FunCall');
     expect(wrapped.message).to.contain('origin.casc');
-    expect(wrapped.message).to.contain('doing \'FunCall\'');
+    expect(wrapped.message).to.contain('FunCall');
+    expect(wrapped.fullMessage).to.contain('RuntimeError: original failure');
+    expect(wrapped.fullMessage).to.contain('(origin.casc) [Line 2, Column 4] FunCall');
+  });
+
+  it('exposes a common diagnostic shape on CompileError', () => {
+    const err = new CompileError('bad syntax', {
+      lineno: 3,
+      colno: 8,
+      label: 'Parser',
+      path: 'compile.casc'
+    });
+
+    expect(err.description).to.be('bad syntax');
+    expect(err.message).to.be([
+      'CompileError: bad syntax',
+      '(compile.casc) [Line 3, Column 8] Parser'
+    ].join('\n'));
+    expect(err.fullMessage).to.be(err.message);
+    expect(err.context).to.eql({
+      lineno: 3,
+      colno: 8,
+      label: 'Parser',
+      path: 'compile.casc'
+    });
   });
 
   it('stores source context on PoisonError and preserves it when grouped', () => {
@@ -114,8 +150,9 @@ describe('error context tracing runtime foundation', () => {
     const poison = PoisonError.create('poisoned', origin);
     const grouped = new PoisonErrorGroup(poison);
 
-    expect(poison.errorContext).to.eql(origin);
-    expect(grouped.errorContext).to.eql(origin);
+    expect(poison.context.path).to.be('origin.casc');
+    expect(poison.context.label).to.be('FunCall');
+    expect(grouped.context).to.eql(poison.context);
     expect(grouped.errors[0]).to.be(poison);
   });
 
@@ -133,7 +170,7 @@ describe('error context tracing runtime foundation', () => {
 
     expect(isPoison(poison)).to.be(true);
     expect(poison.errors).to.have.length(1);
-    expect(poison.errors[0].errorContext).to.eql(ec);
+    expect(poison.errors[0].context.label).to.be('Switch.Expression(Symbol)');
   });
 
   it('preserves promise input failure origin through lookup consumption', async () => {
@@ -147,7 +184,8 @@ describe('error context tracing runtime foundation', () => {
       throw new Error('expected lookup failure');
     } catch (error) {
       const contextualError = error.errors ? error.errors[0] : error;
-      expect(contextualError.errorContext).to.eql(origin);
+      expect(contextualError.context.path).to.be('origin.casc');
+      expect(contextualError.context.label).to.be('Origin');
       expect(contextualError.message).to.contain('origin.casc');
       expect(contextualError.message).to.contain('Origin');
     }
@@ -164,7 +202,7 @@ describe('error context tracing runtime foundation', () => {
       throw new Error('expected poison failure');
     } catch (error) {
       expect(error.errors).to.have.length(1);
-      expect(error.errors[0].errorContext[2]).to.be('FunCall');
+      expect(error.errors[0].label).to.be('FunCall');
       expect(error.errors[0].message).to.contain('FunCall');
     }
   });
@@ -191,9 +229,11 @@ describe('error context tracing runtime foundation', () => {
     const err = new RuntimeError('include failed', ec);
 
     expect(err.name).to.be('RuntimeError');
-    expect(err.errorContext).to.eql(ec);
-    expect(err.message).to.contain('(include.casc) [Line 6, Column 10]');
-    expect(err.message).to.contain('doing \'Include.Template\'');
+    expect(err.context.label).to.be('Include.Template');
+    expect(err.message).to.contain('RuntimeError: include failed');
+    expect(err.message).to.contain('(include.casc) [Line 6, Column 10] Include.Template');
+    expect(err.message).to.contain('Include.Template');
+    expect(err.fullMessage).to.contain('RuntimeError: include failed');
   });
 
   it('RuntimeError merges buffer stack metadata with compact context', () => {
@@ -206,9 +246,11 @@ describe('error context tracing runtime foundation', () => {
     const err = RuntimeError.create('loop failed', bufferStackContext);
     const info = err.getInfo();
 
-    expect(err.errorContext).to.eql(ec);
+    expect(err.context.label).to.be('For');
     expect(err.context.blockName).to.be('body');
     expect(err.context.loop).to.eql({ index: 1, variables: ['item'] });
+    expect(err.fullMessage).to.contain('RuntimeError: loop failed');
+    expect(err.fullMessage).to.contain('(loop.casc) [Line 8, Column 2] For');
     expect(info).to.eql({
       lineno: 8,
       colno: 2,
@@ -234,7 +276,6 @@ describe('error context tracing runtime foundation', () => {
   });
 
   it('includes command-buffer error context in error info', () => {
-    const opEc = [9, 1, 'Output', 'consumer.casc', null];
     const bufferEc = [3, 4, 'If.Condition(FunCall)', 'script.casc', null];
     const buffer = new CommandBuffer({ path: 'script.casc' }, null, null, null, null, {
       ec: bufferEc,
@@ -328,7 +369,7 @@ describe('error context tracing runtime foundation', () => {
   });
 
   it('outputs actual compiled boundary metadata in one stack', async () => {
-    const { output, stacks } = await captureSymbolTextStacks(async () => {
+    const { output, stacks, messages } = await captureSymbolTextStacks(async () => {
       const env = new AsyncEnvironment();
       const template = new AsyncTemplate(
         '{% macro wrap() %}{{ caller() }}{% endmacro %}' +
@@ -363,7 +404,7 @@ describe('error context tracing runtime foundation', () => {
         lineno: 1,
         colno: 66,
         path: 'macro-stack.njk',
-        label: 'For',
+        label: 'Iteration',
         loop: {
           index: 1,
           index0: 0,
@@ -388,7 +429,8 @@ describe('error context tracing runtime foundation', () => {
         path: 'macro-stack.njk',
         label: 'FunCall',
         caller: true,
-        callableName: 'caller'
+        callableName: 'caller',
+        callSignature: 'caller()'
       },
       {
         lineno: 1,
@@ -396,7 +438,8 @@ describe('error context tracing runtime foundation', () => {
         path: 'macro-stack.njk',
         label: 'Macro',
         callerBlock: true,
-        macroName: 'wrap'
+        macroName: 'wrap',
+        macroSignature: 'wrap()'
       },
       {
         lineno: 1,
@@ -406,10 +449,19 @@ describe('error context tracing runtime foundation', () => {
         entryName: 'root'
       }
     ]);
+    expect(messages[messages.length - 1]).to.be([
+      '(macro-stack.njk) [Line 1, Column 96] If.Condition(LookupVal) (branch=then)',
+      'Stack:',
+      '  1. (macro-stack.njk) [Line 1, Column 66] Iteration (loop={ index: 1, index0: 0, first: true, length: 1, last: true, revindex: 1, revindex0: 0, variables: [item] })',
+      '  2. (macro-stack.njk) [Line 1, Column 66] For (loop variables=[item])',
+      '  3. (macro-stack.njk) [Line 1, Column 27] call caller()',
+      '  4. (macro-stack.njk) [Line 1, Column 3] macro wrap() (caller block)',
+      '  5. (macro-stack.njk) [Line 1, Column 0] Root (entry name=root)'
+    ].join('\n'));
   });
 
   it('outputs switch boundary metadata in compiled stacks', async () => {
-    const { output, stacks } = await captureSymbolTextStacks(async () => {
+    const { output, stacks, messages } = await captureSymbolTextStacks(async () => {
       const env = new AsyncEnvironment();
       const template = new AsyncTemplate(
         '{% switch state %}' +
@@ -444,6 +496,11 @@ describe('error context tracing runtime foundation', () => {
         entryName: 'root'
       }
     ]);
+    expect(messages[messages.length - 1]).to.be([
+      '(switch-stack.njk) [Line 1, Column 10] Switch.Expression(Symbol) (branch=case)',
+      'Stack:',
+      '  1. (switch-stack.njk) [Line 1, Column 0] Root (entry name=root)'
+    ].join('\n'));
   });
 
   it('keeps included template path in compiled stack metadata', async () => {
@@ -451,7 +508,7 @@ describe('error context tracing runtime foundation', () => {
     loader.addTemplate('parent.njk', 'Before {% include "child.njk" with context %} After');
     loader.addTemplate('child.njk', 'Child {{ marker }}');
 
-    const { output, stacks } = await captureSymbolTextStacks(async () => {
+    const { output, stacks, messages } = await captureSymbolTextStacks(async () => {
       const env = new AsyncEnvironment(loader);
       return env.renderTemplate('parent.njk', {
         marker: Promise.resolve('STACK_MARKER')
@@ -468,10 +525,11 @@ describe('error context tracing runtime foundation', () => {
         entryName: 'root'
       }
     ]);
+    expect(messages[messages.length - 1]).to.be('(child.njk) [Line 1, Column 0] Root (entry name=root)');
   });
 
   it('outputs capture boundary metadata in compiled stacks', async () => {
-    const { output, stacks } = await captureSymbolTextStacks(async () => {
+    const { output, stacks, messages } = await captureSymbolTextStacks(async () => {
       const env = new AsyncEnvironment();
       const template = new AsyncTemplate(
         '{% set value %}{{ marker }}{% endset %}{{ value }}',
@@ -500,28 +558,34 @@ describe('error context tracing runtime foundation', () => {
         entryName: 'root'
       }
     ]);
+    expect(messages[0]).to.be([
+      '(capture-stack.njk) [Line 1, Column 0] NodeList (capture)',
+      'Stack:',
+      '  1. (capture-stack.njk) [Line 1, Column 0] Root (entry name=root)'
+    ].join('\n'));
   });
 
   it('keeps imported script function path in compiled stack metadata', async () => {
     const loader = new StringLoader();
     loader.addTemplate('lib.script', [
-      'function echo(item)',
-      '  return item',
+      'function echo(first, second)',
+      '  return first',
       'endfunction'
     ].join('\n'));
 
-    const { output, stacks } = await captureCommandStacks(async () => {
+    const { output, stacks, messages } = await captureCommandStacks(async () => {
       const env = new AsyncEnvironment(loader);
       const script = new Script([
         'from "lib.script" import echo',
-        'return echo(marker)'
+        'return echo(marker, other)'
       ].join('\n'), env, 'main.script');
       return script.render({
-        marker: Promise.resolve('STACK_MARKER')
+        marker: Promise.resolve('STACK_MARKER'),
+        other: 'unused'
       });
     }, (command, chainName) =>
       command.constructor.name === 'SnapshotCommand' &&
-      chainName === 'item' &&
+      chainName === 'first' &&
       command.errorContext &&
       command.errorContext[2] === 'Symbol'
     );
@@ -534,14 +598,15 @@ describe('error context tracing runtime foundation', () => {
         path: 'lib.script',
         label: 'Macro',
         macroName: 'echo',
-        callableName: 'echo'
+        macroSignature: 'echo(first, second)'
       },
       {
         lineno: 2,
         colno: 15,
         path: 'main.script',
         label: 'FunCall',
-        callableName: 'echo'
+        callableName: 'echo',
+        callSignature: 'echo(marker, other)'
       },
       {
         lineno: 1,
@@ -551,6 +616,12 @@ describe('error context tracing runtime foundation', () => {
         entryName: 'root'
       }
     ]);
+    expect(messages[messages.length - 1]).to.be([
+      '(lib.script) [Line 1, Column 4] macro echo(first, second)',
+      'Stack:',
+      '  1. (main.script) [Line 2, Column 15] call echo(marker, other)',
+      '  2. (main.script) [Line 1, Column 0] Root (entry name=root)'
+    ].join('\n'));
   });
 
   it('stores buffer stack context on runtime value boundaries', async () => {
@@ -563,10 +634,9 @@ describe('error context tracing runtime foundation', () => {
     }, { ec: boundaryEc, loadName: 'include source@(11,6)' });
 
     expect(child.traceParent).to.be(root);
-    expect(child.bufferStackContext).to.eql({
-      ec: boundaryEc,
-      loadName: 'include source@(11,6)'
-    });
+    expect(child.bufferStackContext.ec).to.be(boundaryEc);
+    expect(child.bufferStackContext.loadName).to.be('include source@(11,6)');
+    expect(child.bufferStackContext.diagnosticStack).to.eql(child.getDiagnosticStack());
   });
 
   it('stores buffer stack context on runtime control-flow boundaries', async () => {
@@ -581,10 +651,9 @@ describe('error context tracing runtime foundation', () => {
     }, { ec: boundaryEc, branch: 'then' });
 
     expect(child.traceParent).to.be(root);
-    expect(child.bufferStackContext).to.eql({
-      ec: boundaryEc,
-      branch: 'then'
-    });
+    expect(child.bufferStackContext.ec).to.be(boundaryEc);
+    expect(child.bufferStackContext.branch).to.be('then');
+    expect(child.bufferStackContext.diagnosticStack).to.eql(child.getDiagnosticStack());
   });
 
   it('requires source context on command-buffer error commands', () => {

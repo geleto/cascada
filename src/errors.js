@@ -1,14 +1,26 @@
 class CascadaError extends Error {
-  static _formatMessage(message, { lineno, colno, label, path }, options = {}) {
+  constructor(name, message, context, options = {}) {
     const {
-      alwaysPrefix = false,
-      separator = ' : '
+      cause: explicitCause = null
     } = options;
 
-    if (!alwaysPrefix && lineno == null && colno == null && label == null && path == null) {
-      return message || '';
-    }
+    super(message || '', { cause: explicitCause });
 
+    this.name = name;
+    this.context = context;
+    this.lineno = context.lineno;
+    this.colno = context.colno;
+    this.path = context.path;
+    this.label = context.label;
+  }
+
+  toString() {
+    return this.message;
+  }
+}
+
+class CompileError extends CascadaError {
+  static _formatMessage(message, { lineno, colno, label, path }) {
     let prefix = '(' + (path || 'unknown path') + ')';
 
     if (lineno && colno) {
@@ -18,28 +30,12 @@ class CascadaError extends Error {
     }
 
     if (label) {
-      prefix += ` doing '${label}'`;
+      prefix += ` ${label}`;
     }
 
-    return `${prefix}${separator}${message || ''}`;
+    return `CompileError: ${message || ''}\n${prefix}`;
   }
 
-  constructor(name, message, context, options = {}) {
-    const {
-      cause: explicitCause = null
-    } = options;
-
-    super(CascadaError._formatMessage(message, context, options), { cause: explicitCause });
-
-    this.name = name;
-    this.lineno = context.lineno;
-    this.colno = context.colno;
-    this.path = context.path;
-    this.label = context.label;
-  }
-}
-
-class CompileError extends CascadaError {
   constructor(message, options = {}) {
     const {
       lineno = null,
@@ -48,14 +44,22 @@ class CompileError extends CascadaError {
       path = null,
       cause = null
     } = options;
+    const context = { lineno, colno, label, path };
+    const description = message || '';
 
     super(
       'CompileError',
-      message,
-      { lineno, colno, label, path },
-      { cause, alwaysPrefix: true, separator: '\n  ' }
+      CompileError._formatMessage(description, context),
+      context,
+      { cause }
     );
+    this.description = description;
+    this.fullMessage = this.message;
   }
 }
 
-export { CascadaError, CompileError };
+function isCompileError(error) {
+  return error instanceof CompileError;
+}
+
+export { CascadaError, CompileError, isCompileError };

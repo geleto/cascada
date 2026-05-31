@@ -523,9 +523,13 @@ if failed is error
 endif
 
 // [ERR-07] RULE: Error Value shape (peek with #):
-//   #message — aggregate summary
-//   #errors — array of individual PoisonError objects:
-//             { message, name, lineno, colno, path, label, cause }
+//   #message - diagnostic text: type/description, then source location
+//   #description - raw problem description before Cascada adds location/stack details
+//   #fullMessage - #message plus diagnostic stack when available
+//             Duplicate primary stack frame is omitted from display.
+//   #context - normalized primary diagnostic context
+//   #errors - array of individual PoisonError objects:
+//             { message, description, fullMessage, context, name, lineno, colno, path, label, cause }
 // Multiple concurrent failures aggregate into one PoisonErrorGroup holding all.
 
 // [ERR-08] RULE: Functions still receive Error Value arguments — the function can detect/repair.

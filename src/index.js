@@ -7,7 +7,7 @@ export {Environment, AsyncEnvironment, Template, AsyncTemplate, Script} from './
 export {Loader} from './loader/loader.js';
 export {FileSystemLoader, NodeResolveLoader, PrecompiledLoader, WebLoader} from './loader/loaders.js';
 export {SafeString, markSafe} from './runtime/safe-output.js';
-export {CascadaError, CompileError} from './errors.js';
+export {CascadaError, CompileError, isCompileError} from './errors.js';
 export {
   PoisonError,
   PoisonErrorGroup,

@@ -76,6 +76,26 @@ import * as runtime from '../../src/runtime/runtime.js';
       expect(output.trim()).to.contain('Sub Error');
     });
 
+    it('should expose the full diagnostic message through #', async () => {
+      const poison = createTestPoison(new Error('Extended Error'));
+
+      const template = `
+        {% if val is error %}
+          {{ val#message }}
+          |
+          {{ val#fullMessage }}
+        {% endif %}
+      `;
+      const output = await env.renderTemplateString(template, { val: poison });
+      const parts = output.trim().split('|').map(part => part.trim());
+
+      expect(parts[0]).to.contain('Extended Error');
+      expect(parts[0]).to.contain('PoisonError: Extended Error');
+      expect(parts[0]).to.contain('(peek-operator.njk) [Line 1, Column 1] Peek.TestInput');
+      expect(parts[1]).to.contain('PoisonError: Extended Error');
+      expect(parts[1]).to.contain('(peek-operator.njk) [Line 1, Column 1] Peek.TestInput');
+    });
+
     it('should detect marker-backed lazy arrays with is error', async () => {
       const template = `
         {% set val = [ok(), bad()] %}
@@ -123,7 +143,7 @@ import * as runtime from '../../src/runtime/runtime.js';
       const poison = createTestPoison(err);
 
       const template = `
-        {{ val#errors[0].name }}
+        {{ val#errors[0].cause.name }}
       `;
       const output = await env.renderTemplateString(template, { val: poison });
       expect(output.trim()).to.contain('CustomName');

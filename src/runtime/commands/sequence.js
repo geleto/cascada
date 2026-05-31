@@ -1,4 +1,3 @@
-import {PoisonError} from '../errors.js';
 import {ChainMutatingResultCommand, ChainObservableCommand} from './base.js';
 import {runWithResolvedArguments} from './arguments.js';
 

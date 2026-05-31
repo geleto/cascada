@@ -5,6 +5,7 @@ import {Obj} from '../object.js';
 import {callbackAsap} from './utils.js';
 import {Context} from './context.js';
 import {createDefaultEnvironment} from './default-environment.js';
+import {CompileError} from '../errors.js';
 
 class TemplateRuntime extends Obj {
   init(src, env, path, eagerCompile) {

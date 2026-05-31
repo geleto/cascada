@@ -23,10 +23,12 @@ class CompileMacro {
     const activeContext = this.currentCallerBindingContext;
     const argsId = compiler._tmpid();
     const errorContext = compiler.emitErrorContext(node);
-    const callerBufferStackContext = compiler.emitBufferStackContext(node, {
+    const callerStackFields = {
       caller: true,
-      callableName: compiler._describeCallableTarget(node.name)
-    });
+      callableName: compiler._describeCallableTarget(node.name),
+      callSignature: compiler._describeCallSignature(node.name, node.args)
+    };
+    const callerBufferStackContext = compiler.emitBufferStackContext(node, callerStackFields);
 
     // Direct caller() must register its invocation buffer and __caller__
     // waits in the current boundary, not from a later .then.
@@ -220,10 +222,12 @@ class CompileMacro {
     const invocationArgsId = compiler._tmpid();
     const invocationFinishedId = compiler._tmpid();
     const invocationResultId = compiler._tmpid();
-    const callerBufferStackContext = compiler.emitBufferStackContext(positionNode, {
+    const callerStackFields = {
       caller: true,
-      callableName: compiler._describeCallableTarget(positionNode.name)
-    });
+      callableName: compiler._describeCallableTarget(positionNode.name),
+      callSignature: compiler._describeCallSignature(positionNode.name, positionNode.args)
+    };
+    const callerBufferStackContext = compiler.emitBufferStackContext(positionNode, callerStackFields);
 
     // See docs/code/caller.md for the full caller-boundary architecture.
     // The macro body can use caller(), but a particular invocation only has a
@@ -248,7 +252,8 @@ class CompileMacro {
     const compiler = this.compiler;
     const callerBufferStackContext = compiler.emitBufferStackContext(node, {
       callerBlock: true,
-      macroName: node.name.value
+      macroName: node.name.value,
+      macroSignature: compiler._describeMacroSignature(node.name.value, [])
     });
     compiler.emit.line(`let ${rawCallerVar} = kwargs.caller;`);
     compiler.emit.line(`let ${allCallersBufferId} = null;`);
@@ -483,6 +488,11 @@ class CompileMacro {
         });
       });
     } else {
+      const parameterNames = callableSignature.positionalNames.concat(callableSignature.keywordNames);
+      const macroStackFields = {
+        macroName: node.name.value,
+        macroSignature: compiler._describeMacroSignature(node.name.value, parameterNames)
+      };
       compiler.emit.managedBlock({
         frame: null,
         createScopeRootBuffer: true,
@@ -490,10 +500,7 @@ class CompileMacro {
         analysisNode: node.body,
         errorContextNode: node,
         traceParentOverride: 'macroParentBuffer',
-        bufferStackContextFields: {
-          macroName: node.name.value,
-          callableName: node.name.value
-        },
+        bufferStackContextFields: macroStackFields,
         emitFunc: (managedFrame, bufferId) => {
           returnStatement = this._emitCompiledAsyncMacroBody({
             node,

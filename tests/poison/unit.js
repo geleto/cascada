@@ -18,6 +18,7 @@ import {
   peekError,
   RESOLVE_MARKER,
   RuntimePromise,
+  RuntimeContextError,
   RuntimeError
 } from '../../src/runtime/runtime.js';
 
@@ -48,7 +49,14 @@ describe('typed poison error contracts', () => {
 
     expect(wrapped).to.be.a(PoisonError);
     expect(wrapped.cause).to.be(raw);
-    expect(wrapped.errorContext).to.be(TEST_EC);
+    expect(wrapped.context).to.eql({
+      lineno: 1,
+      colno: 1,
+      label: 'Poison.Unit',
+      path: 'poison-unit.js',
+      renderState: null
+    });
+    expect(wrapped.errorContext).to.be(undefined);
     expect(PoisonError.wrap(wrapped, OTHER_EC)).to.be(wrapped);
   });
 
@@ -67,13 +75,23 @@ describe('typed poison error contracts', () => {
     const grouped = PoisonError.group([one, two]);
 
     expect(grouped).to.be.a(PoisonErrorGroup);
+    expect(grouped).to.be.a(PoisonError);
     expect(grouped.errors).to.eql([one, two]);
-    expect(grouped.errorContext).to.be(TEST_EC);
+    expect(grouped.context).to.eql(one.context);
+    expect(grouped.errorContext).to.be(undefined);
+    expect(grouped.description).to.be('Multiple errors occurred (2)');
     expect(grouped.lineno).to.be(1);
     expect(grouped.colno).to.be(1);
-    expect(grouped.message).to.contain('Multiple errors occurred (2):');
-    expect(grouped.message).to.contain('1. (poison-unit.js) [Line 1, Column 1]');
-    expect(grouped.message).to.contain('2. (poison-unit.js) [Line 2, Column 3]');
+    expect(grouped.message).to.contain('PoisonErrorGroup (2 errors):');
+    expect(grouped.message).to.contain('1. PoisonError: one');
+    expect(grouped.message).to.contain('(poison-unit.js) [Line 1, Column 1] Poison.Unit');
+    expect(grouped.message).to.contain('2. PoisonError: two');
+    expect(grouped.message).to.contain('(poison-unit.js) [Line 2, Column 3] Poison.Other');
+    expect(grouped.message).to.not.contain('\nLocation:');
+    expect(grouped.fullMessage).to.contain('PoisonErrorGroup (2 errors):');
+    expect(grouped.fullMessage).to.contain('1. PoisonError: one');
+    expect(grouped.fullMessage).to.contain('2. PoisonError: two');
+    expect(grouped.fullMessage).to.not.contain('\nLocation:');
     expect(() => PoisonError.group([one, new Error('raw')])).to.throwException(/PoisonError\.group expects/);
   });
 
@@ -115,8 +133,8 @@ describe('typed poison error contracts', () => {
     const errors = await collectErrors([one, two]);
 
     expect(errors.map(err => err.message)).to.eql([
-      '(poison-unit.js) [Line 1, Column 1] doing \'Poison.Unit\' : one',
-      '(poison-unit.js) [Line 1, Column 1] doing \'Poison.Unit\' : two'
+      'PoisonError: one\n(poison-unit.js) [Line 1, Column 1] Poison.Unit',
+      'PoisonError: two\n(poison-unit.js) [Line 1, Column 1] Poison.Unit'
     ]);
 
     const raw = new Error('raw rejection');
@@ -201,11 +219,15 @@ describe('typed poison error contracts', () => {
     const syncPeek = peekError(poison);
 
     expect(syncPeek).to.be.a(PoisonError);
+    expect(syncPeek.description).to.be('peek sync');
     expect(syncPeek.message).to.contain('peek sync');
+    expect(syncPeek.fullMessage).to.contain('PoisonError: peek sync');
+    expect(syncPeek.fullMessage).to.contain('(poison-unit.js) [Line 1, Column 1] Poison.Unit');
 
     const asyncPeek = await peekError(Promise.resolve(poisonValue('peek async')));
     expect(asyncPeek).to.be.a(PoisonError);
     expect(asyncPeek.message).to.contain('peek async');
+    expect(asyncPeek.fullMessage).to.contain('PoisonError: peek async');
 
     expect(await peekError(Promise.resolve(42))).to.be(null);
   });
@@ -216,7 +238,7 @@ describe('typed poison error contracts', () => {
 
     expect(wrapped).to.be.a(PoisonError);
     expect(wrapped.cause).to.be(raw);
-    expect(wrapped.errorContext).to.be(TEST_EC);
+    expect(wrapped.context.label).to.be('Poison.Unit');
 
     const fatal = RuntimeError.create('fatal rejection', TEST_EC);
     expect(RuntimePromise._wrapRejection(fatal, OTHER_EC)).to.be(fatal);
@@ -241,7 +263,7 @@ describe('typed poison error contracts', () => {
     expect(await handled).to.be('handled');
     expect(seen).to.be.a(PoisonError);
     expect(seen.cause).to.be(raw);
-    expect(seen.errorContext).to.be(TEST_EC);
+    expect(seen.context.label).to.be('Poison.Unit');
   });
 
   it('marks promises handled by installing a rejection handler', () => {
@@ -283,7 +305,7 @@ describe('typed poison error contracts', () => {
     expect(() => PoisonError.create(null, TEST_EC)).to.throwException((err) => {
       expect(isRuntimeError(err)).to.be(true);
       expect(err.message).to.contain('PoisonError.create expects a message string');
-      expect(err.errorContext).to.be(TEST_EC);
+      expect(err.context.label).to.be('Poison.Unit');
     });
   });
 
@@ -291,7 +313,8 @@ describe('typed poison error contracts', () => {
     const err = handleError(new Error('legacy failure'), 3, 4, 'Legacy.Sync', 'legacy.casc');
 
     expect(isRuntimeError(err)).to.be(true);
-    expect(err.message).to.contain('(legacy.casc) [Line 3, Column 4]');
+    expect(err.message).to.contain('RuntimeError: legacy failure');
+    expect(err.message).to.contain('(legacy.casc) [Line 3, Column 4] Legacy.Sync');
     expect(err.message).to.contain('Legacy.Sync');
     expect(err.cause.message).to.be('legacy failure');
   });
@@ -333,6 +356,110 @@ describe('typed poison error contracts', () => {
         }
       ]
     });
+  });
+
+  it('uses buffer stack context diagnosticStack in diagnostic info', () => {
+    const root = new CommandBuffer({}, null, null, null, null, {
+      ec: [1, 1, 'Root', 'diagnostics.casc', null],
+      entryName: 'root'
+    });
+    const child = new CommandBuffer({}, root, null, null, null, {
+      ec: [2, 2, 'Child', 'diagnostics.casc', null],
+      branch: 'then'
+    });
+
+    expect(RuntimeContextError.getInfo(null, child.bufferStackContext).stack).to.eql(child.getDiagnosticStack());
+    expect(RuntimeContextError.formatInfo(null, child.bufferStackContext)).to.be([
+      '(diagnostics.casc) [Line 2, Column 2] Child (branch=then)',
+      'Stack:',
+      '  1. (diagnostics.casc) [Line 1, Column 1] Root (entry name=root)'
+    ].join('\n'));
+  });
+
+  it('keeps compact context source fields authoritative over stack metadata', () => {
+    const err = RuntimeError.create('metadata override attempt', {
+      ec: [2, 3, 'Compact.Label', 'compact.casc', null],
+      lineno: 99,
+      colno: 88,
+      path: 'metadata.casc',
+      renderState: { fake: true },
+      label: 'Display.Label'
+    });
+
+    expect(err.context).to.have.property('lineno', 2);
+    expect(err.context).to.have.property('colno', 3);
+    expect(err.context).to.have.property('path', 'compact.casc');
+    expect(err.context).to.have.property('label', 'Display.Label');
+    expect(err.context.renderState).to.be(null);
+  });
+
+  it('formats extended diagnostic messages with stacks as readable text', () => {
+    const rootEc = [8, 1, 'Root', 'diagnostics.casc', null];
+    const childEc = [9, 2, 'Child', 'diagnostics.casc', null];
+    const root = new CommandBuffer({}, null, null, null, null, { ec: rootEc, entryName: 'root' });
+    const child = new CommandBuffer({}, root, null, null, null, {
+      ec: childEc,
+      methodName: 'child',
+      loop: { index: 1, variables: ['item'] }
+    });
+    const err = RuntimeError.create('diagnostic fatal', child.bufferStackContext);
+
+    expect(err.message).to.be([
+      'RuntimeError: diagnostic fatal',
+      '(diagnostics.casc) [Line 9, Column 2] Child (method name=child, loop={ index: 1, variables: [item] })'
+    ].join('\n'));
+    expect(err.fullMessage).to.be([
+      'RuntimeError: diagnostic fatal',
+      '(diagnostics.casc) [Line 9, Column 2] Child (method name=child, loop={ index: 1, variables: [item] })',
+      'Stack:',
+      '  1. (diagnostics.casc) [Line 8, Column 1] Root (entry name=root)'
+    ].join('\n'));
+  });
+
+  it('keeps the first stack frame when it differs from the primary context', () => {
+    const rootEc = [8, 1, 'Root', 'diagnostics.casc', null];
+    const childEc = [9, 2, 'Child', 'diagnostics.casc', null];
+    const primaryEc = [10, 4, 'Primary', 'diagnostics.casc', null];
+    const root = new CommandBuffer({}, null, null, null, null, { ec: rootEc, entryName: 'root' });
+    const child = new CommandBuffer({}, root, null, null, null, { ec: childEc, branch: 'then' });
+
+    expect(RuntimeContextError.formatInfo(null, primaryEc, { stackBuffer: child })).to.be([
+      '(diagnostics.casc) [Line 10, Column 4] Primary',
+      'Stack:',
+      '  1. (diagnostics.casc) [Line 9, Column 2] Child (branch=then)',
+      '  2. (diagnostics.casc) [Line 8, Column 1] Root (entry name=root)'
+    ].join('\n'));
+  });
+
+  it('keeps diagnostic stack getters local to each command buffer', () => {
+    const root = new CommandBuffer({}, null, null, null, null, {
+      ec: [1, 1, 'Root', 'diagnostics.casc', null],
+      entryName: 'root'
+    });
+    const otherRoot = new CommandBuffer({}, null, null, null, null, {
+      ec: [2, 1, 'Root', 'other.casc', null],
+      entryName: 'other'
+    });
+    const sharedContext = { ec: [3, 2, 'Child', 'diagnostics.casc', null], branch: 'shared' };
+    const first = new CommandBuffer({}, root, null, null, null, sharedContext);
+    const second = new CommandBuffer({}, otherRoot, null, null, null, sharedContext);
+
+    expect(first.bufferStackContext).to.not.be(second.bufferStackContext);
+    expect(first.bufferStackContext.diagnosticStack).to.eql(first.getDiagnosticStack());
+    expect(second.bufferStackContext.diagnosticStack).to.eql(second.getDiagnosticStack());
+    expect(first.bufferStackContext.diagnosticStack[1].path).to.be('diagnostics.casc');
+    expect(second.bufferStackContext.diagnosticStack[1].path).to.be('other.casc');
+  });
+
+  it('formats cyclic diagnostic metadata without recursing forever', () => {
+    const cyclic = { name: 'node' };
+    cyclic.self = cyclic;
+    const err = RuntimeError.create('cyclic metadata', {
+      ec: [1, 1, 'Meta', 'diagnostics.casc', null],
+      cyclic
+    });
+
+    expect(err.message).to.contain('cyclic={ name: node, self: [Circular] }');
   });
 
   it('treats raw lazy object and array rejections as fatal', async () => {

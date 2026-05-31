@@ -1707,6 +1707,53 @@ var user = fetchUser(999)  // Returns an error
 return user.name  // Script fails
 ```
 
+#### Errors Thrown by Render Methods
+
+JavaScript render methods such as `renderScript(...)`,
+`renderScriptString(...)`, `renderTemplate(...)`, and
+`renderTemplateString(...)` reject with Cascada error objects when rendering
+cannot produce a healthy result:
+
+*   **`CompileError`**: The script or template could not be compiled. This is a
+    synchronous source error with `lineno`, `colno`, `path`, `label`,
+    `description`, `fullMessage`, and `context`.
+*   **`RuntimeError`**: A fatal runtime failure occurred, such as an invalid
+    runtime contract, inheritance/load failure, or internal structural error.
+    It exposes the same diagnostic fields as other render errors.
+*   **`PoisonError`**: The rendered result depends on one failed operation.
+*   **`PoisonErrorGroup`**: The rendered result depends on multiple failed
+    operations. Its `errors[]` entries are the individual `PoisonError` objects.
+
+All render errors expose `message`, `description`, `fullMessage`, and
+`context`. `PoisonError` and `PoisonErrorGroup` are the same shapes returned by
+the `#` peek operator. `RuntimeError` is fatal and is not part of dataflow
+recovery.
+
+To distinguish error types in JavaScript `catch` blocks, use `instanceof`.
+Since `PoisonErrorGroup extends PoisonError`, a single `instanceof PoisonError`
+check catches both:
+
+```javascript
+import { PoisonError, CompileError, RuntimeError } from 'cascada-engine';
+
+try {
+  const result = await env.renderScript(script, context);
+} catch (err) {
+  if (err instanceof PoisonError) {
+    // Catches both PoisonError and PoisonErrorGroup; they share the same interface
+    for (const e of err.errors) {
+      console.error(e.fullMessage);
+    }
+  } else if (err instanceof CompileError) {
+    // Source could not be compiled
+    console.error(err.message);
+  } else if (err instanceof RuntimeError) {
+    // Fatal contract violation
+    throw err;
+  }
+}
+```
+
 ### Detecting and Inspecting Errors
 
 #### Detecting and Repairing Errors
@@ -1779,24 +1826,88 @@ endif
 #### Anatomy of an Error Value
 
 Peeking returns the poison error for that value, or `none` when the value is
-healthy. A single failure returns a `PoisonError`; multiple failures return a
-`PoisonErrorGroup`. Both shapes have a summary message and an `errors` array of
-individual `PoisonError` objects. Access the poison error with `#`; entries
-inside `errors` are ordinary objects and do not need another `#`.
+healthy. A single failure returns a `PoisonError`, multiple failures a
+`PoisonErrorGroup`. Both expose the same interface, so most code handles them
+uniformly. Access the poison error with `#`.
 
-*   **`message`**: (string) A summary of all individual error messages.
-*   **`errors`**: (array) A list of one or more individual `PoisonError` objects:
-    *   **`message`**: (string) The specific error message.
-    *   **`name`**: (string) A custom name for business-logic errors (e.g., `'ValidationError'`).
-    *   **`lineno`**: (number) The line number where the error occurred.
-    *   **`colno`**: (number) The column number.
-    *   **`path`**: (string) The script file where the error originated.
-    *   **`label`**: (string) A description of the source operation (e.g., `FunCall`, `LookupVal`, `Add`).
-    *   **`cause`**: (object | null) The original JavaScript `Error` object, if applicable.
+`PoisonError` represents one failed operation. It exposes these fields:
 
-#### Handling Multiple Concurrent Errors
+*   **`description`**: (string) The cause's message text, without the error type prefix, source location, or stack.
+*   **`message`**: (string) Two-line compact diagnostic: the error type and description on the first line, the source location on the second.
+*   **`fullMessage`**: (string) The same first two lines as `message`, plus the Cascada diagnostic stack when available.
+*   **`context`**: (object) The normalized diagnostic context for the failure. May include extra metadata such as `callSignature`, `loop`, or `branch` that appear in the formatted messages.
+*   **`errors`**: (array) A single-item array containing the error itself: `[this]`.
+*   **`name`**: (string) Always `'PoisonError'`.
+*   **`lineno`**: (number) The line number where the error occurred.
+*   **`colno`**: (number) The column number.
+*   **`path`**: (string) The script file where the error originated.
+*   **`label`**: (string) The raw compiler classification token for the source operation (e.g., `'FunCall'`, `'LookupVal'`, `'Divide'`). The formatted `message` renders this as a human-readable phrase such as `call fetchUser(...)`.
+*   **`cause`**: (Error) The original JavaScript `Error` object. Always present on `PoisonError`.
 
-When multiple operations fail concurrently, their errors are collected into a single aggregate poison error (`PoisonErrorGroup`) whose `.errors[]` entries are individual `PoisonError`s with their original source locations.
+The single-item `errors` array is intentional. It lets code process standalone
+and grouped poison errors the same way:
+
+```javascript
+var err = value#
+each item in err.errors
+  log(item.message)
+endeach
+```
+
+`PoisonErrorGroup` represents multiple failures. The aggregate fields override
+the inherited ones:
+
+*   **`name`**: (string) Always `'PoisonErrorGroup'`.
+*   **`description`**: (string) A short aggregate description such as `Multiple errors occurred (3)`.
+*   **`message`**: (string) An aggregate intro such as `PoisonErrorGroup (3 errors):`, followed by numbered child `message` values.
+*   **`fullMessage`**: (string) The same aggregate intro, followed by numbered child `fullMessage` values (each including its own stack).
+*   **`errors`**: (array) The individual `PoisonError` objects, each with its own context and cause.
+
+The following fields are inherited from `PoisonError` and come from the first
+child error, so single-error and multi-error handling code can stay the same:
+
+*   **`cause`**
+*   **`context`**
+*   **`lineno`**
+*   **`colno`**
+*   **`path`**
+*   **`label`**
+
+All individual child locations remain available through `errors[]`.
+
+`error.message` — compact, two lines:
+
+```text
+PoisonError: service failed
+(report.casc) [Line 4, Column 12] call fetchUser (argument names=[userId])
+```
+
+`error.fullMessage` — same header, plus the Cascada execution trace when
+available:
+
+```text
+PoisonError: service failed
+(report.casc) [Line 4, Column 12] call fetchUser (argument names=[userId])
+Stack:
+  1. (report.casc) [Line 3, Column 2] call enrichUser(user)
+  2. (report.casc) [Line 2, Column 0] For (loop variables=[user])
+  3. (report.casc) [Line 1, Column 0] Root (entry name=root)
+```
+
+When the first stack frame matches the primary source location, Cascada
+omits the duplicate and prints it only once.
+
+The diagnostic stack is a Cascada execution trace, not just a function-call
+stack. It can include loops, branches, macros, imports, includes, and other
+runtime steps when they help explain where the error surfaced.
+
+#### Handling Multiple Errors
+
+When a value depends on multiple poisoned inputs, their errors are collected
+into a single aggregate poison error (`PoisonErrorGroup`). The failures may have
+happened concurrently, sequentially, or simply propagated through different
+dataflow paths. The group's `.errors[]` entries are individual `PoisonError`s
+with their original source locations.
 
 ```javascript
 var user = fetchUser(999)        // fails
@@ -1823,7 +1934,8 @@ if summary is error
 endif
 ```
 
-This aggregation is particularly valuable in error reporting and debugging, as you can see all failures that occurred in a concurrent batch rather than just the first one encountered.
+This shows every failure that contributed to the poisoned value, not just the
+first one.
 
 ### Advanced Recovery Mechanisms
 

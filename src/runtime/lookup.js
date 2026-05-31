@@ -2,7 +2,6 @@
 import {
   createPoison,
   isPoison,
-  isPoisonError,
   PoisonError,
   RuntimeError,
   RuntimePromise,

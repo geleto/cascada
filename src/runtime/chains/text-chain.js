@@ -1,4 +1,4 @@
-import {createPoison, PoisonError} from '../errors.js';
+import {createPoison} from '../errors.js';
 import {TextCommand} from '../commands/text.js';
 import {Chain} from './base.js';
 
