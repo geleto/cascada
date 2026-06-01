@@ -40,7 +40,12 @@ describe('typed poison error contracts', () => {
 
     expect(isPoison(poison)).to.be(true);
     expect(poison.errors).to.eql([error]);
-    expect(() => createPoison(new Error('raw'))).to.throwException(/createPoison expects/);
+    expect(() => createPoison(new Error('raw'))).to.throwException((err) => {
+      expect(isRuntimeError(err)).to.be(true);
+      expect(err.message).to.contain('createPoison expects');
+      expect(err.context.label).to.be(null);
+      expect(err.context.path).to.be(null);
+    });
   });
 
   it('creates, wraps, and preserves source context on individual poison errors', () => {
@@ -92,7 +97,12 @@ describe('typed poison error contracts', () => {
     expect(grouped.fullMessage).to.contain('1. PoisonError: one');
     expect(grouped.fullMessage).to.contain('2. PoisonError: two');
     expect(grouped.fullMessage).to.not.contain('\nLocation:');
-    expect(() => PoisonError.group([one, new Error('raw')])).to.throwException(/PoisonError\.group expects/);
+    expect(() => PoisonError.group([one, new Error('raw')])).to.throwException((err) => {
+      expect(isRuntimeError(err)).to.be(true);
+      expect(err.message).to.contain('Expected existing poison errors');
+      expect(err.context.label).to.be(null);
+      expect(err.context.path).to.be(null);
+    });
   });
 
   it('returns the single poison error instead of wrapping it in a group', () => {
@@ -115,6 +125,11 @@ describe('typed poison error contracts', () => {
 
     expect(regrouped).to.be.a(PoisonErrorGroup);
     expect(regrouped.errors).to.eql([one, two]);
+    expect(() => new PoisonErrorGroup(group)).to.throwException((err) => {
+      expect(isRuntimeError(err)).to.be(true);
+      expect(err.message).to.contain('PoisonErrorGroup constructor expects individual poison errors');
+      expect(err.context.label).to.be('Poison.Unit');
+    });
   });
 
   it('deduplicates separate wrappers around the same original cause', () => {
@@ -211,7 +226,7 @@ describe('typed poison error contracts', () => {
   });
 
   it('does not allow raw errors inside PoisonedValue', () => {
-    expect(() => new PoisonedValue([new Error('raw')])).to.throwException(/PoisonError\.group expects/);
+    expect(() => new PoisonedValue([new Error('raw')])).to.throwException(/Expected existing poison errors/);
   });
 
   it('peeks poison errors without consuming healthy values', async () => {
@@ -281,8 +296,17 @@ describe('typed poison error contracts', () => {
 
   it('keeps RuntimeError factory and reporting behavior idempotent', () => {
     const existing = RuntimeError.create('existing fatal', TEST_EC);
-    expect(RuntimeError.create(existing, OTHER_EC)).to.be(existing);
-    expect(() => RuntimeError.create('missing context', null)).to.throwException(/requires an error context/);
+    expect(RuntimeError.create(existing)).to.be(existing);
+    expect(() => RuntimeError.create(existing, OTHER_EC)).to.throwException((err) => {
+      expect(isRuntimeError(err)).to.be(true);
+      expect(err.message).to.contain('RuntimeError.create received context for an existing RuntimeError');
+      expect(err.context.label).to.be('Poison.Other');
+    });
+    const contextless = RuntimeError.create('missing context', null);
+    expect(isRuntimeError(contextless)).to.be(true);
+    expect(contextless.context.label).to.be(null);
+    expect(contextless.context.path).to.be(null);
+    expect(contextless.message).to.contain('(unknown path) [Line ?, Column ?]');
 
     let reported = null;
     const renderState = createRenderState((err) => {
@@ -376,21 +400,16 @@ describe('typed poison error contracts', () => {
     ].join('\n'));
   });
 
-  it('keeps compact context source fields authoritative over stack metadata', () => {
-    const err = RuntimeError.create('metadata override attempt', {
+  it('rejects expanded source fields on buffer stack context', () => {
+    expect(() => RuntimeError.create('metadata override attempt', {
       ec: [2, 3, 'Compact.Label', 'compact.casc', null],
       lineno: 99,
-      colno: 88,
-      path: 'metadata.casc',
-      renderState: { fake: true },
       label: 'Display.Label'
+    })).to.throwException((err) => {
+      expect(err).to.be.a(TypeError);
+      expect(err.message).to.contain('bufferStackContext must use compact ec');
+      expect(err.message).to.contain('lineno');
     });
-
-    expect(err.context).to.have.property('lineno', 2);
-    expect(err.context).to.have.property('colno', 3);
-    expect(err.context).to.have.property('path', 'compact.casc');
-    expect(err.context).to.have.property('label', 'Display.Label');
-    expect(err.context.renderState).to.be(null);
   });
 
   it('formats extended diagnostic messages with stacks as readable text', () => {

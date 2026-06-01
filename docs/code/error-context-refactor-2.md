@@ -14,8 +14,9 @@ async adapters.
 - compact context normalization is owned inside runtime error classes/helpers;
   callers pass non-null compact prepared contexts and do not normalize them
   directly
-- `contextualizeError(error, errorContext)` is the async runtime
-  wrapper for non-poison errors
+- `RuntimeError.create(...)`, `RuntimeError.report(...)`, and
+  `RuntimeError.reportAndThrow(...)` are the async runtime wrappers/reporting
+  paths for fatal non-poison errors
 - `handleError(error, lineno, colno, label, path)` remains only for the frozen
   synchronous Nunjucks-compatible compiler path
 - synchronous positional `handleError(...)` calls must not be rewritten as part
@@ -469,13 +470,13 @@ Prerequisite: Phase F is complete and the render-state tests are passing.
 
 Implemented strict async error-context cleanup after Phase G confirmed helper
 ownership and render-state fatal delivery were stable. Runtime error classes now
-own compact context normalization internally. Poison aggregation uses
-`PoisonError.create(errors)` for already-originated poison errors and
-`createPoison(errors, errorContext)` at public/source boundaries; operations
-that create a new non-fatal value error at that source use
-`new PoisonError(error, errorContext)` or `new PoisonErrorGroup(errors,
-errorContext)`; fatal runtime errors use `contextualizeError(error,
-errorContext)`.
+own compact context normalization internally. New engine-authored non-fatal
+value errors use `PoisonError.create(message, errorContext)`, caught
+user/source failures use `PoisonError.wrap(error, errorContext)`, existing
+poison errors aggregate through `PoisonError.group(errors)`, and synchronous
+poison transport is created with `createPoison(typedPoisonError)`. Fatal
+runtime errors use `RuntimeError.create(...)`, `RuntimeError.report(...)`, or
+`RuntimeError.reportAndThrow(...)`.
 
 Prerequisite satisfied: Phase G is complete. Nullable `errorContext` defaults in
 compiler-owned async helpers and command constructors are eliminated or exposed
@@ -490,8 +491,8 @@ Preflight audit performed:
   `EMPTY_ERROR_CONTEXT_INFO` use
 - done: grep for `errorContext = null`, `errorContext: null`, and nullable
   `errorContext` call paths in async runtime/compiler code
-- done: grep for `contextualizeError(...)`, `createPoison(...)`, command
-  constructors, and boundary helpers that may still receive null
+- done: grep for removed contextualization helpers, strict `createPoison(...)`
+  usage, command constructors, and boundary helpers that may still receive null
 - done: verify that tests do not directly assert `normalizeOptionalErrorContext(...)`
   behavior or depend on `EMPTY_ERROR_CONTEXT_INFO` field values
 - done: scan generated/precompiled fixtures, including the browser precompile
@@ -504,13 +505,12 @@ Preflight audit performed:
    `normalizeOptionalErrorContext(...)`, `EMPTY_ERROR_CONTEXT_INFO`, and the
    associated `TODO(error-context-cleanup)` markers.
 2. Done: replaced optional normalization at runtime wrapper/reporting sites
-   with internal `internal error-class normalization` calls for non-null compact
-   contexts. `RuntimeError`, `contextualizeError(...)`,
-   `getErrorInfo(...)`, `new PoisonError(error, errorContext)`, and
-   `new PoisonErrorGroup(errors, errorContext)` consume compact context
-   directly. Context-free poison aggregation remains separate as
-   `createPoison(errors)`, and the normalizer is no longer exported as a public
-   runtime helper.
+   with internal error-class normalization calls for non-null compact contexts.
+   `RuntimeError`, `RuntimeContextError.getInfo(...)`,
+   `PoisonError.create(...)`, `PoisonError.wrap(...)`, and
+   `PoisonErrorGroup` construction consume compact context directly. Context-free
+   poison aggregation remains separate as `PoisonError.group(errors)`, and the
+   normalizer is no longer exported as a public runtime helper.
 3. Done: removed boundary no-context tolerance. Async boundary helpers now take
    a required `bufferStackContext` object, store it on child buffers for stack
    diagnostics, and use its compact `ec` field when reporting boundary errors.
@@ -519,9 +519,9 @@ Preflight audit performed:
    existing error-owned context, otherwise use a compact fallback only when the
    current operation is the error source. Non-array legacy contexts are no
    longer converted or silently tolerated by normalization.
-5. Done: removed the inline already-wrapped-error bridge in
-   `contextualizeError(...)`; wrapped errors must carry their compact context
-   from construction time or keep their original positional fields.
+5. Done: removed the inline already-wrapped-error bridge from the old
+   contextualization path; wrapped errors must carry their compact context from
+   construction time or keep their original positional fields.
 6. Done: reinforced the source-origin rule for poison and value-consumption
    paths. Contextualizing an existing `PoisonError` preserves it unchanged, and
    consuming lookup/call/loop/output paths no longer attach their local
@@ -538,15 +538,16 @@ general helper cleanup.
 Prerequisite: Phase H is complete for item 4. Items 2 and 3 may be implemented
 independently if they stay behavior-preserving.
 
-1. Done after the Phase H source-origin cleanup: `contextualizeError(...)` no
-   longer mutates `PoisonError` contents or attaches fallback context to poison
-   at consumption sites. `PoisonError.create(...)` remains the strict
-   aggregate rehydration path for errors that already carry origin context,
-   while `createPoison(errors, errorContext)` is the source-boundary helper for
-   raw failures that are being poisoned at their origin. External/user code
-   should throw ordinary non-poison errors; the call/filter/consumption boundary
-   converts those errors to typed `PoisonError`s with that boundary's source
-   context and the original error preserved as `cause`.
+1. Done after the Phase H source-origin cleanup: consumption sites no longer
+   mutate `PoisonError` contents or attach fallback context to incoming poison.
+   `PoisonError.group(...)` is the strict aggregate rehydration path for errors
+   that already carry origin context, while source boundaries create individual
+   poison errors with `PoisonError.create(...)` or `PoisonError.wrap(...)` before
+   passing them to `createPoison(...)` when a synchronous `PoisonedValue` is
+   needed. External/user code should throw ordinary non-poison errors; the
+   call/filter/consumption boundary converts those errors to typed
+   `PoisonError`s with that boundary's source context and the original error
+   preserved as `cause`.
 2. Done: moved shared compact-context normalization and diagnostic message
    formatting behind the runtime error classes. `PoisonError` owns individual
    non-fatal context/message construction, `PoisonErrorGroup` owns aggregate
@@ -623,7 +624,298 @@ item 4 is complete.
    `reportedError`, old aggregate-style `PoisonError` examples, and old runtime
    type descriptions. Historical first-stage planning docs are now explicitly
    marked as historical instead of being rewritten as current guidance.
-5. Revisit `TODO(strict-error-context-cleanup)` direct runtime helper
-   compatibility. Remove the remaining nullable/direct-call contexts if those
-   helpers are made internal-only, or document the direct public contract if
-   they remain supported.
+5. Done: revisited `TODO(strict-error-context-cleanup)` direct runtime helper
+   compatibility. No source/test TODO markers remain. The remaining
+   `errorContext: null` runtime entries are no-parent/finalization metadata
+   sentinels rather than compiler-owned async helper fallbacks.
+
+## Phase K - Post-Semantic Cleanup
+
+This is a low-risk cleanup phase after H/I/J have settled. It should not change
+the public error taxonomy or source-origin behavior; each item should either be
+behavior-preserving or come with focused tests that spell out the intended
+contract.
+
+1. [x] Inline `resolveRuntimeErrorContext(...)` into the `RuntimeError` constructor
+   unless another real caller appears. It is constructor-local selection logic,
+   not a reusable runtime concept.
+2. [x] Decide whether `PoisonErrorGroup` should reject an existing
+   `PoisonErrorGroup` constructor input. Today `PoisonError.group(...)` is the
+   intended aggregate entry point, and direct re-wrapping is not a meaningful
+   public use case.
+3. [x] Remove double normalization/deduplication paths in poison aggregation if a
+   local simplification keeps the constructor and factory contracts clear.
+   Preserve the current identity-based deduplication semantics.
+4. Deferred: do not add a small `PoisonError.toErrors(...)`-style helper unless
+   repeated `isPoisonError(value) ? value.errors : [value]` patterns reappear.
+   Call sites are currently clean, so adding it speculatively would increase
+   surface area without simplifying active code.
+5. [x] Add an assertion or explicit test around `RuntimeError.create(existing,
+   context)` ignoring the second context. If idempotency remains the contract,
+   either require the second context to be absent or document why it is ignored.
+6. [x] Keep the active public docs and TypeScript declarations aligned with the
+   strict public error API:
+   - `RuntimeError.create(message, ec)`
+   - `RuntimeError.report(message, ec)`
+   - `RuntimeError.reportAndThrow(message, ec)`
+   - `PoisonError.create(message, ec)`
+   - `PoisonError.wrap(error, ec)`
+   - `PoisonError.group(errors)`
+   `createPoison(typedPoisonError)` remains an internal runtime transport
+   helper, not a public export.
+7. [x] Remove stale public TypeScript support for the `{ ec, ...metadata }`
+   runtime-context wrapper. The public `RuntimeErrorContext` type is the compact
+   context tuple only until Phase L replaces it with the six-slot tuple. The
+   current `{ ec, ...metadata }` wrapper remains an internal transitional runtime
+   shape only; it is not public API.
+8. [x] Keep `handleError(...)` publicly exported only as the frozen sync
+   compiler adapter. It is not part of the async runtime error model, and new
+   async/runtime code should use `RuntimeError.create(...)`,
+   `RuntimeError.report(...)`, or `RuntimeError.reportAndThrow(...)`. Do not
+   include `handleError(...)` in async error API docs except as a sync
+   compatibility note.
+9. [x] Record the import/from-import `RuntimePromise` wrapping from
+   `error-handling-analysis.md` Phase 2 as complete. Async `import` and
+   `from import` loading paths now wrap emitted `.then(...)` chains in
+   `RuntimePromise`, and from-import bindings use `RuntimePromise` instead of
+   raw async IIFEs. Remaining follow-up from that analysis belongs in a later
+   consumer-hardening phase rather than Phase K.
+10. [x] Verify declaration/doc alignment by checking both public declaration
+    entry points (`src/index.d.ts` and `src/precompiled/index.d.ts`) after any
+    runtime error API surface changes. At minimum, run lint and inspect both
+    declaration files; add a declaration smoke test if the project gains a
+    TypeScript verification step.
+11. [x] Rename the private poison helpers so their contracts are clear:
+    `_normalizePoisonErrors(...)` validates and flattens existing typed poison
+    errors, while `_deduplicateCollectedErrors(...)` remains the private
+    `collectErrors(...)` dedup helper. Further consolidation is not required for
+    Phase K unless duplication grows again.
+12. [x] Remove the legacy `cause.errorContext` fallback from `RuntimeError`
+    construction. Runtime-owned context is `_errorContext`; accepting plain
+    `errorContext` risks accidental matches on third-party errors.
+13. [x] Document the intentional `RuntimeError.report(existingRuntimeError,
+    context)` asymmetry: the existing error keeps its origin, while the supplied
+    context is used only to find the active `renderState` for reporting.
+14. [x] Tighten poison aggregation readability: use caller-agnostic validation
+    messages in `_normalizePoisonErrors(...)`, remove stale `deduped` aliases,
+    document existing-poison passthrough in `PoisonError.wrap(...)`, and document
+    the defensive `RuntimePromise._wrapRejection(isPoison(...))` safety net.
+15. [x] Add a class-level comment to `NormalizedPoisonGroupState` explaining it
+    is a private construction token pending the Phase L grouping cleanup.
+
+## Phase M - RuntimePromise Consumer Hardening
+
+Placeholder for the remaining follow-up from
+`docs/code/error-handling-analysis.md` after Phase K's import/from-import source
+wrapping is complete. This phase should be separate from Phase L's compact
+context ABI work.
+
+1. Audit consumers whose inputs are now guaranteed to arrive through
+   `RuntimePromise`, especially catch blocks that still contain non-`PoisonError`
+   fallback branches.
+2. Replace unreachable `createPoison(err)`-style raw-error fallbacks with fatal
+   propagation (`RuntimeError.create(...)`, `RuntimeError.report(...)`, or
+   `RuntimeError.reportAndThrow(...)`) where the source wrapping guarantees hold.
+3. Revisit fire-and-forget sink behavior and callback-owned boundaries so fatal
+   runtime errors are reported consistently when there is no awaiting caller.
+4. Reconfirm `collectErrors(...)` and `isError(...)` behavior for raw promise or
+   lazy-marker rejections. Raw non-poison rejections should remain fatal unless a
+   source boundary intentionally wraps them as poison.
+5. Add integration tests rather than unit tests where possible, especially for
+   promise-returning imports, function calls, loops, and output application.
+
+## Phase L - Compact Boundary Context Unification
+
+This phase removes the current hybrid buffer-stack context shape and makes the
+compact context the single carrier for source position plus optional boundary
+diagnostic metadata. The goal is one narrow consumption boundary: ordinary
+runtime code carries compact context as opaque data, and error classes unpack it
+when constructing or formatting diagnostic output.
+
+### Target Shape
+
+Replace the current compact context:
+
+```js
+[lineno, colno, label, path, renderState]
+```
+
+with:
+
+```js
+[lineno, colno, label, path, boundaryContext, renderState]
+```
+
+Rules:
+
+1. `boundaryContext` is `null` for ordinary, non-boundary contexts.
+2. `boundaryContext` contains command-buffer/render-boundary metadata such as
+   `entryName`, `methodName`, `loop`, `macroName`, `macroSignature`,
+   `callableName`, `callSignature`, `includeName`, or `loadName`.
+3. Use a boundary metadata name such as `displayLabel` instead of `label` for
+   display-only label overrides, so slot `2` remains the source operation label.
+4. `renderState` moves from slot `4` to slot `5`; it remains runtime
+   coordination state, not diagnostic source metadata.
+5. Do not add an `ec` wrapper around compact context. The compact context is
+   itself the `ec`.
+
+### Architecture
+
+1. `CommandBuffer` stores and exposes only compact context values. It must not
+   store or expose expanded diagnostic context objects or a separate
+   `{ ec, ...metadata }` wrapper object.
+2. Diagnostic stack is computed from the command-buffer graph as an array of
+   compact contexts:
+
+```js
+[compactContext, compactContext, compactContext]
+```
+
+   The stack has no expanded frames and no wrapper objects. Error classes
+   normalize each compact context only when constructing `fullMessage`,
+   `getInfo(...)`, or `formatInfo(...)`.
+3. `RuntimeContextError`, `RuntimeError`, `PoisonError`, and
+   `PoisonErrorGroup` are the only places that unpack compact context into an
+   expanded diagnostic object.
+4. Any printed diagnostic context with extra properties is formatted the same
+   way no matter where it came from. The formatting layer receives one expanded
+   object:
+
+```js
+{
+  lineno,
+  colno,
+  label,
+  path,
+  renderState,
+  ...boundaryContext
+}
+```
+
+5. Source-origin data is always taken from the compact tuple fields. Boundary
+   metadata may add printable details, but must not replace `lineno`, `colno`,
+   `path`, or `renderState`.
+6. Dynamic boundary metadata, such as loop state that is only known while
+   iterating, is added by copying the compact context and replacing/merging the
+   `boundaryContext` slot. Do not attach dynamic metadata beside the compact
+   context.
+7. Prepared compact contexts are shared/read-only. `CommandBuffer` owns a
+   buffer-local clone of the compact context and a cloned `boundaryContext`
+   object so dynamic metadata can be updated without mutating compiler-prepared
+   tables.
+8. Dynamic boundary updates must go through a buffer method such as
+   `currentBuffer.setBoundaryContext({ branch: 'then' })` or
+   `currentBuffer.mergeBoundaryContext(...)`. Compiled code should not mutate
+   tuple slots or boundary objects directly.
+9. Promise-valued diagnostic metadata is never awaited. Diagnostic formatting
+   should print thenables as `?` with minimal custom formatting rather than
+   using `JSON.stringify(...)` for values that need pseudo-JSON output.
+
+### Specific Field Decisions
+
+1. Rename current boundary/display metadata `label` fields to `displayLabel`.
+   This includes compiler call sites that currently emit top-level
+   `stackMetadata.label` through `emitBufferStackContext(...)`.
+2. Apply `displayLabel` precedence inside `RuntimeContextError._normalizeContext(...)`:
+   the expanded diagnostic `label` is
+   `boundaryContext.displayLabel ?? compactContext[2]`.
+3. Treat `boundaryContext.label`, `boundaryContext.lineno`,
+   `boundaryContext.colno`, `boundaryContext.path`, and
+   `boundaryContext.renderState` as invalid internal shape bugs. Source-origin
+   fields come only from tuple slots.
+4. Resolve the old `branchName` follow-up during this phase. Either remove it in
+   favor of `boundaryContext.branch`, or document a distinct field if it still
+   represents buffer/frame identity rather than conditional branch direction.
+5. Keep `CommandBuffer.renderState` only if it remains a derived convenience
+   field from compact context slot `5` or parent state. Otherwise replace direct
+   reads with `getRenderState(buffer.errorContext)` / normalized access. The
+   phase must update the constructor parameter and initialization logic either
+   way.
+
+### Implementation Steps
+
+1. Update `prepareErrorContexts(...)` to produce six-element compact contexts.
+2. Update compiler-generated context tables and all helper call sites that read
+   or construct compact contexts for the slot migration (`renderState` moves
+   from slot `4` to slot `5`).
+3. Move metadata currently passed as `{ ec, entryName, methodName, ... }` into
+   the `boundaryContext` slot.
+4. Add small context helpers for tuple-safe operations:
+   - `getRenderState(errorContext)` or equivalent normalized access for slot `5`
+   - `getBoundaryContext(errorContext)`
+   - `withBoundaryContext(errorContext, extraBoundaryContext)` for dynamic
+     boundary metadata such as loop state
+   Keep these helpers minimal and avoid broader abstractions.
+5. Update `CommandBuffer` construction to accept/store compact context directly.
+   Context validation should require a compact array, not an object with `ec`.
+6. Update `emitBufferStackContext(...)` explicitly. Under the target model it
+   should either disappear or become a thin `emitBoundaryContext(...)` helper
+   that emits slot-4 metadata for prepared contexts. It must no longer emit
+   `{ ec: __ec[i], ...metadata }`.
+7. Update async boundary helpers, command-buffer setup, inheritance/include/import
+   boundaries, macro/function call boundary metadata, loop/iteration metadata,
+   and any direct tests that currently pass `{ ec, ... }`.
+8. Update dynamic branch codegen currently mutating fields such as
+   `currentBuffer.bufferStackContext.branch = 'then'` or `'case'` to call the
+   new `CommandBuffer` boundary-context update method.
+9. Update `RuntimeContextError._normalizeContext(...)` to consume the six-slot
+   compact context and merge `boundaryContext` at the error-class boundary. This
+   is a major simplification: remove the `isBufferStackContext(...)` branch, the
+   `{ ec, ...metadata }` indirection, reserved-key filtering, and expanded-field
+   assertion from normalization.
+10. Update command-buffer stack helpers so `getDiagnosticStack()` returns only an
+   array of compact contexts. Error methods normalize those contexts when
+   formatting stack output.
+11. Update `RuntimeContextError.getInfo(...)` / `formatInfo(...)` so compact
+   fallback contexts and compact-context stack arrays behave consistently.
+12. Add minimal pseudo-JSON diagnostic value formatting for thenables in metadata
+    so promise-valued fields print as `?`, e.g. `{"last":?}`, without awaiting.
+13. Update tests to assert compact context opacity before error construction and
+   identical formatting for boundary metadata regardless of source.
+14. Regenerate precompiled/browser fixtures and any generated snapshots affected
+    by the compiled error-context ABI change.
+15. Update TypeScript declarations and active docs to describe the six-slot
+    compact context shape.
+
+### Cleanup
+
+These should be removed once the new compact context shape is in place:
+
+1. Remove `isBufferStackContext(...)`.
+2. Remove `BUFFER_STACK_CONTEXT_CONTROL_KEYS`.
+3. Remove `EXPANDED_SOURCE_CONTEXT_KEYS`.
+4. Remove `assertNoExpandedSourceContext(...)`.
+5. Remove all `{ ec, ...metadata }` construction and detection paths.
+6. Remove `bufferStackContext.diagnosticStack` lazy getter storage.
+7. Remove reserved-key filtering in `RuntimeContextError._normalizeContext(...)`.
+8. Remove defensive deletion/filtering of `diagnosticStack`, `lineno`, `colno`,
+   `path`, and `renderState` from `CommandBuffer.getDiagnosticContext()`.
+9. Remove `CommandBuffer.getDiagnosticContext()` unless a narrow test-only use
+   remains. No expanded diagnostic context should exist outside error methods.
+10. Remove or collapse `emitBufferStackContext(...)` after all metadata has moved
+    into compact context slot `4`.
+11. Remove direct dynamic mutations of `currentBuffer.bufferStackContext.*`.
+12. Remove or rename all `label` metadata fields that are display overrides;
+    use `displayLabel` instead.
+13. Remove or resolve stale `branchName` metadata paths.
+14. Remove tests that assert wrapper-specific behavior and replace them with
+   tests for six-slot compact contexts plus boundary metadata.
+15. Search for stale five-slot assumptions, especially direct `ec[4]`
+    `renderState` reads, and update them to slot `5` or normalized access.
+16. Remove any runtime field, helper return value, or command payload that carries
+    expanded context data outside `RuntimeContextError` methods.
+17. Revisit `NormalizedPoisonGroupState` and
+    `PoisonErrorGroup._buildStateFromNormalizedErrors(...)` after compact
+    context unification. If Phase L removes the remaining context-construction
+    special cases, replace the state wrapper with a narrower private factory or
+    inline constructor path so poison grouping has less ceremony.
+18. Simplify the `RuntimeError` constructor after wrapper-context support is
+    gone. The remaining selection logic should be limited to cause-owned compact
+    origin context, direct compact context, and the contextless fatal fallback.
+19. Revisit `RuntimeContextError` constructor options after wrapper removal. If
+    `normalizedContext` is only serving the contextless fatal path, narrow it or
+    replace it with an explicit contextless constructor path.
+20. After Phase L, evaluate whether `PoisonedValue`, `createPoison(...)`,
+    `isPoison(...)`, `collectErrors(...)`, and `peekError(...)` should remain in
+    `runtime/errors.js` or move to a small poison-transport module. Do this only
+    if `errors.js` still feels crowded after wrapper-context cleanup.

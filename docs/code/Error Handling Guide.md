@@ -15,7 +15,8 @@ Cascada has three public error families plus the `PoisonedValue` transport:
   source-origin context. Its `cause` is the original JavaScript error when one
   exists.
 - **`PoisonErrorGroup`**: aggregate of individual `PoisonError`s. This is what
-  a `PoisonedValue` rejects with when awaited.
+  a `PoisonedValue` rejects with when awaited. Construct it only from individual
+  poison errors; use `PoisonError.group(...)` to normalize an existing group.
 
 `PoisonedValue` is not an `Error`. It is a thenable container carrying
 `.errors[]` so runtime code can detect poison synchronously with
@@ -26,11 +27,20 @@ Cascada has three public error families plus the `PoisonedValue` transport:
 Error context belongs to the source operation that created the error, not to a
 later consumer. Consumption paths must preserve an incoming error's context.
 
-- Create a new non-fatal value error at its origin with
-  `new PoisonError(error, errorContext)` or `createPoison(error, errorContext)`.
-- Aggregate already-originated poison errors with
-  `PoisonError.create(errors)`.
-- Create fatal runtime errors with `RuntimeError.create(error, errorContext)`.
+- Create a new engine-authored non-fatal value error at its origin with
+  `PoisonError.create(message, errorContext)`.
+- Wrap a caught user/source failure at its origin with
+  `PoisonError.wrap(error, errorContext)`.
+- Aggregate already-originated poison errors with `PoisonError.group(errors)`.
+- Internal runtime code creates synchronous poisoned values only from existing
+  typed poison errors
+  with `createPoison(PoisonError.wrap(error, errorContext))`,
+  `createPoison(PoisonError.create(message, errorContext))`, or
+  `createPoison(PoisonError.group(errors))`. `createPoison(...)` is not part of
+  the public package export surface.
+- Create fatal runtime errors with `RuntimeError.create(error, errorContext)`;
+  report them to the active render with `RuntimeError.report(...)` or
+  `RuntimeError.reportAndThrow(...)`.
 - Do not attach a local consumption `errorContext` to an incoming
   `PoisonError`, `PoisonErrorGroup`, or `PoisonedValue`.
 
@@ -55,8 +65,7 @@ classes/helpers listed above.
 - Non-`async` and sync-first hybrid functions may return `PoisonedValue`
   directly.
 - `async` functions must throw poison errors instead of returning
-  `PoisonedValue`; use `PoisonError.create(value.errors)` for existing
-  poison.
+  `PoisonedValue`; use `PoisonError.group(value.errors)` for existing poison.
 - Always collect all independent value errors before returning/throwing:
   Cascada's poison system follows the "Never Miss Any Error" principle.
 

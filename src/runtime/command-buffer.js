@@ -102,12 +102,13 @@ class CommandBuffer {
   }
 
   getDiagnosticContext() {
-    const { ec, label, ...metadata } = this.bufferStackContext;
-    delete metadata.diagnosticStack;
-    delete metadata.lineno;
-    delete metadata.colno;
-    delete metadata.path;
-    delete metadata.renderState;
+    const { ec, label } = this.bufferStackContext;
+    const metadata = {};
+    for (const key of Object.keys(this.bufferStackContext)) {
+      if (key !== 'ec' && key !== 'label' && key !== 'diagnosticStack') {
+        metadata[key] = this.bufferStackContext[key];
+      }
+    }
     return {
       lineno: ec[0] ?? null,
       colno: ec[1] ?? null,

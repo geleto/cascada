@@ -89,7 +89,7 @@ describe('error context tracing runtime foundation', () => {
     expect(second[1]).not.to.be(prepared[1]);
   });
 
-  it('requires compact context when constructing RuntimeError directly', () => {
+  it('allows contextless RuntimeError only as a fatal runtime fallback', () => {
     const ec = [1, 1, 'Direct.RuntimeError', 'direct.casc', null];
     const err = new RuntimeError('plain failure', ec);
 
@@ -102,8 +102,17 @@ describe('error context tracing runtime foundation', () => {
       renderState: null
     });
     expect(err.errorContext).to.be(undefined);
-    expect(() => new RuntimeError('missing context')).to.throwException((error) => {
-      expect(error.message).to.contain('compact error context');
+    const contextless = new RuntimeError('missing context');
+    expect(contextless.context).to.eql({
+      lineno: null,
+      colno: null,
+      label: null,
+      path: null,
+      renderState: null
+    });
+    expect(contextless.message).to.contain('(unknown path) [Line ?, Column ?]');
+    expect(() => contextless.getInfo()).to.throwException((error) => {
+      expect(error.message).to.contain('origin context');
     });
   });
 
@@ -624,6 +633,50 @@ describe('error context tracing runtime foundation', () => {
     ].join('\n'));
   });
 
+  it('preserves dynamic import target rejection origin', async () => {
+    const env = new AsyncEnvironment(new StringLoader());
+    const template = new AsyncTemplate(
+      '{% import target as lib %}{{ lib.value }}',
+      env,
+      'import-target.njk'
+    );
+    const sourceError = new Error('target load failed');
+
+    try {
+      await template.render({
+        target: Promise.reject(sourceError)
+      });
+      throw new Error('Expected render to fail');
+    } catch (err) {
+      expect(runtime.isPoisonError(err)).to.be(true);
+      const poisonError = err.errors ? err.errors[0] : err;
+      expect(poisonError.cause).to.be(sourceError);
+      expect(poisonError.context.path).to.be('import-target.njk');
+      expect(poisonError.context.label).to.be('Import.Template(Symbol)');
+    }
+  });
+
+  it('reports missing from-import bindings with binding context', async () => {
+    const loader = new StringLoader();
+    loader.addTemplate('lib.njk', '{% set present = "ok" %}');
+    const env = new AsyncEnvironment(loader);
+    const template = new AsyncTemplate(
+      '{% from "lib.njk" import missing %}{{ missing }}',
+      env,
+      'from-missing.njk'
+    );
+
+    try {
+      await template.render({});
+      throw new Error('Expected render to fail');
+    } catch (err) {
+      expect(runtime.isRuntimeError(err)).to.be(true);
+      expect(err.message).to.contain('cannot import \'missing\'');
+      expect(err.context.path).to.be('from-missing.njk');
+      expect(err.context.label).to.be('Symbol');
+    }
+  });
+
   it('stores buffer stack context on runtime value boundaries', async () => {
     const root = new CommandBuffer({ path: 'script.casc' }, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
     const boundaryEc = [11, 6, 'FunCall', 'script.casc', null];
@@ -662,7 +715,7 @@ describe('error context tracing runtime foundation', () => {
 
     expect(command.errorContext).to.eql(ec);
     expect(() => new ErrorCommand(PoisonError.create('guard failed', ec))).to.throwError(/ErrorCommand requires a compact errorContext/);
-    expect(() => new ErrorCommand(null, ec)).to.throwError(/PoisonError\.group expects existing poison errors/);
+    expect(() => new ErrorCommand(null, ec)).to.throwError(/Expected existing poison errors/);
   });
 
   it('requires source context for direct text chain invocation', () => {

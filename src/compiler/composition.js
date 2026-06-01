@@ -24,19 +24,20 @@ class CompileComposition {
     const positionNode = node.template || node;
     const getTargetFunc = this.compiler._tmpid();
     const resolvedTargetValue = this.compiler._tmpid();
+    const errorContext = this.compiler.emitErrorContext(positionNode);
 
     this.emit.line(`const ${getTargetFunc} = env.get${this.compiler.scriptMode ? 'Script' : 'Template'}.bind(env);`);
     this.emit(`const ${resolvedTargetValue} = `);
     this.compiler.compileExpression(node.template, null, positionNode, true);
     this.emit.line(';');
-    this.emit.line(`let ${targetVar} = runtime.resolveSingle(${resolvedTargetValue}).then((resolvedTargetName) => {`);
+    this.emit.line(`let ${targetVar} = new runtime.RuntimePromise(runtime.resolveSingle(${resolvedTargetValue}).then((resolvedTargetName) => {`);
     if (allowNoParent) {
       this.emit.line('  if (resolvedTargetName === null || resolvedTargetName === undefined) {');
       this.emit.line('    return null;');
       this.emit.line('  }');
     }
     this.emit.line(`  return ${getTargetFunc}(resolvedTargetName, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg});`);
-    this.emit.line('});');
+    this.emit.line(`}), ${errorContext});`);
 
     return targetVar;
   }
@@ -74,11 +75,12 @@ class CompileComposition {
       const target = node.target.value;
       const id = this.compileAsyncResolveTargetFile(node, false, false);
       const exportedId = this.compiler._tmpid();
-      this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => {`);
+      const errorContext = this.compiler.emitErrorContext(node);
+      this.emit.line(`let ${exportedId} = new runtime.RuntimePromise(runtime.resolveSingle(${id}).then((resolvedTemplate) => {`);
       this.emit.line('  resolvedTemplate.compile();');
       this.emit.line('  renderState.throwIfFatalErrorReported();');
       this.emit.line('  return runtime.resolveSingle(resolvedTemplate.getExported(null, null, renderState));');
-      this.emit.line('});');
+      this.emit.line(`}), ${errorContext});`);
       this.compiler.buffer.emitLimitedLoopCompletion(exportedId, node);
       this._emitValueImportBinding(target, exportedId, node);
       return;
@@ -89,14 +91,15 @@ class CompileComposition {
     const exportedId = this.compiler._tmpid();
     const importVarsVar = this.compiler._tmpid();
     const importContextVar = this.compiler._tmpid();
+    const errorContext = this.compiler.emitErrorContext(node);
     this.emit.line(`let ${importVarsVar} = {};`);
     this.compiler.compositionPayload.emitCompiledInputs(node, importVarsVar);
     this.compiler.compositionPayload.emitContext(importContextVar, importVarsVar, node.withContext);
-    this.emit.line(`let ${exportedId} = runtime.resolveSingle(${id}).then((resolvedTemplate) => {`);
+    this.emit.line(`let ${exportedId} = new runtime.RuntimePromise(runtime.resolveSingle(${id}).then((resolvedTemplate) => {`);
     this.emit.line('  resolvedTemplate.compile();');
     this.emit.line('  renderState.throwIfFatalErrorReported();');
     this.emit.line(`  return runtime.resolveSingle(resolvedTemplate.getExported(${importContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, renderState));`);
-    this.emit.line('});');
+    this.emit.line(`}), ${errorContext});`);
     this.compiler.buffer.emitLimitedLoopCompletion(exportedId, node);
     this._emitValueImportBinding(target, exportedId, node);
   }
@@ -138,11 +141,12 @@ class CompileComposition {
     const importedId = this.compileAsyncResolveTargetFile(node, false, false);
     const exportedId = this.compiler._tmpid();
     const bindingIds = [];
-    this.emit.line(`let ${exportedId} = runtime.resolveSingle(${importedId}).then((resolvedTemplate) => {`);
+    const errorContext = this.compiler.emitErrorContext(node);
+    this.emit.line(`let ${exportedId} = new runtime.RuntimePromise(runtime.resolveSingle(${importedId}).then((resolvedTemplate) => {`);
     this.emit.line('  resolvedTemplate.compile();');
     this.emit.line('  renderState.throwIfFatalErrorReported();');
     this.emit.line('  return runtime.resolveSingle(resolvedTemplate.getExported(null, null, renderState));');
-    this.emit.line('});');
+    this.emit.line(`}), ${errorContext});`);
     this._emitAsyncFromImportBindings(node, exportedId, bindingIds);
     this._emitFromImportCompletion(node, exportedId, bindingIds);
   }
@@ -153,14 +157,15 @@ class CompileComposition {
     const bindingIds = [];
     const importVarsVar = this.compiler._tmpid();
     const importContextVar = this.compiler._tmpid();
+    const errorContext = this.compiler.emitErrorContext(node);
     this.emit.line(`let ${importVarsVar} = {};`);
     this.compiler.compositionPayload.emitCompiledInputs(node, importVarsVar);
     this.compiler.compositionPayload.emitContext(importContextVar, importVarsVar, node.withContext);
-    this.emit.line(`let ${exportedId} = runtime.resolveSingle(${importedId}).then((resolvedTemplate) => {`);
+    this.emit.line(`let ${exportedId} = new runtime.RuntimePromise(runtime.resolveSingle(${importedId}).then((resolvedTemplate) => {`);
     this.emit.line('  resolvedTemplate.compile();');
     this.emit.line('  renderState.throwIfFatalErrorReported();');
     this.emit.line(`  return runtime.resolveSingle(resolvedTemplate.getExported(${importContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, renderState));`);
-    this.emit.line('});');
+    this.emit.line(`}), ${errorContext});`);
     this._emitAsyncFromImportBindings(node, exportedId, bindingIds);
     this._emitFromImportCompletion(node, exportedId, bindingIds);
   }
@@ -177,21 +182,12 @@ class CompileComposition {
       const failMsg = `cannot import '${importedName}'`.replace(/"/g, '\\"');
       const errorContext = this.compiler.emitErrorContext(nameNode);
 
-      this.emit.line(`let ${id} = (async () => {`);
-      this.emit.line(`  let exported;`);
-      this.emit.line(`  try {`);
-      this.emit.line(`    exported = await ${exportedId};`);
-      this.emit.line(`  } catch(e) {`);
-      this.emit.line(`    if (!runtime.isPoisonError(e) && !runtime.isRuntimeError(e)) {`);
-      this.emit.line(`      runtime.RuntimeError.reportAndThrow(e, ${errorContext});`);
-      this.emit.line(`    }`);
-      this.emit.line(`    throw e;`);
-      this.emit.line(`  }`);
+      this.emit.line(`let ${id} = new runtime.RuntimePromise(Promise.resolve(${exportedId}).then((exported) => {`);
       this.emit.line(`  if(Object.prototype.hasOwnProperty.call(exported, "${importedName}")) {`);
       this.emit.line(`    return exported["${importedName}"];`);
       this.emit.line(`  }`);
       this.emit.line(`  runtime.RuntimeError.reportAndThrow("${failMsg}", ${errorContext});`);
-      this.emit.line(`})();`);
+      this.emit.line(`}), ${errorContext});`);
       bindingIds.push(id);
       this._emitValueImportBinding(alias, id, node);
     });

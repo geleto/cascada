@@ -14,7 +14,9 @@ class RenderState {
     if (!error) {
       throw new TypeError('reportFatalError requires an error');
     }
-    if (errorContext !== undefined || typeof error === 'string') {
+    if (isRuntimeError(error)) {
+      // Preserve the original fatal origin; this render state is only recording it.
+    } else if (errorContext !== undefined || typeof error === 'string') {
       error = RuntimeError.create(error, errorContext);
     } else if (!(error instanceof Error)) {
       error = new Error(String(error));
@@ -30,7 +32,9 @@ class RenderState {
   }
 
   reportAndThrowFatalError(error, errorContext) {
-    if (errorContext !== undefined || typeof error === 'string') {
+    if (isRuntimeError(error)) {
+      // Preserve the original fatal origin; this render state is only recording it.
+    } else if (errorContext !== undefined || typeof error === 'string') {
       error = RuntimeError.create(error, errorContext);
     } else if (!(error instanceof Error)) {
       error = new Error(String(error));
