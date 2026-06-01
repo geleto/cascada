@@ -2,6 +2,7 @@
 import {escape} from '../lib.js';
 import {
   isPoison,
+  isPoisonError,
   RuntimeError,
   handleError,
   collectErrors,
@@ -147,6 +148,13 @@ function suppressValueAsync(val, autoescape, errorContext) {
   return _suppressValueAsyncComplex(val, autoescape, errorContext);
 }
 
+function rethrowPoisonOrFatal(err, errorContext) {
+  if (isPoisonError(err)) {
+    throw err;
+  }
+  RuntimeError.reportAndThrow(err, errorContext);
+}
+
 async function _suppressValueAsyncComplex(val, autoescape, errorContext) {
   val = normalizeBufferValue(val);
   // Consume a single top-level Cascada value before text materialization.
@@ -158,7 +166,7 @@ async function _suppressValueAsyncComplex(val, autoescape, errorContext) {
         val = await val;
       }
     } catch (err) {
-      throw PoisonError.wrap(err, errorContext);
+      rethrowPoisonOrFatal(err, errorContext);
     }
 
   }
@@ -241,7 +249,7 @@ async function _ensureDefinedAsyncComplex(val, errorContext) {
         val = await val;
       }
     } catch (err) {
-      throw PoisonError.wrap(err, errorContext);
+      rethrowPoisonOrFatal(err, errorContext);
     }
 
   }
@@ -295,7 +303,7 @@ async function _suppressValueScriptComplex(val, autoescape, errorContext) {
       }
     }
   } catch (err) {
-    throw PoisonError.wrap(err, errorContext);
+    rethrowPoisonOrFatal(err, errorContext);
   }
 
   if (Array.isArray(val)) {

@@ -45,6 +45,8 @@ class CommandBuffer {
       }
     }
 
+    // Phase M removes wrapper contexts; until then errors built from a
+    // bufferStackContext need a lazy path back to the current buffer stack.
     Object.defineProperty(this.bufferStackContext, 'diagnosticStack', {
       configurable: true,
       get: () => this.getDiagnosticStack()
@@ -102,6 +104,9 @@ class CommandBuffer {
   }
 
   getDiagnosticContext() {
+    // Transitional expansion for the `{ ec, ...metadata }` wrapper shape.
+    // Target Phase M model: diagnostic stacks store compact contexts only and
+    // error methods perform all expansion at formatting/inspection time.
     const { ec, label } = this.bufferStackContext;
     const metadata = {};
     for (const key of Object.keys(this.bufferStackContext)) {

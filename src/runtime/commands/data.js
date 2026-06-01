@@ -16,7 +16,7 @@ class DataCommand extends ChainCommand {
 
   apply(chain) {
     super.apply(chain);
-    return runWithResolvedArguments(this.arguments, this, chain, (resolvedArgs) => {
+    return runWithResolvedArguments(this.arguments, this, (resolvedArgs) => {
       if (!chain || !chain._base) return;
       const args = Array.isArray(resolvedArgs) ? resolvedArgs : [];
       const rawPath = args.length > 0 ? args[0] : null;

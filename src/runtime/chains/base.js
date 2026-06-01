@@ -372,7 +372,9 @@ async function inspectTargetForErrors(target) {
         if (isPoisonError(err)) {
           addErrors(err.errors);
         } else {
-          addError(err);
+          // This diagnostic walker has no source context of its own; raw
+          // promise/marker failures must surface unchanged as fatal errors.
+          throw err;
         }
       }
       return;
@@ -385,7 +387,9 @@ async function inspectTargetForErrors(target) {
         if (isPoisonError(err)) {
           addErrors(err.errors);
         } else {
-          addError(err);
+          // This diagnostic walker has no source context of its own; raw
+          // promise/marker failures must surface unchanged as fatal errors.
+          throw err;
         }
         return;
       }

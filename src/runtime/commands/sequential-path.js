@@ -1,4 +1,4 @@
-import {isPoison, PoisonError} from '../errors.js';
+import {isPoison, isPoisonError, PoisonError, RuntimeError} from '../errors.js';
 import {ObservableCommand, MutatingResultCommand, requireCommandErrorContext} from './base.js';
 
 class SequentialPathReadCommand extends ObservableCommand {
@@ -87,7 +87,11 @@ function runSequentialPathOperation(cmd, chain, isWrite) {
 
   if (result && typeof result.then === 'function') {
     return Promise.resolve(result).then(resolveValue, (err) => {
-      rejectPoison(PoisonError.wrap(err, cmd.errorContext));
+      if (isPoisonError(err)) {
+        rejectPoison(err);
+        return;
+      }
+      RuntimeError.reportAndThrow(err, cmd.errorContext);
     });
   }
 

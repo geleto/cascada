@@ -6,6 +6,7 @@ import {TextCommand} from '../../src/runtime/commands/text.js';
 import {VarCommand} from '../../src/runtime/commands/var.js';
 import {DataCommand} from '../../src/runtime/commands/data.js';
 import {SequenceCallCommand} from '../../src/runtime/commands/sequence.js';
+import {SequentialPathWriteCommand} from '../../src/runtime/commands/sequential-path.js';
 
 import {
   Chain,
@@ -44,6 +45,25 @@ describe('chain errors', function () {
       } catch (err) {
         expect(err).to.be.a(RuntimeError);
         expect(err.message).to.contain('fatal command failure');
+      }
+    });
+
+    it('reports raw command argument rejections as fatal runtime errors', async () => {
+      const output = new TextChain(null, 'text', { path: 'fatal-output.script' }, 'text');
+      const raw = new Error('raw command argument failure');
+      const cmd = new TextCommand({
+        chainName: 'text',
+        args: [Promise.reject(raw)],
+        errorContext: TEST_EC
+      });
+
+      try {
+        await cmd.apply(output);
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(err).to.be.a(RuntimeError);
+        expect(err.cause).to.be(raw);
+        expect(err.message).to.contain('raw command argument failure');
       }
     });
 
@@ -183,6 +203,17 @@ describe('chain errors', function () {
       expect(result.error.errors[0].message).to.contain('marker rejection');
     });
 
+    it('treats raw promise failures during target inspection as fatal', async () => {
+      const raw = new Error('raw inspection failure');
+
+      try {
+        await inspectTargetForErrors({ value: Promise.reject(raw) });
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(err).to.be(raw);
+      }
+    });
+
     it('avoids recursion issues on cyclic plain objects', async () => {
       const target = {};
       target.self = target;
@@ -208,6 +239,34 @@ describe('chain errors', function () {
       output._setTarget(2);
       await output._ensureErrorState();
       expect(inspectCalls).to.be(2);
+    });
+  });
+
+  describe('sequential path command hardening', function () {
+    it('reports raw async sequential operation rejections as fatal runtime errors', async () => {
+      const raw = new Error('raw sequential failure');
+      const cmd = new SequentialPathWriteCommand({
+        chainName: 'db',
+        pathKey: 'db',
+        operation: () => Promise.reject(raw),
+        errorContext: TEST_EC
+      });
+      const chain = {
+        _getSequentialPathPoisonError: () => null,
+        _applySequentialPathPoisonError: () => {
+          throw new Error('raw failure should not be stored as poison');
+        },
+        _setSequentialPathLastResult: () => {}
+      };
+
+      try {
+        await cmd.apply(chain);
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(err).to.be.a(RuntimeError);
+        expect(err.cause).to.be(raw);
+        expect(err.message).to.contain('raw sequential failure');
+      }
     });
   });
 

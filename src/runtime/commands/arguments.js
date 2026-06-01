@@ -1,13 +1,14 @@
 import {
   isPoison,
+  isPoisonError,
   isRuntimeError,
-  PoisonError,
+  RuntimeError,
   createPoison,
   markPromiseHandled,
 } from '../errors.js';
 import {RESOLVE_MARKER, isResolvedValue, unwrapResolvedValue} from '../resolve.js';
 
-function runWithResolvedArguments(value, cmd, chain, applyFn) {
+function runWithResolvedArguments(value, cmd, applyFn) {
   if (Array.isArray(value)) {
     let hasAsync = false;
 
@@ -33,7 +34,7 @@ function runWithResolvedArguments(value, cmd, chain, applyFn) {
       return applyFn(value);
     }
 
-    return runWithResolvedArgumentsAsync(value, cmd, chain, applyFn);
+    return runWithResolvedArgumentsAsync(value, cmd, applyFn);
   }
 
   if (value === undefined) {
@@ -49,7 +50,7 @@ function runWithResolvedArguments(value, cmd, chain, applyFn) {
     return Promise.resolve(value[RESOLVE_MARKER]).then(() => {
       return applyFn(value);
     }).catch((err) => {
-      return applyFn(classifyCommandArgumentFailure(chain, cmd, err));
+      return applyFn(classifyCommandArgumentFailure(cmd, err));
     });
   }
 
@@ -59,11 +60,11 @@ function runWithResolvedArguments(value, cmd, chain, applyFn) {
     }
     return applyFn(resolvedValue);
   }).catch((err) => {
-    return applyFn(classifyCommandArgumentFailure(chain, cmd, err));
+    return applyFn(classifyCommandArgumentFailure(cmd, err));
   });
 }
 
-async function runWithResolvedArgumentsAsync(value, cmd, chain, applyFn) {
+async function runWithResolvedArgumentsAsync(value, cmd, applyFn) {
   const resolvedArray = new Array(value.length);
   for (let i = 0; i < value.length; i++) {
     const entry = value[i];
@@ -81,7 +82,7 @@ async function runWithResolvedArgumentsAsync(value, cmd, chain, applyFn) {
         await fastValue[RESOLVE_MARKER];
         resolvedArray[i] = fastValue;
       } catch (err) {
-        resolvedArray[i] = classifyCommandArgumentFailure(chain, cmd, err);
+        resolvedArray[i] = classifyCommandArgumentFailure(cmd, err);
       }
       continue;
     }
@@ -93,24 +94,26 @@ async function runWithResolvedArgumentsAsync(value, cmd, chain, applyFn) {
           await resolvedValue[RESOLVE_MARKER];
           resolvedArray[i] = resolvedValue;
         } catch (err) {
-          resolvedArray[i] = classifyCommandArgumentFailure(chain, cmd, err);
+          resolvedArray[i] = classifyCommandArgumentFailure(cmd, err);
         }
       } else {
         resolvedArray[i] = resolvedValue;
       }
     } catch (err) {
-      resolvedArray[i] = classifyCommandArgumentFailure(chain, cmd, err);
+      resolvedArray[i] = classifyCommandArgumentFailure(cmd, err);
     }
   }
   return applyFn(resolvedArray);
 }
 
-function classifyCommandArgumentFailure(chain, cmd, err) {
-  void chain;
+function classifyCommandArgumentFailure(cmd, err) {
   if (isRuntimeError(err)) {
     throw err;
   }
-  return createPoison(PoisonError.wrap(err, cmd.errorContext));
+  if (isPoisonError(err)) {
+    return createPoison(err);
+  }
+  RuntimeError.reportAndThrow(err, cmd.errorContext);
 }
 
 function isHandledDeferredPromise(value) {

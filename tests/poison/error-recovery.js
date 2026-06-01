@@ -64,7 +64,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
     });
 
     it('should poison render if RHS of "is" is poisoned', async () => {
-      const p = Promise.reject(new Error('REJECTED'));
+      const p = createTestPoison(new Error('REJECTED'));
       try {
         await env.renderTemplateString('{{ 8 is divisibleby(val) }}', { val: p });
         expect().fail('Should have thrown');

@@ -2,6 +2,7 @@
 import {
   createPoison,
   isPoison,
+  isPoisonError,
   PoisonError,
   RuntimeError,
   RuntimePromise,
@@ -102,10 +103,21 @@ async function _memberLookupAsyncComplex(obj, val, errorContext, currentBuffer =
     return createPoison(PoisonError.group(errors));
   }
 
-  // Resolve the values
+  // Resolve the values. Non-poison resolution failures indicate a missing
+  // source wrapper or runtime bug; lookup itself only owns errors thrown while
+  // reading the resolved value below.
+  let resolvedObj;
+  let resolvedVal;
   try {
-    const [resolvedObj, resolvedVal] = await resolveDuo(obj, val);
+    [resolvedObj, resolvedVal] = await resolveDuo(obj, val);
+  } catch (err) {
+    if (isPoisonError(err)) {
+      return createPoison(err);
+    }
+    RuntimeError.reportAndThrow(err, errorContext);
+  }
 
+  try {
     const result = memberLookup(resolvedObj, resolvedVal);
 
     // Wrap promise results to preserve error context
@@ -177,10 +189,21 @@ async function _memberLookupScriptComplex(obj, val, errorContext, currentBuffer 
     return createPoison(PoisonError.group(errors));
   }
 
-  // Resolve the values
+  // Resolve the values. Non-poison resolution failures indicate a missing
+  // source wrapper or runtime bug; script lookup itself only owns errors thrown
+  // while reading the resolved value below.
+  let resolvedObj;
+  let resolvedVal;
   try {
-    const [resolvedObj, resolvedVal] = await resolveDuo(obj, val);
+    [resolvedObj, resolvedVal] = await resolveDuo(obj, val);
+  } catch (err) {
+    if (isPoisonError(err)) {
+      return createPoison(err);
+    }
+    RuntimeError.reportAndThrow(err, errorContext);
+  }
 
+  try {
     // The call to memberLookupScript can throw a native TypeError if resolvedObj is null/undefined.
     // This try/catch block will handle it and enrich the error with context.
     const result = memberLookupScriptRaw(resolvedObj, resolvedVal);

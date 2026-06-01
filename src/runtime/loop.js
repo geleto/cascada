@@ -676,6 +676,8 @@ function poisonLoopEffects(buffer, asyncOptions, poisonError, didIterate) {
 }
 
 async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOptions = null) {
+  const errorContext = asyncOptions ? asyncOptions.errorContext : null;
+
   // Handle poison detection if in async mode
   if (asyncOptions) {
     // Check for synchronous poison first
@@ -705,7 +707,6 @@ async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOpti
   let sequential = asyncOptions ? asyncOptions.sequential : false;
   let limitSequentialOverride = false;
   const isAsync = asyncOptions !== null;
-  const errorContext = asyncOptions ? asyncOptions.errorContext : null;
 
   let didIterate = false;
   // Called between sequential iterations. The ordered chain observation may

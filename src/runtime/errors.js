@@ -8,7 +8,7 @@ import {
 } from './error-format.js';
 
 // Private construction token for already-normalized PoisonErrorGroup state.
-// Revisit after Phase L removes remaining context-construction special cases.
+// Revisit after Phase M removes remaining context-construction special cases.
 class NormalizedPoisonGroupState {
   constructor(state) {
     this.state = state;
@@ -34,7 +34,7 @@ const EXPANDED_SOURCE_CONTEXT_KEYS = new Set([
   'renderState'
 ]);
 
-// Phase-L transitional scaffolding: while command buffers still carry
+// Phase-M transitional scaffolding: while command buffers still carry
 // `{ ec, ...metadata }` wrapper contexts, runtime errors must normalize both
 // compact contexts and buffer stack contexts. Compact boundary contexts should
 // replace this wrapper shape and remove these helpers.
@@ -389,7 +389,7 @@ class PoisonErrorGroup extends PoisonError {
   static _fromState(state) {
     // Private construction token used so PoisonError.group(...) can validate
     // and dedupe once while direct PoisonErrorGroup re-wrapping stays rejected.
-    // Revisit after Phase L removes the remaining context-construction
+    // Revisit after Phase M removes the remaining context-construction
     // special cases.
     return new PoisonErrorGroup(new NormalizedPoisonGroupState(state));
   }

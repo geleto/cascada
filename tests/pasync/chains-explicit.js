@@ -1,7 +1,10 @@
 
 import expect from 'expect.js';
 import {AsyncEnvironment} from '../../src/environment/environment.js';
-import {createPoison, isPoisonError} from '../../src/runtime/runtime.js';
+import {createPoison, isPoisonError, PoisonError} from '../../src/runtime/runtime.js';
+
+const TEST_POISON_EC = [1, 1, 'ChainsExplicit.TestPoison', 'chains-explicit.casc', null];
+const testPoison = (message) => createPoison(PoisonError.create(message, TEST_POISON_EC));
 
 describe('Cascada Script: Explicit Chain Declarations', function () {
   let env;
@@ -976,7 +979,7 @@ describe('Cascada Script: Explicit Chain Declarations', function () {
           },
           snapshot() { return this.events.slice(); }
         }),
-        fail: () => createPoison([new Error('guard failure')])
+        fail: () => testPoison('guard failure')
       });
       expect(failure).to.eql(['begin', 'write:fail', 'rollback']);
     });
@@ -1025,7 +1028,7 @@ describe('Cascada Script: Explicit Chain Declarations', function () {
         return tx.snapshot()
       `;
       const failure = await render(failureScript, {
-        fail: () => createPoison([new Error('guard-fail')]),
+        fail: () => testPoison('guard-fail'),
         makeTx: () => {
           const events = [];
           return {
@@ -1063,7 +1066,7 @@ describe('Cascada Script: Explicit Chain Declarations', function () {
         return { events: db.snapshot(), flag: flag }
       `;
       const result = await render(script, {
-        fail: () => createPoison([new Error('guard-fail')]),
+        fail: () => testPoison('guard-fail'),
         makeDb: () => ({
           events: [],
           write(v) {
@@ -1172,7 +1175,7 @@ describe('Cascada Script: Explicit Chain Declarations', function () {
       `;
       const failure = await render(failureScript, {
         events: failureEvents,
-        fail: () => createPoison([new Error('guard-fail')]),
+        fail: () => testPoison('guard-fail'),
         makeA: function () {
           const ev = failureEvents;
           return {
@@ -1209,7 +1212,7 @@ describe('Cascada Script: Explicit Chain Declarations', function () {
       `;
 
       const run = render(script, {
-        fail: () => createPoison([new Error('guard-fail')]),
+        fail: () => testPoison('guard-fail'),
         makeDb: () => ({
           events: [],
           async getValue() {
@@ -2335,7 +2338,7 @@ describe('Cascada Script: Explicit Chain Declarations', function () {
 
     it('should revert chains when guard fails', async () => {
       const context = {
-        fail() { return createPoison([new Error('guard fail')]); }
+        fail() { return testPoison('guard fail'); }
       };
       const script = `
         data myData
@@ -2351,7 +2354,7 @@ describe('Cascada Script: Explicit Chain Declarations', function () {
 
     it('should revert only guard changes on failure', async () => {
       const context = {
-        fail() { return createPoison([new Error('guard fail')]); }
+        fail() { return testPoison('guard fail'); }
       };
       const script = `
         data myData
@@ -2367,7 +2370,7 @@ describe('Cascada Script: Explicit Chain Declarations', function () {
 
     it('should handle nested guards with chain reverts', async () => {
       const context = {
-        fail() { return createPoison([new Error('inner fail')]); }
+        fail() { return testPoison('inner fail'); }
       };
       const script = `
         data myData

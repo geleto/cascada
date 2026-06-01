@@ -26,7 +26,7 @@ class TextCommand extends ChainCommand {
 
   apply(chain) {
     super.apply(chain);
-    return runWithResolvedArguments(this.arguments, this, chain, (resolvedArgs) => {
+    return runWithResolvedArguments(this.arguments, this, (resolvedArgs) => {
       if (!chain || !Array.isArray(chain._target)) {
         if (!chain) {
           return;
