@@ -11,6 +11,7 @@ import {
   RepairWriteCommand,
 } from './commands/sequential-path.js';
 import {requireCommandErrorContext} from './commands/base.js';
+import {markPromiseHandled} from './errors.js';
 
 function init(renderState = null, errorContext) {
   errorContext = requireCommandErrorContext(errorContext, 'guard.init');
@@ -74,6 +75,8 @@ function initChainSnapshots(chainNames = null, buffer = null, renderState = null
       .then((capturedState) => {
         state.snapshots[chainName] = capturedState;
       });
+    // The guard finalizer observes this later; suppress delayed internal rejection noise.
+    markPromiseHandled(capturePromise);
     state.setupPromises.push(capturePromise);
   }
 
@@ -226,7 +229,10 @@ function repairSequenceChains(buffer, guardState, lockNames, errorContext) {
       errorContext
     }), lockName).catch((err) => guardState.renderState.reportAndThrowFatalError(err, errorContext));
 
-    guardState.detectionPromises.push(Promise.all([detectPromise, repairPromise]).then(() => true));
+    const detectionPromise = Promise.all([detectPromise, repairPromise]).then(() => true);
+    // The guard finalizer observes this later; suppress delayed internal rejection noise.
+    markPromiseHandled(detectionPromise);
+    guardState.detectionPromises.push(detectionPromise);
   }
 }
 

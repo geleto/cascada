@@ -39,18 +39,18 @@ suite green before the next.
 Goal: clear the trivially-correct items, the confirmed crash, and the bug class it
 belongs to. No dependencies, no fixtures.
 
-- [ ] §11.2 — `markPromiseHandled(...)` on the component cleanup promise
+- [x] §11.2 — `markPromiseHandled(...)` on the component cleanup promise
   (`inheritance/component.js` ≈168).
-- [ ] §11.7 — delete the stale `iterateArrayLimited.worker` `@todo` (`loop.js` ≈562).
-- [ ] §11.1 — remove the dead inner per-property `try/catch` in `resolve.js`
+- [x] §11.7 — delete the stale `iterateArrayLimited.worker` `@todo` (`loop.js` ≈562).
+- [x] §11.1 — remove the dead inner per-property `try/catch` in `resolve.js`
   `createObject`/`createArray`; await the values directly.
-- [ ] §11.16 — fix duplicate fatal delivery (the confirmed process-crashing
+- [x] §11.16 — fix duplicate fatal delivery (the confirmed process-crashing
   unhandled rejection). Locate the loop boundary/completion promise that re-throws
   an already-reported fatal and `markPromiseHandled` it (or have the completion
   consumer swallow the already-reported rejection). Then **un-skip** the guard in
   `tests/poison/fatal-delivery.js` and confirm it passes. Verify breadth across all
   loop forms (analysis §11.16 "Breadth").
-- [ ] **Unobserved-rejection sweep** (same bug class as §11.16) — audit every
+- [x] **Unobserved-rejection sweep** (same bug class as §11.16) — audit every
   fire-and-forget promise (`loop.js` workers, guard setup/detection) for a rejection
   with no handler; `markPromiseHandled` or route as appropriate.
 

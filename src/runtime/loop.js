@@ -6,6 +6,7 @@ import {
   isPoison,
   isPoisonError,
   isRuntimeError,
+  markPromiseHandled,
   PoisonError,
   RuntimeError,
 } from './errors.js';
@@ -413,7 +414,7 @@ async function iterateAsyncLimited(arr, loopBody, loopVars, errorContext, limit)
   // Kick off the initial workers immediately
   for (let i = 0; i < workerCount; i++) {
     // Fire-and-forget; we only wait for "all scheduled"
-    worker();
+    markPromiseHandled(worker());
   }
 
   // Wait until every iteration has been *started* (scheduled),
@@ -559,10 +560,11 @@ async function iterateArrayLimited(arr, loopBody, loopVars, errorContext, limit)
         }
         await res;
       } catch (err) {
-        // most likely a bug, @todo - betetr handling of unexpoected errors
         // iterate(...) will handle the error after allIterationsScheduled rejects
-        rejectAllScheduled(err);
-        rejectAllScheduled = null;
+        if (rejectAllScheduled) {
+          rejectAllScheduled(err);
+          rejectAllScheduled = null;
+        }
       }
     }
   }
@@ -571,7 +573,7 @@ async function iterateArrayLimited(arr, loopBody, loopVars, errorContext, limit)
   //
   const workerCount = Math.min(limit, len);
   for (let i = 0; i < workerCount; i++) {
-    worker();
+    markPromiseHandled(worker());
   }
 
   // Wait until every iteration has been started.

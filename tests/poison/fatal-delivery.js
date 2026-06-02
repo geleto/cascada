@@ -59,10 +59,9 @@ import {isPoisonError, isRuntimeError} from '../../src/runtime/runtime.js';
       expect(messages.every((m) => m === messages[0])).to.be(true);
     });
 
-    // §11.16 (known bug): the render rejects with the fatal correctly, but the loop
-    // boundary's own promise also rejects with the same error and is unobserved,
-    // surfacing as an unhandled rejection. Un-skip once §11.16 is fixed.
-    it.skip('a boundary fatal does not also surface as an unhandled rejection (§11.16)', async () => {
+    // Regression guard: fatal delivery belongs to the render state and
+    // must not also leak through a structural boundary promise.
+    it('a boundary fatal does not also surface as an unhandled rejection (§11.16)', async () => {
       const seen = [];
       const onUnhandled = (err) => seen.push(err);
       process.on('unhandledRejection', onUnhandled);

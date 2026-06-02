@@ -165,7 +165,9 @@ async function createComponentInstance(spec) {
   }
 
   if (ownerBuffer && resolvedSideChainName) {
-    ownerBuffer.getChain(resolvedSideChainName).getFinishedPromise().then(() => instance.close());
+    markPromiseHandled(
+      ownerBuffer.getChain(resolvedSideChainName).getFinishedPromise().then(() => instance.close())
+    );
   }
 
   return instance;

@@ -400,24 +400,10 @@ function createObject(obj) {
         let val = obj[key];
         if (val) {
           if (typeof val.then === 'function' && !isPoison(val)) {
-            try {
-              obj[key] = await val;
-            } catch (e) {
-              if (isPoisonError(e)) {
-                throw e;
-              }
-              throw e;
-            }
+            obj[key] = await val;
           } else if (val[RESOLVE_MARKER]) {
-            try {
-              await val[RESOLVE_MARKER];
-              // Note: child object is mutated in place by its own resolver
-            } catch (e) {
-              if (isPoisonError(e)) {
-                throw e;
-              }
-              throw e;
-            }
+            await val[RESOLVE_MARKER];
+            // Note: child object is mutated in place by its own resolver
           }
         }
       }
@@ -471,23 +457,9 @@ function createArray(arr) {
         const val = arr[i];
         if (val) {
           if (typeof val.then === 'function' && !isPoison(val)) {
-            try {
-              arr[i] = await val;
-            } catch (e) {
-              if (isPoisonError(e)) {
-                throw e;
-              }
-              throw e;
-            }
+            arr[i] = await val;
           } else if (val[RESOLVE_MARKER]) {
-            try {
-              await val[RESOLVE_MARKER];
-            } catch (e) {
-              if (isPoisonError(e)) {
-                throw e;
-              }
-              throw e;
-            }
+            await val[RESOLVE_MARKER];
           }
         }
       }
