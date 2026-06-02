@@ -1,6 +1,7 @@
 import {MutatingResultCommand, requireCommandErrorContext} from '../commands/base.js';
 import {CommandBuffer} from '../command-buffer.js';
-import {RuntimeError, isPoisonError, markPromiseHandled, cloneContext, cloneWithAddedContext} from '../errors.js';
+import {cloneContext, cloneWithAddedContext} from '../error-context.js';
+import {RuntimeError, isPoisonError, markPromiseHandled} from '../errors.js';
 import {getSharedSourceName, isPrivateSharedName} from '../../inheritance/shared-names.js';
 import {InheritanceInstance} from './instance.js';
 

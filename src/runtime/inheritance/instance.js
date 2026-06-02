@@ -1,4 +1,5 @@
-import {RuntimeError, cloneWithAddedContext} from '../errors.js';
+import {cloneWithAddedContext} from '../error-context.js';
+import {RuntimeError} from '../errors.js';
 import {createInheritanceCallableArgumentFrame} from './invoke.js';
 import {declareInheritanceSharedChain} from './shared.js';
 

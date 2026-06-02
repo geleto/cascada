@@ -1,6 +1,7 @@
 
 import {assertChainLaneAvailable, checkFinishedBuffer} from './checks.js';
-import {getRenderState, isCompactErrorContext, RuntimeError} from './errors.js';
+import {getRenderState, isCompactErrorContext} from './error-context.js';
+import {RuntimeError} from './errors.js';
 
 class CommandBuffer {
   constructor(context, parent = null, linkedChains = null, linkTarget = null, linkedMutatedChains = null, bufferStackErrorContext, traceParent = null, renderState = null) {

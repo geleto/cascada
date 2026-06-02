@@ -1,7 +1,8 @@
 
 import expect from 'expect.js';
 import {AsyncEnvironment} from '../../src/environment/environment.js';
-import {createPoison, isPoison, isPoisonError, PoisonError, RuntimeError, cloneWithAddedContext} from '../../src/runtime/errors.js';
+import {cloneWithAddedContext} from '../../src/runtime/error-context.js';
+import {createPoison, isPoison, isPoisonError, PoisonError, RuntimeError} from '../../src/runtime/errors.js';
 import {TextCommand} from '../../src/runtime/commands/text.js';
 import {VarCommand} from '../../src/runtime/commands/var.js';
 import {DataCommand} from '../../src/runtime/commands/data.js';

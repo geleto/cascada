@@ -1055,6 +1055,10 @@ small simplification is clearly behavior-preserving.
    `collectErrors(...)`, and `peekError(...)` should move from
    `runtime/errors.js` into a small poison-transport module. Do not split the
    module unless it makes imports and ownership clearer.
+   - Done for compact error-context helpers: `prepareErrorContexts(...)`,
+     compact-context predicates, accessors, cloning, mutation, and added-context
+     validation now live in `runtime/error-context.js`. Poison transport remains
+     in `runtime/errors.js`.
 3. Evaluate inherited-metadata allocation cost, especially per-command
    `cloneWithAddedContext(...)` in loop bodies and loop-else label inheritance.
    Any optimization must preserve the three ownership modes and keep
