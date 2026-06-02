@@ -13,6 +13,8 @@ import {
   validateAddedContext
 } from './error-context.js';
 
+// Last-resort fatal runtime context only. Ordinary runtime and poison errors
+// must carry compact origin context.
 const CONTEXTLESS_FATAL_RUNTIME_CONTEXT = {
   lineno: null,
   colno: null,
@@ -88,6 +90,12 @@ class PoisonedValue {
 }
 
 class RuntimeContextError extends CascadaError {
+  static _resolveContext(errorContext) {
+    return errorContext === undefined || errorContext === null
+      ? CONTEXTLESS_FATAL_RUNTIME_CONTEXT
+      : RuntimeContextError._normalizeContext(errorContext);
+  }
+
   static _normalizeContext(errorContext) {
     if (!isCompactErrorContext(errorContext)) {
       throw new Error('RuntimeContextError expects a compact error context');
@@ -107,39 +115,35 @@ class RuntimeContextError extends CascadaError {
 
   constructor(name, message, errorContext, options = {}) {
     const {
-      normalizedContext = null,
-      storedErrorContext = errorContext,
-      diagnosticName = name,
-      diagnosticHeaderLines = null,
-      diagnosticFullHeaderLines = diagnosticHeaderLines,
+      headerLines = null,
       diagnosticStack = null,
       ...errorOptions
     } = options;
-    const context = normalizedContext || RuntimeContextError._normalizeContext(errorContext);
+    const context = RuntimeContextError._resolveContext(errorContext);
     const description = message || '';
-    const compactMessage = formatDiagnosticMessage(diagnosticName, description, context, {
-      headerLines: diagnosticHeaderLines
+    const compactMessage = formatDiagnosticMessage(name, description, context, {
+      headerLines
     });
     const normalizedDiagnosticStack = RuntimeContextError._normalizeDiagnosticStack(diagnosticStack);
-    const fullMessage = formatDiagnosticMessage(diagnosticName, description, context, {
-      headerLines: diagnosticFullHeaderLines,
+    const fullMessage = formatDiagnosticMessage(name, description, context, {
+      headerLines,
       stack: normalizedDiagnosticStack
     });
 
     super(name, compactMessage, context, { ...errorOptions, formatContext: false });
     this.context = context;
-    this._errorContext = storedErrorContext;
+    this._errorContext = errorContext || null;
     this._diagnosticStack = diagnosticStack;
     this.description = description;
     this.fullMessage = fullMessage;
   }
 
   getInfo(diagnosticStack = null) {
-    return RuntimeContextError.getInfo(this, this._errorContext, diagnosticStack);
+    return RuntimeContextError.getInfo(this, this._errorContext || this.context, diagnosticStack);
   }
 
   formatInfo(diagnosticStack = null) {
-    return RuntimeContextError.formatInfo(this, this._errorContext, diagnosticStack);
+    return RuntimeContextError.formatInfo(this, this._errorContext || this.context, diagnosticStack);
   }
 
   static getInfo(error, fallbackContext, diagnosticStack = null) {
@@ -147,7 +151,14 @@ class RuntimeContextError extends CascadaError {
     if (!effectiveContext) {
       throw new Error('RuntimeContextError.getInfo requires an error with origin context or a compact fallback context');
     }
-    const info = RuntimeContextError._normalizeContext(effectiveContext);
+    let info;
+    if (isCompactErrorContext(effectiveContext)) {
+      info = RuntimeContextError._normalizeContext(effectiveContext);
+    } else if (error && effectiveContext === error.context && effectiveContext && typeof effectiveContext === 'object') {
+      info = { ...effectiveContext };
+    } else {
+      throw new Error('RuntimeContextError.getInfo requires an error with origin context or a compact fallback context');
+    }
     delete info.renderState;
 
     let stack = null;
@@ -188,11 +199,12 @@ function throwIfRuntimeError(error) {
 
 class PoisonError extends RuntimeContextError {
   constructor(cause, errorContext, options = {}) {
+    if (!isCompactErrorContext(errorContext)) {
+      throw new TypeError('PoisonError requires compact origin context');
+    }
     const source = cause instanceof Error ? cause : new Error(String(cause));
     super('PoisonError', source.message, errorContext, {
       cause: source,
-      storedErrorContext: errorContext,
-      diagnosticName: 'PoisonError',
       diagnosticStack: options.diagnosticStack || null
     });
     if (new.target === PoisonError) {
@@ -404,18 +416,10 @@ class RuntimeError extends RuntimeContextError {
     const errorContext = cause && cause._errorContext
       ? cause._errorContext
       : inputContext;
-    const hasErrorContext = errorContext !== undefined && errorContext !== null;
-    const context = hasErrorContext
-      ? RuntimeContextError._normalizeContext(errorContext)
-      : CONTEXTLESS_FATAL_RUNTIME_CONTEXT;
-    const runtimeName = cause && cause.name ? `RuntimeError: ${cause.name}` : 'RuntimeError';
     const runtimeMessage = cause ? cause.message : message;
 
-    super(runtimeName, runtimeMessage, errorContext, {
+    super('RuntimeError', runtimeMessage, errorContext, {
       cause,
-      normalizedContext: context,
-      storedErrorContext: hasErrorContext ? errorContext : null,
-      diagnosticName: 'RuntimeError',
       diagnosticStack: stackBuffer ? stackBuffer.getDiagnosticStack() : null
     });
 

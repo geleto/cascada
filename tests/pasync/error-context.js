@@ -11,6 +11,7 @@ import {
   memberLookupScript,
   prepareErrorContexts,
   runControlFlowBoundary,
+  runWaitedControlFlowBoundary,
   runValueBoundary,
   sequentialContextLookupValue
 } from '../../src/runtime/runtime.js';
@@ -149,8 +150,11 @@ describe('error context tracing runtime foundation', () => {
       renderState: null
     });
     expect(contextless.message).to.contain('(unknown path) [Line ?, Column ?]');
-    expect(() => contextless.getInfo()).to.throwException((error) => {
-      expect(error.message).to.contain('origin context');
+    expect(contextless.getInfo()).to.eql({
+      lineno: null,
+      colno: null,
+      label: null,
+      path: null
     });
   });
 
@@ -885,6 +889,57 @@ describe('error context tracing runtime foundation', () => {
     expect(child.traceParent).to.be(root);
     expect(child.bufferStackErrorContext).to.eql(boundaryContext);
     expect(child.getDiagnosticStack()).to.eql([child.bufferStackErrorContext, root.bufferStackErrorContext]);
+  });
+
+  it('settles waited control-flow cleanup after fatal state is reported', async () => {
+    const renderState = runtime.createRenderState();
+    const root = new CommandBuffer(
+      { path: 'script.casc' },
+      null,
+      null,
+      null,
+      null,
+      TEST_DIAGNOSTIC_CONTEXT,
+      null,
+      renderState
+    );
+    const waitedChainName = '__waited__test';
+    const boundaryEc = [12, 8, 'For', 'script.casc', null, null];
+    const pending = new Promise(() => {});
+
+    const boundaryResult = runWaitedControlFlowBoundary(
+      root,
+      null,
+      null,
+      { path: 'script.casc' },
+      renderState,
+      async (currentBuffer) => {
+        declareBufferChain(currentBuffer, waitedChainName, 'var', { path: 'script.casc' }, null);
+        currentBuffer.addCommand(new runtime.WaitResolveCommand({
+          chainName: waitedChainName,
+          args: [pending],
+          errorContext: boundaryEc
+        }), waitedChainName);
+        renderState.reportFatalError(RuntimeError.create('waited boundary failed', boundaryEc, currentBuffer));
+      },
+      waitedChainName,
+      boundaryEc
+    );
+
+    const outcome = await Promise.race([
+      boundaryResult.then(
+        () => ({ error: null }),
+        (error) => ({ error })
+      ),
+      new Promise((resolve) => {
+        setTimeout(() => resolve({ error: new Error('timed out waiting for fatal cleanup') }), 500);
+      })
+    ]);
+
+    expect(outcome.error).to.be.ok();
+    expect(outcome.error.message).to.contain('waited boundary failed');
+    expect(outcome.error.message).to.not.contain('timed out');
+    expect(runtime.isRuntimeError(outcome.error)).to.be(true);
   });
 
   it('requires source context on command-buffer error commands', () => {

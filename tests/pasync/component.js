@@ -311,6 +311,43 @@ describe('Phase 8 - Component Method Calls', function () {
     expect(outcome.error.message).to.contain('fatal component arg');
   });
 
+  it('should reject instead of hanging when component method cleanup follows fatal state', async function () {
+    const loader = new StringLoader();
+    const env = new AsyncEnvironment(loader);
+
+    env.addGlobal('never', () => new Promise(() => {}));
+    env.addGlobal('fatalMethod', () => {
+      throw runtimeModule.RuntimeError.create(
+        'component method fatal cleanup',
+        [1, 1, 'FunCall', 'Component.script', null, null]
+      );
+    });
+
+    loader.addTemplate('Component.script', [
+      'method build()',
+      '  text out',
+      '  out(never())',
+      '  return fatalMethod()',
+      'endmethod'
+    ].join('\n'));
+    loader.addTemplate('Main.script', [
+      'component "Component.script" as ns',
+      'return ns.build()'
+    ].join('\n'));
+
+    const outcome = await Promise.race([
+      env.renderScript('Main.script', {}).then(
+        (value) => ({ type: 'value', value }),
+        (error) => ({ type: 'error', error })
+      ),
+      new Promise((resolve) => setTimeout(() => resolve({ type: 'timeout' }), 500))
+    ]);
+
+    expect(outcome.type).to.be('error');
+    expect(outcome.error).to.be.a(runtimeModule.RuntimeError);
+    expect(outcome.error.message).to.contain('component method fatal cleanup');
+  });
+
   it('should reject unsupported nested component method property access', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);

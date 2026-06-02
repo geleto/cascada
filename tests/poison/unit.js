@@ -65,6 +65,10 @@ describe('typed poison error contracts', () => {
     });
     expect(wrapped.errorContext).to.be(undefined);
     expect(PoisonError.wrap(wrapped, OTHER_EC)).to.be(wrapped);
+    expect(() => new PoisonError('missing context')).to.throwException((err) => {
+      expect(err).to.be.a(TypeError);
+      expect(err.message).to.contain('compact origin context');
+    });
   });
 
   it('does not convert fatal runtime errors into poison', () => {

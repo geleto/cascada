@@ -4,6 +4,9 @@ import {delay} from '../util.js';
 const {AsyncEnvironment} = typeof window !== 'undefined'
   ? window.nunjucks
   : await import('../../src/environment/environment.js');
+const runtime = typeof window !== 'undefined'
+  ? window.nunjucks.runtime
+  : await import('../../src/runtime/runtime.js');
 
 (function () {
 
@@ -800,6 +803,40 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
           catch (error) {
             expect(error.message).to.contain('Nested async error');
           }
+        });
+
+        it('should reject instead of hanging when macro caller cleanup follows fatal state', async () => {
+          const fatalContext = [1, 1, 'FunCall', 'macro-caller-fatal.njk', null, null];
+          const template = `
+            {% macro wrapper() %}
+              {{ caller() }}{{ fatal() }}
+            {% endmacro %}
+
+            {% call wrapper() %}
+              {{ never() }}
+            {% endcall %}
+          `;
+          const context = {
+            never() {
+              return new Promise(() => {});
+            },
+            fatal() {
+              throw runtime.RuntimeError.create('macro caller fatal cleanup', fatalContext);
+            }
+          };
+
+          const outcome = await Promise.race([
+            env.renderTemplateString(template, context).then(
+              () => ({ type: 'value' }),
+              (error) => ({ type: 'error', error })
+            ),
+            new Promise((resolve) => {
+              setTimeout(() => resolve({ type: 'timeout' }), 500);
+            })
+          ]);
+
+          expect(outcome.type).to.be('error');
+          expect(outcome.error.message).to.contain('macro caller fatal cleanup');
         });
       });
     });

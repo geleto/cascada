@@ -9,6 +9,9 @@ const outDir = path.join(projectRoot, 'dist');
 
 const rootFiles = [
   'chain-types.js',
+  // Root modules import this by relative path; copying it does not define a
+  // package subpath export.
+  'errors.js',
   'index.js',
   'lib.js',
   'object.js',

@@ -2,7 +2,7 @@
 import expect from 'expect.js';
 import {AsyncEnvironment, AsyncTemplate, Script} from '../../src/environment/environment.js';
 import {StringLoader, delay} from '../util.js';
-import {createPoison, isPoisonError, PoisonError, TextCommand, SnapshotCommand, CommandBuffer, declareBufferChain, cloneWithAddedContext} from '../../src/runtime/runtime.js';
+import {createPoison, isPoisonError, PoisonError, RuntimeError, TextCommand, SnapshotCommand, CommandBuffer, declareBufferChain, cloneWithAddedContext} from '../../src/runtime/runtime.js';
 import * as parser from '../../src/language/parser.js';
 import * as nodes from '../../src/language/nodes.js';
 import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
@@ -1401,6 +1401,37 @@ const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC
         await env.renderTemplateString(template, context);
         expect(context.processed).to.be(size);
         expect(context.tracker.max).to.be.lessThan(6);
+      });
+
+      it('rejects instead of hanging when bounded-loop waited cleanup follows fatal state', async () => {
+        const fatalContext = [1, 1, 'FunCall', 'limited-fatal.njk', null, null];
+        const context = {
+          never() {
+            return new Promise(() => {});
+          },
+          fatal() {
+            throw RuntimeError.create('bounded loop fatal cleanup', fatalContext);
+          }
+        };
+        const template = `
+        {%- for item in [1] of 1 -%}
+          {{ never() }}{{ fatal() }}
+        {%- endfor -%}
+        `;
+
+        const outcome = await Promise.race([
+          env.renderTemplateString(template, context).then(
+            () => ({ error: null }),
+            (error) => ({ error })
+          ),
+          new Promise((resolve) => {
+            setTimeout(() => resolve({ error: new Error('timed out waiting for bounded loop fatal cleanup') }), 500);
+          })
+        ]);
+
+        expect(outcome.error).to.be.ok();
+        expect(outcome.error.message).to.contain('bounded loop fatal cleanup');
+        expect(outcome.error.message).to.not.contain('timed out');
       });
 
       it('15) treats oversized limits like unbounded object loops', async () => {

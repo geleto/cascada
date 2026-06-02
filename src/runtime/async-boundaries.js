@@ -73,7 +73,11 @@ async function runWaitedControlFlowBoundary(parentBuffer, linkedChainNames, link
     renderState.reportAndThrowFatalError(err, childStackErrorContext, childBuffer);
   } finally {
     childBuffer.finish();
-    await childBuffer.getChain(waitedChainName).finalSnapshot();
+    // Fatal state abandons pending waited work; renderState owns shutdown and
+    // draining never-settling waited commands would deadlock cleanup.
+    if (!renderState.isFatalErrorReported()) {
+      await childBuffer.getChain(waitedChainName).finalSnapshot();
+    }
   }
 }
 
