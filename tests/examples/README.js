@@ -3,7 +3,7 @@ import {AsyncEnvironment} from '../../src/index.js';
 import {createPoison, PoisonError} from '../../src/runtime/runtime.js';
 
 const delay = (ms, value) => new Promise(resolve => setTimeout(() => resolve(value), ms));
-const TEST_EC = [1, 1, 'Readme.Example', 'README.js', null];
+const TEST_EC = [1, 1, 'Readme.Example', 'README.js', null, null];
 const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC));
 
 describe('README examples', function () {

@@ -4,7 +4,7 @@ import {AsyncEnvironment} from '../src/environment/environment.js';
 import * as runtime from '../src/runtime/runtime.js';
 
 const {createPoison, isPoisonError, PoisonError} = runtime;
-const TEST_EC = [1, 1, 'WhilePoison.TestInput', 'phase5-while-generator.js', null];
+const TEST_EC = [1, 1, 'WhilePoison.TestInput', 'phase5-while-generator.js', null, null];
 const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC));
 
 describe('Phase 5: While Loop Generator Error Handling', () => {

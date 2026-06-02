@@ -10,14 +10,14 @@ class RenderState {
     markPromiseHandled(this.fatalPromise);
   }
 
-  reportFatalError(error, errorContext) {
+  reportFatalError(error, errorContext, stackBuffer = null) {
     if (!error) {
       throw new TypeError('reportFatalError requires an error');
     }
     if (isRuntimeError(error)) {
       // Preserve the original fatal origin; this render state is only recording it.
     } else if (errorContext !== undefined || typeof error === 'string') {
-      error = RuntimeError.create(error, errorContext);
+      error = RuntimeError.create(error, errorContext, stackBuffer);
     } else if (!(error instanceof Error)) {
       error = new Error(String(error));
     }
@@ -31,15 +31,15 @@ class RenderState {
     this._rejectFatal(error);
   }
 
-  reportAndThrowFatalError(error, errorContext) {
+  reportAndThrowFatalError(error, errorContext, stackBuffer = null) {
     if (isRuntimeError(error)) {
       // Preserve the original fatal origin; this render state is only recording it.
     } else if (errorContext !== undefined || typeof error === 'string') {
-      error = RuntimeError.create(error, errorContext);
+      error = RuntimeError.create(error, errorContext, stackBuffer);
     } else if (!(error instanceof Error)) {
       error = new Error(String(error));
     }
-    this.reportFatalError(error);
+    this.reportFatalError(error, null, stackBuffer);
     throw error;
   }
 

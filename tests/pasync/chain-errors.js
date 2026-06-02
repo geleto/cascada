@@ -1,7 +1,7 @@
 
 import expect from 'expect.js';
 import {AsyncEnvironment} from '../../src/environment/environment.js';
-import {createPoison, isPoison, isPoisonError, PoisonError, RuntimeError} from '../../src/runtime/errors.js';
+import {createPoison, isPoison, isPoisonError, PoisonError, RuntimeError, cloneWithAddedContext} from '../../src/runtime/errors.js';
 import {TextCommand} from '../../src/runtime/commands/text.js';
 import {VarCommand} from '../../src/runtime/commands/var.js';
 import {DataCommand} from '../../src/runtime/commands/data.js';
@@ -21,8 +21,8 @@ import {
 import {CommandBuffer} from '../../src/runtime/command-buffer.js';
 import {createArray} from '../../src/runtime/resolve.js';
 
-const TEST_EC = [1, 1, 'Test', 'test.casc', null];
-const TEST_DIAGNOSTIC_CONTEXT = { ec: TEST_EC, branchName: 'test' };
+const TEST_EC = [1, 1, 'Test', 'test.casc', null, null];
+const TEST_DIAGNOSTIC_CONTEXT = cloneWithAddedContext(TEST_EC, { branch: 'test' });
 
 function testError(message) {
   return PoisonError.create(message, TEST_EC);
@@ -32,7 +32,7 @@ describe('chain errors', function () {
   describe('chain commands step2 poison encoding', function () {
     it('propagates RuntimeError instead of degrading it into poison during argument resolution', async () => {
       const output = new TextChain(null, 'text', { path: 'fatal-output.script' }, 'text');
-      const fatal = new RuntimeError('fatal command failure', [1, 1, null, 'fatal-output.script', null]);
+      const fatal = new RuntimeError('fatal command failure', [1, 1, null, 'fatal-output.script', null, null]);
       const cmd = new TextCommand({
         chainName: 'text',
         args: [Promise.reject(fatal)],
@@ -158,7 +158,7 @@ describe('chain errors', function () {
   describe('output target inspection internals', function () {
     it('surfaces RuntimeError through chain inspection without wrapping it as poison', async () => {
       const output = new VarChain(null, 'value', { path: 'fatal-inspection.script' }, 'value');
-      const fatal = new RuntimeError('fatal inspection failure', [2, 3, null, 'fatal-inspection.script', null]);
+      const fatal = new RuntimeError('fatal inspection failure', [2, 3, null, 'fatal-inspection.script', null, null]);
 
       output._recordError(fatal, { errorContext: TEST_EC });
 

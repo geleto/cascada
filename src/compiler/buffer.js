@@ -37,15 +37,17 @@ class CompileBuffer {
    * @param {string} bufferId
    * @param {string|null} parentBufferId
    * @param {string} textChainVar
+   * @param {Array<string>|null} linkedChains
+   * @param {string} bufferStackErrorContextArg compact context expression
    */
-  initManagedBuffer(bufferId, parentBufferId, textChainVar, linkedChains = null, errorContextArg = 'null', traceParentArg = 'null') {
+  initManagedBuffer(bufferId, parentBufferId, textChainVar, linkedChains = null, bufferStackErrorContextArg = 'null', traceParentArg = 'null') {
     if (this.compiler.asyncMode) {
       const textId = textChainVar || `${bufferId}_textChainVar`;
       const parentArg = parentBufferId || 'null';
       const linkedChainsArg = Array.isArray(linkedChains) && linkedChains.length > 0
         ? JSON.stringify(linkedChains)
         : 'null';
-      this.compiler.emit.line(`let ${bufferId} = new runtime.CommandBuffer(context, ${parentArg}, ${linkedChainsArg}, ${parentArg}, null, ${errorContextArg}, ${traceParentArg}, renderState);`);
+      this.compiler.emit.line(`let ${bufferId} = new runtime.CommandBuffer(context, ${parentArg}, ${linkedChainsArg}, ${parentArg}, null, ${bufferStackErrorContextArg}, ${traceParentArg}, renderState);`);
       if (!this.compiler.scriptMode) {
         this.compiler.emit.line(`let ${textId} = runtime.declareBufferChain(${bufferId}, "${this.currentTextChainName}", "text", context, null);`);
       }
@@ -445,4 +447,3 @@ CompileBuffer.DEFAULT_TEMPLATE_TEXT_OUTPUT = DEFAULT_TEMPLATE_TEXT_CHAIN;
 export {CompileBuffer};
 export {DEFAULT_TEMPLATE_TEXT_CHAIN};
 export {DEFAULT_TEMPLATE_TEXT_CHAIN as DEFAULT_TEMPLATE_TEXT_OUTPUT};
-

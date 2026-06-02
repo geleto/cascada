@@ -300,16 +300,18 @@ class CompilerAsync extends CompilerBaseAsync {
         this.emit(': ');
 
         if (c.body.children.length) {
-          this.emit(`${this.buffer.currentBuffer}.bufferStackContext.branch = "case";`);
-          this.compile(c.body, null);
+          this.withBranchAddedContext(this._switchCaseAddedContext(c), 'Switch.Case', () => {
+            this.compile(c.body, null);
+          });
           this.emit.line('break;');
         }
       });
 
       if (node.default) {
         this.emit('default: ');
-        this.emit(`${this.buffer.currentBuffer}.bufferStackContext.branch = "default";`);
-        this.compile(node.default, null);
+        this.withBranchAddedContext(null, 'Switch.Default', () => {
+          this.compile(node.default, null);
+        });
       }
 
       this.emit('}');
@@ -327,6 +329,33 @@ class CompilerAsync extends CompilerBaseAsync {
       }
       this.emit('}');
     }, node.expr);
+  }
+
+  _switchCaseAddedContext(caseNode) {
+    if (!(caseNode.cond instanceof nodes.Literal)) {
+      return '{ dynamicCase: true }';
+    }
+    const literalValue = typeof caseNode.cond.value === 'string'
+      ? JSON.stringify(caseNode.cond.value)
+      : String(caseNode.cond.value);
+    return `{ caseValue: ${JSON.stringify(literalValue)} }`;
+  }
+
+  withBranchAddedContext(addedContextExpr, label, emitBody) {
+    if (!addedContextExpr) {
+      // Boundary-only labels such as If.Then/If.Else identify this stack entry;
+      // commands inside the branch keep their own source labels.
+      this.emit(`runtime.setContextLabel(${this.buffer.currentBuffer}.bufferStackErrorContext, ${JSON.stringify(label)});`);
+      emitBody();
+      return;
+    }
+    // Switch cases also expose non-duplicative data, e.g. caseValue, to nested
+    // command/helper contexts while the boundary label stays local to the buffer.
+    this.withInheritedAddedContextExpr(addedContextExpr, (addedContextVar) => {
+      this.emit(`runtime.mergeAddedContext(${this.buffer.currentBuffer}.bufferStackErrorContext, ${addedContextVar});`);
+      this.emit(`runtime.setContextLabel(${this.buffer.currentBuffer}.bufferStackErrorContext, ${JSON.stringify(label)});`);
+      emitBody();
+    });
   }
 
   analyzeCase(node) {
@@ -379,13 +408,15 @@ class CompilerAsync extends CompilerBaseAsync {
       this.emit(';');
       this.emit('');
       this.emit(`if (${condResultId}) {`);
-      this.emit(`${this.buffer.currentBuffer}.bufferStackContext.branch = "then";`);
-      this.compile(node.body, null);
+      this.withBranchAddedContext(null, 'If.Then', () => {
+        this.compile(node.body, null);
+      });
       this.emit('} else {');
-      this.emit(`${this.buffer.currentBuffer}.bufferStackContext.branch = "else";`);
-      if (node.else_) {
-        this.compile(node.else_, null);
-      }
+      this.withBranchAddedContext(null, 'If.Else', () => {
+        if (node.else_) {
+          this.compile(node.else_, null);
+        }
+      });
       this.emit('}');
 
       const errorContext = this.emitErrorContext(node.cond);

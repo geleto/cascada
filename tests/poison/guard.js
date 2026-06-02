@@ -3,7 +3,7 @@ import * as cascada from '../../src/index.js';
 import {createPoison, PoisonError} from '../../src/runtime/runtime.js';
 
 const {AsyncEnvironment} = cascada;
-const TEST_EC = [1, 1, 'Guard.Test', 'guard-test.njk', null];
+const TEST_EC = [1, 1, 'Guard.Test', 'guard-test.njk', null, null];
 
 (function () {
 

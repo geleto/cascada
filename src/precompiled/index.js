@@ -13,7 +13,7 @@ export {
 export {Loader} from '../loader/loader.js';
 export {PrecompiledLoader} from '../loader/precompiled-loader.js';
 export {SafeString, markSafe} from '../runtime/safe-output.js';
-export {CascadaError, CompileError} from '../errors.js';
+export {CascadaError, CompileError, isCompileError} from '../errors.js';
 export {
   PoisonError,
   PoisonErrorGroup,

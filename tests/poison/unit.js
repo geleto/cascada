@@ -19,11 +19,13 @@ import {
   RESOLVE_MARKER,
   RuntimePromise,
   RuntimeContextError,
-  RuntimeError
+  RuntimeError,
+  cloneContext,
+  cloneWithAddedContext
 } from '../../src/runtime/runtime.js';
 
-const TEST_EC = [1, 1, 'Poison.Unit', 'poison-unit.js', null];
-const OTHER_EC = [2, 3, 'Poison.Other', 'poison-unit.js', null];
+const TEST_EC = [1, 1, 'Poison.Unit', 'poison-unit.js', null, null];
+const OTHER_EC = [2, 3, 'Poison.Other', 'poison-unit.js', null, null];
 
 function poisonError(message, ec = TEST_EC) {
   return PoisonError.create(message, ec);
@@ -312,13 +314,13 @@ describe('typed poison error contracts', () => {
     const renderState = createRenderState((err) => {
       reported = err;
     });
-    const ec = [4, 5, 'Runtime.Report', 'runtime-report.casc', renderState];
+    const ec = [4, 5, 'Runtime.Report', 'runtime-report.casc', null, renderState];
     const reportedError = RuntimeError.report('reported fatal', ec);
     expect(reported).to.be(reportedError);
     expect(renderState.error).to.be(reportedError);
 
     const throwState = createRenderState();
-    const throwEc = [6, 7, 'Runtime.Throw', 'runtime-report.casc', throwState];
+    const throwEc = [6, 7, 'Runtime.Throw', 'runtime-report.casc', null, throwState];
     expect(() => RuntimeError.reportAndThrow('thrown fatal', throwEc)).to.throwException((err) => {
       expect(err).to.be(throwState.error);
       expect(isRuntimeError(err)).to.be(true);
@@ -344,16 +346,15 @@ describe('typed poison error contracts', () => {
   });
 
   it('exposes diagnostic info from runtime context errors', () => {
-    const rootEc = [8, 1, 'Root', 'diagnostics.casc', null];
-    const childEc = [9, 2, 'Child', 'diagnostics.casc', null];
-    const root = new CommandBuffer({}, null, null, null, null, { ec: rootEc, entryName: 'root' });
-    const child = new CommandBuffer({}, root, null, null, null, {
-      ec: childEc,
+    const rootEc = [8, 1, 'Root', 'diagnostics.casc', null, null];
+    const childEc = [9, 2, 'Child', 'diagnostics.casc', null, null];
+    const root = new CommandBuffer({}, null, null, null, null, cloneWithAddedContext(rootEc, { entryName: 'root' }));
+    const child = new CommandBuffer({}, root, null, null, null, cloneWithAddedContext(childEc, {
       methodName: 'child',
       loop: { index: 1, variables: ['item'] }
-    });
-    const err = RuntimeError.create('diagnostic fatal', child.bufferStackContext);
-    const info = err.getInfo({ stackBuffer: child });
+    }));
+    const err = RuntimeError.create('diagnostic fatal', child.bufferStackErrorContext, child);
+    const info = err.getInfo(child.getDiagnosticStack());
 
     expect(info).to.eql({
       lineno: 9,
@@ -382,46 +383,75 @@ describe('typed poison error contracts', () => {
     });
   });
 
-  it('uses buffer stack context diagnosticStack in diagnostic info', () => {
-    const root = new CommandBuffer({}, null, null, null, null, {
-      ec: [1, 1, 'Root', 'diagnostics.casc', null],
-      entryName: 'root'
-    });
-    const child = new CommandBuffer({}, root, null, null, null, {
-      ec: [2, 2, 'Child', 'diagnostics.casc', null],
-      branch: 'then'
-    });
+  it('uses explicit stack buffer in diagnostic info', () => {
+    const root = new CommandBuffer({}, null, null, null, null, cloneWithAddedContext(
+      [1, 1, 'Root', 'diagnostics.casc', null, null],
+      {
+        entryName: 'root'
+      }
+    ));
+    const child = new CommandBuffer({}, root, null, null, null, cloneWithAddedContext(
+      [2, 2, 'Child', 'diagnostics.casc', null, null],
+      {
+        branch: 'then'
+      }
+    ));
 
-    expect(RuntimeContextError.getInfo(null, child.bufferStackContext).stack).to.eql(child.getDiagnosticStack());
-    expect(RuntimeContextError.formatInfo(null, child.bufferStackContext)).to.be([
+    expect(RuntimeContextError.getInfo(null, child.bufferStackErrorContext, child.getDiagnosticStack()).stack).to.eql([
+      {
+        lineno: 2,
+        colno: 2,
+        path: 'diagnostics.casc',
+        label: 'Child',
+        branch: 'then'
+      },
+      {
+        lineno: 1,
+        colno: 1,
+        path: 'diagnostics.casc',
+        label: 'Root',
+        entryName: 'root'
+      }
+    ]);
+    expect(RuntimeContextError.formatInfo(null, child.bufferStackErrorContext, child.getDiagnosticStack())).to.be([
       '(diagnostics.casc) [Line 2, Column 2] Child (branch=then)',
       'Stack:',
       '  1. (diagnostics.casc) [Line 1, Column 1] Root (entry name=root)'
     ].join('\n'));
   });
 
-  it('rejects expanded source fields on buffer stack context', () => {
-    expect(() => RuntimeError.create('metadata override attempt', {
-      ec: [2, 3, 'Compact.Label', 'compact.casc', null],
-      lineno: 99,
-      label: 'Display.Label'
-    })).to.throwException((err) => {
+  it('rejects source fields on added context', () => {
+    expect(() => RuntimeError.create(
+      'metadata override attempt',
+      [2, 3, 'Compact.Label', 'compact.casc', { lineno: 99 }, null]
+    )).to.throwException((err) => {
       expect(err).to.be.a(TypeError);
-      expect(err.message).to.contain('bufferStackContext must use compact ec');
+      expect(err.message).to.contain('Added context cannot contain source field');
       expect(err.message).to.contain('lineno');
     });
   });
 
+  it('rejects stale compact contexts without the renderState slot', () => {
+    const staleContext = [2, 3, 'Old.Compact', 'compact.casc', null];
+
+    expect(() => RuntimeError.create('stale context', staleContext)).to.throwException((err) => {
+      expect(err.message).to.contain('compact error context');
+    });
+    expect(() => new CommandBuffer({}, null, null, null, null, staleContext)).to.throwException((err) => {
+      expect(err).to.be.a(TypeError);
+      expect(err.message).to.contain('compact bufferStackErrorContext');
+    });
+  });
+
   it('formats extended diagnostic messages with stacks as readable text', () => {
-    const rootEc = [8, 1, 'Root', 'diagnostics.casc', null];
-    const childEc = [9, 2, 'Child', 'diagnostics.casc', null];
-    const root = new CommandBuffer({}, null, null, null, null, { ec: rootEc, entryName: 'root' });
-    const child = new CommandBuffer({}, root, null, null, null, {
-      ec: childEc,
+    const rootEc = [8, 1, 'Root', 'diagnostics.casc', null, null];
+    const childEc = [9, 2, 'Child', 'diagnostics.casc', null, null];
+    const root = new CommandBuffer({}, null, null, null, null, cloneWithAddedContext(rootEc, { entryName: 'root' }));
+    const child = new CommandBuffer({}, root, null, null, null, cloneWithAddedContext(childEc, {
       methodName: 'child',
       loop: { index: 1, variables: ['item'] }
-    });
-    const err = RuntimeError.create('diagnostic fatal', child.bufferStackContext);
+    }));
+    const err = RuntimeError.create('diagnostic fatal', child.bufferStackErrorContext, child);
 
     expect(err.message).to.be([
       'RuntimeError: diagnostic fatal',
@@ -436,13 +466,13 @@ describe('typed poison error contracts', () => {
   });
 
   it('keeps the first stack frame when it differs from the primary context', () => {
-    const rootEc = [8, 1, 'Root', 'diagnostics.casc', null];
-    const childEc = [9, 2, 'Child', 'diagnostics.casc', null];
-    const primaryEc = [10, 4, 'Primary', 'diagnostics.casc', null];
-    const root = new CommandBuffer({}, null, null, null, null, { ec: rootEc, entryName: 'root' });
-    const child = new CommandBuffer({}, root, null, null, null, { ec: childEc, branch: 'then' });
+    const rootEc = [8, 1, 'Root', 'diagnostics.casc', null, null];
+    const childEc = [9, 2, 'Child', 'diagnostics.casc', null, null];
+    const primaryEc = [10, 4, 'Primary', 'diagnostics.casc', null, null];
+    const root = new CommandBuffer({}, null, null, null, null, cloneWithAddedContext(rootEc, { entryName: 'root' }));
+    const child = new CommandBuffer({}, root, null, null, null, cloneWithAddedContext(childEc, { branch: 'then' }));
 
-    expect(RuntimeContextError.formatInfo(null, primaryEc, { stackBuffer: child })).to.be([
+    expect(RuntimeContextError.formatInfo(null, primaryEc, child.getDiagnosticStack())).to.be([
       '(diagnostics.casc) [Line 10, Column 4] Primary',
       'Stack:',
       '  1. (diagnostics.casc) [Line 9, Column 2] Child (branch=then)',
@@ -450,33 +480,37 @@ describe('typed poison error contracts', () => {
     ].join('\n'));
   });
 
-  it('keeps diagnostic stack getters local to each command buffer', () => {
-    const root = new CommandBuffer({}, null, null, null, null, {
-      ec: [1, 1, 'Root', 'diagnostics.casc', null],
-      entryName: 'root'
-    });
-    const otherRoot = new CommandBuffer({}, null, null, null, null, {
-      ec: [2, 1, 'Root', 'other.casc', null],
-      entryName: 'other'
-    });
-    const sharedContext = { ec: [3, 2, 'Child', 'diagnostics.casc', null], branch: 'shared' };
-    const first = new CommandBuffer({}, root, null, null, null, sharedContext);
-    const second = new CommandBuffer({}, otherRoot, null, null, null, sharedContext);
+  it('keeps explicit diagnostic stack buffers local to each command buffer', () => {
+    const root = new CommandBuffer({}, null, null, null, null, cloneWithAddedContext(
+      [1, 1, 'Root', 'diagnostics.casc', null, null],
+      {
+        entryName: 'root'
+      }
+    ));
+    const otherRoot = new CommandBuffer({}, null, null, null, null, cloneWithAddedContext(
+      [2, 1, 'Root', 'other.casc', null, null],
+      {
+        entryName: 'other'
+      }
+    ));
+    const sharedContext = cloneWithAddedContext([3, 2, 'Child', 'diagnostics.casc', null, null], { branch: 'shared' });
+    const first = new CommandBuffer({}, root, null, null, null, cloneContext(sharedContext));
+    const second = new CommandBuffer({}, otherRoot, null, null, null, cloneContext(sharedContext));
 
-    expect(first.bufferStackContext).to.not.be(second.bufferStackContext);
-    expect(first.bufferStackContext.diagnosticStack).to.eql(first.getDiagnosticStack());
-    expect(second.bufferStackContext.diagnosticStack).to.eql(second.getDiagnosticStack());
-    expect(first.bufferStackContext.diagnosticStack[1].path).to.be('diagnostics.casc');
-    expect(second.bufferStackContext.diagnosticStack[1].path).to.be('other.casc');
+    expect(first.bufferStackErrorContext).to.not.be(second.bufferStackErrorContext);
+    expect(first.getDiagnosticStack()).to.eql([first.bufferStackErrorContext, root.bufferStackErrorContext]);
+    expect(second.getDiagnosticStack()).to.eql([second.bufferStackErrorContext, otherRoot.bufferStackErrorContext]);
+    expect(RuntimeContextError.getInfo(null, first.bufferStackErrorContext, first.getDiagnosticStack()).stack[1].path).to.be('diagnostics.casc');
+    expect(RuntimeContextError.getInfo(null, second.bufferStackErrorContext, second.getDiagnosticStack()).stack[1].path).to.be('other.casc');
   });
 
   it('formats cyclic diagnostic metadata without recursing forever', () => {
     const cyclic = { name: 'node' };
     cyclic.self = cyclic;
-    const err = RuntimeError.create('cyclic metadata', {
-      ec: [1, 1, 'Meta', 'diagnostics.casc', null],
-      cyclic
-    });
+    const err = RuntimeError.create(
+      'cyclic metadata',
+      cloneWithAddedContext([1, 1, 'Meta', 'diagnostics.casc', null, null], { cyclic })
+    );
 
     expect(err.message).to.contain('cyclic={ name: node, self: [Circular] }');
   });

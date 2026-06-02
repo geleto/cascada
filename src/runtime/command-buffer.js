@@ -1,20 +1,22 @@
 
 import {assertChainLaneAvailable, checkFinishedBuffer} from './checks.js';
-import {RuntimeError} from './errors.js';
+import {getRenderState, isCompactErrorContext, RuntimeError} from './errors.js';
 
 class CommandBuffer {
-  constructor(context, parent = null, linkedChains = null, linkTarget = null, linkedMutatedChains = null, bufferStackContext, traceParent = null, renderState = null) {
-    if (!bufferStackContext || !Array.isArray(bufferStackContext.ec)) {
-      throw new TypeError('CommandBuffer requires bufferStackContext with compact ec');
+  constructor(context, parent = null, linkedChains = null, linkTarget = null, linkedMutatedChains = null, bufferStackErrorContext, traceParent = null, renderState = null) {
+    if (!isCompactErrorContext(bufferStackErrorContext)) {
+      throw new TypeError('CommandBuffer requires compact bufferStackErrorContext');
     }
-    const linkedLaneNames = validateLaneNames(linkedChains, 'linkedChains', bufferStackContext);
-    const linkedMutatedLaneNames = validateLaneNames(linkedMutatedChains, 'linkedMutatedChains', bufferStackContext);
+    const linkedLaneNames = validateLaneNames(linkedChains, 'linkedChains', bufferStackErrorContext);
+    const linkedMutatedLaneNames = validateLaneNames(linkedMutatedChains, 'linkedMutatedChains', bufferStackErrorContext);
 
     this._context = context;
     this.parent = parent;
     this.traceParent = traceParent || null;
-    this.renderState = renderState || (parent && parent.renderState) || null;
-    this.bufferStackContext = { ...bufferStackContext };
+    // The caller may pass a shared static context or an owned clone. Only owned
+    // clones may be mutated after construction.
+    this.bufferStackErrorContext = bufferStackErrorContext;
+    this.renderState = renderState || getRenderState(this.bufferStackErrorContext) || (parent && parent.renderState) || null;
     this.finished = false;
     this._finishedChains = Object.create(null);
     // Local addressability map. Entries may be owned by this buffer or linked
@@ -44,13 +46,6 @@ class CommandBuffer {
         effectiveLinkTarget.addBuffer(this, linkedLaneNames[i]);
       }
     }
-
-    // Phase M removes wrapper contexts; until then errors built from a
-    // bufferStackContext need a lazy path back to the current buffer stack.
-    Object.defineProperty(this.bufferStackContext, 'diagnosticStack', {
-      configurable: true,
-      get: () => this.getDiagnosticStack()
-    });
   }
 
   _createLane(chainName) {
@@ -61,7 +56,7 @@ class CommandBuffer {
     if (resolvedChainName in this.arrays) {
       RuntimeError.reportAndThrow(
         `Chain '${resolvedChainName}' was registered more than once on the same CommandBuffer`,
-        this.bufferStackContext
+        this.bufferStackErrorContext
       );
     }
     this.arrays[resolvedChainName] = [];
@@ -103,34 +98,12 @@ class CommandBuffer {
     return this._finishedPromise;
   }
 
-  getDiagnosticContext() {
-    // Transitional expansion for the `{ ec, ...metadata }` wrapper shape.
-    // Target Phase M model: diagnostic stacks store compact contexts only and
-    // error methods perform all expansion at formatting/inspection time.
-    const { ec, label } = this.bufferStackContext;
-    const metadata = {};
-    for (const key of Object.keys(this.bufferStackContext)) {
-      if (key !== 'ec' && key !== 'label' && key !== 'diagnosticStack') {
-        metadata[key] = this.bufferStackContext[key];
-      }
-    }
-    return {
-      lineno: ec[0] ?? null,
-      colno: ec[1] ?? null,
-      label: label ?? ec[2] ?? null,
-      path: ec[3] ?? null,
-      ...metadata
-    };
-  }
-
   getDiagnosticStack() {
     const stack = [];
-    const seen = new Set();
     let buffer = this;
 
-    while (buffer && !seen.has(buffer)) {
-      seen.add(buffer);
-      stack.push(buffer.getDiagnosticContext());
+    while (buffer) {
+      stack.push(buffer.bufferStackErrorContext);
       buffer = buffer.traceParent || buffer.parent || null;
     }
 
@@ -408,7 +381,7 @@ class CommandBuffer {
     if (!chain) {
       RuntimeError.reportAndThrow(
         `Cannot link chain '${resolvedChainName}' without a registered chain object`,
-        this.bufferStackContext
+        this.bufferStackErrorContext
       );
     }
     return resolvedChainName;
@@ -416,24 +389,24 @@ class CommandBuffer {
 
 }
 
-function validateLaneNames(laneNames, label, bufferStackContext) {
+function validateLaneNames(laneNames, label, bufferStackErrorContext) {
   if (laneNames == null) {
     return null;
   }
   if (!Array.isArray(laneNames)) {
-    RuntimeError.reportAndThrow(`${label} must be an array when provided`, bufferStackContext);
+    RuntimeError.reportAndThrow(`${label} must be an array when provided`, bufferStackErrorContext);
   }
   const seen = new Set();
   for (let i = 0; i < laneNames.length; i++) {
     const name = laneNames[i];
     if (typeof name !== 'string') {
-      RuntimeError.reportAndThrow(`${label} contains a non-string chain name`, bufferStackContext);
+      RuntimeError.reportAndThrow(`${label} contains a non-string chain name`, bufferStackErrorContext);
     }
     if (!name) {
-      RuntimeError.reportAndThrow(`${label} contains an empty chain name`, bufferStackContext);
+      RuntimeError.reportAndThrow(`${label} contains an empty chain name`, bufferStackErrorContext);
     }
     if (seen.has(name)) {
-      RuntimeError.reportAndThrow(`${label} contains duplicate chain '${name}'`, bufferStackContext);
+      RuntimeError.reportAndThrow(`${label} contains duplicate chain '${name}'`, bufferStackErrorContext);
     }
     seen.add(name);
   }

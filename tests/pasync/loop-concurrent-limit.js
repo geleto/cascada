@@ -2,13 +2,13 @@
 import expect from 'expect.js';
 import {AsyncEnvironment, AsyncTemplate, Script} from '../../src/environment/environment.js';
 import {StringLoader, delay} from '../util.js';
-import {createPoison, isPoisonError, PoisonError, TextCommand, SnapshotCommand, CommandBuffer, declareBufferChain} from '../../src/runtime/runtime.js';
+import {createPoison, isPoisonError, PoisonError, TextCommand, SnapshotCommand, CommandBuffer, declareBufferChain, cloneWithAddedContext} from '../../src/runtime/runtime.js';
 import * as parser from '../../src/language/parser.js';
 import * as nodes from '../../src/language/nodes.js';
 import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
 
-const TEST_EC = [1, 1, 'Test', 'test.casc', null];
-const TEST_DIAGNOSTIC_CONTEXT = { ec: TEST_EC, branchName: 'test' };
+const TEST_EC = [1, 1, 'Test', 'test.casc', null, null];
+const TEST_DIAGNOSTIC_CONTEXT = cloneWithAddedContext(TEST_EC, { branch: 'test' });
 const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC));
 
 (function () {
@@ -2703,8 +2703,8 @@ const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC
 
     it('inherits chain aliases for child buffers linked through addBuffer', function () {
       const ctx = { path: 'alias-child.njk' };
-      const parent = new CommandBuffer(ctx, null, null, null, null, { ec: TEST_EC, branchName: 'alias-parent' });
-      const child = new CommandBuffer(ctx, null, null, null, null, { ec: TEST_EC, branchName: 'alias-child' });
+      const parent = new CommandBuffer(ctx, null, null, null, null, cloneWithAddedContext(TEST_EC, { branch: 'alias-parent' }));
+      const child = new CommandBuffer(ctx, null, null, null, null, cloneWithAddedContext(TEST_EC, { branch: 'alias-child' }));
       parent._setChainAliases({ loop: 'loop#4', someVar: 'someVar#9' });
       declareBufferChain(parent, 'loop#4', 'text', ctx, null);
 

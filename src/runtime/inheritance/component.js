@@ -1,6 +1,6 @@
 import {MutatingResultCommand, requireCommandErrorContext} from '../commands/base.js';
 import {CommandBuffer} from '../command-buffer.js';
-import {RuntimeError, isPoisonError, markPromiseHandled} from '../errors.js';
+import {RuntimeError, isPoisonError, markPromiseHandled, cloneContext, cloneWithAddedContext} from '../errors.js';
 import {getSharedSourceName, isPrivateSharedName} from '../../inheritance/shared-names.js';
 import {InheritanceInstance} from './instance.js';
 
@@ -140,10 +140,10 @@ async function createComponentInstance(spec) {
     ownerContext.getRenderContextVariables(),
     payloadContext
   );
-  const componentFrame = { ec: errorContext, componentName: bindingName || 'component' };
+  const componentErrorContext = cloneWithAddedContext(errorContext, { componentName: bindingName || 'component' });
   renderState.throwIfFatalErrorReported();
-  const rootBuffer = new CommandBuffer(componentContext, null, null, null, null, componentFrame, ownerBuffer || null, renderState);
-  const sharedRootBuffer = new CommandBuffer(componentContext, null, null, null, null, componentFrame, ownerBuffer || null, renderState);
+  const rootBuffer = new CommandBuffer(componentContext, null, null, null, null, componentErrorContext, ownerBuffer || null, renderState);
+  const sharedRootBuffer = new CommandBuffer(componentContext, null, null, null, null, cloneContext(componentErrorContext), ownerBuffer || null, renderState);
   const instance = await InheritanceInstance.create({
     entryTemplateOrScript: templateOrScript,
     env,

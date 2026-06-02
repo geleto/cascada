@@ -115,6 +115,9 @@ function formatDiagnosticKey(key) {
 }
 
 function formatDiagnosticValue(value, seen) {
+  if (value && typeof value.then === 'function') {
+    return '?';
+  }
   if (Array.isArray(value)) {
     if (seen.has(value)) {
       return '[Circular]';

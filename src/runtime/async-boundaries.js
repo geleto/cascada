@@ -2,20 +2,23 @@
 import {isPoisonError, markPromiseHandled} from './errors.js';
 import {CommandBuffer} from './command-buffer.js';
 
-function _createChildBoundary(parentBuffer, linkedChainNames, linkedMutatedChainNames = null, isolatedContext = null, bufferStackContext, traceParent = null, renderState = null) {
+function _createChildBoundary(parentBuffer, linkedChainNames, linkedMutatedChainNames = null, isolatedContext = null, bufferStackErrorContext, traceParent = null, renderState = null) {
   const bufferContext = parentBuffer && parentBuffer._context ? parentBuffer._context : isolatedContext;
   const diagnosticTraceParent = traceParent || parentBuffer || null;
   const boundaryRenderState = renderState || (parentBuffer && parentBuffer.renderState) || null;
   // Boundary buffers intentionally keep parent null for runtime visibility and
   // attach to parentBuffer only through linked chain lanes. traceParent carries
   // the diagnostic stack relationship.
+  // Store the exact compact context the compiler selected for this origin.
+  // Dynamic boundaries receive owned clones so later metadata updates are
+  // visible to diagnostics; static boundaries may share prepared contexts.
   const childBuffer = new CommandBuffer(
     bufferContext,
     null,
     linkedChainNames,
     parentBuffer || null,
     linkedMutatedChainNames,
-    bufferStackContext,
+    bufferStackErrorContext,
     diagnosticTraceParent,
     boundaryRenderState
   );
@@ -28,10 +31,10 @@ function _createChildBoundary(parentBuffer, linkedChainNames, linkedMutatedChain
  * The asyncFn receives (childBuffer) and runs the branch body inside that
  * single child boundary.
  */
-async function runControlFlowBoundary(parentBuffer, linkedChainNames, linkedMutatedChainNames, context, renderState, asyncFn, bufferStackContext) {
+async function runControlFlowBoundary(parentBuffer, linkedChainNames, linkedMutatedChainNames, context, renderState, asyncFn, bufferStackErrorContext) {
   renderState.throwIfFatalErrorReported();
-  const { childBuffer } = _createChildBoundary(parentBuffer, linkedChainNames, linkedMutatedChainNames, null, bufferStackContext, null, renderState);
-  const childStackContext = childBuffer.bufferStackContext;
+  const { childBuffer } = _createChildBoundary(parentBuffer, linkedChainNames, linkedMutatedChainNames, null, bufferStackErrorContext, null, renderState);
+  const childStackErrorContext = childBuffer.bufferStackErrorContext;
 
   try {
     const result = await asyncFn(childBuffer);
@@ -42,7 +45,7 @@ async function runControlFlowBoundary(parentBuffer, linkedChainNames, linkedMuta
     if (isPoisonError(err)) {
       throw err;
     }
-    renderState.reportAndThrowFatalError(err, childStackContext);
+    renderState.reportAndThrowFatalError(err, childStackErrorContext, childBuffer);
   } finally {
     childBuffer.finish();
   }
@@ -53,10 +56,10 @@ async function runControlFlowBoundary(parentBuffer, linkedChainNames, linkedMuta
  * waited chain. This is loop-specific structural behavior and stays out of
  * the generic control-flow helper.
  */
-async function runWaitedControlFlowBoundary(parentBuffer, linkedChainNames, linkedMutatedChainNames, context, renderState, asyncFn, waitedChainName, bufferStackContext) {
+async function runWaitedControlFlowBoundary(parentBuffer, linkedChainNames, linkedMutatedChainNames, context, renderState, asyncFn, waitedChainName, bufferStackErrorContext) {
   renderState.throwIfFatalErrorReported();
-  const { childBuffer } = _createChildBoundary(parentBuffer, linkedChainNames, linkedMutatedChainNames, null, bufferStackContext, null, renderState);
-  const childStackContext = childBuffer.bufferStackContext;
+  const { childBuffer } = _createChildBoundary(parentBuffer, linkedChainNames, linkedMutatedChainNames, null, bufferStackErrorContext, null, renderState);
+  const childStackErrorContext = childBuffer.bufferStackErrorContext;
 
   try {
     const result = await asyncFn(childBuffer);
@@ -67,7 +70,7 @@ async function runWaitedControlFlowBoundary(parentBuffer, linkedChainNames, link
     if (isPoisonError(err)) {
       throw err;
     }
-    renderState.reportAndThrowFatalError(err, childStackContext);
+    renderState.reportAndThrowFatalError(err, childStackErrorContext, childBuffer);
   } finally {
     childBuffer.finish();
     await childBuffer.getChain(waitedChainName).finalSnapshot();
@@ -79,10 +82,10 @@ async function runWaitedControlFlowBoundary(parentBuffer, linkedChainNames, link
  * into the parent tree. The asyncFn receives (childBuffer)
  * and should synchronously emit the boundary body into that child buffer.
  */
-async function runRenderBoundary(context, renderState, asyncFn, bufferStackContext, traceParent = null) {
+async function runRenderBoundary(context, renderState, asyncFn, bufferStackErrorContext, traceParent = null) {
   renderState.throwIfFatalErrorReported();
-  const { childBuffer } = _createChildBoundary(null, null, null, context || null, bufferStackContext, traceParent, renderState);
-  const childStackContext = childBuffer.bufferStackContext;
+  const { childBuffer } = _createChildBoundary(null, null, null, context || null, bufferStackErrorContext, traceParent, renderState);
+  const childStackErrorContext = childBuffer.bufferStackErrorContext;
 
   try {
     const result = await asyncFn(childBuffer);
@@ -93,7 +96,7 @@ async function runRenderBoundary(context, renderState, asyncFn, bufferStackConte
     if (isPoisonError(err)) {
       throw err;
     }
-    renderState.reportAndThrowFatalError(err, childStackContext);
+    renderState.reportAndThrowFatalError(err, childStackErrorContext, childBuffer);
   } finally {
     childBuffer.finish();
   }
@@ -106,8 +109,8 @@ async function runRenderBoundary(context, renderState, asyncFn, bufferStackConte
  * Unlike runControlFlowBoundary(...), this helper preserves normal expression
  * rejection semantics: errors are rethrown to the awaiting caller.
  */
-function runValueBoundary(parentBuffer, linkedChainNames, linkedMutatedChainNames, asyncFn, bufferStackContext) {
-  const { childBuffer } = _createChildBoundary(parentBuffer, linkedChainNames, linkedMutatedChainNames, null, bufferStackContext);
+function runValueBoundary(parentBuffer, linkedChainNames, linkedMutatedChainNames, asyncFn, bufferStackErrorContext) {
+  const { childBuffer } = _createChildBoundary(parentBuffer, linkedChainNames, linkedMutatedChainNames, null, bufferStackErrorContext);
   const promise = Promise.resolve()
     .then(() => asyncFn(childBuffer))
     .finally(() => {

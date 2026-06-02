@@ -965,7 +965,7 @@ import * as runtime from '../../src/runtime/runtime.js';
 
         // Throw our fatal error
         // We pass dummy values for line/col/ctx as this is a simulation
-        throw new runtime.RuntimeError(fatalMsg, [1, 1, 'test execution', 'test.njk', null]);
+        throw new runtime.RuntimeError(fatalMsg, [1, 1, 'test execution', 'test.njk', null, null]);
       };
 
       runtime.runValueBoundary(
@@ -973,7 +973,7 @@ import * as runtime from '../../src/runtime/runtime.js';
         null,
         null,
         asyncBody,
-        { ec: [1, 1, 'test execution', 'test.njk', null] }
+        [1, 1, 'test execution', 'test.njk', null, null]
       ).then(() => {
         done(new Error('runValueBoundary should have rejected'));
       }).catch(err => {

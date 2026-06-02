@@ -65,7 +65,7 @@ function assertChainLaneAvailable(buffer, chainName) {
 
   RuntimeError.reportAndThrow(
     `Chain '${chainName}' is visible but this buffer has no linked lane for it`,
-    buffer.bufferStackContext
+    buffer.bufferStackErrorContext
   );
 }
 

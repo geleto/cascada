@@ -16,7 +16,7 @@ import {createPoison, isPoison, isPoisonError, PoisonError} from '../../src/runt
  */
 
 describe('Sequential Expression Poisoning', function () {
-  const TEST_EC = [1, 1, 'SequentialExpression.TestInput', 'poison-sequential-expression.njk', null];
+  const TEST_EC = [1, 1, 'SequentialExpression.TestInput', 'poison-sequential-expression.njk', null, null];
 
   function createTestPoison(error) {
     return createPoison(PoisonError.wrap(error, TEST_EC));

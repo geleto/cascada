@@ -1,4 +1,4 @@
-import {RuntimeError} from '../errors.js';
+import {RuntimeError, cloneWithAddedContext} from '../errors.js';
 import {createInheritanceCallableArgumentFrame} from './invoke.js';
 import {declareInheritanceSharedChain} from './shared.js';
 
@@ -27,7 +27,7 @@ class InheritanceInstance {
       null,
       null,
       null,
-      { ec: options.errorContext, entryName: 'inheritance' },
+      cloneWithAddedContext(options.errorContext, { entryName: 'inheritance' }),
       traceParent,
       options.renderState
     );
@@ -125,11 +125,10 @@ class InheritanceInstance {
       visibleChains,
       parentBuffer,
       methodData.mergedMutatedChains,
-      {
-        ec: errorContext,
+      this.runtime.cloneWithAddedContext(errorContext, {
         methodName: methodData.name,
         methodSignature: `${methodData.name}(${methodData.signature.argNames.join(', ')})`
-      },
+      }),
       traceParent,
       this.renderState
     );

@@ -6,7 +6,7 @@ import * as runtime from '../../src/runtime/runtime.js';
 import {isPoisonError} from '../../src/runtime/runtime.js';
 
 (function () {
-  const TEST_EC = [1, 1, 'Test.PoisonInput', 'poison-integration.njk', null];
+  const TEST_EC = [1, 1, 'Test.PoisonInput', 'poison-integration.njk', null, null];
 
   function createTestPoison(message) {
     return runtime.createPoison(runtime.PoisonError.create(message, TEST_EC));
@@ -91,7 +91,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
     it('should treat RuntimeError thrown inside a macro body as fatal', async () => {
       const fatal = runtime.RuntimeError.create(
         'macro structural failure',
-        [1, 1, 'Macro.FatalSource', 'macro-fatal.njk', null]
+        [1, 1, 'Macro.FatalSource', 'macro-fatal.njk', null, null]
       );
       env.addGlobal('fatalMacroOperation', () => {
         throw fatal;

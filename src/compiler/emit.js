@@ -105,10 +105,10 @@ class CompileEmit {
     }
     // this.Line(`let ${this.compiler.buffer.currentBuffer} = "";`);
     if (this.compiler.asyncMode && name === 'root') {
-      const rootBufferStackContext = this.compiler.emitBufferStackContext(node, { entryName: name });
+      const rootBufferStackErrorContext = this.compiler.emitErrorContext(node, { entryName: name });
       this.line(
         `let ${this.compiler.buffer.currentBuffer} = ` +
-        `new runtime.CommandBuffer(context, null, null, null, null, ${rootBufferStackContext}, null, renderState);`
+        `new runtime.CommandBuffer(context, null, null, null, null, ${rootBufferStackErrorContext}, null, renderState);`
       );
       if (!this.compiler.scriptMode) {
         this.line(
@@ -117,15 +117,15 @@ class CompileEmit {
         );
       }
     } else {
-      const managedBufferStackContext = this.compiler.asyncMode
-        ? this.compiler.emitBufferStackContext(node, { entryName: name })
+      const managedBufferStackErrorContext = this.compiler.asyncMode
+        ? this.compiler.emitErrorContext(node, { entryName: name })
         : null;
       this.compiler.buffer.initManagedBuffer(
         this.compiler.buffer.currentBuffer,
         this.compiler.asyncMode ? 'parentBuffer' : null,
         this.compiler.buffer.currentTextChainVar,
         linkedChains,
-        managedBufferStackContext,
+        managedBufferStackErrorContext,
         this.compiler.asyncMode ? 'parentBuffer' : 'null'
       );
     }
@@ -173,7 +173,7 @@ class CompileEmit {
     analysisNode = null,
     errorContextNode = analysisNode,
     traceParentOverride = undefined,
-    bufferStackContextFields = {}
+    bufferStackErrorContextFields = {}
   }) {
     let nextFrame = frame;
     if (createScope) {
@@ -201,15 +201,15 @@ class CompileEmit {
         const traceParentArg = traceParentOverride !== undefined
           ? traceParentOverride
           : (parentBufferId || 'null');
-        const managedBufferStackContext = this.compiler.asyncMode
-          ? this.compiler.emitBufferStackContext(errorContextNode, bufferStackContextFields)
+        const managedBufferStackErrorContext = this.compiler.asyncMode
+          ? this.compiler.emitErrorContext(errorContextNode, bufferStackErrorContextFields)
           : null;
         this.compiler.buffer.initManagedBuffer(
           bufferId,
           parentBufferId,
           `${bufferId}_textOutputVar`,
           linkedChains,
-          managedBufferStackContext,
+          managedBufferStackErrorContext,
           traceParentArg
         );
         if (typeof emitFunc === 'function') {

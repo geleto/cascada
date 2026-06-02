@@ -199,6 +199,16 @@ Development and tests require Node `>=22`.
     *   No "current position" wait on parent/root buffers.
     *   If the current buffer cannot observe a value in source order, the real bug is missing linked chains, wrong `currentBuffer`, or missing explicit payload wiring.
 
+#### **Compact Error Context Ownership**
+
+Compiler/runtime error contexts have three ownership modes:
+
+1. **Static context** — shared prepared `__ec[index]` tuple. Never mutate it.
+2. **Initialized owned context** — clone created at the origin AST node when added metadata is already known, such as a loop iteration.
+3. **Dynamic owned context** — clone created at the origin AST node before metadata is known, such as an async if/switch boundary. When control flow resolves, mutate that owned clone with `runtime.mergeAddedContext(...)` or `runtime.setContextLabel(...)`.
+
+For all three modes, origin AST codegen chooses the context and passes that same context to commands, helpers, and buffers for that origin. Owned contexts may update tuple label slot `2` for diagnostic identity; extra printable metadata stays in added context slot `4`. Context is normalized only inside error handling at the point of consumption.
+
 ---
 
 ## Implementation Architecture

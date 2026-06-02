@@ -9,8 +9,8 @@ import * as nodes from '../../src/language/nodes.js';
 import * as runtime from '../../src/runtime/runtime.js';
 import {transpiler as scriptTranspiler} from '../../src/language/script-transpiler.js';
 
-const TEST_EC = [1, 1, 'Test', 'test.casc', null];
-const TEST_DIAGNOSTIC_CONTEXT = { ec: TEST_EC, branchName: 'test' };
+const TEST_EC = [1, 1, 'Test', 'test.casc', null, null];
+const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch: 'test' });
 
 (function () {
   function createIdPool() {

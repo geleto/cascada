@@ -7,14 +7,6 @@ import {
   formatNumberedDiagnostic
 } from './error-format.js';
 
-// Private construction token for already-normalized PoisonErrorGroup state.
-// Revisit after Phase M removes remaining context-construction special cases.
-class NormalizedPoisonGroupState {
-  constructor(state) {
-    this.state = state;
-  }
-}
-
 const CONTEXTLESS_RUNTIME_ERROR = {
   lineno: null,
   colno: null,
@@ -22,22 +14,13 @@ const CONTEXTLESS_RUNTIME_ERROR = {
   path: null,
   renderState: null
 };
-const BUFFER_STACK_CONTEXT_CONTROL_KEYS = new Set([
-  'ec',
-  'diagnosticStack',
-  'label'
-]);
-const EXPANDED_SOURCE_CONTEXT_KEYS = new Set([
+const RESERVED_ADDED_CONTEXT_KEYS = new Set([
+  'label',
   'lineno',
   'colno',
   'path',
   'renderState'
 ]);
-
-// Phase-M transitional scaffolding: while command buffers still carry
-// `{ ec, ...metadata }` wrapper contexts, runtime errors must normalize both
-// compact contexts and buffer stack contexts. Compact boundary contexts should
-// replace this wrapper shape and remove these helpers.
 
 // Internal promises are sometimes observed through an owning command/chain
 // instead of by the promise object itself. Mark those promises handled so delayed
@@ -50,17 +33,85 @@ function markPromiseHandled(promise) {
 }
 
 function prepareErrorContexts(path, renderState, labels, specs) {
-  return specs.map(([lineno, colno, label]) => [
+  return specs.map(([lineno, colno, label, addedContext = null]) => [
     lineno,
     colno,
     typeof label === 'number' ? labels[label] : label,
     path ?? null,
+    addedContext,
     renderState ?? null
   ]);
 }
 
-function isBufferStackContext(context) {
-  return context && !Array.isArray(context) && Array.isArray(context.ec);
+function isCompactErrorContext(context) {
+  return Array.isArray(context) && context.length === 6;
+}
+
+function assertCompactErrorContext(errorContext) {
+  if (!isCompactErrorContext(errorContext)) {
+    throw new TypeError('Expected compact error context');
+  }
+}
+
+function getAddedContext(errorContext) {
+  assertCompactErrorContext(errorContext);
+  return errorContext[4] ?? null;
+}
+
+function getRenderState(errorContext) {
+  assertCompactErrorContext(errorContext);
+  return errorContext[5] ?? null;
+}
+
+function cloneContext(errorContext) {
+  assertCompactErrorContext(errorContext);
+  const existingAddedContext = getAddedContext(errorContext);
+  validateAddedContext(existingAddedContext);
+  return [
+    errorContext[0] ?? null,
+    errorContext[1] ?? null,
+    errorContext[2] ?? null,
+    errorContext[3] ?? null,
+    existingAddedContext ? { ...existingAddedContext } : null,
+    errorContext[5] ?? null
+  ];
+}
+
+function cloneWithAddedContext(errorContext, addedContext = null) {
+  return mergeAddedContext(cloneContext(errorContext), addedContext);
+}
+
+function setContextLabel(errorContext, label) {
+  assertCompactErrorContext(errorContext);
+  errorContext[2] = label ?? null;
+  return errorContext;
+}
+
+function validateAddedContext(addedContext) {
+  if (!addedContext) {
+    return;
+  }
+  if (typeof addedContext !== 'object' || Array.isArray(addedContext)) {
+    throw new TypeError('Added context must be an object when provided');
+  }
+  for (const key of RESERVED_ADDED_CONTEXT_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(addedContext, key)) {
+      throw new TypeError(`Added context cannot contain source field '${key}'`);
+    }
+  }
+}
+
+function mergeAddedContext(errorContext, addedContext) {
+  assertCompactErrorContext(errorContext);
+  validateAddedContext(addedContext);
+  const mergedAddedContext = {
+    ...(getAddedContext(errorContext) || {}),
+    ...(addedContext || {})
+  };
+  errorContext[4] = Object.keys(mergedAddedContext).length > 0
+    ? mergedAddedContext
+    : null;
+  return errorContext;
 }
 
 /**
@@ -122,40 +173,19 @@ class PoisonedValue {
 
 class RuntimeContextError extends CascadaError {
   static _normalizeContext(errorContext) {
-    const bufferStackContext = isBufferStackContext(errorContext)
-      ? errorContext
-      : null;
-    const ec = bufferStackContext ? bufferStackContext.ec : errorContext;
-
-    if (!Array.isArray(ec)) {
+    if (!isCompactErrorContext(errorContext)) {
       throw new Error('RuntimeContextError expects a compact error context');
     }
-    const context = {
-      lineno: ec[0] ?? null,
-      colno: ec[1] ?? null,
-      label: ec[2] ?? null,
-      path: ec[3] ?? null,
-      renderState: ec[4] ?? null
-    };
-
-    if (!bufferStackContext) {
-      return context;
-    }
-
-    // The compact ec remains the authority for source position and render
-    // state. Stack metadata may intentionally provide a display label override
-    // such as "Iteration", but expanded source fields are invalid here.
-    assertNoExpandedSourceContext(bufferStackContext);
-    const displayLabel = bufferStackContext.label;
-    const bufferStackMetadata = Object.fromEntries(
-      Object.entries(bufferStackContext)
-        .filter(([key]) => !BUFFER_STACK_CONTEXT_CONTROL_KEYS.has(key))
-    );
+    const addedContext = getAddedContext(errorContext);
+    validateAddedContext(addedContext);
 
     return {
-      ...context,
-      ...bufferStackMetadata,
-      label: displayLabel ?? context.label
+      lineno: errorContext[0] ?? null,
+      colno: errorContext[1] ?? null,
+      label: errorContext[2] ?? null,
+      path: errorContext[3] ?? null,
+      renderState: errorContext[5] ?? null,
+      ...(addedContext || {})
     };
   }
 
@@ -166,6 +196,7 @@ class RuntimeContextError extends CascadaError {
       diagnosticName = name,
       diagnosticHeaderLines = null,
       diagnosticFullHeaderLines = diagnosticHeaderLines,
+      diagnosticStack = null,
       ...errorOptions
     } = options;
     const context = normalizedContext || RuntimeContextError._normalizeContext(errorContext);
@@ -173,64 +204,63 @@ class RuntimeContextError extends CascadaError {
     const compactMessage = formatDiagnosticMessage(diagnosticName, description, context, {
       headerLines: diagnosticHeaderLines
     });
-    const diagnosticStack = RuntimeContextError._getDiagnosticStack(errorContext);
+    const normalizedDiagnosticStack = RuntimeContextError._normalizeDiagnosticStack(diagnosticStack);
     const fullMessage = formatDiagnosticMessage(diagnosticName, description, context, {
       headerLines: diagnosticFullHeaderLines,
-      stack: diagnosticStack
+      stack: normalizedDiagnosticStack
     });
 
     super(name, compactMessage, context, { ...errorOptions, formatContext: false });
     this.context = context;
     this._errorContext = storedErrorContext;
+    this._diagnosticStack = diagnosticStack;
     this.description = description;
     this.fullMessage = fullMessage;
   }
 
-  getInfo(options = {}) {
-    return RuntimeContextError.getInfo(this, this._errorContext, options);
+  getInfo(diagnosticStack = null) {
+    return RuntimeContextError.getInfo(this, this._errorContext, diagnosticStack);
   }
 
-  formatInfo(options = {}) {
-    return RuntimeContextError.formatInfo(this, this._errorContext, options);
+  formatInfo(diagnosticStack = null) {
+    return RuntimeContextError.formatInfo(this, this._errorContext, diagnosticStack);
   }
 
-  static getInfo(error, fallbackContext, options = {}) {
-    const { stackBuffer = null } = options;
+  static getInfo(error, fallbackContext, diagnosticStack = null) {
     const effectiveContext = error && error._errorContext ? error._errorContext : fallbackContext;
     if (!effectiveContext) {
       throw new Error('RuntimeContextError.getInfo requires an error with origin context or a compact fallback context');
     }
-    const contextInput = error && error.bufferStackContext
-      ? error.bufferStackContext
-      : effectiveContext;
-    const info = RuntimeContextError._normalizeContext(contextInput);
+    const info = RuntimeContextError._normalizeContext(effectiveContext);
     delete info.renderState;
 
-    if (stackBuffer) {
-      info.stack = stackBuffer.getDiagnosticStack();
-    } else if (isBufferStackContext(contextInput) && Array.isArray(contextInput.diagnosticStack)) {
-      info.stack = contextInput.diagnosticStack;
+    let stack = null;
+    if (diagnosticStack) {
+      stack = diagnosticStack;
+    } else if (error && error._diagnosticStack) {
+      stack = error._diagnosticStack;
+    }
+    const normalizedStack = RuntimeContextError._normalizeDiagnosticStack(stack);
+    if (normalizedStack) {
+      info.stack = normalizedStack.map((frame) => {
+        const printableFrame = { ...frame };
+        delete printableFrame.renderState;
+        return printableFrame;
+      });
     }
 
     return info;
   }
 
-  static formatInfo(error, fallbackContext, options = {}) {
-    return formatDiagnosticInfo(RuntimeContextError.getInfo(error, fallbackContext, options));
+  static formatInfo(error, fallbackContext, diagnosticStack = null) {
+    return formatDiagnosticInfo(RuntimeContextError.getInfo(error, fallbackContext, diagnosticStack));
   }
 
-  static _getDiagnosticStack(errorContext) {
-    return isBufferStackContext(errorContext) && Array.isArray(errorContext.diagnosticStack)
-      ? errorContext.diagnosticStack
-      : null;
-  }
-}
-
-function assertNoExpandedSourceContext(context) {
-  for (const key of EXPANDED_SOURCE_CONTEXT_KEYS) {
-    if (Object.prototype.hasOwnProperty.call(context, key)) {
-      throw new TypeError(`bufferStackContext must use compact ec; unexpected expanded '${key}' field`);
+  static _normalizeDiagnosticStack(stack) {
+    if (!Array.isArray(stack)) {
+      return null;
     }
+    return stack.map(frame => RuntimeContextError._normalizeContext(frame));
   }
 }
 
@@ -241,12 +271,13 @@ function throwIfRuntimeError(error) {
 }
 
 class PoisonError extends RuntimeContextError {
-  constructor(cause, errorContext) {
+  constructor(cause, errorContext, options = {}) {
     const source = cause instanceof Error ? cause : new Error(String(cause));
     super('PoisonError', source.message, errorContext, {
       cause: source,
       storedErrorContext: errorContext,
-      diagnosticName: 'PoisonError'
+      diagnosticName: 'PoisonError',
+      diagnosticStack: options.diagnosticStack || null
     });
     if (new.target === PoisonError) {
       this.errors = [this];
@@ -355,21 +386,20 @@ class PoisonError extends RuntimeContextError {
  * first child error; errors[] holds all individual PoisonErrors.
  */
 class PoisonErrorGroup extends PoisonError {
-  constructor(input) {
-    let state;
-    if (input instanceof NormalizedPoisonGroupState) {
-      state = input.state;
-    } else {
-      if (input instanceof PoisonErrorGroup) {
-        reportRuntimeContractError(
-          'PoisonErrorGroup constructor expects individual poison errors; use PoisonError.group(...) to normalize existing groups',
-          input._errorContext
-        );
-      }
-      state = PoisonErrorGroup._buildStateFromNormalizedErrors(PoisonError._normalizePoisonErrors(input));
+  constructor(input, alreadyNormalized = false) {
+    if (!alreadyNormalized && input instanceof PoisonErrorGroup) {
+      reportRuntimeContractError(
+        'PoisonErrorGroup constructor expects individual poison errors; use PoisonError.group(...) to normalize existing groups',
+        input._errorContext
+      );
     }
+    const state = alreadyNormalized
+      ? input
+      : PoisonErrorGroup._buildStateFromNormalizedErrors(PoisonError._normalizePoisonErrors(input));
     const firstError = state.errors[0];
-    super(firstError.cause, firstError._errorContext);
+    super(firstError.cause, firstError._errorContext, {
+      diagnosticStack: firstError._diagnosticStack || null
+    });
 
     this.name = 'PoisonErrorGroup';
     this.description = state.description;
@@ -378,7 +408,7 @@ class PoisonErrorGroup extends PoisonError {
     });
     this.fullMessage = formatDiagnosticMessage('PoisonErrorGroup', state.description, this.context, {
       headerLines: state.fullMessageLines,
-      stack: RuntimeContextError._getDiagnosticStack(firstError._errorContext)
+      stack: RuntimeContextError._normalizeDiagnosticStack(firstError._diagnosticStack)
     });
     this.errors = state.errors;
     if (state.stack) {
@@ -387,11 +417,7 @@ class PoisonErrorGroup extends PoisonError {
   }
 
   static _fromState(state) {
-    // Private construction token used so PoisonError.group(...) can validate
-    // and dedupe once while direct PoisonErrorGroup re-wrapping stays rejected.
-    // Revisit after Phase M removes the remaining context-construction
-    // special cases.
-    return new PoisonErrorGroup(new NormalizedPoisonGroupState(state));
+    return new PoisonErrorGroup(state, true);
   }
 
   static _buildStateFromNormalizedErrors(normalizedErrors) {
@@ -425,27 +451,27 @@ class PoisonErrorGroup extends PoisonError {
 }
 
 class RuntimeError extends RuntimeContextError {
-  static create(message, context) {
+  static create(message, context, stackBuffer = null) {
     if (message instanceof RuntimeError) {
       if (context !== undefined && context !== null) {
         reportRuntimeContractError('RuntimeError.create received context for an existing RuntimeError', context);
       }
       return message;
     }
-    if (!context && !(message && (message._errorContext || message.errorContext))) {
+    if (!context && !(message && message._errorContext)) {
       return new RuntimeError(message);
     }
-    return new RuntimeError(message, context);
+    return new RuntimeError(message, context, stackBuffer);
   }
 
-  static report(message, context) {
+  static report(message, context, stackBuffer = null) {
     // Existing RuntimeError keeps its origin. A supplied context is used only
     // to find the active renderState to report into, not to re-contextualize it.
     const error = message instanceof RuntimeError
       ? message
-      : RuntimeError.create(message, context);
+      : RuntimeError.create(message, context, stackBuffer);
     const renderState = context
-      ? RuntimeContextError._normalizeContext(context).renderState
+      ? getRenderState(context)
       : error.context.renderState;
     if (renderState) {
       renderState.reportFatalError(error);
@@ -453,40 +479,29 @@ class RuntimeError extends RuntimeContextError {
     return error;
   }
 
-  static reportAndThrow(message, context) {
-    throw RuntimeError.report(message, context);
+  static reportAndThrow(message, context, stackBuffer = null) {
+    throw RuntimeError.report(message, context, stackBuffer);
   }
 
-  constructor(message, inputContext) {
+  constructor(message, inputContext, stackBuffer = null) {
     const cause = message instanceof Error ? message : null;
-    const inputBufferStackContext = isBufferStackContext(inputContext)
-      ? inputContext
-      : null;
     const errorContext = cause && cause._errorContext
       ? cause._errorContext
-      : (inputBufferStackContext ? inputBufferStackContext.ec : inputContext);
-    const bufferStackContext = cause && cause.bufferStackContext
-      ? cause.bufferStackContext
-      : inputBufferStackContext;
+      : inputContext;
     const hasErrorContext = errorContext !== undefined && errorContext !== null;
-    const contextInput = bufferStackContext && bufferStackContext.ec === errorContext
-      ? bufferStackContext
-      : errorContext;
-    const context = hasErrorContext || bufferStackContext
-      ? RuntimeContextError._normalizeContext(contextInput)
+    const context = hasErrorContext
+      ? RuntimeContextError._normalizeContext(errorContext)
       : CONTEXTLESS_RUNTIME_ERROR;
     const runtimeName = cause && cause.name ? `RuntimeError: ${cause.name}` : 'RuntimeError';
     const runtimeMessage = cause ? cause.message : message;
 
-    super(runtimeName, runtimeMessage, contextInput, {
+    super(runtimeName, runtimeMessage, errorContext, {
       cause,
       normalizedContext: context,
       storedErrorContext: hasErrorContext ? errorContext : null,
-      diagnosticName: 'RuntimeError'
+      diagnosticName: 'RuntimeError',
+      diagnosticStack: stackBuffer ? stackBuffer.getDiagnosticStack() : null
     });
-    if (bufferStackContext) {
-      this.bufferStackContext = bufferStackContext;
-    }
 
     // Capture stack trace for contextual portion
     if (Error.captureStackTrace) {
@@ -687,7 +702,7 @@ function handleError(error, lineno = null, colno = null, syncLabel = null, path 
   if (error instanceof RuntimeError) {
     return error;
   }
-  const errorContext = [lineno ?? 0, colno ?? 0, syncLabel, path, null];
+  const errorContext = [lineno ?? 0, colno ?? 0, syncLabel, path, null, null];
   return RuntimeError.create(error, errorContext);
 }
 
@@ -719,4 +734,4 @@ function peekError(value) {
   return null;
 }
 
-export { PoisonedValue, PoisonError, PoisonErrorGroup, RuntimeError, RuntimeContextError, RuntimePromise, prepareErrorContexts, createPoison, isPoison, isPoisonError, isRuntimeError, isError, collectErrors, handleError, peekError, markPromiseHandled };
+export { PoisonedValue, PoisonError, PoisonErrorGroup, RuntimeError, RuntimeContextError, RuntimePromise, prepareErrorContexts, isCompactErrorContext, cloneContext, cloneWithAddedContext, getAddedContext, getRenderState, mergeAddedContext, setContextLabel, createPoison, isPoison, isPoisonError, isRuntimeError, isError, collectErrors, handleError, peekError, markPromiseHandled };

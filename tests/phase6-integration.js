@@ -4,7 +4,7 @@ import {AsyncEnvironment} from '../src/environment/environment.js';
 import * as runtime from '../src/runtime/runtime.js';
 
 const {createPoison, isPoisonError, PoisonError} = runtime;
-const TEST_EC = [1, 1, 'LoopPoisonIntegration.TestInput', 'phase6-integration.js', null];
+const TEST_EC = [1, 1, 'LoopPoisonIntegration.TestInput', 'phase6-integration.js', null, null];
 const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC));
 
 describe('Phase 6: Loop Poison Integration', () => {

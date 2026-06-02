@@ -355,14 +355,6 @@ export class SafeString {
 
 export function markSafe(val: string): SafeString;
 
-export interface CompileErrorOptions {
-  lineno?: number | null;
-  colno?: number | null;
-  label?: string | null;
-  path?: string | null;
-  cause?: Error | null;
-}
-
 export type DiagnosticContext = {
   lineno: number | null;
   colno: number | null;
@@ -380,9 +372,7 @@ export class CascadaError extends Error {
   label: string | null;
 }
 
-export class CompileError extends CascadaError {
-  constructor(message: string, options?: CompileErrorOptions);
-
+export abstract class CompileError extends CascadaError {
   name: string; // always 'CompileError'
   cause?: Error | undefined;
   context: DiagnosticContext;
@@ -390,25 +380,9 @@ export class CompileError extends CascadaError {
   fullMessage: string;
 }
 
-export type CompactErrorContext = [
-  lineno: number | null,
-  colno: number | null,
-  label: string | null,
-  path: string | null,
-  renderState: unknown | null
-];
-
-export type RuntimeErrorContext = CompactErrorContext;
-
 export type RuntimeDiagnosticContext = DiagnosticContext & Record<string, unknown>;
 
-export class RuntimeError extends CascadaError {
-  constructor(cause: string | Error, context?: RuntimeErrorContext | null);
-
-  static create(message: string | Error | RuntimeError, context?: RuntimeErrorContext | null): RuntimeError;
-  static report(message: string | Error | RuntimeError, context?: RuntimeErrorContext | null): RuntimeError;
-  static reportAndThrow(message: string | Error | RuntimeError, context?: RuntimeErrorContext | null): never;
-
+export abstract class RuntimeError extends CascadaError {
   name: string; // always 'RuntimeError'
   cause?: Error | undefined;
   context: RuntimeDiagnosticContext;
@@ -416,17 +390,7 @@ export class RuntimeError extends CascadaError {
   fullMessage: string;
 }
 
-export class PoisonError extends CascadaError {
-  constructor(cause: unknown, context: RuntimeErrorContext);
-
-  static create(message: string, context: RuntimeErrorContext): CascadaPoisonError;
-  static wrap(error: unknown, context: RuntimeErrorContext): CascadaPoisonError;
-  /**
-   * Returns the original PoisonError for one normalized child, or
-   * PoisonErrorGroup when multiple poison errors remain after flattening.
-   */
-  static group(errors: PoisonError | PoisonError[] | PoisonErrorGroup): CascadaPoisonError;
-
+export abstract class PoisonError extends CascadaError {
   errors: PoisonError[];
   cause: Error;
   context: RuntimeDiagnosticContext;
@@ -434,9 +398,7 @@ export class PoisonError extends CascadaError {
   fullMessage: string;
 }
 
-export class PoisonErrorGroup extends PoisonError {
-  constructor(errors: PoisonError | PoisonError[]);
-
+export abstract class PoisonErrorGroup extends PoisonError {
   name: string; // always 'PoisonErrorGroup'
   errors: PoisonError[];
 }
@@ -444,5 +406,6 @@ export class PoisonErrorGroup extends PoisonError {
 export type CascadaPoisonError = PoisonError;
 export type CascadaRenderError = CompileError | RuntimeError | CascadaPoisonError;
 
+export function isCompileError(error: unknown): error is CompileError;
 export function isPoisonError(error: unknown): error is CascadaPoisonError;
 export function isRuntimeError(error: unknown): error is RuntimeError;

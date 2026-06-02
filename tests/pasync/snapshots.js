@@ -14,11 +14,12 @@ import {
   isPoisonError,
   PoisonError,
   linkInheritanceCallableFootprintChains,
-  runControlFlowBoundary
+  runControlFlowBoundary,
+  cloneWithAddedContext
 } from '../../src/runtime/runtime.js';
 
-const TEST_EC = [1, 1, 'Test', 'test.casc', null];
-const TEST_DIAGNOSTIC_CONTEXT = { ec: TEST_EC, branchName: 'test' };
+const TEST_EC = [1, 1, 'Test', 'test.casc', null, null];
+const TEST_DIAGNOSTIC_CONTEXT = cloneWithAddedContext(TEST_EC, { branch: 'test' });
 const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC));
 
 describe('chain.finalSnapshot', function () {
@@ -63,8 +64,8 @@ describe('chain.finalSnapshot', function () {
     return cb;
   };
   const makeChain = (buffer, ctx, chainName) => {
-    if (!buffer.bufferStackContext) {
-      buffer.bufferStackContext = TEST_DIAGNOSTIC_CONTEXT;
+    if (!buffer.bufferStackErrorContext) {
+      buffer.bufferStackErrorContext = TEST_DIAGNOSTIC_CONTEXT;
     }
     const name = chainName || 'text';
     return buffer.getOwnChain(name) || declareBufferChain(buffer, name, name, ctx || null, null);
@@ -279,7 +280,7 @@ describe('chain.finalSnapshot', function () {
       const parent = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       declareBufferChain(parent, 'text', 'text', context, null);
       try {
-        await runControlFlowBoundary(parent, 'text', null, context, createRenderState(), async () => null, { ec: TEST_EC });
+        await runControlFlowBoundary(parent, 'text', null, context, createRenderState(), async () => null, TEST_EC);
         throw new Error('expected invalid linked chain metadata to fail');
       } catch (err) {
         expect(err.name).to.be('RuntimeError');
@@ -485,7 +486,7 @@ describe('chain.finalSnapshot', function () {
   describe('Error Handling & Edge Cases', function () {
     it('should resolve snapshot at command position before later writes', async function () {
       const buffer = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
-      buffer.bufferStackContext = TEST_DIAGNOSTIC_CONTEXT;
+      buffer.bufferStackErrorContext = TEST_DIAGNOSTIC_CONTEXT;
       const textOut = declareBufferChain(buffer, 'text', 'text', context, null);
 
       textOut('A', TEST_EC);
@@ -513,7 +514,7 @@ describe('chain.finalSnapshot', function () {
 
     it('finalSnapshot should wait for owning chain completion', async function () {
       const buffer = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
-      buffer.bufferStackContext = TEST_DIAGNOSTIC_CONTEXT;
+      buffer.bufferStackErrorContext = TEST_DIAGNOSTIC_CONTEXT;
       const out = declareBufferChain(buffer, 'text', 'text', context, null);
       out('late', TEST_EC);
 
@@ -530,7 +531,7 @@ describe('chain.finalSnapshot', function () {
 
     it('tracks finished state per chain', async function () {
       const buffer = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
-      buffer.bufferStackContext = TEST_DIAGNOSTIC_CONTEXT;
+      buffer.bufferStackErrorContext = TEST_DIAGNOSTIC_CONTEXT;
       const text = declareBufferChain(buffer, 'text', 'text', context, null);
       const data = declareBufferChain(buffer, 'data', 'data', context, null);
 
@@ -1111,4 +1112,3 @@ describe('chain.finalSnapshot', function () {
     });
   });
 });
-

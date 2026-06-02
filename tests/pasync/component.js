@@ -6,8 +6,8 @@ import {AsyncEnvironment, Script} from '../../src/environment/environment.js';
 import {StringLoader} from '../util.js';
 import * as runtimeModule from '../../src/runtime/runtime.js';
 
-const TEST_EC = [1, 1, 'Test', 'test.casc', null];
-const TEST_BUFFER_STACK_CONTEXT = { ec: TEST_EC, branchName: 'test' };
+const TEST_EC = [1, 1, 'Test', 'test.casc', null, null];
+const TEST_BUFFER_STACK_CONTEXT = runtimeModule.cloneWithAddedContext(TEST_EC, { branch: 'test' });
 const createTestPoison = (message) => runtimeModule.createPoison(
   runtimeModule.PoisonError.create(message, TEST_EC)
 );
@@ -41,9 +41,9 @@ function componentParticipant(path, options = {}) {
       sharedSchema: options.sharedSchema || {},
       hasExtends: false
     },
-    getErrorContexts(runtimeArg, ownerPath, reportError) {
+    getErrorContexts(runtimeArg, ownerPath, renderState) {
       void runtimeArg;
-      return [[1, 1, 'Test', ownerPath ?? path, reportError ?? null]];
+      return [[1, 1, 'Test', ownerPath ?? path, null, renderState ?? null]];
     },
     resolveInheritanceParent() {
       return runtimeModule.noInheritanceParent();
@@ -285,7 +285,7 @@ describe('Phase 8 - Component Method Calls', function () {
     const env = new AsyncEnvironment(loader);
 
     env.addGlobal('fatalArg', () => Promise.reject(
-      new runtimeModule.RuntimeError('fatal component arg', [1, 1, 'fatalArg()', 'Main.script', null])
+      new runtimeModule.RuntimeError('fatal component arg', [1, 1, 'fatalArg()', 'Main.script', null, null])
     ));
 
     loader.addTemplate('Component.script', [
@@ -709,7 +709,7 @@ describe('Phase 8 - Component Observations', function () {
         args: ['bad'],
         errorContext: TEST_EC
       }),
-      errorContext: [2, 1, null, 'Main.script', null]
+      errorContext: [2, 1, null, 'Main.script', null, null]
     });
 
     ownerBuffer.finish();
@@ -1120,7 +1120,7 @@ describe('Phase 8 - Component Lifecycle', function () {
       env,
       runtime: runtimeModule,
       renderState: createTestRenderState(),
-      errorContext: [2, 1, null, 'Main.script', null]
+      errorContext: [2, 1, null, 'Main.script', null, null]
     });
 
     const sideChainFinished = ownerBuffer.getChain('nsBinding').finalSnapshot();
@@ -1187,7 +1187,7 @@ describe('Phase 8 - Component Lifecycle', function () {
       env,
       runtime: runtimeModule,
       renderState: createTestRenderState(),
-      errorContext: [2, 1, null, 'Main.script', null]
+      errorContext: [2, 1, null, 'Main.script', null, null]
     });
 
     const sideChainFinished = ownerBuffer.getChain('nsBinding').finalSnapshot();
@@ -1230,7 +1230,7 @@ describe('Phase 8 - Component Lifecycle', function () {
       renderState: createTestRenderState(),
       ownerBuffer,
       bindingName: 'nsBinding',
-      errorContext: [1, 1, null, 'Main.script', null]
+      errorContext: [1, 1, null, 'Main.script', null, null]
     });
 
     ownerBuffer.addCommand(new runtimeModule.VarCommand({
@@ -1315,7 +1315,7 @@ describe('Phase 8 - Component Lifecycle', function () {
       runtime: runtimeModule,
       renderState: createTestRenderState(),
       ownerBuffer,
-      errorContext: [1, 1, null, 'Main.script', null]
+      errorContext: [1, 1, null, 'Main.script', null, null]
     });
 
     expect(seen.nextPath).to.be('Component.script');
@@ -1348,7 +1348,7 @@ describe('Phase 8 - Component Lifecycle', function () {
         runtime: runtimeModule,
         renderState: createTestRenderState(),
         ownerBuffer,
-        errorContext: [1, 1, null, 'Main.script', null]
+        errorContext: [1, 1, null, 'Main.script', null, null]
       });
       expect().fail('Expected createComponentInstance to reject');
     } catch (error) {
@@ -1371,7 +1371,7 @@ describe('Phase 8 - Component Lifecycle', function () {
 
     const failure = new runtimeModule.RuntimeError(
       'async constructor failed',
-      [1, 1, null, 'Component.script', null]
+      [1, 1, null, 'Component.script', null, null]
     );
 
     try {
@@ -1396,7 +1396,7 @@ describe('Phase 8 - Component Lifecycle', function () {
           }
         }),
         ownerBuffer,
-        errorContext: [1, 1, null, 'Main.script', null]
+        errorContext: [1, 1, null, 'Main.script', null, null]
       });
       expect().fail('Expected createComponentInstance to reject');
     } catch (error) {

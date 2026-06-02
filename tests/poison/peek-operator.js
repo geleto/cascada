@@ -4,7 +4,7 @@ import {AsyncEnvironment} from '../../src/environment/environment.js';
 import * as runtime from '../../src/runtime/runtime.js';
 
 (function () {
-  const TEST_EC = [1, 1, 'Peek.TestInput', 'peek-operator.njk', null];
+  const TEST_EC = [1, 1, 'Peek.TestInput', 'peek-operator.njk', null, null];
 
   function createTestPoison(error) {
     return runtime.createPoison(runtime.PoisonError.wrap(error, TEST_EC));

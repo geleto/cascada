@@ -4,7 +4,7 @@ import {AsyncEnvironment} from '../../src/environment/environment.js';
 import * as runtime from '../../src/runtime/runtime.js';
 
 const {createPoison, isPoisonError, PoisonError} = runtime;
-const TEST_EC = [1, 1, 'AsyncIterator.TestInput', 'phase4-async-iterator-errors.js', null];
+const TEST_EC = [1, 1, 'AsyncIterator.TestInput', 'phase4-async-iterator-errors.js', null, null];
 
 function createTestPoison(error) {
   return createPoison(PoisonError.wrap(error, TEST_EC));

@@ -46,6 +46,10 @@ class CompilerCommon extends Obj {
       : (typeof options.templateName === 'string' ? options.templateName : undefined);
     this.errorContextEntries = [];
     this.errorContextTableBuilt = false;
+    // Added diagnostic metadata inherited by nested AST origins. This is not
+    // an error context; each origin still emits its own compact context.
+    this.currentInheritedAddedContext = null;
+    this.currentInheritedLabelOverride = null;
     this.inBlock = false;
 
     this.sequential = new CompileSequential(this);
@@ -99,44 +103,141 @@ class CompilerCommon extends Obj {
     return finalLabel;
   }
 
-  _registerErrorContextEntry(node, label, positionNode = node) {
+  _addErrorContextEntry(label, positionNode, addedContext = null) {
     if (this.errorContextTableBuilt) {
       throw new Error('Cannot register error context after the error context table has been emitted');
     }
     const lineno = positionNode.lineno !== undefined ? positionNode.lineno + 1 : 0;
     const colno = positionNode.colno !== undefined ? positionNode.colno : 0;
-    node.addAnalysis({ errorContextIndex: this.errorContextEntries.length });
-    this.errorContextEntries.push({ lineno, colno, label });
+    const index = this.errorContextEntries.length;
+    this.errorContextEntries.push({ lineno, colno, label, addedContext });
+    return index;
   }
 
-  emitErrorContext(node) {
+  _registerErrorContextEntry(node, label, positionNode = node) {
+    const index = this._addErrorContextEntry(label, positionNode);
+    node.addAnalysis({ errorContextIndex: index });
+    return index;
+  }
+
+  _emitStaticErrorContext(node, addedContext = null) {
     if (!node) {
       return 'null';
     }
     const tableExpr = this.inheritance.currentCallableNode
       ? 'methodData.errorContextTable'
       : '__ec';
-    return `${tableExpr}[${this.getErrorContextIndex(node)}]`;
+    const contextIndex = this.getErrorContextIndex(node, addedContext);
+    return `${tableExpr}[${contextIndex}]`;
   }
 
-  getErrorContextIndex(node) {
+  emitErrorContext(node, addedContext = null) {
+    const contextExpr = this._emitStaticErrorContext(node, addedContext);
+    const inheritedAddedContext = this.currentInheritedAddedContext;
+    const inheritedLabelOverride = this.currentInheritedLabelOverride;
+    if (contextExpr === 'null') {
+      return contextExpr;
+    }
+    if (!inheritedAddedContext && !inheritedLabelOverride) {
+      return contextExpr;
+    }
+    const ownedContextExpr = inheritedAddedContext
+      ? `runtime.cloneWithAddedContext(${contextExpr}, ${inheritedAddedContext})`
+      : `runtime.cloneContext(${contextExpr})`;
+    return inheritedLabelOverride
+      ? `runtime.setContextLabel(${ownedContextExpr}, ${inheritedLabelOverride})`
+      : ownedContextExpr;
+  }
+
+  createInheritedAddedContextVar(addedContextExpr) {
+    const addedContextVar = this._tmpid();
+    // Inherited diagnostics are lexical metadata, not context identity. Inner
+    // scopes intentionally shadow duplicate keys such as nested loop metadata.
+    const valueExpr = this.currentInheritedAddedContext
+      ? `{ ...${this.currentInheritedAddedContext}, ...${addedContextExpr} }`
+      : addedContextExpr;
+    this.emit.line(`const ${addedContextVar} = ${valueExpr};`);
+    return addedContextVar;
+  }
+
+  withInheritedAddedContext(addedContextVar, emitFunc) {
+    const previousAddedContext = this.currentInheritedAddedContext;
+    this.currentInheritedAddedContext = addedContextVar;
+    try {
+      return emitFunc();
+    } finally {
+      this.currentInheritedAddedContext = previousAddedContext;
+    }
+  }
+
+  withInheritedAddedContextExpr(addedContextExpr, emitFunc) {
+    const addedContextVar = this.createInheritedAddedContextVar(addedContextExpr);
+    return this.withInheritedAddedContext(addedContextVar, () => emitFunc(addedContextVar));
+  }
+
+  withInheritedLabelOverride(labelExpr, emitFunc) {
+    const previousLabel = this.currentInheritedLabelOverride;
+    this.currentInheritedLabelOverride = labelExpr;
+    try {
+      return emitFunc();
+    } finally {
+      this.currentInheritedLabelOverride = previousLabel;
+    }
+  }
+
+  getErrorContextIndex(node, addedContext = null) {
+    if (addedContext) {
+      return this._getAddedErrorContextIndex(node, addedContext);
+    }
     if (node._analysis.errorContextIndex === undefined) {
       this._generateErrorContext(node);
     }
     return node._analysis.errorContextIndex;
   }
 
-  emitBufferStackContext(node, stackMetadata = {}) {
+  emitClonedErrorContext(node, addedContextFields = {}) {
     if (!node) {
-      throw new TypeError('emitBufferStackContext requires a node');
+      throw new TypeError('emitClonedErrorContext requires an origin node');
     }
-    const parts = [`ec: ${this.emitErrorContext(node)}`];
-    for (const [key, value] of Object.entries(stackMetadata)) {
-      if (value !== undefined && value !== null) {
-        parts.push(`${key}: ${JSON.stringify(value)}`);
+    const addedContext = {};
+    for (const [key, value] of Object.entries(addedContextFields)) {
+      if (value === undefined || value === null) {
+        continue;
       }
+      addedContext[key] = value;
     }
-    return `{ ${parts.join(', ')} }`;
+    const staticContextExpr = Object.keys(addedContext).length === 0
+      ? this._emitStaticErrorContext(node)
+      : this._emitStaticErrorContext(node, addedContext);
+    const inheritedAddedContext = this.currentInheritedAddedContext;
+    const inheritedLabelOverride = this.currentInheritedLabelOverride;
+    const ownedContextExpr = inheritedAddedContext
+      ? `runtime.cloneWithAddedContext(${staticContextExpr}, ${inheritedAddedContext})`
+      : `runtime.cloneContext(${staticContextExpr})`;
+    if (inheritedLabelOverride) {
+      return `runtime.setContextLabel(${ownedContextExpr}, ${inheritedLabelOverride})`;
+    }
+    return ownedContextExpr;
+  }
+
+  _getAddedErrorContextIndex(node, addedContext) {
+    if (!node) {
+      throw new TypeError('_getAddedErrorContextIndex requires a node');
+    }
+    const resolvedPositionNode = node._analysis?.errorContextPositionNode || node;
+    const finalLabel = this._getErrorContextLabel(node, resolvedPositionNode, null);
+    const key = JSON.stringify(addedContext);
+    if (!node._analysis.addedContextIndexes) {
+      node.addAnalysis({ addedContextIndexes: Object.create(null) });
+    }
+    if (node._analysis.addedContextIndexes[key] === undefined) {
+      node._analysis.addedContextIndexes[key] = this._addErrorContextEntry(
+        finalLabel,
+        resolvedPositionNode,
+        addedContext
+      );
+    }
+    return node._analysis.addedContextIndexes[key];
   }
 
   _buildErrorContextTable() {
@@ -154,11 +255,17 @@ class CompilerCommon extends Obj {
       }
     });
 
-    const specs = this.errorContextEntries.map((entry) => [
-      entry.lineno,
-      entry.colno,
-      labelIndexes.has(entry.label) ? labelIndexes.get(entry.label) : entry.label
-    ]);
+    const specs = this.errorContextEntries.map((entry) => {
+      const spec = [
+        entry.lineno,
+        entry.colno,
+        labelIndexes.has(entry.label) ? labelIndexes.get(entry.label) : entry.label
+      ];
+      if (entry.addedContext) {
+        spec.push(entry.addedContext);
+      }
+      return spec;
+    });
 
     return { labels, specs };
   }
