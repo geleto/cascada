@@ -127,7 +127,7 @@ describe('error context tracing runtime foundation', () => {
     expect(second[1]).not.to.be(prepared[1]);
   });
 
-  it('allows contextless RuntimeError only as a fatal runtime fallback', () => {
+  it('uses contextless RuntimeError only as a last-resort fatal runtime fallback', () => {
     const ec = [1, 1, 'Direct.RuntimeError', 'direct.casc', null, null];
     const err = new RuntimeError('plain failure', ec);
 

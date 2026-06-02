@@ -13,7 +13,7 @@ import {
   validateAddedContext
 } from './error-context.js';
 
-const CONTEXTLESS_RUNTIME_ERROR = {
+const CONTEXTLESS_FATAL_RUNTIME_CONTEXT = {
   lineno: null,
   colno: null,
   label: null,
@@ -407,7 +407,7 @@ class RuntimeError extends RuntimeContextError {
     const hasErrorContext = errorContext !== undefined && errorContext !== null;
     const context = hasErrorContext
       ? RuntimeContextError._normalizeContext(errorContext)
-      : CONTEXTLESS_RUNTIME_ERROR;
+      : CONTEXTLESS_FATAL_RUNTIME_CONTEXT;
     const runtimeName = cause && cause.name ? `RuntimeError: ${cause.name}` : 'RuntimeError';
     const runtimeMessage = cause ? cause.message : message;
 

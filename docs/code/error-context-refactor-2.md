@@ -1003,12 +1003,13 @@ These should be removed once the new compact context shape is in place.
       remains rejected.
 18. Simplify the `RuntimeError` constructor after wrapper-context support is
     gone. The remaining selection logic should be limited to cause-owned compact
-    origin context, direct compact context, and the contextless fatal fallback.
+    origin context, direct compact context, and the last-resort contextless
+    fatal fallback.
     - Status: done. The pre-underscore `error.errorContext` bridge and wrapper
       context detection are removed.
 19. Revisit `RuntimeContextError` constructor options after wrapper removal. If
-    `normalizedContext` is only serving the contextless fatal path, narrow it or
-    replace it with an explicit contextless constructor path.
+    `normalizedContext` is only serving the last-resort contextless fatal path,
+    narrow it or replace it with an explicit contextless constructor path.
     - Deferred to Phase N. It now primarily supports the contextless
       fatal-runtime path and should be narrowed separately from the tuple ABI
       change.
@@ -1039,10 +1040,19 @@ small simplification is clearly behavior-preserving.
 
 #### Scope
 
-1. Narrow `RuntimeContextError` constructor options if `normalizedContext` and
-   `storedErrorContext` are only serving the contextless fatal-runtime path.
-   Preserve the rule that ordinary fatal and poison errors require compact
-   origin context.
+1. Narrow `RuntimeContextError` constructor options where the current option
+   object is only carrying post-refactor structure. Preserve the rule that
+   ordinary fatal and poison errors require compact origin context.
+   - Audit `normalizedContext` specifically. It is currently used by
+     `RuntimeError` to avoid double-normalizing an already-selected compact
+     context and to support the last-resort contextless fatal-runtime fallback; it is not
+     purely a contextless-path detail. Decide whether `RuntimeError` should keep
+     pre-normalizing before `super(...)`, or whether `RuntimeContextError`
+     should own normalization except for an explicit contextless path.
+   - Audit `storedErrorContext` specifically. It still preserves the compact
+     origin context used later by `getInfo(...)` / `formatInfo(...)`; decide
+     whether the option name and constructor shape are still the clearest way to
+     represent that origin context.
    - Started: removed public `RuntimeErrorOptions` declarations and converted
      internal runtime reporting to pass a direct stack buffer argument instead
      of an options object. Command-buffer stack plumbing is no longer part of
@@ -1051,18 +1061,33 @@ small simplification is clearly behavior-preserving.
      `CompileError`/`RuntimeError`/`PoisonError` factory and constructor
      signatures. Public declarations now keep the error classes available for
      inspection and narrowing without advertising internal construction.
-2. Evaluate whether `PoisonedValue`, `createPoison(...)`, `isPoison(...)`,
+   - Started: added `isCompileError(...)` declaration/export parity for the
+     precompiled entry and removed public `CompileErrorOptions`.
+2. Keep compact context ABI helpers in `runtime/error-context.js`, separate from
+   error semantics.
+   - Done: `prepareErrorContexts(...)`, compact-context predicates, accessors,
+     cloning, mutation, and added-context validation now live in
+     `runtime/error-context.js`.
+   - Keep expanded diagnostic normalization in `RuntimeContextError`. Do not
+     move `_normalizeContext(...)`, `_normalizeDiagnosticStack(...)`,
+     `getInfo(...)`, or `formatInfo(...)` into `runtime/error-context.js`; those
+     are error-consumption behavior, not ordinary runtime context handling.
+   - Treat helpers exported from `runtime/runtime.js` as internal compiled
+     runtime ABI. They should remain absent from public `.d.ts` declarations
+     unless a future API decision intentionally exposes them.
+3. Evaluate whether `PoisonedValue`, `createPoison(...)`, `isPoison(...)`,
    `collectErrors(...)`, and `peekError(...)` should move from
    `runtime/errors.js` into a small poison-transport module. Do not split the
    module unless it makes imports and ownership clearer.
-   - Done for compact error-context helpers: `prepareErrorContexts(...)`,
-     compact-context predicates, accessors, cloning, mutation, and added-context
-     validation now live in `runtime/error-context.js`. Poison transport remains
-     in `runtime/errors.js`.
-3. Evaluate inherited-metadata allocation cost, especially per-command
+   - Decide explicitly whether `PoisonError`, `PoisonErrorGroup`, and
+     `RuntimePromise` stay in `runtime/errors.js`. They are coupled to poison
+     transport but also part of the error taxonomy; do not split them by reflex.
+4. Evaluate inherited-metadata allocation cost, especially per-command
    `cloneWithAddedContext(...)` in loop bodies and loop-else label inheritance.
    Any optimization must preserve the three ownership modes and keep
    normalization inside error handling only.
+   - Do not introduce a region-wide current error-context state. The origin AST
+     node compiled code must still choose/create the context for that origin.
 
 #### Non-Goals
 
@@ -1072,17 +1097,22 @@ small simplification is clearly behavior-preserving.
 3. Do not add runtime compatibility for stale precompiled artifacts.
 4. Do not optimize by normalizing context earlier than error construction,
    `getInfo(...)`, or `formatInfo(...)`.
+5. Do not expose compact-context helpers or compact tuple types in public
+   declaration files merely because generated runtime code imports them through
+   `runtime/runtime.js`.
 
 #### Checkpoints
 
 1. Audit `RuntimeContextError`, `RuntimeError`, `PoisonError`, and
    `PoisonErrorGroup` constructor paths for option fields that are now
    single-purpose or redundant.
-2. Decide whether poison transport belongs in `errors.js` or a separate module;
+2. Confirm `runtime/error-context.js` remains limited to compact tuple ABI
+   operations and does not grow error-class normalization/formatting behavior.
+3. Decide whether poison transport belongs in `errors.js` or a separate module;
    if split, keep public exports stable.
-3. Inspect generated loop and branch code for unnecessary owned-context clones.
+4. Inspect generated loop and branch code for unnecessary owned-context clones.
    If a simpler allocation pattern exists, cover it with integration tests that
    verify loop metadata, branch labels, and origin preservation.
-4. Re-run the focused error suites:
+5. Re-run the focused error suites:
    `tests/pasync/error-context.js`, `tests/poison/unit.js`, and loop/branch
    integration tests.
