@@ -317,17 +317,7 @@ class CompilerAsync extends CompilerBaseAsync {
       this.emit('}');
 
       const errorContext = this.emitErrorContext(node.expr);
-      this.emit('} catch (e) {');
-      if (poisonChains.length > 0) {
-        const contextualErrorVar = this._tmpid();
-        this.emit(`  const ${contextualErrorVar} = runtime.PoisonError.wrap(e, ${errorContext});`);
-        for (const chainName of poisonChains) {
-          this.emit.line(
-            `    ${this.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(${contextualErrorVar}, ${errorContext}), "${chainName}");`
-          );
-        }
-      }
-      this.emit('}');
+      this.boundaries.emitBranchPoisonCatch(this.buffer, poisonChains, errorContext);
     }, node.expr);
   }
 
@@ -420,17 +410,7 @@ class CompilerAsync extends CompilerBaseAsync {
       this.emit('}');
 
       const errorContext = this.emitErrorContext(node.cond);
-      this.emit('} catch (e) {');
-      if (poisonChains.length > 0) {
-        const contextualErrorVar = this._tmpid();
-        this.emit(`  const ${contextualErrorVar} = runtime.PoisonError.wrap(e, ${errorContext});`);
-        for (const chainName of poisonChains) {
-          this.emit.line(
-            `    ${this.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(${contextualErrorVar}, ${errorContext}), "${chainName}");`
-          );
-        }
-      }
-      this.emit('}');
+      this.boundaries.emitBranchPoisonCatch(this.buffer, poisonChains, errorContext);
     }, node.cond);
   }
 

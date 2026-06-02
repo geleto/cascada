@@ -530,6 +530,30 @@ function createPoison(poisonError) {
   return new PoisonedValue(poisonError.errors);
 }
 
+// Sync-first consumers: return poison as a value, report raw failures as fatal.
+function poisonOrReport(err, errorContext) {
+  if (isPoisonError(err)) {
+    return createPoison(err);
+  }
+  RuntimeError.reportAndThrow(err, errorContext);
+}
+
+// Async consumers: keep poison as a rejection, report raw failures as fatal.
+function rethrowPoisonOrReport(err, errorContext) {
+  if (isPoisonError(err)) {
+    throw err;
+  }
+  RuntimeError.reportAndThrow(err, errorContext);
+}
+
+// Context-free consumers: return poison as a value, bare-rethrow raw failures by design.
+function poisonOrRethrow(err) {
+  if (isPoisonError(err)) {
+    return createPoison(err);
+  }
+  throw err;
+}
+
 /**
  * Check if a VALUE is a PoisonedValue (before await)
  * This does not handle regular rejected promises and is not
@@ -654,4 +678,4 @@ function peekError(value) {
   return null;
 }
 
-export { PoisonedValue, PoisonError, PoisonErrorGroup, RuntimeError, RuntimeContextError, RuntimePromise, createPoison, isPoison, isPoisonError, isRuntimeError, isError, collectErrors, handleError, peekError, markPromiseHandled };
+export { PoisonedValue, PoisonError, PoisonErrorGroup, RuntimeError, RuntimeContextError, RuntimePromise, createPoison, poisonOrReport, rethrowPoisonOrReport, poisonOrRethrow, isPoison, isPoisonError, isRuntimeError, isError, collectErrors, handleError, peekError, markPromiseHandled };

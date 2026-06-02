@@ -36,6 +36,13 @@ function runControlFlowBoundary(parentBuffer, linkedChainNames, linkedMutatedCha
   return markPromiseHandled(_runControlFlowBoundary(parentBuffer, linkedChainNames, linkedMutatedChainNames, context, renderState, asyncFn, bufferStackErrorContext));
 }
 
+function handleStructuralBoundaryError(err, renderState, childStackErrorContext, childBuffer) {
+  if (isPoisonError(err)) {
+    throw err;
+  }
+  renderState.reportAndThrowFatalError(err, childStackErrorContext, childBuffer);
+}
+
 async function _runControlFlowBoundary(parentBuffer, linkedChainNames, linkedMutatedChainNames, context, renderState, asyncFn, bufferStackErrorContext) {
   renderState.throwIfFatalErrorReported();
   const { childBuffer } = _createChildBoundary(parentBuffer, linkedChainNames, linkedMutatedChainNames, null, bufferStackErrorContext, null, renderState);
@@ -47,10 +54,7 @@ async function _runControlFlowBoundary(parentBuffer, linkedChainNames, linkedMut
     renderState.throwIfFatalErrorReported();
     return result;
   } catch (err) {
-    if (isPoisonError(err)) {
-      throw err;
-    }
-    renderState.reportAndThrowFatalError(err, childStackErrorContext, childBuffer);
+    handleStructuralBoundaryError(err, renderState, childStackErrorContext, childBuffer);
   } finally {
     childBuffer.finish();
   }
@@ -77,10 +81,7 @@ async function _runWaitedControlFlowBoundary(parentBuffer, linkedChainNames, lin
     renderState.throwIfFatalErrorReported();
     return result;
   } catch (err) {
-    if (isPoisonError(err)) {
-      throw err;
-    }
-    renderState.reportAndThrowFatalError(err, childStackErrorContext, childBuffer);
+    handleStructuralBoundaryError(err, renderState, childStackErrorContext, childBuffer);
   } finally {
     childBuffer.finish();
     // Fatal state abandons pending waited work; renderState owns shutdown and
@@ -112,10 +113,7 @@ async function _runRenderBoundary(context, renderState, asyncFn, bufferStackErro
     renderState.throwIfFatalErrorReported();
     return result;
   } catch (err) {
-    if (isPoisonError(err)) {
-      throw err;
-    }
-    renderState.reportAndThrowFatalError(err, childStackErrorContext, childBuffer);
+    handleStructuralBoundaryError(err, renderState, childStackErrorContext, childBuffer);
   } finally {
     childBuffer.finish();
   }

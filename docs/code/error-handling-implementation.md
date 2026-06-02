@@ -64,19 +64,19 @@ Verify: `npm run mocha -- tests/poison/fatal-delivery.js tests/pasync/loops.js` 
 Goal: the §2 invariant in one named place, plus the mechanical dedups (analysis
 §11.12–15, §9 dedup). All behavior-preserving.
 
-- [ ] §11.12 — add three named helpers to `errors.js`: `poisonOrReport(err, ec)`,
+- [x] §11.12 — add three named helpers to `errors.js`: `poisonOrReport(err, ec)`,
   `rethrowPoisonOrReport(err, ec)`, `poisonOrRethrow(err)` (signatures in §11.12; no
   `isRuntimeError` guard — it collapses). Replace the hand-rolled copies in
   `resolve.js` (~6 catches), `lookup.js`, `safe-output.js` (`rethrowPoisonOrFatal`),
   `commands/arguments.js` (`classifyCommandArgumentFailure`).
-- [ ] §11.15 — dedup `createObject`/`createArray` resolver bodies into one shared
+- [x] §11.15 — dedup `createObject`/`createArray` resolver bodies into one shared
   lazy-container helper (in `resolve.js`; do in the **same phase** as §11.12, which
   also edits `resolve.js`, to avoid re-churn — the §11.12 helpers themselves live in
   `errors.js`).
-- [ ] §11.13 — one shared boundary catch handler in `async-boundaries.js` for
+- [x] §11.13 — one shared boundary catch handler in `async-boundaries.js` for
   `runControlFlowBoundary`/`runWaitedControlFlowBoundary`/`runRenderBoundary`
   (`finally` bodies stay per-helper).
-- [ ] §11.14 — one emit helper for the branch-poison catch shared by
+- [x] §11.14 — one emit helper for the branch-poison catch shared by
   `compiler-async.js` (if/switch) and `compiler/loop.js` (while). Touches emitted
   code → regenerate fixtures.
 

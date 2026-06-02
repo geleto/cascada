@@ -2,11 +2,11 @@
 import {escape} from '../lib.js';
 import {
   isPoison,
-  isPoisonError,
   RuntimeError,
   handleError,
   collectErrors,
-  PoisonError
+  PoisonError,
+  rethrowPoisonOrReport
 } from './errors.js';
 import {RESOLVE_MARKER, resolveAll, resolveSingle} from './resolve.js';
 import {CommandBuffer} from './command-buffer.js';
@@ -148,13 +148,6 @@ function suppressValueAsync(val, autoescape, errorContext) {
   return _suppressValueAsyncComplex(val, autoescape, errorContext);
 }
 
-function rethrowPoisonOrFatal(err, errorContext) {
-  if (isPoisonError(err)) {
-    throw err;
-  }
-  RuntimeError.reportAndThrow(err, errorContext);
-}
-
 async function _suppressValueAsyncComplex(val, autoescape, errorContext) {
   val = normalizeBufferValue(val);
   // Consume a single top-level Cascada value before text materialization.
@@ -166,7 +159,7 @@ async function _suppressValueAsyncComplex(val, autoescape, errorContext) {
         val = await val;
       }
     } catch (err) {
-      rethrowPoisonOrFatal(err, errorContext);
+      rethrowPoisonOrReport(err, errorContext);
     }
 
   }
@@ -249,7 +242,7 @@ async function _ensureDefinedAsyncComplex(val, errorContext) {
         val = await val;
       }
     } catch (err) {
-      rethrowPoisonOrFatal(err, errorContext);
+      rethrowPoisonOrReport(err, errorContext);
     }
 
   }
@@ -303,7 +296,7 @@ async function _suppressValueScriptComplex(val, autoescape, errorContext) {
       }
     }
   } catch (err) {
-    rethrowPoisonOrFatal(err, errorContext);
+    rethrowPoisonOrReport(err, errorContext);
   }
 
   if (Array.isArray(val)) {

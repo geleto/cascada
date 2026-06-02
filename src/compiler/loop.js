@@ -273,16 +273,12 @@ class CompileLoop {
             });
             this.compiler.emit.line(';');
             whileErrorContext = this.compiler.emitErrorContext(whileConditionNode);
-            this.compiler.emit('} catch (e) {');
-            if (poisonChains.length > 0) {
-              const contextualErrorVar = this.compiler._tmpid();
-              this.compiler.emit(`  const ${contextualErrorVar} = runtime.PoisonError.wrap(e, ${whileErrorContext});`);
-              for (const chainName of poisonChains) {
-                this.compiler.emit.line(`  ${this.compiler.buffer.currentBuffer}.addCommand(new runtime.ErrorCommand(${contextualErrorVar}, ${whileErrorContext}), "${chainName}");`);
-              }
-            }
-            this.compiler.emit(`  ${whileCondId} = false;`);
-            this.compiler.emit('}');
+            this.compiler.boundaries.emitBranchPoisonCatch(
+              this.compiler.buffer,
+              poisonChains,
+              whileErrorContext,
+              () => this.compiler.emit(`  ${whileCondId} = false;`)
+            );
             this.compiler.emit(`if (!${whileCondId}) {`);
             this.compiler.emit.line('  return false;');
             this.compiler.emit.line('}');

@@ -31,7 +31,7 @@
  *    - On success, it **mutates the object in-place**, replacing promises with real values.
  *    - This ensures subsequent reads are instant and synchronous.
  */
-import {createPoison, isPoison, isPoisonError, collectErrors, PoisonError} from './errors.js';
+import {createPoison, isPoison, collectErrors, PoisonError, poisonOrRethrow} from './errors.js';
 import {RESOLVE_MARKER, RESOLVED_VALUE_MARKER} from './markers.js';
 
 function makeResolvedValue(value, mapper = null) {
@@ -199,10 +199,7 @@ async function resolveValueAndMarkerAsync(value) {
     try {
       resolved = await resolved;
     } catch (err) {
-      if (isPoisonError(err)) {
-        return createPoison(err);
-      }
-      throw err;
+      return poisonOrRethrow(err);
     }
   }
 
@@ -210,10 +207,7 @@ async function resolveValueAndMarkerAsync(value) {
     try {
       await resolved[RESOLVE_MARKER];
     } catch (err) {
-      if (isPoisonError(err)) {
-        return createPoison(err);
-      }
-      throw err;
+      return poisonOrRethrow(err);
     }
   }
 
@@ -235,10 +229,7 @@ async function resolveObjectPropertiesAsync(marked) {
   try {
     await marked[RESOLVE_MARKER];
   } catch (err) {
-    if (isPoisonError(err)) {
-      return createPoison(err);
-    }
-    throw err;
+    return poisonOrRethrow(err);
   }
   return marked;
 }
@@ -284,10 +275,7 @@ async function resolveSingleAsync(value) {
     }
   } catch (err) {
     // Note: This is called from various contexts; error position added upstream
-    if (isPoisonError(err)) {
-      return createPoison(err);
-    }
-    throw err;
+    return poisonOrRethrow(err);
   }
 
   // Check if resolved to poison
@@ -299,10 +287,7 @@ async function resolveSingleAsync(value) {
     try {
       await resolvedValue[RESOLVE_MARKER];
     } catch (err) {
-      if (isPoisonError(err)) {
-        return createPoison(err);
-      }
-      throw err;
+      return poisonOrRethrow(err);
     }
   }
 
@@ -329,10 +314,7 @@ async function _resolveSingleArrAsync(value) {
     const resolved = await resolveSingle(value);
     return [resolved];
   } catch (err) {
-    if (isPoisonError(err)) {
-      return createPoison(err);
-    }
-    throw err;
+    return poisonOrRethrow(err);
   }
 }
 
@@ -368,61 +350,86 @@ function resolveArguments(fn, skipArguments = 0) {
  *
  * If no async properties are found, returns the object as-is (Sync optimization).
  */
+// Scan-time helper: return the promise a parent lazy marker must wait on, if any.
+// This is a dependency only; awaiting it does not replace the child slot.
+function getResolvePromise(value) {
+  if (!value) {
+    return null;
+  }
+  if (typeof value.then === 'function' && !isPoison(value)) {
+    return value;
+  }
+  if (value[RESOLVE_MARKER]) {
+    return value[RESOLVE_MARKER];
+  }
+  return null;
+}
+
+// Finalize-time helper: return the current slot value, or a promise for the same
+// slot value after its own lazy marker has finished mutating it in place.
+function getResolvedLazyValue(value) {
+  if (!value) {
+    return value;
+  }
+  if (isPoison(value)) {
+    return value;
+  }
+  if (typeof value.then === 'function') {
+    return value;
+  }
+  if (value[RESOLVE_MARKER]) {
+    return value[RESOLVE_MARKER].then(() => value);
+  }
+  return value;
+}
+
+async function assignResolvedLazyValue(container, key) {
+  const value = getResolvedLazyValue(container[key]);
+  container[key] = isPoison(value) ? value : await value;
+}
+
+function attachResolveMarker(container, dependencies, finalize) {
+  if (dependencies.length === 0) {
+    return container;
+  }
+
+  const resolver = (async () => {
+    const errors = await collectErrors(dependencies);
+    if (errors.length > 0) {
+      throw PoisonError.group(errors);
+    }
+
+    await finalize();
+    delete container[RESOLVE_MARKER];
+    return container;
+  })();
+
+  Object.defineProperty(container, RESOLVE_MARKER, {
+    value: resolver,
+    configurable: true,
+    writable: true,
+    enumerable: false
+  });
+
+  return container;
+}
+
 function createObject(obj) {
-  // Basic checks
   if (!obj || typeof obj !== 'object') return obj;
 
-  const promises = [];
-
-  // Scan for immediate promises or marked children
+  const dependencies = [];
   for (const key in obj) {
-    const val = obj[key];
-    if (val) {
-      if (typeof val.then === 'function' && !isPoison(val)) {
-        promises.push(val);
-      } else if (val[RESOLVE_MARKER]) {
-        promises.push(val[RESOLVE_MARKER]); // Dependency on child resolution
-      }
+    const dependency = getResolvePromise(obj[key]);
+    if (dependency) {
+      dependencies.push(dependency);
     }
   }
 
-  if (promises.length > 0) {
-    const resolver = (async () => {
-      // Wait for all dependencies to settle
-      const errors = await collectErrors(promises);
-
-      if (errors.length > 0) {
-        throw PoisonError.group(errors);
-      }
-
-      // All dependencies successful. Apply values.
-      for (const key in obj) {
-        let val = obj[key];
-        if (val) {
-          if (typeof val.then === 'function' && !isPoison(val)) {
-            obj[key] = await val;
-          } else if (val[RESOLVE_MARKER]) {
-            await val[RESOLVE_MARKER];
-            // Note: child object is mutated in place by its own resolver
-          }
-        }
-      }
-
-      // Clean up marker
-      delete obj[RESOLVE_MARKER];
-      return obj;
-    })();
-
-    // Attach the marker
-    Object.defineProperty(obj, RESOLVE_MARKER, {
-      value: resolver,
-      configurable: true,
-      writable: true,
-      enumerable: false
-    });
-  }
-
-  return obj;
+  return attachResolveMarker(obj, dependencies, async () => {
+    for (const key in obj) {
+      await assignResolvedLazyValue(obj, key);
+    }
+  });
 }
 
 /**
@@ -434,49 +441,19 @@ function createObject(obj) {
 function createArray(arr) {
   if (!Array.isArray(arr)) return arr;
 
-  const promises = [];
+  const dependencies = [];
   for (let i = 0; i < arr.length; i++) {
-    const val = arr[i];
-    if (val) {
-      if (typeof val.then === 'function' && !isPoison(val)) {
-        promises.push(val);
-      } else if (val[RESOLVE_MARKER]) {
-        promises.push(val[RESOLVE_MARKER]);
-      }
+    const dependency = getResolvePromise(arr[i]);
+    if (dependency) {
+      dependencies.push(dependency);
     }
   }
 
-  if (promises.length > 0) {
-    const resolver = (async () => {
-      const errors = await collectErrors(promises);
-      if (errors.length > 0) {
-        throw PoisonError.group(errors);
-      }
-
-      for (let i = 0; i < arr.length; i++) {
-        const val = arr[i];
-        if (val) {
-          if (typeof val.then === 'function' && !isPoison(val)) {
-            arr[i] = await val;
-          } else if (val[RESOLVE_MARKER]) {
-            await val[RESOLVE_MARKER];
-          }
-        }
-      }
-
-      delete arr[RESOLVE_MARKER];
-      return arr;
-    })();
-
-    Object.defineProperty(arr, RESOLVE_MARKER, {
-      value: resolver,
-      configurable: true,
-      writable: true,
-      enumerable: false
-    });
-  }
-
-  return arr;
+  return attachResolveMarker(arr, dependencies, async () => {
+    for (let i = 0; i < arr.length; i++) {
+      await assignResolvedLazyValue(arr, i);
+    }
+  });
 }
 
 export { resolveAll, resolveDuo, resolveSingle, resolveSingleArr, resolveObjectProperties, resolveArguments, normalizeFinalPromise, createObject, createArray, RESOLVE_MARKER, RESOLVED_VALUE_MARKER, isResolvedValue, unwrapResolvedValue };

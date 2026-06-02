@@ -141,6 +141,25 @@ class CompileBoundaries {
     return { frame };
   }
 
+  // Branch/control-flow selector failures poison the chains
+  //  that the skipped region could have written.
+  emitBranchPoisonCatch(bufferCompiler, poisonChains, errorContextExpr, emitCatchTail = null) {
+    this.compiler.emit('} catch (e) {');
+    if (poisonChains.length > 0) {
+      const contextualErrorVar = this.compiler._tmpid();
+      this.compiler.emit(`  const ${contextualErrorVar} = runtime.PoisonError.wrap(e, ${errorContextExpr});`);
+      for (const chainName of poisonChains) {
+        this.compiler.emit.line(
+          `    ${bufferCompiler.currentBuffer}.addCommand(new runtime.ErrorCommand(${contextualErrorVar}, ${errorContextExpr}), "${chainName}");`
+        );
+      }
+    }
+    if (emitCatchTail) {
+      emitCatchTail();
+    }
+    this.compiler.emit('}');
+  }
+
   _compileAsyncRenderBoundaryImpl(emitCompiler, node, innerBodyFunction, callbackName, positionNode = node, stackFields = {}) {
     const emitCallbackResult = (resultExpr) => {
       if (callbackName) {

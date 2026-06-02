@@ -1,10 +1,7 @@
 import {
   isPoison,
-  isPoisonError,
-  isRuntimeError,
-  RuntimeError,
-  createPoison,
   markPromiseHandled,
+  poisonOrReport,
 } from '../errors.js';
 import {RESOLVE_MARKER, isResolvedValue, unwrapResolvedValue} from '../resolve.js';
 
@@ -107,13 +104,7 @@ async function runWithResolvedArgumentsAsync(value, cmd, applyFn) {
 }
 
 function classifyCommandArgumentFailure(cmd, err) {
-  if (isRuntimeError(err)) {
-    throw err;
-  }
-  if (isPoisonError(err)) {
-    return createPoison(err);
-  }
-  RuntimeError.reportAndThrow(err, cmd.errorContext);
+  return poisonOrReport(err, cmd.errorContext);
 }
 
 function isHandledDeferredPromise(value) {

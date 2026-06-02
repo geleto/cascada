@@ -2,11 +2,11 @@
 import {
   createPoison,
   isPoison,
-  isPoisonError,
   PoisonError,
   RuntimeError,
   RuntimePromise,
   collectErrors,
+  poisonOrReport,
 } from './errors.js';
 
 import {resolveDuo} from './resolve.js';
@@ -111,10 +111,7 @@ async function _memberLookupAsyncComplex(obj, val, errorContext, currentBuffer =
   try {
     [resolvedObj, resolvedVal] = await resolveDuo(obj, val);
   } catch (err) {
-    if (isPoisonError(err)) {
-      return createPoison(err);
-    }
-    RuntimeError.reportAndThrow(err, errorContext);
+    return poisonOrReport(err, errorContext);
   }
 
   try {
@@ -197,10 +194,7 @@ async function _memberLookupScriptComplex(obj, val, errorContext, currentBuffer 
   try {
     [resolvedObj, resolvedVal] = await resolveDuo(obj, val);
   } catch (err) {
-    if (isPoisonError(err)) {
-      return createPoison(err);
-    }
-    RuntimeError.reportAndThrow(err, errorContext);
+    return poisonOrReport(err, errorContext);
   }
 
   try {
