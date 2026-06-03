@@ -70,7 +70,8 @@ class Context extends Obj {
       } else {
         return createPoison(PoisonError.create(
           `Can not look up unknown variable/function: ${name}`,
-          errorContext
+          errorContext,
+          'UnknownVariable'
         ));
       }
     }

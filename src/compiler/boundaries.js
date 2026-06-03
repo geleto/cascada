@@ -64,7 +64,7 @@ class CompileBoundaries {
       this.compiler.emit.line(';');
       this.compiler.emit.line(`  return await ${resultId};`);
       this.compiler.emit.line('} catch (e) {');
-      this.compiler.emit.line(`  throw runtime.PoisonError.wrap(e, ${errorContextArg});`);
+      this.compiler.emit.line(`  throw runtime.PoisonError.wrap(e, ${errorContextArg}, "ExpressionThrew");`);
       this.compiler.emit.line('}');
       this.compiler.emit.line(`}, ${bufferStackErrorContextArg})`);
     });
@@ -147,7 +147,7 @@ class CompileBoundaries {
     this.compiler.emit('} catch (e) {');
     if (poisonChains.length > 0) {
       const contextualErrorVar = this.compiler._tmpid();
-      this.compiler.emit(`  const ${contextualErrorVar} = runtime.PoisonError.wrap(e, ${errorContextExpr});`);
+      this.compiler.emit(`  const ${contextualErrorVar} = runtime.PoisonError.wrap(e, ${errorContextExpr}, "ConditionThrew");`);
       for (const chainName of poisonChains) {
         this.compiler.emit.line(
           `    ${bufferCompiler.currentBuffer}.addCommand(new runtime.ErrorCommand(${contextualErrorVar}, ${errorContextExpr}), "${chainName}");`

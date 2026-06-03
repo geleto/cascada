@@ -5,7 +5,7 @@ import {createPoison, isPoisonError, PoisonError} from '../../src/runtime/runtim
 
 (function () {
   const TEST_EC = [1, 1, 'LoopPoison.TestInput', 'phase2-loop-poison-sync.js', null, null];
-  const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC));
+  const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC, 'ValueRejected'));
 
   describe('Phase 2: Loop Synchronous Poison Detection', () => {
     let env;

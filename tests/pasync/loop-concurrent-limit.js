@@ -9,7 +9,7 @@ import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
 
 const TEST_EC = [1, 1, 'Test', 'test.casc', null, null];
 const TEST_DIAGNOSTIC_CONTEXT = cloneWithAddedContext(TEST_EC, { branch: 'test' });
-const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC));
+const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC, 'ValueRejected'));
 
 (function () {
 

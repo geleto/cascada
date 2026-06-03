@@ -4,7 +4,7 @@ import {AsyncEnvironment} from '../../src/environment/environment.js';
 import {createPoison, isPoisonError, PoisonError} from '../../src/runtime/runtime.js';
 
 const TEST_POISON_EC = [1, 1, 'ChainsExplicit.TestPoison', 'chains-explicit.casc', null, null];
-const testPoison = (message) => createPoison(PoisonError.create(message, TEST_POISON_EC));
+const testPoison = (message) => createPoison(PoisonError.create(message, TEST_POISON_EC, 'ValueRejected'));
 
 describe('Cascada Script: Explicit Chain Declarations', function () {
   let env;

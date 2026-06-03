@@ -158,7 +158,7 @@ function getDestructuredLoopArgs(value, loopVars, errorContext, buffer, asyncOpt
   if (Array.isArray(value)) {
     return value.slice(0, loopVars.length);
   }
-  const poisonError = PoisonError.create('Expected an array for destructuring', errorContext);
+  const poisonError = PoisonError.create('Expected an array for destructuring', errorContext, 'DestructureMismatch');
   poisonIterationEffects(buffer, asyncOptions, poisonError);
   return null;
 }
@@ -177,7 +177,7 @@ async function iterateAsyncSequential(arr, loopBody, loopVars, errorContext, ret
       if (value instanceof Error) {
         // Soft error: generator yielded an error. Preserve the yielded error's
         // own origin when present; otherwise use the iterator source boundary.
-        value = createPoison(PoisonError.wrap(value, errorContext));
+        value = createPoison(PoisonError.wrap(value, errorContext, 'IteratorThrew'));
       }
 
       let res;
@@ -208,7 +208,7 @@ async function iterateAsyncSequential(arr, loopBody, loopVars, errorContext, ret
       i++;
     }
   } catch (err) {
-    const poisonError = PoisonError.wrap(err, errorContext);
+    const poisonError = PoisonError.wrap(err, errorContext, 'IteratorThrew');
     poisonError.didIterate = didIterate;
     poisonError.errors[poisonError.errors.length - 1].didIterate = didIterate;
     throw poisonError;
@@ -259,7 +259,7 @@ async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext, buffe
           if (value instanceof Error) {
             // Soft error: generator yielded an error. Preserve the yielded error's
             // own origin when present; otherwise use the iterator source boundary.
-            value = createPoison(PoisonError.wrap(value, errorContext));
+            value = createPoison(PoisonError.wrap(value, errorContext, 'IteratorThrew'));
           }
 
           // Resolve the previous iteration's lastPromise
@@ -297,7 +297,7 @@ async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext, buffe
           lastPromiseResolve(true);
         }
 
-        const rejectionError = PoisonError.wrap(error, errorContext);
+        const rejectionError = PoisonError.wrap(error, errorContext, 'IteratorThrew');
         // Preserve the loop-else decision on both the aggregate PoisonError and
         // its leaf error, since callers inspect both shapes in existing paths.
         rejectionError.didIterate = didIterate;
@@ -374,7 +374,7 @@ async function iterateAsyncLimited(arr, loopBody, loopVars, errorContext, limit,
       // iterator.next() is a value-consumption boundary: convert raw
       // generator failures to poison so the loop effects can be poisoned
       // without aborting unrelated work.
-      const poisonError = PoisonError.wrap(err, errorContext);
+      const poisonError = PoisonError.wrap(err, errorContext, 'IteratorThrew');
       poisonError.didIterate = didIterate;
       poisonError.errors[poisonError.errors.length - 1].didIterate = didIterate;
       if (rejectAllScheduled) {
@@ -393,7 +393,7 @@ async function iterateAsyncLimited(arr, loopBody, loopVars, errorContext, limit,
     // Soft error: generator yielded an Error. Preserve the yielded error's
     // own origin when present; otherwise use the iterator source boundary.
     if (value instanceof Error) {
-      value = createPoison(PoisonError.wrap(value, errorContext));
+      value = createPoison(PoisonError.wrap(value, errorContext, 'IteratorThrew'));
     }
 
     const res = callLoopBodyLimited(loopBody, loopVars, value, i, undefined, false, errorContext, buffer, asyncOptions);
@@ -801,7 +801,7 @@ async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOpti
           poisonLoopEffects(
             buffer,
             asyncOptions,
-            PoisonError.create('concurrentLimit must be a positive number or 0 / null / undefined', errorContext),
+            PoisonError.create('concurrentLimit must be a positive number or 0 / null / undefined', errorContext, 'InvalidConcurrentLimit'),
             false
           );
           return;

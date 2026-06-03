@@ -31,7 +31,7 @@ const TEST_EC = [1, 1, 'Poison.Unit', 'poison-unit.js', null, null];
 const OTHER_EC = [2, 3, 'Poison.Other', 'poison-unit.js', null, null];
 
 function poisonError(message, ec = TEST_EC) {
-  return PoisonError.create(message, ec);
+  return PoisonError.create(message, ec, 'ValueRejected');
 }
 
 function poisonValue(message, ec = TEST_EC) {
@@ -55,10 +55,11 @@ describe('typed poison error contracts', () => {
 
   it('creates, wraps, and preserves source context on individual poison errors', () => {
     const raw = new Error('raw failure');
-    const wrapped = PoisonError.wrap(raw, TEST_EC);
+    const wrapped = PoisonError.wrap(raw, TEST_EC, 'UserCallThrew');
 
     expect(wrapped).to.be.a(PoisonError);
     expect(wrapped.cause).to.be(raw);
+    expect(wrapped.kind).to.be('UserCallThrew');
     expect(wrapped.context).to.eql({
       lineno: 1,
       colno: 1,
@@ -67,7 +68,9 @@ describe('typed poison error contracts', () => {
       renderState: null
     });
     expect(wrapped.errorContext).to.be(undefined);
-    expect(PoisonError.wrap(wrapped, OTHER_EC)).to.be(wrapped);
+    expect(PoisonError.wrap(wrapped, OTHER_EC, 'LookupThrew')).to.be(wrapped);
+    expect(wrapped.kind).to.be('UserCallThrew');
+    expect(PoisonError.create('created failure', TEST_EC, 'NotCallable').kind).to.be('NotCallable');
     expect(() => new PoisonError('missing context')).to.throwException((err) => {
       expect(err).to.be.a(TypeError);
       expect(err.message).to.contain('compact origin context');
@@ -83,6 +86,21 @@ describe('typed poison error contracts', () => {
     });
   });
 
+  it('requires kind when creating a new poison source', () => {
+    expect(() => PoisonError.create('missing kind', TEST_EC)).to.throwException((err) => {
+      expect(isRuntimeError(err)).to.be(true);
+      expect(err.message).to.contain('PoisonError.create requires kind');
+    });
+    expect(() => PoisonError.wrap(new Error('missing kind'), TEST_EC)).to.throwException((err) => {
+      expect(isRuntimeError(err)).to.be(true);
+      expect(err.message).to.contain('PoisonError.wrap requires kind');
+    });
+    expect(() => new RuntimePromise(Promise.resolve('ok'), TEST_EC)).to.throwException((err) => {
+      expect(isRuntimeError(err)).to.be(true);
+      expect(err.message).to.contain('RuntimePromise requires kind');
+    });
+  });
+
   it('groups only existing poison errors', () => {
     const one = poisonError('one');
     const two = poisonError('two', OTHER_EC);
@@ -90,6 +108,9 @@ describe('typed poison error contracts', () => {
 
     expect(grouped).to.be.a(PoisonErrorGroup);
     expect(grouped).to.be.a(PoisonError);
+    expect(grouped.kind).to.be('ValueRejected');
+    expect(grouped.kinds).to.eql(['ValueRejected']);
+    expect(grouped.totalErrorCount).to.be(2);
     expect(grouped.errors).to.eql([one, two]);
     expect(grouped.context).to.eql(one.context);
     expect(grouped.errorContext).to.be(undefined);
@@ -143,12 +164,45 @@ describe('typed poison error contracts', () => {
 
   it('deduplicates separate wrappers around the same original cause', () => {
     const raw = new Error('same source');
-    const first = PoisonError.wrap(raw, TEST_EC);
-    const second = PoisonError.wrap(raw, OTHER_EC);
+    const first = PoisonError.wrap(raw, TEST_EC, 'ValueRejected');
+    const second = PoisonError.wrap(raw, OTHER_EC, 'ValueRejected');
     const grouped = PoisonError.group([first, second]);
 
     expect(grouped).to.be(first);
     expect(grouped.errors).to.eql([first]);
+  });
+
+  it('sorts grouped poison errors by source before formatting', () => {
+    const later = PoisonError.create('later', [5, 1, 'later', 'b.njk', null, null], 'LookupThrew');
+    const earlier = PoisonError.create('earlier', [1, 2, 'earlier', 'a.njk', null, null], 'NotCallable');
+    const sameLine = PoisonError.create('same line', [1, 3, 'same', 'a.njk', null, null], 'NotAFunction');
+    const grouped = PoisonError.group([later, sameLine, earlier]);
+
+    expect(grouped.errors).to.eql([earlier, sameLine, later]);
+    expect(grouped.kinds).to.eql(['LookupThrew', 'NotAFunction', 'NotCallable']);
+    expect(grouped.message.indexOf('earlier')).to.be.lessThan(grouped.message.indexOf('same line'));
+    expect(grouped.message.indexOf('same line')).to.be.lessThan(grouped.message.indexOf('later'));
+  });
+
+  it('caps grouped poison messages while retaining all errors', () => {
+    const errors = [];
+    for (let i = 0; i < 12; i++) {
+      const kind = i % 2 === 0 ? 'LookupThrew' : 'UserCallThrew';
+      errors.push(PoisonError.create(`failure ${i}`, [i + 1, 1, `err${i}`, 'cap.njk', null, null], kind));
+    }
+
+    const grouped = PoisonError.group(errors);
+
+    expect(grouped).to.be.a(PoisonErrorGroup);
+    expect(grouped.totalErrorCount).to.be(12);
+    expect(grouped.errors).to.have.length(12);
+    expect(grouped.kinds).to.eql(['LookupThrew', 'UserCallThrew']);
+    expect(grouped.message).to.contain('PoisonErrorGroup (12 errors, showing 10) of 2 kinds (LookupThrew, UserCallThrew):');
+    expect(grouped.message).to.contain('failure 9');
+    expect(grouped.message).to.not.contain('failure 10');
+    expect(grouped.message).to.not.contain('failure 11');
+    expect(grouped.errors[10].message).to.contain('failure 10');
+    expect(grouped.errors[11].message).to.contain('failure 11');
   });
 
   it('collects poison errors and treats raw promise rejections as fatal', async () => {
@@ -258,11 +312,12 @@ describe('typed poison error contracts', () => {
 
   it('normalizes RuntimePromise rejections at the promise boundary', async () => {
     const raw = new Error('plain rejection');
-    const wrapped = RuntimePromise._wrapRejection(raw, TEST_EC);
+    const wrapped = RuntimePromise._wrapRejection(raw, TEST_EC, 'LookupThrew');
 
     expect(wrapped).to.be.a(PoisonError);
     expect(wrapped.cause).to.be(raw);
     expect(wrapped.context.label).to.be('Poison.Unit');
+    expect(wrapped.kind).to.be('LookupThrew');
 
     const fatal = RuntimeError.create('fatal rejection', TEST_EC);
     expect(RuntimePromise._wrapRejection(fatal, OTHER_EC)).to.be(fatal);
@@ -278,7 +333,7 @@ describe('typed poison error contracts', () => {
   it('passes normalized rejections to RuntimePromise handlers', async () => {
     const raw = new Error('handler source');
     let seen = null;
-    const handled = new RuntimePromise(Promise.reject(raw), TEST_EC)
+    const handled = new RuntimePromise(Promise.reject(raw), TEST_EC, 'UserCallThrew')
       .then(null, (err) => {
         seen = err;
         return 'handled';
@@ -288,6 +343,7 @@ describe('typed poison error contracts', () => {
     expect(seen).to.be.a(PoisonError);
     expect(seen.cause).to.be(raw);
     expect(seen.context.label).to.be('Poison.Unit');
+    expect(seen.kind).to.be('UserCallThrew');
   });
 
   it('marks promises handled by installing a rejection handler', () => {
@@ -335,7 +391,7 @@ describe('typed poison error contracts', () => {
   });
 
   it('guards PoisonError.create message input and reports with runtime context', () => {
-    expect(() => PoisonError.create(null, TEST_EC)).to.throwException((err) => {
+    expect(() => PoisonError.create(null, TEST_EC, 'ValueRejected')).to.throwException((err) => {
       expect(isRuntimeError(err)).to.be(true);
       expect(err.message).to.contain('PoisonError.create expects a message string');
       expect(err.context.label).to.be('Poison.Unit');

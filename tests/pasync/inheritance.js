@@ -789,7 +789,8 @@ describe('Inheritance rebuild', function () {
           if (!(name in values)) {
             return runtime.createPoison(runtime.PoisonError.create(
               `Can not look up unknown variable/function: ${name}`,
-              [1, 1, 'Lookup', path, null, null]
+              [1, 1, 'Lookup', path, null, null],
+              'UnknownVariable'
             ));
           }
           return values[name];

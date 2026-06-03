@@ -86,7 +86,7 @@ function memberLookupAsync(obj, val, errorContext, currentBuffer = null) {
   // No errors - proceed with lookup
   const result = memberLookup(obj, val);
   if (result && typeof result.then === 'function') {
-    return new RuntimePromise(result, errorContext);
+    return new RuntimePromise(result, errorContext, 'LookupThrew');
   }
   return result;
 }
@@ -120,12 +120,12 @@ async function _memberLookupAsyncComplex(obj, val, errorContext, currentBuffer =
     // Wrap promise results to preserve error context
     // This handles: 1) properties that are promises, 2) getters that return promises
     if (result && typeof result.then === 'function') {
-      return new RuntimePromise(result, errorContext);
+      return new RuntimePromise(result, errorContext, 'LookupThrew');
     }
 
     return result;
   } catch (err) {
-    return createPoison(PoisonError.wrap(err, errorContext));
+    return createPoison(PoisonError.wrap(err, errorContext, 'LookupThrew'));
   }
 }
 
@@ -160,7 +160,7 @@ function memberLookupScript(obj, val, errorContext, currentBuffer = null) {
   }
 
   if (obj === undefined || obj === null) {
-    return createPoison(PoisonError.create(`Cannot read property ${val} of ${obj}`, errorContext));
+    return createPoison(PoisonError.create(`Cannot read property ${val} of ${obj}`, errorContext, 'NullLookup'));
   }
 
   const value = obj[val];//some APIs (vercel ai result.elementStream) do not like multiple reads
@@ -169,7 +169,7 @@ function memberLookupScript(obj, val, errorContext, currentBuffer = null) {
   }
 
   if (value && typeof value.then === 'function') {
-    return new RuntimePromise(value, errorContext);
+    return new RuntimePromise(value, errorContext, 'LookupThrew');
   }
   return value;
 }
@@ -205,12 +205,12 @@ async function _memberLookupScriptComplex(obj, val, errorContext, currentBuffer 
     // Wrap promise results to preserve error context
     // This handles: 1) properties that are promises, 2) getters that return promises
     if (result && typeof result.then === 'function') {
-      return new RuntimePromise(result, errorContext);
+      return new RuntimePromise(result, errorContext, 'LookupThrew');
     }
 
     return result;
   } catch (err) {
-    return createPoison(PoisonError.wrap(err, errorContext));
+    return createPoison(PoisonError.wrap(err, errorContext, 'LookupThrew'));
   }
 }
 

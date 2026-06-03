@@ -7,7 +7,7 @@ import * as runtime from '../../src/runtime/runtime.js';
   const TEST_EC = [1, 1, 'Peek.TestInput', 'peek-operator.njk', null, null];
 
   function createTestPoison(error) {
-    return runtime.createPoison(runtime.PoisonError.wrap(error, TEST_EC));
+    return runtime.createPoison(runtime.PoisonError.wrap(error, TEST_EC, 'ValueRejected'));
   }
 
   describe('Peek Operator (#)', () => {

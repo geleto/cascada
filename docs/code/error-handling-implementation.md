@@ -138,18 +138,21 @@ Goal: one stable failure-category per leaf poison, and bounded/readable groups b
 on it (analysis §3, §11.8, §11 "Open evaluation areas" — Aggregate order +
 Unbounded aggregation). Producer + first consumer together.
 
-- [ ] §11.8 — thread `kind` through `PoisonError.create`, `PoisonError.wrap`, and
+- [x] §11.8 — thread `kind` through `PoisonError.create`, `PoisonError.wrap`, and
   `RuntimePromise` (carry + apply on `_wrapRejection`); pass the target `kind` at
   every source in the analysis §3 kind table, including `ImportBindingMissing` at the
-  `from import` missing-binding throw (replacing the `ValueRejected` fallback).
-- [ ] Cap the `PoisonErrorGroup` message; when the cap is reached, the header
+  `from import` missing-binding throw. This intentionally changes async `from import`
+  missing bindings from fatal `RuntimeError` to poison; sync-compiled mode keeps its
+  legacy fatal path.
+- [x] Cap the `PoisonErrorGroup` message; when the cap is reached, the header
   summarizes the full set before the capped list: `N errors (showing <cap>) of K
   kinds (kind1, kind2, kind3)`. Counts/kinds from the fully-collected set (all already
-  awaited) — completeness preserved; also cap retained `.errors[]`.
-- [ ] Sort aggregated errors by source position (`path`, `lineno`, `colno`) with
+  awaited) — completeness preserved; retain the full structured `.errors[]` and cap
+  only `message` / `fullMessage` presentation.
+- [x] Sort aggregated errors by source position (`path`, `lineno`, `colno`) with
   deterministic tiebreakers before building the group. Order determinism is **not**
   required; completeness (never miss an error) **is**.
-- [ ] *(Opportunistic, fixture-coupled — unrelated to `kind`/aggregation.)* Close the
+- [ ] *(Postponed, fixture-coupled — unrelated to `kind`/aggregation.)* Close the
   **sync-root cleanup caveat** (analysis §5 "Fatal-unwind cleanup ownership", R1): the
   async compiled root finishes its buffer on the success path only, so a call-wrapper
   rethrow from the synchronous root skips `output.finish()`. Wrap the emitted root
@@ -157,6 +160,15 @@ Unbounded aggregation). Producer + first consumer together.
   because this phase already regenerates fixtures; do **not** pay a separate fixture
   regen for it. Leak (not hang), so it stays optional — skip if it complicates the
   emit and revisit with the next emit-touching phase.
+- [ ] *(Postponed / optional cleanup.)* Simplify the redundant group-time
+  `requirePoisonKind(...)` reads in `_collectKinds` / `_sortErrorsBySource` once this
+  area is touched again. Construction already enforces the invariant; the duplicate
+  guard is harmless on the error path.
+- [ ] *(Postponed / loop fragility cleanup.)* Replace loop-else reads that depend on
+  `err.errors[err.errors.length - 1]?.didIterate` with an explicit iterator-error
+  marker before changing loop aggregation again. Group sorting means `.errors[]`
+  order is source-order, not "last thrown"; current paths are single-leaf, but the
+  pattern is brittle.
 
 Verify: `npm run mocha -- tests/poison/ tests/pasync/error-context.js
 tests/pasync/composition.js` (kind, group cap/summary/order) · regenerate fixtures ·
@@ -387,8 +399,8 @@ benchmark before/after for the lazy-formatting change.
 - **First-fatal-wins** — accepted as non-deterministic; first reported wins. Close as
   fast as possible and do not crash (Phase 2 early-exit + Phase 0 §11.16).
 - **Aggregate order** — completeness required; deterministic order not (Phase 3).
-- **Unbounded aggregation** — cap the message + retained errors, with a kind-summary
-  header (Phase 3).
+- **Unbounded aggregation** — cap the message with a kind-summary header while
+  retaining the full structured `.errors[]` (Phase 3).
 - **Dedup stability** — non-issue; origin context is fixed at creation, so order does
   not change the kept context. No work.
 - **Efficiency** — low priority; lazy formatting still worth doing for clarity.

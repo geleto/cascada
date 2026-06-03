@@ -31,6 +31,16 @@ function expandedContext(context) {
   return info;
 }
 
+async function expectPoisonKind(operation, kind) {
+  try {
+    await operation();
+    throw new Error(`Expected render to fail with ${kind}`);
+  } catch (err) {
+    expect(runtime.isPoisonError(err)).to.be(true);
+    expect(err.errors[0].kind).to.be(kind);
+  }
+}
+
 function expandedStack(stack) {
   return stack.map(expandedContext);
 }
@@ -198,7 +208,7 @@ describe('error context tracing runtime foundation', () => {
 
   it('stores source context on PoisonError and preserves it when grouped', () => {
     const origin = [2, 4, 'FunCall', 'origin.casc', null, null];
-    const poison = PoisonError.create('poisoned', origin);
+    const poison = PoisonError.create('poisoned', origin, 'ValueRejected');
     const grouped = new PoisonErrorGroup(poison);
 
     expect(poison.context.path).to.be('origin.casc');
@@ -217,7 +227,7 @@ describe('error context tracing runtime foundation', () => {
 
   it('createPoison accepts ready poison errors only', () => {
     const ec = [5, 9, 'Switch.Expression(Symbol)', 'switch.casc', null, null];
-    const poison = runtime.createPoison(PoisonError.create('one', ec));
+    const poison = runtime.createPoison(PoisonError.create('one', ec, 'ValueRejected'));
 
     expect(isPoison(poison)).to.be(true);
     expect(poison.errors).to.have.length(1);
@@ -228,7 +238,7 @@ describe('error context tracing runtime foundation', () => {
     const ec = [8, 12, 'LookupVal', 'lookup.casc', null, null];
     const origin = [3, 5, 'Origin', 'origin.casc', null, null];
     const buffer = new CommandBuffer({ path: 'lookup.casc' }, null, null, null, null, runtime.cloneWithAddedContext(ec, { entryName: 'lookup' }));
-    const inputError = PoisonError.create('lookup failed', origin);
+    const inputError = PoisonError.create('lookup failed', origin, 'ValueRejected');
 
     try {
       await memberLookupScript(Promise.reject(inputError), 'name', ec, buffer);
@@ -839,7 +849,7 @@ describe('error context tracing runtime foundation', () => {
     }
   });
 
-  it('reports missing from-import bindings with binding context', async () => {
+  it('poisons missing from-import bindings with binding context', async () => {
     const loader = new StringLoader();
     loader.addTemplate('lib.njk', '{% set present = "ok" %}');
     const env = new AsyncEnvironment(loader);
@@ -853,11 +863,70 @@ describe('error context tracing runtime foundation', () => {
       await template.render({});
       throw new Error('Expected render to fail');
     } catch (err) {
-      expect(runtime.isRuntimeError(err)).to.be(true);
+      expect(runtime.isPoisonError(err)).to.be(true);
+      const poisonError = err.errors[0];
       expect(err.message).to.contain('cannot import \'missing\'');
-      expect(err.context.path).to.be('from-missing.njk');
-      expect(err.context.label).to.be('Symbol');
+      expect(poisonError.kind).to.be('ImportBindingMissing');
+      expect(poisonError.context.path).to.be('from-missing.njk');
+      expect(poisonError.context.label).to.be('Symbol');
     }
+  });
+
+  it('assigns source-specific poison kinds through runtime render paths', async () => {
+    const env = new AsyncEnvironment();
+
+    await expectPoisonKind(
+      () => env.renderScriptString('return missing'),
+      'UnknownVariable'
+    );
+    await expectPoisonKind(
+      () => env.renderScriptString('return value.name', { value: null }),
+      'NullLookup'
+    );
+    await expectPoisonKind(
+      () => env.renderScriptString('return value()', { value: null }),
+      'NotCallable'
+    );
+    await expectPoisonKind(
+      () => env.renderScriptString('return value()', { value: 1 }),
+      'NotAFunction'
+    );
+    await expectPoisonKind(
+      () => env.renderScriptString('return value()', { value: () => { throw new Error('boom'); } }),
+      'UserCallThrew'
+    );
+    await expectPoisonKind(
+      () => env.renderScriptString('return getValue().name', {
+        async getValue() {
+          return Object.defineProperty({}, 'name', {
+            get() {
+              throw new Error('getter failed');
+            }
+          });
+        }
+      }),
+      'LookupThrew'
+    );
+    await expectPoisonKind(
+      () => env.renderScriptString('return value.name', {
+        value: Promise.resolve(Object.defineProperty({}, 'name', {
+          get() {
+            throw new Error('getter failed');
+          }
+        }))
+      }),
+      'LookupThrew'
+    );
+    await expectPoisonKind(
+      () => env.renderScriptString([
+        'data result',
+        'for item in items of limit',
+        '  result.push(item)',
+        'endfor',
+        'return result.snapshot()'
+      ].join('\n'), { items: [1, 2], limit: -1 }),
+      'InvalidConcurrentLimit'
+    );
   });
 
   it('stores buffer stack error context on runtime value boundaries', async () => {
@@ -944,10 +1013,10 @@ describe('error context tracing runtime foundation', () => {
 
   it('requires source context on command-buffer error commands', () => {
     const ec = [13, 2, 'Guard.Condition(Symbol)', 'script.casc', null, null];
-    const command = new ErrorCommand(PoisonError.create('guard failed', ec), ec);
+    const command = new ErrorCommand(PoisonError.create('guard failed', ec, 'ValueRejected'), ec);
 
     expect(command.errorContext).to.eql(ec);
-    expect(() => new ErrorCommand(PoisonError.create('guard failed', ec))).to.throwError(/ErrorCommand requires a compact errorContext/);
+    expect(() => new ErrorCommand(PoisonError.create('guard failed', ec, 'ValueRejected'))).to.throwError(/ErrorCommand requires a compact errorContext/);
     expect(() => new ErrorCommand(null, ec)).to.throwError(/Expected existing poison errors/);
   });
 

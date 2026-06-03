@@ -81,7 +81,7 @@ function runSequentialPathOperation(cmd, chain, isWrite) {
   try {
     result = cmd.operation();
   } catch (err) {
-    rejectPoison(PoisonError.wrap(err, cmd.errorContext));
+    rejectPoison(PoisonError.wrap(err, cmd.errorContext, 'SequentialPathThrew'));
     return;
   }
 

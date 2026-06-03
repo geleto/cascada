@@ -5,8 +5,8 @@ inventory (§9) of the `catch` blocks in the async runtime and compiler-emitted 
 — what each does, why, and whether it is correct, redundant, or a known gap. The
 `catch` inventory is exhaustive; fire-and-forget promise-rejection coverage is
 current best-known and still being swept (§11), not final proof. Parts of §3 marked
-**Planned** (the `kind` taxonomy, NaN handling) and all of §11 are target design,
-not current implementation.
+**Planned** (NaN handling) and all unchecked items in §11 are target design, not
+current implementation.
 
 **Scope:** the async compiler/runtime only. The frozen synchronous
 Nunjucks-compatible path (`handleError(error, lineno, colno, label, path)`,
@@ -20,8 +20,7 @@ taxonomy, compact contexts, fatal delivery — is implemented across the value p
 `guard.js`, `buffer-iterator.js`, `inheritance/*`), and compiler-emitted catches.
 Sections 1–10 are the reference for that implemented model.
 [§11](#11-remaining-work-and-gaps) is the design + plan for what is **not** yet
-implemented: the `kind` field (§3), NaN→poison, fatal early-exit, the cleanups and
-dedups, and a confirmed process-crashing bug (§11.16). The ordered plan lives in
+implemented: NaN→poison, load-failure policy, remaining cleanups and dedups. The ordered plan lives in
 [`error-handling-implementation.md`](error-handling-implementation.md).
 
 ---
@@ -150,14 +149,14 @@ Aggregate of existing poison errors; never invents a new consumption origin.
 Build only through `PoisonError.group(poisonErrors)`, which returns the single
 normalized `PoisonError` for one-error input and a `PoisonErrorGroup` for
 multi-error input. `PoisonErrorGroup extends PoisonError`, so `isPoisonError(...)`
-matches both; never branch on `instanceof PoisonErrorGroup`. A group has no single
-`kind`; each leaf in `.errors[]` keeps its own `kind`.
+matches both; never branch on `instanceof PoisonErrorGroup`. Each leaf in
+`.errors[]` keeps its source `kind`; a group exposes a derived aggregate `kind`
+for inspection (`'Multiple'` when leaves have mixed kinds, otherwise the shared
+kind), plus `kinds[]` and `totalErrorCount`. `'Multiple'` is not a source kind.
 
 ### Poison `kind` (failure category)
 
-**Planned (§11.8).** This whole subsection is **target design, not yet
-implemented** — no
-`PoisonError.create`/`wrap` call passes a `kind` today. `kind` is **internal
+**Implemented (§11.8).** `kind` is **internal
 diagnostic metadata**: readable on a caught error for inspection/grouping, but not a
 stable public API contract — the set of kinds may change, so do not treat it as a
 compatibility surface.
@@ -175,13 +174,13 @@ line:
 `kind` is set at the source: `PoisonError.create(message, errorContext, kind)` and
 `PoisonError.wrap(error, errorContext, kind)`. `RuntimePromise` carries the `kind`
 too (`new RuntimePromise(promise, errorContext, kind)`) so a delayed async
-rejection keeps source attribution rather than collapsing to the generic fallback.
+rejection keeps source attribution. There is no default kind; constructing a new
+poison source without an explicit kind is a runtime contract error.
 
 This table is the **complete** poison-source enumeration, cross-checked against
 every `PoisonError.create` / `PoisonError.wrap` call site in `src/`. Each existing
-source is assigned its target `kind`; the two **new** sources being added
-(`DestructureMismatch`, `NaNResult`) and the one **planned** kind
-(`ImportBindingMissing`) are marked.
+source is assigned its target `kind`; `DestructureMismatch` and
+`ImportBindingMissing` are implemented additions, while `NaNResult` remains planned.
 
 | `kind` | Source site | Factory | Status |
 |---|---|---|---|
@@ -200,14 +199,13 @@ source is assigned its target `kind`; the two **new** sources being added
 | `ValueRejected` | `RuntimePromise._wrapRejection` and `commands/errors.js` `contextualizeChainError` fallback — a source-origin async value rejected / a raw chain error was contextualized with no more specific `kind` | `wrap` | existing |
 | `DestructureMismatch` | `loop.js` — loop value is not an array for multi-variable destructuring | `create` | **new** (§9 / §11.4) |
 | `NaNResult` | value-production points (arithmetic / call / lookup / data-method / loop results) — value is `NaN` (see [NaN handling](#nan-handling)) | `create` | **new** (§11) |
-| `ImportBindingMissing` | `composition.js` — `from import` names an export the module does not have | `create` | **planned** — today the raw throw flows through `RuntimePromise` as `ValueRejected`; set this `kind` when wrapping the missing-binding throw |
+| `ImportBindingMissing` | `composition.js` — `from import` names an export the module does not have | `create` | implemented |
 | `LoadFailed` | `composition.js` / inheritance — a non-fatal **value-producing** load (`import` / `from import` / `component`) failed to resolve or compile (see [Load-failure policy](#load-failure-policy-planned)) | `wrap` | **planned** (§11.17) — one kind, many `label`s (the import/component frame). `include` failures are silent or fatal, never poison-by-default, so they carry no `kind`. |
 
 Notes:
 
-- The `kind` field itself is a planned addition — no `PoisonError.create`/`wrap`
-  call passes a `kind` today. Implementing it means threading `kind` through the
-  two factories and `RuntimePromise`, then passing it at each source above.
+- The `kind` field is implemented by threading `kind` through `PoisonError.create`,
+  `PoisonError.wrap`, and `RuntimePromise`, then passing it at each source above.
 - `ErrorCommand` / `TargetPoisonCommand` and `resolve.js`'s `createPoison(group)`
   only **aggregate** existing poison; they are not sources and get no `kind`.
 - There is no `DivideByZero` kind: `/` and `%` by zero produce `Infinity`/`NaN`,
@@ -1226,9 +1224,10 @@ async timing.
   `PoisonErrorGroup` message. When the cap is reached, the header summarizes the
   full set before the capped list: e.g. `N errors (showing <cap>) of K kinds
   (kind1, kind2, kind3)`. Counts and kinds come from the fully-collected set (all
-  entries are already awaited), so completeness is preserved; also cap the retained
-  `.errors[]` to bound memory for pathological failures. Uses the `kind` field — so
-  this depends on the kind work (§11.8). Tracked as an action.
+  entries are already awaited), so completeness is preserved. Retain the full
+  structured `.errors[]`; the cap is presentation-only for `message` /
+  `fullMessage`. Uses the `kind` field — so this depends on the kind work (§11.8).
+  Tracked as an action.
 - **Unobserved-rejection sweep (REQUIRED).** Beyond the §11.2/§11.3 gaps and the
   confirmed §11.16 bug, sweep every fire-and-forget promise — `loop.js` worker
   promises, guard setup/detection promises — for a rejection with no handler. The

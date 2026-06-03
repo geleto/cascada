@@ -141,7 +141,7 @@ class Chain {
       this._applyPoisonError(err, cmd);
       return;
     }
-    this._applyPoisonError(PoisonError.wrap(err, cmd.errorContext), cmd);
+    this._applyPoisonError(PoisonError.wrap(err, cmd.errorContext, 'DataMethodThrew'), cmd);
   }
 
   _applyPoisonError(poisonError) {

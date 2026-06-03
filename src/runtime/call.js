@@ -75,12 +75,14 @@ function callWrapAsync(obj, name, context, args, errorContext, currentBuffer = n
   if (!obj) {
     return createPoison(PoisonError.create(
       'Unable to call `' + name + '`, which is undefined or falsey',
-      errorContext
+      errorContext,
+      'NotCallable'
     ));
   } else if (typeof obj !== 'function') {
     return createPoison(PoisonError.create(
       'Unable to call `' + name + '`, which is not a function',
-      errorContext
+      errorContext,
+      'NotAFunction'
     ));
   }
 
@@ -95,11 +97,11 @@ function callWrapAsync(obj, name, context, args, errorContext, currentBuffer = n
     }
     if (result && typeof result.then === 'function') {// && !isPoison(result)) {
       // add context to the promise that will be applied if it rejects
-      return new RuntimePromise(result, errorContext);
+      return new RuntimePromise(result, errorContext, 'UserCallThrew');
     }
     return result;
   } catch (err) {
-    return createPoison(PoisonError.wrap(err, errorContext));
+    return createPoison(PoisonError.wrap(err, errorContext, 'UserCallThrew'));
   }
 }
 
@@ -159,12 +161,14 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
   if (!obj) {
     return createPoison(PoisonError.create(
       'Unable to call `' + name + '`, which is undefined or falsey',
-      errorContext
+      errorContext,
+      'NotCallable'
     ));
   } else if (typeof obj !== 'function') {
     return createPoison(PoisonError.create(
       'Unable to call `' + name + '`, which is not a function',
-      errorContext
+      errorContext,
+      'NotAFunction'
     ));
   }
 
@@ -180,12 +184,12 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
 
     // Wrap promise results to preserve error context
     if (result && typeof result.then === 'function') {
-      return new RuntimePromise(result, errorContext);
+      return new RuntimePromise(result, errorContext, 'UserCallThrew');
     }
 
     return result;
   } catch (err) {
-    return createPoison(PoisonError.wrap(err, errorContext));
+    return createPoison(PoisonError.wrap(err, errorContext, 'UserCallThrew'));
   }
 }
 
@@ -198,11 +202,11 @@ function envCallWrapAsync(fn, thisArg, args, errorContext) {
       return result;
     }
     if (result && typeof result.then === 'function') {
-      return new RuntimePromise(result, errorContext);
+      return new RuntimePromise(result, errorContext, 'UserCallThrew');
     }
     return result;
   } catch (err) {
-    return createPoison(PoisonError.wrap(err, errorContext));
+    return createPoison(PoisonError.wrap(err, errorContext, 'UserCallThrew'));
   }
 }
 

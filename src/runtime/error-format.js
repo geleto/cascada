@@ -38,6 +38,25 @@ function formatNumberedDiagnostic(index, message) {
   ].join('\n');
 }
 
+function formatPoisonErrorGroupMessages(errors, kinds, limit) {
+  const totalErrorCount = errors.length;
+  const displayedErrors = errors.slice(0, limit);
+  const errorLabel = totalErrorCount === 1 ? 'error' : 'errors';
+  const header = totalErrorCount > limit
+    ? `PoisonErrorGroup (${totalErrorCount} ${errorLabel}, showing ${displayedErrors.length}) of ${kinds.length} kinds (${kinds.join(', ')}):`
+    : `PoisonErrorGroup (${totalErrorCount} ${errorLabel}):`;
+  return {
+    messageLines: [
+      header,
+      ...displayedErrors.map((error, index) => formatNumberedDiagnostic(index, error.message))
+    ],
+    fullMessageLines: [
+      header,
+      ...displayedErrors.map((error, index) => formatNumberedDiagnostic(index, error.fullMessage))
+    ]
+  };
+}
+
 function appendFormattedDiagnosticStack(lines, stack, primaryContext = null) {
   const primary = primaryContext ? formatDiagnosticContext(primaryContext) : null;
   const stackFrames = primary && stack.length > 0 && formatDiagnosticContext(stack[0]) === primary
@@ -141,4 +160,4 @@ function formatDiagnosticValue(value, seen) {
   return String(value);
 }
 
-export { formatDiagnosticInfo, formatDiagnosticMessage, formatNumberedDiagnostic };
+export { formatDiagnosticInfo, formatDiagnosticMessage, formatNumberedDiagnostic, formatPoisonErrorGroupMessages };

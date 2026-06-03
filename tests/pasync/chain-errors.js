@@ -26,7 +26,7 @@ const TEST_EC = [1, 1, 'Test', 'test.casc', null, null];
 const TEST_DIAGNOSTIC_CONTEXT = cloneWithAddedContext(TEST_EC, { branch: 'test' });
 
 function testError(message) {
-  return PoisonError.create(message, TEST_EC);
+  return PoisonError.create(message, TEST_EC, 'ValueRejected');
 }
 
 describe('chain errors', function () {

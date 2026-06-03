@@ -37,7 +37,7 @@ class CompileComposition {
       this.emit.line('  }');
     }
     this.emit.line(`  return ${getTargetFunc}(resolvedTargetName, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg});`);
-    this.emit.line(`}), ${errorContext});`);
+    this.emit.line(`}), ${errorContext}, "ValueRejected");`);
 
     return targetVar;
   }
@@ -80,7 +80,7 @@ class CompileComposition {
       this.emit.line('  resolvedTemplate.compile();');
       this.emit.line('  renderState.throwIfFatalErrorReported();');
       this.emit.line('  return runtime.resolveSingle(resolvedTemplate.getExported(null, null, renderState));');
-      this.emit.line(`}), ${errorContext});`);
+      this.emit.line(`}), ${errorContext}, "ValueRejected");`);
       this.compiler.buffer.emitLimitedLoopCompletion(exportedId, node);
       this._emitValueImportBinding(target, exportedId, node);
       return;
@@ -99,7 +99,7 @@ class CompileComposition {
     this.emit.line('  resolvedTemplate.compile();');
     this.emit.line('  renderState.throwIfFatalErrorReported();');
     this.emit.line(`  return runtime.resolveSingle(resolvedTemplate.getExported(${importContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, renderState));`);
-    this.emit.line(`}), ${errorContext});`);
+    this.emit.line(`}), ${errorContext}, "ValueRejected");`);
     this.compiler.buffer.emitLimitedLoopCompletion(exportedId, node);
     this._emitValueImportBinding(target, exportedId, node);
   }
@@ -146,7 +146,7 @@ class CompileComposition {
     this.emit.line('  resolvedTemplate.compile();');
     this.emit.line('  renderState.throwIfFatalErrorReported();');
     this.emit.line('  return runtime.resolveSingle(resolvedTemplate.getExported(null, null, renderState));');
-    this.emit.line(`}), ${errorContext});`);
+    this.emit.line(`}), ${errorContext}, "ValueRejected");`);
     this._emitAsyncFromImportBindings(node, exportedId, bindingIds);
     this._emitFromImportCompletion(node, exportedId, bindingIds);
   }
@@ -165,7 +165,7 @@ class CompileComposition {
     this.emit.line('  resolvedTemplate.compile();');
     this.emit.line('  renderState.throwIfFatalErrorReported();');
     this.emit.line(`  return runtime.resolveSingle(resolvedTemplate.getExported(${importContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, renderState));`);
-    this.emit.line(`}), ${errorContext});`);
+    this.emit.line(`}), ${errorContext}, "ValueRejected");`);
     this._emitAsyncFromImportBindings(node, exportedId, bindingIds);
     this._emitFromImportCompletion(node, exportedId, bindingIds);
   }
@@ -186,8 +186,8 @@ class CompileComposition {
       this.emit.line(`  if(Object.prototype.hasOwnProperty.call(exported, "${importedName}")) {`);
       this.emit.line(`    return exported["${importedName}"];`);
       this.emit.line(`  }`);
-      this.emit.line(`  runtime.RuntimeError.reportAndThrow("${failMsg}", ${errorContext});`);
-      this.emit.line(`}), ${errorContext});`);
+      this.emit.line(`  throw runtime.PoisonError.create("${failMsg}", ${errorContext}, "ImportBindingMissing");`);
+      this.emit.line(`}), ${errorContext}, "ImportBindingMissing");`);
       bindingIds.push(id);
       this._emitValueImportBinding(alias, id, node);
     });

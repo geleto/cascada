@@ -7,7 +7,7 @@ const {createPoison, isPoisonError, PoisonError} = runtime;
 const TEST_EC = [1, 1, 'AsyncIterator.TestInput', 'phase4-async-iterator-errors.js', null, null];
 
 function createTestPoison(error) {
-  return createPoison(PoisonError.wrap(error, TEST_EC));
+  return createPoison(PoisonError.wrap(error, TEST_EC, 'ValueRejected'));
 }
 
 describe('Phase 4: Async Iterator Error Handling', () => {
@@ -231,8 +231,8 @@ describe('Phase 4: Async Iterator Error Handling', () => {
       async *testGen() {
         yield 'a';
         yield PoisonError.group([
-          PoisonError.create('Multiple error 1', TEST_EC),
-          PoisonError.create('Multiple error 2', TEST_EC)
+          PoisonError.create('Multiple error 1', TEST_EC, 'ValueRejected'),
+          PoisonError.create('Multiple error 2', TEST_EC, 'ValueRejected')
         ]);
         yield 'b';
       }

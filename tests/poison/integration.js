@@ -9,7 +9,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
   const TEST_EC = [1, 1, 'Test.PoisonInput', 'poison-integration.njk', null, null];
 
   function createTestPoison(message) {
-    return runtime.createPoison(runtime.PoisonError.create(message, TEST_EC));
+    return runtime.createPoison(runtime.PoisonError.create(message, TEST_EC, 'ValueRejected'));
   }
 
   describe('Poisoning integration Tests', () => {

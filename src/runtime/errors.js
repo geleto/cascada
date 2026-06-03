@@ -4,7 +4,7 @@ import {CascadaError} from '../errors.js';
 import {
   formatDiagnosticInfo,
   formatDiagnosticMessage,
-  formatNumberedDiagnostic
+  formatPoisonErrorGroupMessages
 } from './error-format.js';
 import {
   getAddedContext,
@@ -22,6 +22,7 @@ const CONTEXTLESS_FATAL_RUNTIME_CONTEXT = {
   path: null,
   renderState: null
 };
+const POISON_GROUP_ERROR_LIMIT = 10;
 // Internal promises are sometimes observed through an owning command/chain
 // instead of by the promise object itself. Mark those promises handled so delayed
 // Cascada-owned consumption does not create process-level rejection warnings.
@@ -209,6 +210,7 @@ class PoisonError extends RuntimeContextError {
     });
     if (new.target === PoisonError) {
       this.errors = [this];
+      this.kind = requirePoisonKind(options.kind, errorContext, 'PoisonError requires kind');
       if (source.stack) {
         this.stack = source.stack;
       }
@@ -276,21 +278,23 @@ class PoisonError extends RuntimeContextError {
     return err instanceof PoisonError && err.cause ? err.cause : err;
   }
 
-  static create(message, errorContext) {
+  static create(message, errorContext, kind) {
     if (typeof message !== 'string') {
       RuntimeError.reportAndThrow('PoisonError.create expects a message string', errorContext);
     }
-    return new PoisonError(new Error(message), errorContext);
+    requirePoisonKind(kind, errorContext, 'PoisonError.create requires kind');
+    return new PoisonError(new Error(message), errorContext, { kind });
   }
 
-  static wrap(error, errorContext) {
+  static wrap(error, errorContext, kind) {
     if (isPoisonError(error)) {
       // Existing poison keeps its original source context; consumers must not
       // replace it with the current operation's context.
       return error;
     }
     throwIfRuntimeError(error);
-    return new PoisonError(error, errorContext);
+    requirePoisonKind(kind, errorContext, 'PoisonError.wrap requires kind');
+    return new PoisonError(error, errorContext, { kind });
   }
 
   /**
@@ -339,6 +343,9 @@ class PoisonErrorGroup extends PoisonError {
       stack: RuntimeContextError._normalizeDiagnosticStack(firstError._diagnosticStack)
     });
     this.errors = state.errors;
+    this.kind = state.kind;
+    this.totalErrorCount = state.totalErrorCount;
+    this.kinds = state.kinds;
     if (state.stack) {
       this.stack = state.stack;
     }
@@ -352,19 +359,18 @@ class PoisonErrorGroup extends PoisonError {
     if (normalizedErrors.length === 0) {
       throw new Error('PoisonErrorGroup requires at least one poison error');
     }
-    const errorLabel = normalizedErrors.length === 1 ? 'error' : 'errors';
-    const description = `Multiple errors occurred (${normalizedErrors.length})`;
-    const messageLines = [
-      `PoisonErrorGroup (${normalizedErrors.length} ${errorLabel}):`,
-      ...normalizedErrors.map((error, index) => formatNumberedDiagnostic(index, error.message))
-    ];
-    const fullMessageLines = [
-      `PoisonErrorGroup (${normalizedErrors.length} ${errorLabel}):`,
-      ...normalizedErrors.map((error, index) => formatNumberedDiagnostic(index, error.fullMessage))
-    ];
-    const stacks = normalizedErrors.map(e => e.stack).filter(Boolean);
+    const sortedErrors = PoisonErrorGroup._sortErrorsBySource(normalizedErrors);
+    const totalErrorCount = sortedErrors.length;
+    const kinds = PoisonErrorGroup._collectKinds(sortedErrors);
+    const description = `Multiple errors occurred (${totalErrorCount})`;
+    const { messageLines, fullMessageLines } = formatPoisonErrorGroupMessages(
+      sortedErrors,
+      kinds,
+      POISON_GROUP_ERROR_LIMIT
+    );
+    const stacks = sortedErrors.map(e => e.stack).filter(Boolean);
     const allSame = stacks.length > 0 && stacks.every(s => s === stacks[0]);
-    if (!normalizedErrors[0]._errorContext) {
+    if (!sortedErrors[0]._errorContext) {
       throw new Error('PoisonErrorGroup requires origin context');
     }
 
@@ -372,10 +378,57 @@ class PoisonErrorGroup extends PoisonError {
       description,
       messageLines,
       fullMessageLines,
-      errors: normalizedErrors,
+      errors: sortedErrors,
+      totalErrorCount,
+      kinds,
+      kind: kinds.length === 1 ? kinds[0] : 'Multiple',
       stack: allSame ? stacks[0] : null
     };
   }
+
+  static _collectKinds(errors) {
+    return [...new Set(errors.map(error =>
+      requirePoisonKind(error.kind, error._errorContext, 'Grouped PoisonError requires kind')
+    ))].sort();
+  }
+
+  static _sortErrorsBySource(errors) {
+    return errors
+      .map((error, index) => ({ error, index }))
+      .sort((left, right) => {
+        const leftContext = left.error.context || {};
+        const rightContext = right.error.context || {};
+        return compareNullable(leftContext.path, rightContext.path) ||
+          compareNullable(leftContext.lineno, rightContext.lineno) ||
+          compareNullable(leftContext.colno, rightContext.colno) ||
+          compareNullable(
+            requirePoisonKind(left.error.kind, left.error._errorContext, 'Grouped PoisonError requires kind'),
+            requirePoisonKind(right.error.kind, right.error._errorContext, 'Grouped PoisonError requires kind')
+          ) ||
+          left.index - right.index;
+      })
+      .map(entry => entry.error);
+  }
+}
+
+function requirePoisonKind(kind, errorContext, message) {
+  if (typeof kind !== 'string' || kind.length === 0) {
+    reportRuntimeContractError(message, errorContext);
+  }
+  return kind;
+}
+
+function compareNullable(left, right) {
+  if (left === right) {
+    return 0;
+  }
+  if (left === null || left === undefined) {
+    return 1;
+  }
+  if (right === null || right === undefined) {
+    return -1;
+  }
+  return left < right ? -1 : 1;
 }
 
 class RuntimeError extends RuntimeContextError {
@@ -464,7 +517,7 @@ function reportRuntimeContractError(message, errorContext) {
  *   only once per error.
  */
 class RuntimePromise {
-  constructor(promise, errorContext) {
+  constructor(promise, errorContext, kind) {
     this.promise = Promise.resolve(promise);
     // RuntimePromise instances are often passed around as values and awaited
     // only later during output application. Mark the wrapped promise as handled
@@ -472,42 +525,43 @@ class RuntimePromise {
     // PromiseRejectionHandledWarning for internal async flows.
     markPromiseHandled(this.promise);
     this.errorContext = errorContext;
+    this.kind = requirePoisonKind(kind, errorContext, 'RuntimePromise requires kind');
   }
 
   then(onFulfilled, onRejected) {
     const wrappedOnRejected = onRejected && (err =>
-      onRejected(RuntimePromise._wrapRejection(err, this.errorContext))
+      onRejected(RuntimePromise._wrapRejection(err, this.errorContext, this.kind))
     );
 
     const p = this.promise.then(onFulfilled, wrappedOnRejected);
-    return new RuntimePromise(p, this.errorContext);
+    return new RuntimePromise(p, this.errorContext, this.kind);
   }
 
   catch(onRejected) {
     const p = this.promise.catch(err =>
-      onRejected(RuntimePromise._wrapRejection(err, this.errorContext))
+      onRejected(RuntimePromise._wrapRejection(err, this.errorContext, this.kind))
     );
-    return new RuntimePromise(p, this.errorContext);
+    return new RuntimePromise(p, this.errorContext, this.kind);
   }
 
   finally(onFinally) {
     const p = this.promise.finally(onFinally);
-    return new RuntimePromise(p, this.errorContext);
+    return new RuntimePromise(p, this.errorContext, this.kind);
   }
 
   get [Symbol.toStringTag]() { return 'Promise'; }
 
   toPromise() { return this.promise; }
 
-  static resolve(value, ctx) {
-    return new RuntimePromise(Promise.resolve(value), ctx);
+  static resolve(value, ctx, kind) {
+    return new RuntimePromise(Promise.resolve(value), ctx, kind);
   }
 
-  static reject(reason, ctx) {
-    return new RuntimePromise(Promise.reject(reason), ctx);
+  static reject(reason, ctx, kind) {
+    return new RuntimePromise(Promise.reject(reason), ctx, kind);
   }
 
-  static _wrapRejection(err, errorContext) {
+  static _wrapRejection(err, errorContext, kind) {
     if (isPoisonError(err) || isRuntimeError(err)) {
       return err;
     }
@@ -516,7 +570,8 @@ class RuntimePromise {
       // instead of throwing a PoisonError.
       return PoisonError.group(err.errors);
     }
-    return PoisonError.wrap(err, errorContext);
+    requirePoisonKind(kind, errorContext, 'RuntimePromise rejection requires kind');
+    return PoisonError.wrap(err, errorContext, kind);
   }
 }
 

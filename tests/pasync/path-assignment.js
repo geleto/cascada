@@ -7,7 +7,7 @@ import * as transpiler from '../../src/language/script-transpiler.js';
 
 describe('Cascada Script: Variable Path Assignments (set_path)', function () {
   const TEST_POISON_EC = [1, 1, 'PathAssignment.TestInput', 'path-assignment.casc', null, null];
-  const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_POISON_EC));
+  const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_POISON_EC, 'ValueRejected'));
 
   let env;
 

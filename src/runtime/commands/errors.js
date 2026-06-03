@@ -56,7 +56,7 @@ function contextualizeChainError(errorContext, err) {
     if (perError && perError.has(cacheKey)) {
       return perError.get(cacheKey);
     }
-    const wrapped = PoisonError.wrap(err, errorContext);
+    const wrapped = PoisonError.wrap(err, errorContext, 'ValueRejected');
     if (wrapped !== err) {
       const nextPerError = perError || new Map();
       nextPerError.set(cacheKey, wrapped);
@@ -64,7 +64,7 @@ function contextualizeChainError(errorContext, err) {
     }
     return wrapped;
   }
-  return PoisonError.wrap(err, errorContext);
+  return PoisonError.wrap(err, errorContext, 'ValueRejected');
 }
 
 export {ErrorCommand, TargetPoisonCommand, contextualizeChainError};
