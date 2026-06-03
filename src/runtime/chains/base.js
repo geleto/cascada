@@ -8,6 +8,7 @@ import {
   isPoisonError,
   isRuntimeError,
   createPoison,
+  poisonOrReportedFatal,
 } from '../errors.js';
 import {BufferIterator} from '../buffer-iterator.js';
 
@@ -169,12 +170,12 @@ class Chain {
       const result = cmd.apply(this);
       if (result && typeof result.then === 'function') {
         return Promise.resolve(result).catch((err) => {
-          cmd.rejectResult(RuntimeError.report(err, cmd.errorContext));
+          cmd.rejectResult(poisonOrReportedFatal(err, cmd.errorContext));
         });
       }
       return result;
     } catch (err) {
-      cmd.rejectResult(RuntimeError.report(err, cmd.errorContext));
+      cmd.rejectResult(poisonOrReportedFatal(err, cmd.errorContext));
     }
   }
 

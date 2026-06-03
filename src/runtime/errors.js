@@ -546,7 +546,15 @@ function rethrowPoisonOrReport(err, errorContext) {
   RuntimeError.reportAndThrow(err, errorContext);
 }
 
-// Context-free consumers: return poison as a value, bare-rethrow raw failures by design.
+// Observable command results: preserve poison, report raw failures as fatal.
+function poisonOrReportedFatal(err, errorContext) {
+  return isPoisonError(err) ? err : RuntimeError.report(err, errorContext);
+}
+
+// Context-free consumers (resolve.js): return poison as a value, bare-rethrow raw
+// failures (and RuntimeErrors, unchanged) by design. No errorContext here, so the
+// owning boundary — call/structural, or raceRootResult — reports it as fatal with
+// proper context. Context belongs to the origin/owner, not the consumer.
 function poisonOrRethrow(err) {
   if (isPoisonError(err)) {
     return createPoison(err);
@@ -678,4 +686,4 @@ function peekError(value) {
   return null;
 }
 
-export { PoisonedValue, PoisonError, PoisonErrorGroup, RuntimeError, RuntimeContextError, RuntimePromise, createPoison, poisonOrReport, rethrowPoisonOrReport, poisonOrRethrow, isPoison, isPoisonError, isRuntimeError, isError, collectErrors, handleError, peekError, markPromiseHandled };
+export { PoisonedValue, PoisonError, PoisonErrorGroup, RuntimeError, RuntimeContextError, RuntimePromise, createPoison, poisonOrReport, rethrowPoisonOrReport, poisonOrReportedFatal, poisonOrRethrow, isPoison, isPoisonError, isRuntimeError, isError, collectErrors, handleError, peekError, markPromiseHandled };

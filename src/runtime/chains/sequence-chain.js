@@ -1,4 +1,4 @@
-import {PoisonError, isPoison} from '../errors.js';
+import {PoisonError, isPoison, poisonOrReportedFatal} from '../errors.js';
 import {Chain} from './base.js';
 
 class SequenceObjectChain extends Chain {
@@ -57,7 +57,7 @@ class SequenceObjectChain extends Chain {
         const result = cmd.apply(this);
         if (result && typeof result.then === 'function') {
           return Promise.resolve(result).catch((err) => {
-            cmd.rejectResult(err);
+            cmd.rejectResult(poisonOrReportedFatal(err, cmd.errorContext));
           });
         }
         return result;
@@ -77,7 +77,7 @@ class SequenceObjectChain extends Chain {
       return result;
     } catch (err) {
       if (cmd.isObservable) {
-        cmd.rejectResult(err);
+        cmd.rejectResult(poisonOrReportedFatal(err, cmd.errorContext));
         return;
       }
       this._recordError(err, cmd);

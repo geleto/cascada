@@ -1,7 +1,16 @@
 
 import expect from 'expect.js';
 import {AsyncEnvironment} from '../../src/environment/environment.js';
-import {isPoisonError, isRuntimeError} from '../../src/runtime/runtime.js';
+import {
+  CommandBuffer,
+  RuntimeError,
+  SnapshotCommand,
+  TextCommand,
+  createRenderState,
+  declareBufferChain,
+  isPoisonError,
+  isRuntimeError
+} from '../../src/runtime/runtime.js';
 
 // Coverage for two findings from docs/code/error-handling-analysis.md §11:
 //  - Q1: parallel/limited loops collect ALL iteration errors, deterministically.
@@ -76,6 +85,45 @@ import {isPoisonError, isRuntimeError} from '../../src/runtime/runtime.js';
         process.removeListener('unhandledRejection', onUnhandled);
       }
       expect(seen.length).to.be(0);
+    });
+
+    it('rejects abandoned observable command promises after fatal stop', async () => {
+      const renderState = createRenderState();
+      const errorContext = [1, 1, 'Fatal.Observable', 'fatal-observable.njk', null, renderState];
+      const rootBuffer = new CommandBuffer({}, null, null, null, null, errorContext, null, renderState);
+      declareBufferChain(rootBuffer, 'text', 'text', {}, null);
+      const childBuffer = new CommandBuffer({}, rootBuffer, ['text'], null, null, errorContext, null, renderState);
+      const output = rootBuffer.getChain('text');
+
+      childBuffer.addCommand(new TextCommand({
+        chainName: 'text',
+        args: ['held-open'],
+        errorContext
+      }), 'text');
+      const snapshotPromise = rootBuffer.addCommand(new SnapshotCommand({
+        chainName: 'text',
+        errorContext
+      }), 'text');
+
+      const fatal = RuntimeError.report('abandon observable', errorContext);
+      rootBuffer.addCommand(new TextCommand({
+        chainName: 'text',
+        args: ['after-fatal'],
+        errorContext
+      }), 'text');
+      childBuffer.finish();
+      rootBuffer.finish();
+
+      try {
+        await Promise.race([
+          snapshotPromise,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timed out waiting for abandoned observable')), 100))
+        ]);
+        expect().fail('expected abandoned snapshot to reject');
+      } catch (err) {
+        expect(err).to.be(fatal);
+      }
+      await output.getFinishedPromise();
     });
   });
 })();

@@ -37,6 +37,19 @@ function getRenderState(errorContext) {
   return errorContext[5] ?? null;
 }
 
+// ec-keyed adapters over RenderState, which owns the fatal-state semantics
+// (`isFatalErrorReported` / `throwIfFatalErrorReported`). These exist because the
+// call/loop runtime has the errorContext tuple in scope, not the RenderState.
+function isFatalReported(errorContext) {
+  return errorContext ? !!getRenderState(errorContext)?.isFatalErrorReported() : false;
+}
+
+function throwReportedFatal(errorContext) {
+  if (errorContext) {
+    getRenderState(errorContext)?.throwIfFatalErrorReported();
+  }
+}
+
 function validateAddedContext(addedContext) {
   if (!addedContext) {
     return;
@@ -94,6 +107,8 @@ export {
   assertCompactErrorContext,
   getAddedContext,
   getRenderState,
+  isFatalReported,
+  throwReportedFatal,
   cloneContext,
   cloneWithAddedContext,
   mergeAddedContext,

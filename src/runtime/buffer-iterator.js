@@ -224,6 +224,27 @@ class BufferIterator {
     buffer.arrays[this.chainName] = null;
   }
 
+  _rejectPendingCommandResultsAfterFatal(buffer, err) {
+    if (!buffer || !this.chainName || !buffer.arrays || !err) {
+      return;
+    }
+    const arr = buffer.arrays[this.chainName];
+    if (!arr) {
+      return;
+    }
+    for (const item of arr) {
+      if (!item) {
+        continue;
+      }
+      if (isCommandBufferLike(item)) {
+        this._rejectPendingCommandResultsAfterFatal(item, err);
+      } else if (typeof item.rejectResult === 'function' && item.reject) {
+        // reject is cleared once the command result is settled.
+        item.rejectResult(err);
+      }
+    }
+  }
+
   _setCurrentBuffer(buffer, skipLeave = false) {
     if (!skipLeave && this._enteredBuffer && this.chainName) {
       this._enteredBuffer.onIteratorLeaveBuffer(this, this.chainName);
@@ -262,8 +283,12 @@ class BufferIterator {
   _stopAfterFatalReport() {
     // Fatal render state owns the reported error. Stop applying later commands
     // so unrelated buffered work cannot keep running after render failure.
+    const fatalError = this.output && this.output._buffer && this.output._buffer.renderState
+      ? this.output._buffer.renderState.error
+      : null;
     for (const cursor of this.stack) {
       if (cursor && cursor.buffer) {
+        this._rejectPendingCommandResultsAfterFatal(cursor.buffer, fatalError || cursor.buffer.renderState?.error);
         cursor.buffer.onIteratorLeaveBuffer(this, this.chainName);
         this._releaseFinishedLane(cursor.buffer);
       }

@@ -201,6 +201,7 @@ source is assigned its target `kind`; the two **new** sources being added
 | `DestructureMismatch` | `loop.js` — loop value is not an array for multi-variable destructuring | `create` | **new** (§9 / §11.4) |
 | `NaNResult` | value-production points (arithmetic / call / lookup / data-method / loop results) — value is `NaN` (see [NaN handling](#nan-handling)) | `create` | **new** (§11) |
 | `ImportBindingMissing` | `composition.js` — `from import` names an export the module does not have | `create` | **planned** — today the raw throw flows through `RuntimePromise` as `ValueRejected`; set this `kind` when wrapping the missing-binding throw |
+| `LoadFailed` | `composition.js` / inheritance — a non-fatal **value-producing** load (`import` / `from import` / `component`) failed to resolve or compile (see [Load-failure policy](#load-failure-policy-planned)) | `wrap` | **planned** (§11.17) — one kind, many `label`s (the import/component frame). `include` failures are silent or fatal, never poison-by-default, so they carry no `kind`. |
 
 Notes:
 
@@ -397,10 +398,11 @@ entering and after the body settles:
 
 The buffer iterator (`buffer-iterator.js`) is a driver, not a catch site. It
 checks `renderState.isFatalErrorReported()` at the top of each advance and calls
-`_stopAfterFatalReport()` to finish buffers and unblock pending snapshots without
-applying further commands. The apply itself, and its catch, live in the chain
-(`chains/base.js` `_applyObservableCommand` / `_applyMutatingCommand`). The
-iterator only `markPromiseHandled`s the apply-result cleanup chain.
+`_stopAfterFatalReport()` to finish buffers, reject abandoned observable/result
+commands, and unblock pending snapshots without applying further commands. The
+apply itself, and its catch, live in the chain (`chains/base.js`
+`_applyObservableCommand` / `_applyMutatingCommand`). The iterator only
+`markPromiseHandled`s the apply-result cleanup chain.
 
 ### Render state and fatal delivery
 
@@ -430,10 +432,74 @@ Rules:
   check at a funnel covers everything flowing through it.
 - Command-buffer early exit must still **finish buffers/chains and unblock pending
   snapshots** so cleanup cannot deadlock — `_stopAfterFatalReport()` does exactly
-  this (leaves buffers, releases lanes, resolves iterator completion).
-- Root-flow helpers (e.g. `callWrapAsync`) are sync-first and **must not throw**
-  on the check; they return without invoking. Boundary bodies use
-  `throwIfFatalErrorReported()`, whose throw the boundary catch routes to fatal.
+  this (leaves buffers, releases lanes, resolves iterator completion, and rejects
+  abandoned result commands so awaiters cannot hang).
+- **Rethrow vs controlled-settle, by ownership.** A fatal reported elsewhere is
+  *rethrown* where a structural owner will catch and clean it up, and *settled
+  cleanly* where the path is fire-and-forget (no catching owner):
+  - **Awaited / boundary-caught sites** (call wrappers; boundaries themselves)
+    **rethrow the original reported fatal** for a fast unwind. Use
+    `throwReportedFatal(errorContext)` from `error-context.js` in value-production
+    entries, or `renderState.throwIfFatalErrorReported()` where the render state is
+    already directly owned by a boundary. The enclosing boundary catch re-reports it
+    (render-state dedups → first-fatal-wins, origin preserved) and its `finally` runs
+    cleanup. The thrown value is the *same object* as `renderState.error`.
+  - **Fire-and-forget scheduling sites** (loop workers, parallel scheduling) **do
+    not rethrow** — break/continue, resolve the scheduling promise, let buffers
+    settle. Rethrowing a fire-and-forget worker promise re-creates detached
+    rejections / unsettled cleanup.
+  - A fatal check may **throw** only when that throw reaches a structural owner or
+    boundary catch that classifies `RuntimeError` as fatal. A fatal check must remain
+    a **gate** (`break`, `return null`, resolve-then-break) when it sits inside a
+    local `try/catch` that wraps throws into `PoisonError`, or when it is a
+    scheduler/worker gate that owns bookkeeping promises (`lastPromise`,
+    `lenPromise`, `allIterationsScheduled`, iterator locks). Throwing in those
+    places would either misclassify the fatal as poison or strand local bookkeeping.
+    The fatal is already reported, so the gate only needs to stop scheduling new
+    work.
+  - This is *not* a license to sprinkle rethrows: the command pipeline (application,
+    argument resolution, output, resolve, sequential-path) is command-driven and
+    already gated by the buffer-iterator fatal-stop + `raceRootResult`, and lookups
+    are intentionally not gated. Calls + boundaries are the high-value rethrow sites.
+  - Sync-root caveat: a call wrapper that rethrows from the synchronous compiled
+    root (Pattern 1) skips `output.finish()`, but this almost never fires (fatals are
+    async); settlement is owned by `raceRootResult` + `_rejectAbandonedResultCommands`.
+
+#### Fatal-unwind cleanup ownership (rules)
+
+When a fatal rethrow unwinds through in-flight state (buffers created earlier,
+parked `await`s, fire-and-forget work), cleanup is owned by **structural scopes on
+the unwind path**, never by the throw site. The rules:
+
+- **R1 — One owner per buffer, all paths.** Every `CommandBuffer` is finished on
+  *every* exit (success, poison, fatal) by a structural owner: a boundary helper's
+  `finally { childBuffer.finish() }`, or the creator's `try/finally` (or
+  finish-on-every-branch). Never finish only on success while relying on an implicit
+  unwind to clean up.
+- **R2 — Check fatal before allocating.** Call `throwIfFatalErrorReported()` (or the
+  fatal check) *before* `new CommandBuffer(...)`, so a doomed render never allocates
+  a buffer it then has to clean.
+- **R3 — Finish before a fallible setup.** If you create a buffer and then
+  `await setup(buf)` where `setup` can throw, wrap so `buf.finish()` runs on the
+  throw.
+- **R4 — Every `await` settles on fatal.** An `await` must be reachable by fatal
+  settlement — inside a boundary catch, or awaiting a promise that fatal-stop / the
+  early-exit break settles (command results → `_rejectAbandonedResultCommands`;
+  scheduling promises → resolved on break; waited drain → skipped). Never `await` a
+  promise that only settles on the success path.
+- **R5 — Cleanup is structural, never at the throw.** `throwReportedFatal` /
+  `throwIfFatalErrorReported` are pure throws — no cleanup callbacks. The unwinding
+  scope's `finally` owns cleanup. A callback at the throw site can only see the
+  immediate frame, not the buffers/awaits up the stack, so it cannot do the job.
+- **R6 — Severity bound.** `raceRootResult` delivers the render result independently
+  of internal cleanup, so a missing `finally` is a **leak** (tidiness), never a
+  **render hang / deadlock**. Fix leaks at the owner; they never block the error.
+
+Audited ownership (current): boundary buffers (boundary `finally`), macro buffers
+(caller `.finally()`), and inheritance method/block buffers (`invoke`'s
+catch + `finishWithValue`/`finishWithError`) satisfy R1 on all paths. The two known
+exceptions are the sync-root caveat (above) and the `InheritanceInstance.create`
+buffer-finish gap (R3, §11).
 
 Coverage (centralized choke points):
 
@@ -448,16 +514,15 @@ Coverage (centralized choke points):
 | Component creation | `inheritance/component.js` 145 | `throwIfFatalErrorReported()` before buffers | guarded |
 | Composition roots (include/import/from-import) | emitted `composition.js` 81/100/147/166/272 | `throwIfFatalErrorReported()` before child root | guarded |
 | Direct `getExported(...)` | `template-runtime.js` 324 | `throwIfFatalErrorReported()` | guarded |
-| **User function invocation** | `call.js` `callWrapAsync` / `_callWrapAsyncComplex` | — | **gap** (§11) |
-| **Loop iteration scheduling** | `loop.js` `iterate` and the iterate helpers | — | **gap** (§11) |
+| User function invocation | `call.js` `callWrapAsync` / `_callWrapAsyncComplex` / `envCallWrapAsync` | `throwReportedFatal(errorContext)` | guarded |
+| Loop iteration scheduling | `loop.js` `iterate` and the iterate helpers | `isFatalReported(errorContext)` gates | guarded |
 
-The two gaps are the most leveraged remaining additions. `callWrapAsync` invokes
-the user function **during root/boundary execution, before** the result-command is
-applied, so the buffer-iterator gate does not stop it — the call boundary is where
-expensive side-effecting work (DB/HTTP/model calls) actually fires after fatal.
-Loop scheduling fans out `loopBody` per element; a check before/within the
-iteration loop stops the fan-out. Both already have `errorContext` in scope, so
-they reach `RenderState` via `getRenderState(errorContext)` with no new threading.
+The call and loop additions are Phase 2-complete. `callWrapAsync` invokes the user
+function **during root/boundary execution, before** the result-command is applied, so
+the buffer-iterator gate does not stop it — the call boundary is where expensive
+side-effecting work (DB/HTTP/model calls) actually fires after fatal. Loop scheduling
+fans out `loopBody` per element; `isFatalReported(...)` gates stop the fan-out while
+preserving the loop helpers' local settlement contracts.
 
 **Not gated, by design.** Expression roots (`compileExpression`) and value
 boundaries (`runValueBoundary`) are deliberately *not* fatal-gated. Most
@@ -681,17 +746,18 @@ reach the `iterate()` outer catch and hit the raw→`reportAndThrow` branch.
 a runtime value-shape failure (it cannot be a compile error, and it is a sibling
 of `lookup.js`/`call.js` `PoisonError.create(...)` data errors), so it belongs on
 the poison path. At each `if (!Array.isArray(value))` site, replace the raw throw
-with the same poison-fill the existing `isPoison(value)` branch uses:
+by enqueueing poison on that iteration's body chains and skipping the body:
 
 ```javascript
-const itemPoison = createPoison(PoisonError.create('Expected an array for destructuring', errorContext));
-const args = Array(loopVars.length).fill(itemPoison);
-loopBody(...args, /* index, len, isLast, */ errorContext);
+const poisonError = PoisonError.create('Expected an array for destructuring', errorContext);
+poisonIterationEffects(buffer, asyncOptions, poisonError);
+continue;
 ```
 
-This poisons only the failing iteration's body effects (parallel-friendly,
-deterministic) and removes every raw throw before it reaches the outer catch, so
-all five paths behave identically.
+This poisons only the failing iteration's body effects (including literal effects
+that do not read the destructured variables), keeps iteration/else bookkeeping
+deterministic, and removes every raw throw before it reaches the outer catch, so
+all five async paths behave identically. Contextless sync mode keeps the raw throw.
 
 Note: `'Expected two variables for key/value iteration'` (≈591, ≈724) is a
 separate, loop-level usage error (wrong variable count for an object iterable) and
@@ -719,7 +785,7 @@ is a constructor invariant, not a catch.)
 
 | Site | Surrounds | Behavior | Class | Verdict |
 |---|---|---|---|---|
-| `_applyObservableCommand` ≈166 (sync + async `.catch`) | `cmd.apply` | `cmd.rejectResult(RuntimeError.report(err, cmd.errorContext))` | A (observable apply is structural) | KEEP |
+| `_applyObservableCommand` ≈166 (sync + async `.catch`) | `cmd.apply` | poison→`cmd.rejectResult(err)`, raw/fatal→`cmd.rejectResult(RuntimeError.report(err, cmd.errorContext))` | A (observable apply is structural; existing poison remains poison) | KEEP |
 | `_applyMutatingCommand` ≈181 (sync + async `.catch`) | `cmd.apply` | `_recordError`: runtime→fatal, poison→apply, raw→`PoisonError.wrap` | C source | KEEP |
 | `inspectTargetForErrors` ≈368/384 | await value/marker | poison→collect, raw→`throw` | B/D diagnostic | KEEP |
 | `finalSnapshot` ≈264 | sync throw | `Promise.reject(err)` | boilerplate | KEEP |
@@ -732,22 +798,24 @@ command (e.g. a data method) becomes poison on the chain target;
 
 | Site | Surrounds | Behavior | Class | Verdict |
 |---|---|---|---|---|
-| `_applyCommand` observable ≈59/79 | `cmd.apply` | `cmd.rejectResult(err)` (raw) | A | **FIX** (align) |
+| `_applyCommand` observable ≈59/79 | `cmd.apply` | poison→`cmd.rejectResult(err)`, raw/fatal→`cmd.rejectResult(RuntimeError.report(err, cmd.errorContext))` | A | **FIXED** (align) |
 | `_applyCommand` mutating ≈72/83 | `cmd.apply` | `_recordError(err, cmd)` | C source | KEEP |
 
-The observable branch rejects with the **raw** error, whereas
-`chains/base.js` `_applyObservableCommand` wraps with `RuntimeError.report(...)`.
+The observable branch used to reject with the **raw** error, whereas
+`chains/base.js` `_applyObservableCommand` reported raw structural failures as
+fatal. During implementation, the single-classification audit also found that
+both paths must preserve an existing `PoisonError`; observable snapshots of
+poisoned chains are value failures, not fatal structural failures.
 
 **Resolution (decided): align with `chains/base.js`.** An observable command apply
-that throws is a fatal structural failure, so the propagated rejection value must
-be a `RuntimeError`, not a raw error. Convert at the catch site (≈59 async, ≈79
-sync) via `cmd.rejectResult(RuntimeError.report(err, cmd.errorContext))`. This is
-correct on both counts: `RuntimeError.report/create` takes the raw `err` as the
-`cause` (preserving its message, stack, and own properties — the "proper cause"),
-and the value stored/propagated is a `RuntimeError`. Converting at the catch is
-the earliest point the error is observed, so no raw error ever escapes into chain
-state or an awaiting consumer. (The mutating branch already routes through
-`_recordError`, which converts/records correctly.)
+that throws raw is a fatal structural failure, so the propagated rejection value
+must be a `RuntimeError`, not a raw error. Convert raw/fatal failures at the catch
+site (≈59 async, ≈79 sync) via `cmd.rejectResult(RuntimeError.report(err,
+cmd.errorContext))`, but pass existing `PoisonError` through unchanged. This is
+correct on both counts: raw errors become the `cause` of a reported `RuntimeError`,
+and poison observable reads remain poison instead of being double-classified as
+fatal. (The mutating branch already routes through `_recordError`, which
+converts/records correctly.)
 
 ### `runtime/commands/sequential-path.js`
 
@@ -919,17 +987,18 @@ is the spec, that document is the plan.
    (§10).
 4. **FIX** the loop destructuring-error asymmetry in `loop.js` (§9). Decided
    resolution: make `Expected an array for destructuring` **poison, per-iteration**
-   at all five sites (≈167, ≈254, ≈448, ≈471, ≈507) by replacing the raw throw
-   with the existing `isPoison(value)` poison-fill pattern. Leave
+   at all five sites (≈167, ≈254, ≈448, ≈471, ≈507) by enqueuing poison on the
+   failing iteration's body chains and skipping the body. Leave
    `Expected two variables…` (≈591, ≈724) fatal — it is a consistent loop-level
    usage error, not part of the asymmetry.
 5. **FIX** (optional) the `_suppressValueScriptComplex` array path in
    `safe-output.js` ≈309 to collect all poison before `resolveAll(...)`, matching
    the template path's "never miss any error" behavior.
 6. **FIX** the `sequence-chain.js` observable `_applyCommand` rejection (≈59/79).
-   Decided resolution: convert at the catch via
-   `cmd.rejectResult(RuntimeError.report(err, cmd.errorContext))`, matching
-   `chains/base.js`. The raw `err` becomes the `cause` (proper underlying
+   Decided resolution: convert raw/fatal failures at the catch via
+   `cmd.rejectResult(RuntimeError.report(err, cmd.errorContext))`, matching the
+   guarded `chains/base.js` path, while preserving existing `PoisonError`
+   rejections unchanged. The raw `err` becomes the `cause` (proper underlying
    error/stack preserved) and the propagated value is a `RuntimeError`, so no raw
    error escapes into chain state. Convert at the catch — the earliest observation
    point — not later.
@@ -952,13 +1021,13 @@ is the spec, that document is the plan.
 10. **ADD** a fatal-state early-exit check to the **call boundary**
     ([Fatal-state early exit](#fatal-state-early-exit)): in `callWrapAsync` /
     `_callWrapAsyncComplex`, before invoking the user function, test
-    `getRenderState(errorContext).isFatalErrorReported()` and return without
-    invoking (sync-first; do not throw). Highest-value gap — it stops expensive
-    side-effecting calls after a render has already failed.
+    the render state's reported fatal via `throwReportedFatal(errorContext)` and
+    rethrow the original fatal without invoking. The throw reaches a structural
+    owner/boundary catch, which re-reports idempotently and runs cleanup.
 11. **ADD** a fatal-state early-exit check to **loop scheduling** in `loop.js`
     `iterate(...)`: before/within the iteration loop, stop fanning out `loopBody`
-    once `isFatalErrorReported()`. Must still finish the loop's buffers/chains so
-    cleanup cannot deadlock.
+    once `isFatalReported(errorContext)`. These are gates, not throws: the loop sites
+    sit inside poison-wrapping catches and/or scheduler bookkeeping that must settle.
 12. **DEDUP** the consumer-assertion family into `errors.js` (§9 dedup) — the §2
     invariant, currently hand-rolled in four places. Provide three small **named**
     helpers (not one flag-parameterized helper), each `isPoisonError(err) ?
@@ -1013,6 +1082,94 @@ is the spec, that document is the plan.
     A guard test is in place but skipped: `tests/poison/fatal-delivery.js`
     (`it.skip('a boundary fatal does not also surface as an unhandled rejection')`)
     — un-skip it when this is fixed.
+17. **ADD** the load-failure policy ([Load-failure policy](#load-failure-policy-planned)):
+    a `loadFailFatal` env option (`true` (default, nunjucks-compatible) / `false` /
+    `LoadKind[]`) that chooses **fatal vs non-fatal** per value-producing load kind.
+    The non-fatal shape is fixed by what the load produces — `import` / `from import`
+    / `component` → **poison** (the only coherent shape for a value/namespace);
+    `include` → **silent** (poison-`include` ≈ fatal, so omission is the useful
+    non-fatal behavior; per-site `ignore missing` keeps working). Structural loads
+    (`root` / `extends`) stay **always fatal**. One source-placed runtime helper
+    produces poison-or-fatal at the load site (preserving §7). This is sequenced
+    after the `kind` field (§11.8) so the poison path is assigned `LoadFailed` in its
+    first implementation, with no retrofit.
+
+### Load-failure policy (planned)
+
+**Problem.** Obtaining a dependency — resolve + compile of an `include` / `import` /
+`from import` / `component` / `extends` target — can fail (**not-found**, or a
+**load/compile error**). Today the only outcomes are *silent* (`ignore missing`,
+not-found only) or *fatal* (a raw `Error('Template not found: …')` —
+[base-environment.js:366](../../src/environment/base-environment.js#L366) — that
+rejects the `getTemplate`/`getScript` promise and surfaces as a `RuntimeError` at the
+consuming boundary). There is no way to isolate a failed value-producing dependency
+and let the rest of the render continue.
+
+**The non-fatal shape is fixed by what the load produces** — *not* by template vs
+script:
+
+| Kind | Produces | Non-fatal shape | Why |
+|---|---|---|---|
+| `import` / `from import` | a namespace | **poison** | "ignoring" (empty namespace) does not skip anything — it defers the failure to `m.foo()` → "not a function". Poison is the only coherent representation: the namespace is poison, dependents propagate, independent work proceeds. |
+| `component` | a value | **poison** | same reason. |
+| `include` | an inline output region | **silent / empty** | the region *can* be omitted. Poison-`include` lands in the text stream and ≈ fatal there, so omission is the useful non-fatal behavior. |
+| `root` / `extends` | the render skeleton | **always fatal** | no skeleton ⇒ nothing to render. Never poison, never ignored. Consistent with the fatal-and-finish path in `InheritanceInstance.create`. |
+
+The mechanism is **identical for scripts and templates** — one shared flag, no mode
+branch. The effect templates feel — poison-`import`/`component` and (had it existed)
+poison-`include` poisoning the whole output — is just the text stream being the
+template's result. In a script that `return result.snapshot()`s a data chain, a
+poisoned text region from an upstream load often does not touch the return value, so
+the same poison genuinely isolates. Same poison, different blast radius by what you
+return.
+
+**What counts as a load failure.** The policy governs the whole act of **obtaining
+and materializing the dependency after a concrete target name resolves** — target
+load (reject / not-found), the loaded module's `compile()`, and its
+export-materialization / instance bootstrap / render-start. It does **not** govern the
+**target-name expression** itself: `{% include getName() %}` where `getName()` rejects
+is a failed value producing the name, not a loader failure — it stays on the existing
+expression poison/fatal path. Nor does it govern a loaded module's own **render**
+errors (normal nested flow) or a **missing named export** in a successfully-loaded
+module (the separate `ImportBindingMissing` path). The policy decision is taken at the
+load site, after the name is known.
+
+**Configuration.** `loadFailFatal: true | false | LoadKind[]` (default `true`):
+
+- `true` — every value-producing load is fatal (nunjucks-compatible).
+- `false` — none are fatal: `import`/`from`/`component` fail as **poison**, `include`
+  fails **silent**.
+- `LoadKind[]` (e.g. `['import','component']`) — a **fatal allowlist**: listed kinds
+  are fatal, the rest non-fatal (their produces-shape from the table). `LoadKind =
+  'import' | 'component' | 'include'`, where `'import'` governs **both** `import` and
+  `from import`. `extends`/`root` are never listed (always fatal).
+
+Read `loadFailFatal` at **render** time so a precompiled artifact honors the running
+env's policy. `ignore` is an **include-only** escape hatch via the existing per-site
+`ignore missing` marker — it makes one `include` silent even when the global default
+is fatal. There is no per-site marker for import/component (silent there is not a
+coherent option); per-kind granularity lives in the env array.
+
+**Source placement (invariant-preserving).** The load is the **source** of the
+failure (§7). A value-producing site (`import`/`from import`/`component`) wraps its
+load + compile + materialization in a catch that calls one runtime helper —
+`runtime.handleLoadFailure(error, errorContext, kind, env)` — which **always throws**,
+re-entering the existing rejection→poison plumbing: a `RuntimeError` passes through
+fatal (never poisoned), an existing `PoisonError` passes through unchanged (origin
+preserved), and a raw error is reported-and-thrown as fatal or thrown as
+`PoisonError.wrap(error, errorContext, 'LoadFailed')` per `loadFailFatal`. The throw
+makes the bound namespace/value poison (non-fatal) or reports fatal. A bare rejection
+already poisons via `RuntimePromise._wrapRejection`, so the **fatal default needs this
+active catch**. `include` branches on `isLoadFailureFatal` instead — its non-fatal
+outcome is *omission* (no `TextCommand`), not a poison value. The consuming boundary
+never reclassifies a load failure — the helper produced the correct shape at the
+source. `extends`/`root` keep their existing fatal path unchanged.
+
+**`kind`.** The poison path carries a single `kind: 'LoadFailed'`; the `label` (tuple
+slot 2) already distinguishes the import/component frame — one kind, many labels.
+Silent `include` and fatal loads carry no `kind`. The planned `ImportBindingMissing`
+(a *resolved* module missing a named export) is a distinct, narrower kind and is
+unaffected.
 
 ### Re-audit checklist when adding an async source
 
@@ -1079,7 +1236,14 @@ async timing.
 - **Internal pending-promise leak (REQUIRED).** The render does not hang
   (`raceRootResult` verified), but audit whether `_stopAfterFatalReport` leaves any
   pending observable command result promise (snapshot, `getError`, sequential-path
-  read, guard capture/restore) unsettled, and settle it if so.
+  read, guard capture/restore) unsettled, and settle it if so. *(Done in Phase 2 for
+  command results via `_rejectAbandonedResultCommands`.)*
+- **`InheritanceInstance.create` buffer-finish gap (R3, confirmed).** When
+  `create`/`loadInheritanceChain` throws (bad component/`extends` template — load
+  error, cycle), the root/shared buffers created at `component.js:27-28` (and inside
+  `create` when it makes its own) are **never finished** — no `try/finally` wraps the
+  `await create(...)`. A leak, not a hang (R6). Fix: `create` finishes the buffers it
+  owns in a `try/finally` on its own failure.
 - **Single-classification (REQUIRED).** Audit that a thrown error cannot be both
   poisoned and fatal-reported, or wrapped as poison twice with different context.
 

@@ -333,6 +333,30 @@ import {createPoison, isPoisonError, PoisonError} from '../../src/runtime/runtim
       }
     });
 
+    it('should poison literal body effects for malformed destructured loop items', async () => {
+      const template = '{% for name, id in items %}X{% endfor %}';
+
+      try {
+        await env.renderTemplateString(template, { items: [1] });
+        expect().fail('Render should have thrown a PoisonError');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
+        expect(err.errors[0].message).to.contain('Expected an array for destructuring');
+      }
+    });
+
+    it('should poison variable-consuming body effects for malformed destructured loop items', async () => {
+      const template = '{% for name, id in items %}{{ name }}{% endfor %}';
+
+      try {
+        await env.renderTemplateString(template, { items: [1] });
+        expect().fail('Render should have thrown a PoisonError');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
+        expect(err.errors[0].message).to.contain('Expected an array for destructuring');
+      }
+    });
+
     it('should skip else handlers after any successful iteration without poisoning', async () => {
       const context = {
         async *myGenerator() {

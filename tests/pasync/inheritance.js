@@ -1635,6 +1635,74 @@ describe('Inheritance rebuild', function () {
       expect(invoked).to.be(false);
     });
 
+    it('finishes owned instance buffers when inheritance loading fails', async function () {
+      const renderState = createTestRenderState();
+      const context = createRuntimeContext();
+      const rootBuffer = new runtime.CommandBuffer(context, null, null, null, null, TEST_EC, null, renderState);
+      const sharedRootBuffer = new runtime.CommandBuffer(context, null, null, null, null, TEST_EC, null, renderState);
+      const participant = {
+        path: 'broken.script',
+        compile() {
+          throw new Error('instance load failed');
+        }
+      };
+
+      try {
+        await runtime.InheritanceInstance.create({
+          entryTemplateOrScript: participant,
+          env: {},
+          context,
+          runtime,
+          renderState,
+          rootBuffer,
+          sharedRootBuffer,
+          errorContext: TEST_EC
+        });
+        expect().fail('Expected inheritance instance creation to fail');
+      } catch (error) {
+        expect(error.message).to.contain('instance load failed');
+      }
+
+      await Promise.all([rootBuffer.getFinishedPromise(), sharedRootBuffer.getFinishedPromise()]);
+      expect(rootBuffer.finished).to.be(true);
+      expect(sharedRootBuffer.finished).to.be(true);
+    });
+
+    it('finishes owned instance buffers when inheritance loading detects a cycle', async function () {
+      const renderState = createTestRenderState();
+      const context = createRuntimeContext();
+      const rootBuffer = new runtime.CommandBuffer(context, null, null, null, null, TEST_EC, null, renderState);
+      const sharedRootBuffer = new runtime.CommandBuffer(context, null, null, null, null, TEST_EC, null, renderState);
+      const participant = inheritanceParticipant('cycle.script', {
+        scriptMode: true,
+        hasExtends: true
+      });
+      participant.resolveInheritanceParent = async () => ({
+        parentTemplateOrScript: participant,
+        errorContext: TEST_EC
+      });
+
+      try {
+        await runtime.InheritanceInstance.create({
+          entryTemplateOrScript: participant,
+          env: {},
+          context,
+          runtime,
+          renderState,
+          rootBuffer,
+          sharedRootBuffer,
+          errorContext: TEST_EC
+        });
+        expect().fail('Expected inheritance instance cycle to fail');
+      } catch (error) {
+        expect(String(error)).to.contain('inheritance cycle detected');
+      }
+
+      await Promise.all([rootBuffer.getFinishedPromise(), sharedRootBuffer.getFinishedPromise()]);
+      expect(rootBuffer.finished).to.be(true);
+      expect(sharedRootBuffer.finished).to.be(true);
+    });
+
     it('invokes finalized methods through the instance dispatch table', async function () {
       const participant = inheritanceParticipant('component.script', {
         scriptMode: true,

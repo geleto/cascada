@@ -300,8 +300,16 @@ async function _suppressValueScriptComplex(val, autoescape, errorContext) {
   }
 
   if (Array.isArray(val)) {
-    const resolvedArray = await resolveAll(val);
-    val = resolvedArray;
+    let collectedErrors;
+    try {
+      collectedErrors = await collectErrors(val);
+    } catch (err) {
+      RuntimeError.reportAndThrow(err, errorContext);
+    }
+    if (collectedErrors.length > 0) {
+      throw PoisonError.group(collectedErrors);
+    }
+    val = await resolveAll(val);
   }
 
   return suppressValueScriptRaw(val, autoescape);

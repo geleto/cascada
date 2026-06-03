@@ -14,6 +14,7 @@ import {
 import {VarCommand} from './commands/var.js';
 import {ErrorCommand} from './commands/errors.js';
 import {ReturnIsUnsetCommand} from './commands/observation.js';
+import {isFatalReported} from './error-context.js';
 
 const arrayFrom = Array.from;
 const supportsIterators = (
@@ -140,12 +141,37 @@ function setLoopValueBindings(chainName, index, len, last, errorContext) {
   });
 }
 
-async function iterateAsyncSequential(arr, loopBody, loopVars, errorContext, returnAdvanceCheck = null) {
+function poisonIterationEffects(buffer, asyncOptions, poisonError) {
+  if (!buffer || !asyncOptions || !asyncOptions.bodyChains) {
+    return;
+  }
+  for (const chainName of asyncOptions.bodyChains) {
+    buffer.addCommand(new ErrorCommand(poisonError, asyncOptions.errorContext), chainName);
+  }
+}
+
+function getDestructuredLoopArgs(value, loopVars, errorContext, buffer, asyncOptions) {
+  // Returns null after poisoning this iteration's body effects for a malformed value.
+  if (isPoison(value)) {
+    return Array(loopVars.length).fill(value);
+  }
+  if (Array.isArray(value)) {
+    return value.slice(0, loopVars.length);
+  }
+  const poisonError = PoisonError.create('Expected an array for destructuring', errorContext);
+  poisonIterationEffects(buffer, asyncOptions, poisonError);
+  return null;
+}
+
+async function iterateAsyncSequential(arr, loopBody, loopVars, errorContext, returnAdvanceCheck = null, buffer = null, asyncOptions = null) {
   let didIterate = false;
   let i = 0;
 
   try {
     for await (let value of arr) { // value is now mutable
+      if (isFatalReported(errorContext)) {
+        break;
+      }
       didIterate = true;
 
       if (value instanceof Error) {
@@ -159,15 +185,12 @@ async function iterateAsyncSequential(arr, loopBody, loopVars, errorContext, ret
         // `while` loops pass `undefined` for len/last, which is correct.
         res = loopBody(value, i, undefined, false, errorContext);
       } else {
-        if (isPoison(value)) {
-          const args = Array(loopVars.length);
-          args[0] = value;
-          res = loopBody(...args, i, undefined, false, errorContext);
-        } else if (!Array.isArray(value)) {
-          throw new Error('Expected an array for destructuring');
-        } else {
-          res = loopBody(...value.slice(0, loopVars.length), i, undefined, false, errorContext);
+        const args = getDestructuredLoopArgs(value, loopVars, errorContext, buffer, asyncOptions);
+        if (!args) {
+          i++;
+          continue;
         }
+        res = loopBody(...args, i, undefined, false, errorContext);
       }
 
       // Sequential loops await the compiled body result directly.
@@ -194,7 +217,7 @@ async function iterateAsyncSequential(arr, loopBody, loopVars, errorContext, ret
   return didIterate;
 }
 
-async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext) {
+async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext, buffer = null, asyncOptions = null) {
   let didIterate = false;
   // PARALLEL PATH
   // This logic allows for `loop.length` and `loop.last` to work
@@ -217,6 +240,9 @@ async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext) {
     iterationComplete = (async () => {
       try {
         while (true) {
+          if (isFatalReported(errorContext)) {
+            break;
+          }
           // Async generators await yielded values. If a generator yields a thenable that rejects,
           // iterator.next() will throw. We catch PoisonErrors as soft errors and continue iteration.
           // Non-PoisonErrors from the generator are treated as hard errors.
@@ -247,15 +273,12 @@ async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext) {
           if (loopVars.length === 1) {
             loopBody(value, i, lenPromise, lastPromise, errorContext);
           } else {
-            if (!Array.isArray(value)) {
-              if (isPoison(value)) {
-                //poison all loop variables
-                value = Array(loopVars.length).fill(value);
-              } else {
-                throw new Error('Expected an array for destructuring');
-              }
+            const args = getDestructuredLoopArgs(value, loopVars, errorContext, buffer, asyncOptions);
+            if (!args) {
+              i++;
+              continue;
             }
-            loopBody(...value.slice(0, loopVars.length), i, lenPromise, lastPromise, errorContext);
+            loopBody(...args, i, lenPromise, lastPromise, errorContext);
           }
           i++;
         }
@@ -292,7 +315,7 @@ async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext) {
   return didIterate;
 }
 
-async function iterateAsyncLimited(arr, loopBody, loopVars, errorContext, limit) {
+async function iterateAsyncLimited(arr, loopBody, loopVars, errorContext, limit, buffer = null, asyncOptions = null) {
   const iterator = arr[Symbol.asyncIterator]();
   let didIterate = false;
   let index = 0;
@@ -326,14 +349,16 @@ async function iterateAsyncLimited(arr, loopBody, loopVars, errorContext, limit)
 
   // Helper to pull the next value from the async iterator
   async function getNext() {
-    if (iteratorDone) {
+    if (iteratorDone || isFatalReported(errorContext)) {
+      iteratorDone = true;
       return null;
     }
 
     await acquireIteratorLock();
     try {
       // Re-check under the lock to avoid extra next() calls after done
-      if (iteratorDone) {
+      if (iteratorDone || isFatalReported(errorContext)) {
+        iteratorDone = true;
         return null;
       }
 
@@ -371,7 +396,7 @@ async function iterateAsyncLimited(arr, loopBody, loopVars, errorContext, limit)
       value = createPoison(PoisonError.wrap(value, errorContext));
     }
 
-    const res = callLoopBodyLimited(loopBody, loopVars, value, i, undefined, false, errorContext);
+    const res = callLoopBodyLimited(loopBody, loopVars, value, i, undefined, false, errorContext, buffer, asyncOptions);
     // Normalise sync/async body
     await Promise.resolve(res);
   }
@@ -435,28 +460,26 @@ async function iterateAsyncLimited(arr, loopBody, loopVars, errorContext, limit)
  * @param {Object} errorContext - Error context object
  * @returns {Promise|*} The result of calling the loop body
  */
-function callLoopBodyLimited(loopBody, loopVars, value, index, len, isLast, errorContext) {
+function callLoopBodyLimited(loopBody, loopVars, value, index, len, isLast, errorContext, buffer = null, asyncOptions = null) {
   if (loopVars.length === 1) {
     return loopBody(value, index, len, isLast, errorContext);
   }
 
-  if (isPoison(value)) {
-    const args = Array(loopVars.length).fill(value);
-    return loopBody(...args, index, len, isLast, errorContext);
+  const args = getDestructuredLoopArgs(value, loopVars, errorContext, buffer, asyncOptions);
+  if (!args) {
+    return undefined;
   }
-
-  if (!Array.isArray(value)) {
-    throw new Error('Expected an array for destructuring');
-  }
-
-  return loopBody(...value.slice(0, loopVars.length), index, len, isLast, errorContext);
+  return loopBody(...args, index, len, isLast, errorContext);
 }
 
-async function iterateArraySequential(arr, loopBody, loopVars, errorContext, returnAdvanceCheck = null) {
+async function iterateArraySequential(arr, loopBody, loopVars, errorContext, returnAdvanceCheck = null, buffer = null, asyncOptions = null) {
   const len = arr.length;
   let didIterate = len > 0;
 
   for (let i = 0; i < arr.length; i++) {
+    if (isFatalReported(errorContext)) {
+      break;
+    }
     let value = arr[i];
     const isLast = i === arr.length - 1;
 
@@ -464,16 +487,11 @@ async function iterateArraySequential(arr, loopBody, loopVars, errorContext, ret
     if (loopVars.length === 1) {
       res = loopBody(value, i, len, isLast, errorContext);
     } else {
-      if (!Array.isArray(value)) {
-        if (isPoison(value)) {
-          const args = Array(loopVars.length).fill(value);
-          res = loopBody(...args, i, len, isLast, errorContext);
-        } else {
-          throw new Error('Expected an array for destructuring');
-        }
-      } else {
-        res = loopBody(...value.slice(0, loopVars.length), i, len, isLast, errorContext);
+      const args = getDestructuredLoopArgs(value, loopVars, errorContext, buffer, asyncOptions);
+      if (!args) {
+        continue;
       }
+      res = loopBody(...args, i, len, isLast, errorContext);
     }
 
     await res;
@@ -488,35 +506,33 @@ async function iterateArraySequential(arr, loopBody, loopVars, errorContext, ret
 
 // Synchronous (not async): returns boolean directly for sync loops, avoids Promise overhead.
 // Arrays iterate synchronously - only loop bodies can be async.
-function iterateArrayParallel(arr, loopBody, loopVars, errorContext) {
+function iterateArrayParallel(arr, loopBody, loopVars, errorContext, buffer = null, asyncOptions = null) {
   const len = arr.length;
   let didIterate = len > 0;
 
   // Each loopBody call may start its own async structural work; poison propagation handles failures.
   for (let i = 0; i < arr.length; i++) {
+    if (isFatalReported(errorContext)) {
+      break;
+    }
     let value = arr[i];
     const isLast = i === arr.length - 1;
 
     if (loopVars.length === 1) {
       loopBody(value, i, len, isLast, errorContext);
     } else {
-      if (!Array.isArray(value)) {
-        if (isPoison(value)) {
-          const args = Array(loopVars.length).fill(value);
-          loopBody(...args, i, len, isLast, errorContext);
-        } else {
-          throw new Error('Expected an array for destructuring');
-        }
-      } else {
-        loopBody(...value.slice(0, loopVars.length), i, len, isLast, errorContext);
+      const args = getDestructuredLoopArgs(value, loopVars, errorContext, buffer, asyncOptions);
+      if (!args) {
+        continue;
       }
+      loopBody(...args, i, len, isLast, errorContext);
     }
   }
 
   return didIterate;
 }
 
-async function iterateArrayLimited(arr, loopBody, loopVars, errorContext, limit) {
+async function iterateArrayLimited(arr, loopBody, loopVars, errorContext, limit, buffer = null, asyncOptions = null) {
   const len = arr.length;
   const didIterate = len > 0;
 
@@ -539,7 +555,7 @@ async function iterateArrayLimited(arr, loopBody, loopVars, errorContext, limit)
 
 
     const isLast = index === len - 1;
-    const res = callLoopBodyLimited(loopBody, loopVars, value, index, len, isLast, errorContext);
+    const res = callLoopBodyLimited(loopBody, loopVars, value, index, len, isLast, errorContext, buffer, asyncOptions);
     await Promise.resolve(res);
   };
 
@@ -548,6 +564,13 @@ async function iterateArrayLimited(arr, loopBody, loopVars, errorContext, limit)
     //until the index is greater than the length of the array
     while (true) {
       try {
+        if (isFatalReported(errorContext)) {
+          if (resolveAllScheduled) {
+            resolveAllScheduled();
+            resolveAllScheduled = null;
+          }
+          break;
+        }
         const current = nextIndex++;
         if (current >= len) {
           break;
@@ -582,7 +605,7 @@ async function iterateArrayLimited(arr, loopBody, loopVars, errorContext, limit)
   return didIterate;
 }
 
-async function iterateObject(arr, loopBody, loopVars, errorContext, effectiveSequential, maxConcurrency, returnAdvanceCheck = null) {
+async function iterateObject(arr, loopBody, loopVars, errorContext, effectiveSequential, maxConcurrency, returnAdvanceCheck = null, buffer = null, asyncOptions = null) {
   const keys = Object.keys(arr);
   const len = keys.length;
   let didIterate = len > 0;
@@ -598,6 +621,9 @@ async function iterateObject(arr, loopBody, loopVars, errorContext, effectiveSeq
     if (effectiveSequential) {
       // Sequential object iteration (unchanged semantics, but via effectiveSequential)
       for (let i = 0; i < len; i++) {
+        if (isFatalReported(errorContext)) {
+          break;
+        }
         const key = keys[i];
         let value = arr[key];
         const isLast = i === len - 1;
@@ -615,6 +641,9 @@ async function iterateObject(arr, loopBody, loopVars, errorContext, effectiveSeq
       // preserving Error→poison behaviour and full length/last metadata.
       const entries = new Array(len);
       for (let i = 0; i < len; i++) {
+        if (isFatalReported(errorContext)) {
+          break;
+        }
         const key = keys[i];
         let value = arr[key];
 
@@ -630,7 +659,9 @@ async function iterateObject(arr, loopBody, loopVars, errorContext, effectiveSeq
         loopBody,
         loopVars,
         errorContext,
-        maxConcurrency
+        maxConcurrency,
+        buffer,
+        asyncOptions
       );
     } else {
       // Parallel (unbounded) object iteration – same semantics as before
@@ -794,16 +825,16 @@ async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOpti
         // any `for` loop marked as sequential. It does NOT support `loop.length`
         // or `loop.last` for async iterators, as that is impossible to know
         // without first consuming the entire iterator.
-        didIterate = await iterateAsyncSequential(arr, loopBody, loopVars, errorContext, returnAdvanceCheck);
+        didIterate = await iterateAsyncSequential(arr, loopBody, loopVars, errorContext, returnAdvanceCheck, buffer, asyncOptions);
       } else if (maxConcurrency) {
         // Limited concurrency path: behaves like while loops for metadata
-        didIterate = await iterateAsyncLimited(arr, loopBody, loopVars, errorContext, maxConcurrency);
+        didIterate = await iterateAsyncLimited(arr, loopBody, loopVars, errorContext, maxConcurrency, buffer, asyncOptions);
       } else {
         // PARALLEL PATH
         // This complex logic allows for `loop.length` and `loop.last` to work
         // by resolving promises only after the entire iterator is consumed. This
         // only works when loop bodies are fired in parallel (sequential=false)
-        didIterate = await iterateAsyncParallel(arr, loopBody, loopVars, errorContext);
+        didIterate = await iterateAsyncParallel(arr, loopBody, loopVars, errorContext, buffer, asyncOptions);
       }
     }
     else if (arr) {
@@ -812,18 +843,18 @@ async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOpti
         const effectiveSequential = sequential || limitSequentialOverride;
 
         if (effectiveSequential) {
-          didIterate = await iterateArraySequential(arr, loopBody, loopVars, errorContext, returnAdvanceCheck);
+          didIterate = await iterateArraySequential(arr, loopBody, loopVars, errorContext, returnAdvanceCheck, buffer, asyncOptions);
         } else if (maxConcurrency && maxConcurrency < len) {
-          didIterate = await iterateArrayLimited(arr, loopBody, loopVars, errorContext, maxConcurrency);
+          didIterate = await iterateArrayLimited(arr, loopBody, loopVars, errorContext, maxConcurrency, buffer, asyncOptions);
         } else {
           // Sync: returns boolean directly. Async: await to handle Promise (though it's not async)
-          const result = iterateArrayParallel(arr, loopBody, loopVars, errorContext);
+          const result = iterateArrayParallel(arr, loopBody, loopVars, errorContext, buffer, asyncOptions);
           didIterate = asyncOptions ? await result : result;
         }
       } else {
         // object iteration
         const effectiveSequential = sequential || limitSequentialOverride;
-        didIterate = await iterateObject(arr, loopBody, loopVars, errorContext, effectiveSequential, maxConcurrency, returnAdvanceCheck);
+        didIterate = await iterateObject(arr, loopBody, loopVars, errorContext, effectiveSequential, maxConcurrency, returnAdvanceCheck, buffer, asyncOptions);
       }
     }
   } catch (err) {

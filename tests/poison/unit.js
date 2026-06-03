@@ -2,6 +2,7 @@ import expect from 'expect.js';
 import {
   collectErrors,
   CommandBuffer,
+  callWrapAsync,
   createArray,
   createObject,
   createPoison,
@@ -11,6 +12,7 @@ import {
   isPoisonError,
   isError,
   isRuntimeError,
+  iterate,
   markPromiseHandled,
   PoisonedValue,
   PoisonError,
@@ -20,6 +22,7 @@ import {
   RuntimePromise,
   RuntimeContextError,
   RuntimeError,
+  envCallWrapAsync,
   cloneContext,
   cloneWithAddedContext
 } from '../../src/runtime/runtime.js';
@@ -563,5 +566,60 @@ describe('typed poison error contracts', () => {
       expect(isPoisonError(err)).to.be(true);
       expect(err.errors).to.eql([arrayPoison]);
     }
+  });
+
+  describe('fatal render state early exits', () => {
+    function createFatalContext(label = 'Fatal.Unit') {
+      const renderState = createRenderState();
+      return {
+        renderState,
+        errorContext: [1, 1, label, 'poison-unit.js', null, renderState]
+      };
+    }
+
+    it('does not invoke call wrappers after fatal render state is reported', () => {
+      const { errorContext } = createFatalContext('Fatal.Call');
+      const fatal = RuntimeError.report('already fatal', errorContext);
+      let callWrapInvoked = false;
+      let envCallInvoked = false;
+      const context = {
+        env: { globals: {} },
+        ctx: {}
+      };
+
+      expect(() => callWrapAsync(() => {
+        callWrapInvoked = true;
+        return 'called';
+      }, 'lateCall', context, [], errorContext))
+        .to.throwException((err) => {
+          expect(err).to.be(fatal);
+        });
+      expect(() => envCallWrapAsync(() => {
+        envCallInvoked = true;
+        return 'called';
+      }, context, [], errorContext))
+        .to.throwException((err) => {
+          expect(err).to.be(fatal);
+        });
+
+      expect(callWrapInvoked).to.be(false);
+      expect(envCallInvoked).to.be(false);
+    });
+
+    it('stops scheduling loop bodies after fatal render state is reported', async () => {
+      const { renderState, errorContext } = createFatalContext('Fatal.Loop');
+      const buffer = new CommandBuffer({}, null, null, null, null, errorContext, null, renderState);
+      const visited = [];
+
+      await iterate([1, 2, 3], (value) => {
+        visited.push(value);
+        RuntimeError.report('loop fatal', errorContext);
+      }, null, buffer, ['item'], {
+        errorContext,
+        sequential: false
+      });
+
+      expect(visited).to.eql([1]);
+    });
   });
 });

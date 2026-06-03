@@ -33,32 +33,40 @@ class InheritanceInstance {
       options.renderState
     );
     const sharedRootBuffer = options.sharedRootBuffer || rootBuffer;
-    const chain = await runtime.loadInheritanceChain({
-      templateOrScript: options.entryTemplateOrScript,
-      env: options.env,
-      context,
-      runtime,
-      errorContext: options.errorContext,
-      renderState: options.renderState
-    });
-    const runtimeState = runtime.finalizeInheritanceChain(chain, context);
-    const boundRuntimeState = runtime.bindInheritanceRuntimeState(runtimeState, runtime, options.renderState);
+    try {
+      const chain = await runtime.loadInheritanceChain({
+        templateOrScript: options.entryTemplateOrScript,
+        env: options.env,
+        context,
+        runtime,
+        errorContext: options.errorContext,
+        renderState: options.renderState
+      });
+      const runtimeState = runtime.finalizeInheritanceChain(chain, context);
+      const boundRuntimeState = runtime.bindInheritanceRuntimeState(runtimeState, runtime, options.renderState);
 
-    Object.entries(boundRuntimeState.sharedSchema).forEach(([name, schemaEntry]) => {
-      declareInheritanceSharedChain(sharedRootBuffer, name, schemaEntry.type, context, undefined, schemaEntry.errorContext);
-    });
+      Object.entries(boundRuntimeState.sharedSchema).forEach(([name, schemaEntry]) => {
+        declareInheritanceSharedChain(sharedRootBuffer, name, schemaEntry.type, context, undefined, schemaEntry.errorContext);
+      });
 
-    return new InheritanceInstance({
-      entryTemplateOrScript: chain.entries[0].templateOrScript,
-      runtimeState: boundRuntimeState,
-      env: options.env,
-      runtime,
-      renderState: options.renderState,
-      rootBuffer,
-      sharedRootBuffer,
-      traceParent,
-      context
-    });
+      return new InheritanceInstance({
+        entryTemplateOrScript: chain.entries[0].templateOrScript,
+        runtimeState: boundRuntimeState,
+        env: options.env,
+        runtime,
+        renderState: options.renderState,
+        rootBuffer,
+        sharedRootBuffer,
+        traceParent,
+        context
+      });
+    } catch (error) {
+      rootBuffer.finish();
+      if (sharedRootBuffer !== rootBuffer) {
+        sharedRootBuffer.finish();
+      }
+      throw error;
+    }
   }
 
   invoke(methodName, args = [], errorContext) {

@@ -1,5 +1,6 @@
 
 import {createPoison, isPoison, isPoisonError, RuntimePromise, collectErrors, PoisonError, RuntimeError} from './errors.js';
+import {throwReportedFatal} from './error-context.js';
 import {RESOLVE_MARKER, resolveAll} from './resolve.js';
 
 /**
@@ -26,6 +27,8 @@ function callWrap(obj, name, context, args, currentBuffer = null) {
  * Async call wrapper using sync-first hybrid pattern.
  */
 function callWrapAsync(obj, name, context, args, errorContext, currentBuffer = null) {
+  throwReportedFatal(errorContext);
+
   if (obj && obj.isMacro) {
     // Macros are promise/poison-transparent Cascada boundaries. They receive
     // raw argument values and any thrown/rejected error must propagate as a
@@ -121,6 +124,8 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
     errors.push(...obj.errors);
   }
 
+  throwReportedFatal(errorContext);
+
   if (obj && obj.isMacro) {
     // Macros are promise/poison-transparent Cascada boundaries. Keep promise-
     // valued args untouched and let any thrown/rejected error propagate as a
@@ -149,6 +154,8 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
   }
 
   // All resolved successfully - validate and call the function
+  throwReportedFatal(errorContext);
+
   if (!obj) {
     return createPoison(PoisonError.create(
       'Unable to call `' + name + '`, which is undefined or falsey',
@@ -183,6 +190,8 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
 }
 
 function envCallWrapAsync(fn, thisArg, args, errorContext) {
+  throwReportedFatal(errorContext);
+
   try {
     const result = fn.apply(thisArg, args);
     if (isPoison(result)) {
