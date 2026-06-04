@@ -1,7 +1,7 @@
 import {MutatingResultCommand, requireCommandErrorContext} from '../commands/base.js';
 import {CommandBuffer} from '../command-buffer.js';
 import {cloneContext, cloneWithAddedContext} from '../error-context.js';
-import {RuntimeError, isPoisonError, markPromiseHandled} from '../errors.js';
+import {RuntimeError, isPoisonError, handleLoadFailure, markPromiseHandled} from '../errors.js';
 import {getSharedSourceName, isPrivateSharedName} from '../../inheritance/shared-names.js';
 import {InheritanceInstance} from './instance.js';
 
@@ -127,7 +127,7 @@ async function createComponentInstance(spec) {
     try {
       templateOrScript = await templateOrScript;
     } catch (error) {
-      RuntimeError.reportAndThrow(error, errorContext);
+      handleLoadFailure(error, errorContext, 'component', env);
     }
   }
   if (!templateOrScript) {
@@ -145,17 +145,22 @@ async function createComponentInstance(spec) {
   renderState.throwIfFatalErrorReported();
   const rootBuffer = new CommandBuffer(componentContext, null, null, null, null, componentErrorContext, ownerBuffer || null, renderState);
   const sharedRootBuffer = new CommandBuffer(componentContext, null, null, null, null, cloneContext(componentErrorContext), ownerBuffer || null, renderState);
-  const instance = await InheritanceInstance.create({
-    entryTemplateOrScript: templateOrScript,
-    env,
-    context: componentContext,
-    runtime,
-    renderState,
-    rootBuffer,
-    sharedRootBuffer,
-    traceParent: ownerBuffer || null,
-    errorContext: errorContext
-  });
+  let instance;
+  try {
+    instance = await InheritanceInstance.create({
+      entryTemplateOrScript: templateOrScript,
+      env,
+      context: componentContext,
+      runtime,
+      renderState,
+      rootBuffer,
+      sharedRootBuffer,
+      traceParent: ownerBuffer || null,
+      errorContext: errorContext
+    });
+  } catch (error) {
+    handleLoadFailure(error, errorContext, 'component', env);
+  }
 
   try {
     await instance.invokeConstructor(errorContext);

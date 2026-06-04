@@ -508,6 +508,33 @@ function reportRuntimeContractError(message, errorContext) {
   throw new RuntimeError(message);
 }
 
+function isLoadFailureFatal(env, kind) {
+  requireLoadFailureKind(kind);
+  const policy = env && env.opts && env.opts.loadFailFatal;
+  if (policy instanceof Set) {
+    return policy.has(kind);
+  }
+  // Default fatal for older/custom environment objects that do not normalize opts.
+  return true;
+}
+
+function handleLoadFailure(error, errorContext, kind, env) {
+  requireLoadFailureKind(kind);
+  if (isRuntimeError(error) || isPoisonError(error)) {
+    throw error;
+  }
+  if (isLoadFailureFatal(env, kind)) {
+    RuntimeError.reportAndThrow(error, errorContext);
+  }
+  throw PoisonError.wrap(error, errorContext, 'LoadFailed');
+}
+
+function requireLoadFailureKind(kind) {
+  if (kind !== 'import' && kind !== 'component' && kind !== 'include') {
+    reportRuntimeContractError(`Invalid load failure kind '${kind}'`, CONTEXTLESS_FATAL_RUNTIME_CONTEXT);
+  }
+}
+
 /**
  * Wraps a Promise to add contextual error information the *first time* it rejects.
  * - Does NOT attach a catch in the constructor, so global unhandled rejections still fire.
@@ -741,4 +768,4 @@ function peekError(value) {
   return null;
 }
 
-export { PoisonedValue, PoisonError, PoisonErrorGroup, RuntimeError, RuntimeContextError, RuntimePromise, createPoison, poisonOrReport, rethrowPoisonOrReport, poisonOrReportedFatal, poisonOrRethrow, isPoison, isPoisonError, isRuntimeError, isError, collectErrors, handleError, peekError, markPromiseHandled };
+export { PoisonedValue, PoisonError, PoisonErrorGroup, RuntimeError, RuntimeContextError, RuntimePromise, createPoison, poisonOrReport, rethrowPoisonOrReport, poisonOrReportedFatal, poisonOrRethrow, isPoison, isPoisonError, isRuntimeError, isError, collectErrors, handleError, peekError, markPromiseHandled, isLoadFailureFatal, handleLoadFailure };

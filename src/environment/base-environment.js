@@ -7,6 +7,7 @@ import {handleError} from '../runtime/errors.js';
 import {express as expressApp} from './express-app.js';
 import {clearStringCache, callLoaders} from '../loader/loader-utils.js';
 
+const LOAD_FAILURE_KINDS = new Set(['import', 'component', 'include']);
 let DefaultFileSystemLoader = null;
 let DefaultWebLoader = null;
 
@@ -100,7 +101,7 @@ class BaseEnvironment extends EmitterObj {
     // (the full trace from within nunjucks may confuse developers using
     //  the library)
     // defaults to false
-    opts = this.opts = opts || {};
+    opts = this.opts = { ...(opts || {}) };
     this.opts.dev = !!opts.dev;
 
     // The autoescape flag sets global autoescaping. If true,
@@ -114,6 +115,7 @@ class BaseEnvironment extends EmitterObj {
     this.opts.throwOnUndefined = !!opts.throwOnUndefined;
     this.opts.trimBlocks = !!opts.trimBlocks;
     this.opts.lstripBlocks = !!opts.lstripBlocks;
+    this.opts.loadFailFatal = normalizeLoadFailFatal(opts.loadFailFatal);
 
     this.loaders = [];
 
@@ -398,6 +400,27 @@ class BaseEnvironment extends EmitterObj {
   waterfall(tasks, callback, forceAsync) {
     return waterfall(tasks, callback, forceAsync);
   }
+}
+
+function normalizeLoadFailFatal(value) {
+  if (value === undefined || value === true) {
+    return new Set(LOAD_FAILURE_KINDS);
+  }
+  if (value === false) {
+    return new Set();
+  }
+  if (!Array.isArray(value)) {
+    throw new Error('loadFailFatal must be true, false, or an array of load kinds');
+  }
+
+  const result = new Set();
+  for (const kind of value) {
+    if (!LOAD_FAILURE_KINDS.has(kind)) {
+      throw new Error(`Invalid loadFailFatal kind '${kind}'`);
+    }
+    result.add(kind);
+  }
+  return result;
 }
 
 export { BaseEnvironment, noopTmplSrc, noopTmplSrcAsync, setDefaultLoaderClasses };

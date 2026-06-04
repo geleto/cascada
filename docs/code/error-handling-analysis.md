@@ -1092,7 +1092,7 @@ is the spec, that document is the plan.
     after the `kind` field (§11.8) so the poison path is assigned `LoadFailed` in its
     first implementation, with no retrofit.
 
-### Load-failure policy (planned)
+### Load-failure policy (implemented)
 
 **Problem.** Obtaining a dependency — resolve + compile of an `include` / `import` /
 `from import` / `component` / `extends` target — can fail (**not-found**, or a
@@ -1159,9 +1159,12 @@ preserved), and a raw error is reported-and-thrown as fatal or thrown as
 makes the bound namespace/value poison (non-fatal) or reports fatal. A bare rejection
 already poisons via `RuntimePromise._wrapRejection`, so the **fatal default needs this
 active catch**. `include` branches on `isLoadFailureFatal` instead — its non-fatal
-outcome is *omission* (no `TextCommand`), not a poison value. The consuming boundary
-never reclassifies a load failure — the helper produced the correct shape at the
-source. `extends`/`root` keep their existing fatal path unchanged.
+raw-load outcome is *omission* (no `TextCommand`), not a poison value. Existing poison
+in an include target is written to the text chain as poison, because the include region
+has no namespace/value binding that could carry it and the structural boundary promise
+is intentionally handled. The consuming boundary never reclassifies a load failure —
+the helper produced the correct shape at the source. `extends`/`root` keep their
+existing fatal path unchanged.
 
 **`kind`.** The poison path carries a single `kind: 'LoadFailed'`; the `label` (tuple
 slot 2) already distinguishes the import/component frame — one kind, many labels.

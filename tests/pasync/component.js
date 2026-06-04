@@ -852,6 +852,61 @@ describe('Phase 8 - Component Observations', function () {
     expect(outcome.error.message).to.match(/Missing\.script|missing/i);
   });
 
+  it('should isolate a non-fatal missing component when the binding is unused', async function () {
+    const loader = new StringLoader();
+    const env = new AsyncEnvironment(loader, { loadFailFatal: ['import'] });
+
+    loader.addTemplate('Main.script', [
+      'data result = []',
+      'component "Missing.script" as ns',
+      'result.push("ok")',
+      'return result.snapshot()'
+    ].join('\n'));
+
+    const result = await env.renderScript('Main.script', {});
+
+    expect(result).to.eql(['ok']);
+  });
+
+  it('should publish non-fatal missing component loads as LoadFailed poison', async function () {
+    const loader = new StringLoader();
+    const env = new AsyncEnvironment(loader, { loadFailFatal: false });
+
+    loader.addTemplate('Main.script', [
+      'component "Missing.script" as ns',
+      'return ns.theme'
+    ].join('\n'));
+
+    try {
+      await env.renderScript('Main.script', {});
+      expect().fail('Expected renderScript to reject');
+    } catch (err) {
+      expect(runtimeModule.isPoisonError(err)).to.be(true);
+      expect(err.kind).to.be('LoadFailed');
+      expect(err.message).to.match(/Missing\.script|missing/i);
+    }
+  });
+
+  it('should publish poisoned component targets without relabeling them as LoadFailed', async function () {
+    const loader = new StringLoader();
+    const env = new AsyncEnvironment(loader, { loadFailFatal: false });
+
+    loader.addTemplate('Main.script', [
+      'component target as ns',
+      'return ns.theme'
+    ].join('\n'));
+
+    try {
+      await env.renderScript('Main.script', { target: createTestPoison('component target poisoned') });
+      expect().fail('Expected renderScript to reject');
+    } catch (err) {
+      expect(runtimeModule.isPoisonError(err)).to.be(true);
+      expect(err.kind).to.be('ValueRejected');
+      expect(err.kind).not.to.be('LoadFailed');
+      expect(err.message).to.contain('component target poisoned');
+    }
+  });
+
   it('should reject instead of hanging when observing a missing shared component chain', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);

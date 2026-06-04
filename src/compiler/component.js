@@ -31,7 +31,7 @@ class CompileComponent {
     }
 
     const targetName = node.target.value;
-    const componentScriptOrTemplateVar = this.compiler.composition.compileAsyncResolveTargetFile(node, true, false);
+    const componentScriptOrTemplateVar = this.compiler.composition.compileAsyncResolveTargetFile(node, true, false, false, 'component');
     const componentVarsVar = this.compiler._tmpid();
     const rootContextVar = this.compiler._tmpid();
 

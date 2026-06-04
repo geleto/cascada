@@ -1,6 +1,16 @@
 import expect from 'expect.js';
-import {AsyncEnvironment} from '../../src/environment/environment.js';
+import {AsyncEnvironment, Environment} from '../../src/environment/environment.js';
 import {StringLoader} from '../util.js';
+import * as runtime from '../../src/runtime/runtime.js';
+
+async function expectRejects(promise) {
+  try {
+    await promise;
+    expect().fail('Expected promise to reject');
+  } catch (err) {
+    return err;
+  }
+}
 
 (function () {
 
@@ -431,6 +441,164 @@ import {StringLoader} from '../util.js';
       env = new AsyncEnvironment(loader);
       const result = await env.renderTemplate('main.njk', {});
       expect(result).to.equal('1');
+    });
+
+    describe('Load-failure policy', function () {
+      it('should validate loadFailFatal at environment construction', () => {
+        expect(() => new AsyncEnvironment(loader, { loadFailFatal: 'include' }))
+          .to.throwException(/loadFailFatal/);
+        expect(() => new AsyncEnvironment(loader, { loadFailFatal: ['root'] }))
+          .to.throwException(/Invalid loadFailFatal kind 'root'/);
+      });
+
+      it('should not mutate reusable loadFailFatal options', () => {
+        const opts = { loadFailFatal: false };
+
+        new AsyncEnvironment(loader, opts);
+        new AsyncEnvironment(loader, opts);
+
+        expect(opts.loadFailFatal).to.be(false);
+      });
+
+      it('should keep missing imports fatal by default', async () => {
+        loader.addTemplate('main.njk', '{% import "missing.njk" as lib %}{{ lib.x }}');
+
+        env = new AsyncEnvironment(loader);
+        const err = await expectRejects(env.renderTemplate('main.njk', {}));
+
+        expect(runtime.isRuntimeError(err)).to.be(true);
+        expect(err.message).to.match(/missing\.njk/i);
+      });
+
+      it('should keep poisoned import targets out of LoadFailed', async () => {
+        loader.addTemplate('main.njk', '{% import target as lib %}{{ lib.x }}');
+        const poison = runtime.createPoison(runtime.PoisonError.create(
+          'target poisoned',
+          [1, 1, 'target', 'target-origin.njk', null, null],
+          'ValueRejected'
+        ));
+
+        env = new AsyncEnvironment(loader, { loadFailFatal: false });
+        const err = await expectRejects(env.renderTemplate('main.njk', { target: poison }));
+
+        expect(runtime.isPoisonError(err)).to.be(true);
+        expect(err.kind).to.be('ValueRejected');
+        expect(err.kind).not.to.be('LoadFailed');
+        expect(err.message).to.contain('target poisoned');
+      });
+
+      it('should turn non-fatal missing imports into LoadFailed poison', async () => {
+        loader.addTemplate('main.njk', '{% import "missing.njk" as lib %}{{ lib.x }}');
+
+        env = new AsyncEnvironment(loader, { loadFailFatal: false });
+        const err = await expectRejects(env.renderTemplate('main.njk', {}));
+
+        expect(runtime.isPoisonError(err)).to.be(true);
+        expect(err.kind).to.be('LoadFailed');
+        expect(err.message).to.match(/missing\.njk/i);
+      });
+
+      it('should turn non-fatal import compile failures into LoadFailed poison', async () => {
+        loader.addTemplate('broken.njk', '{% if %}');
+        loader.addTemplate('main.njk', '{% import "broken.njk" as lib %}{{ lib.x }}');
+
+        env = new AsyncEnvironment(loader, { loadFailFatal: false });
+        const err = await expectRejects(env.renderTemplate('main.njk', {}));
+
+        expect(runtime.isPoisonError(err)).to.be(true);
+        expect(err.kind).to.be('LoadFailed');
+      });
+
+      it('should poison from-import bindings with the module load failure', async () => {
+        loader.addTemplate('main.njk', '{% from "missing.njk" import a, b %}{{ a is error }}|{{ b is error }}|{{ a#errors[0].kind }}|{{ b#errors[0].kind }}');
+
+        env = new AsyncEnvironment(loader, { loadFailFatal: false });
+        const result = await env.renderTemplate('main.njk', {});
+
+        expect(result).to.be('true|true|LoadFailed|LoadFailed');
+      });
+
+      it('should keep missing exports as ImportBindingMissing after a successful load', async () => {
+        loader.addTemplate('lib.njk', '{% set present = "ok" %}');
+        loader.addTemplate('main.njk', '{% from "lib.njk" import missing %}{{ missing }}');
+
+        env = new AsyncEnvironment(loader, { loadFailFatal: false });
+        const err = await expectRejects(env.renderTemplate('main.njk', {}));
+
+        expect(runtime.isPoisonError(err)).to.be(true);
+        expect(err.kind).to.be('ImportBindingMissing');
+      });
+
+      it('should omit non-fatal missing includes', async () => {
+        loader.addTemplate('main.njk', 'a{% include "missing.njk" %}b');
+
+        env = new AsyncEnvironment(loader, { loadFailFatal: false });
+        const result = await env.renderTemplate('main.njk', {});
+
+        expect(result).to.be('ab');
+      });
+
+      it('should complete limited loop iterations around silenced includes', async () => {
+        loader.addTemplate('main.njk', '{% for x in [1,2,3] of 2 %}{{ x }}{% include "missing.njk" %}|{% endfor %}');
+
+        env = new AsyncEnvironment(loader, { loadFailFatal: false });
+        const result = await env.renderTemplate('main.njk', {});
+
+        expect(result).to.be('1|2|3|');
+      });
+
+      it('should let ignore missing silence one include under the fatal default', async () => {
+        loader.addTemplate('main.njk', 'a{% include "missing.njk" ignore missing %}b');
+
+        env = new AsyncEnvironment(loader);
+        const result = await env.renderTemplate('main.njk', {});
+
+        expect(result).to.be('ab');
+      });
+
+      it('should keep target-name expression failures out of LoadFailed', async () => {
+        loader.addTemplate('main.njk', '{% include getName() %}');
+        env = new AsyncEnvironment(loader, { loadFailFatal: false });
+        env.addGlobal('getName', () => Promise.reject(new Error('name exploded')));
+
+        const err = await expectRejects(env.renderTemplate('main.njk', {}));
+
+        expect(runtime.isPoisonError(err)).to.be(true);
+        expect(err.kind).to.be('UserCallThrew');
+        expect(err.kind).not.to.be('LoadFailed');
+        expect(err.message).to.contain('name exploded');
+      });
+
+      it('should keep public root renders fatal regardless of loadFailFatal', async () => {
+        env = new AsyncEnvironment(loader, { loadFailFatal: false });
+
+        const templateErr = await expectRejects(env.renderTemplate('missing.njk', {}));
+        const scriptErr = await expectRejects(env.renderScript('missing.casc', {}));
+
+        expect(runtime.isPoisonError(templateErr)).to.be(false);
+        expect(runtime.isPoisonError(scriptErr)).to.be(false);
+        expect(templateErr.message).to.match(/missing\.njk/i);
+        expect(scriptErr.message).to.match(/missing\.casc/i);
+      });
+
+      it('should keep extends fatal regardless of loadFailFatal', async () => {
+        loader.addTemplate('child.njk', '{% extends "missing-parent.njk" %}{% block content %}x{% endblock %}');
+
+        env = new AsyncEnvironment(loader, { loadFailFatal: false });
+        const err = await expectRejects(env.renderTemplate('child.njk', {}));
+
+        expect(runtime.isRuntimeError(err)).to.be(true);
+        expect(err.message).to.match(/missing-parent\.njk/i);
+      });
+
+      it('should leave sync include ignore-missing behavior untouched', () => {
+        loader.addTemplate('main.njk', 'a{% include "missing.njk" ignore missing %}b');
+        const syncEnv = new Environment(loader, { loadFailFatal: false });
+
+        const result = syncEnv.renderTemplate('main.njk', {});
+
+        expect(result).to.be('ab');
+      });
     });
 
     it('should resolve async exported values after removing deferred-export visibility linking', async () => {

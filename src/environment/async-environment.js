@@ -110,6 +110,8 @@ class AsyncEnvironment extends BaseEnvironment {
             throw new Error(`Script not found: ${script}`);
           }
           scr.render(ctx, callback);
+        }).catch(err => {
+          reject(err);
         });
       } else {
         // render script string
