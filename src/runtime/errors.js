@@ -654,6 +654,18 @@ function poisonOrRethrow(err) {
   throw err;
 }
 
+function observeDiscardedExpression(value, errorContext) {
+  if (!value || isPoison(value) || typeof value.then !== 'function') {
+    return;
+  }
+
+  markPromiseHandled(Promise.resolve(value).catch((err) => {
+    if (!isPoisonError(err)) {
+      RuntimeError.report(err, errorContext);
+    }
+  }));
+}
+
 /**
  * Check if a VALUE is a PoisonedValue (before await)
  * This does not handle regular rejected promises and is not
@@ -778,4 +790,4 @@ function peekError(value) {
   return null;
 }
 
-export { PoisonedValue, PoisonError, PoisonErrorGroup, RuntimeError, RuntimeContextError, RuntimePromise, createPoison, poisonIfNaN, poisonOrReport, rethrowPoisonOrReport, poisonOrReportedFatal, poisonOrRethrow, isPoison, isPoisonError, isRuntimeError, isError, collectErrors, handleError, peekError, markPromiseHandled, isLoadFailureFatal, handleLoadFailure };
+export { PoisonedValue, PoisonError, PoisonErrorGroup, RuntimeError, RuntimeContextError, RuntimePromise, createPoison, poisonIfNaN, poisonOrReport, rethrowPoisonOrReport, poisonOrReportedFatal, poisonOrRethrow, observeDiscardedExpression, isPoison, isPoisonError, isRuntimeError, isError, collectErrors, handleError, peekError, markPromiseHandled, isLoadFailureFatal, handleLoadFailure };

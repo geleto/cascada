@@ -35,6 +35,26 @@ import {delay} from '../util.js';
     });
 
     describe('"Do" tag', () => {
+      async function collectUnhandledRejections(fn) {
+        if (typeof process === 'undefined' || typeof process.on !== 'function') {
+          await fn();
+          await delay(30);
+          return [];
+        }
+        const unhandled = [];
+        const onUnhandled = (reason) => {
+          unhandled.push(reason);
+        };
+        process.on('unhandledRejection', onUnhandled);
+        try {
+          await fn();
+          await delay(30);
+        } finally {
+          process.removeListener('unhandledRejection', onUnhandled);
+        }
+        return unhandled;
+      }
+
       it('should evaluate a single expression for side effects', async () => {
         let called = false;
         const context = {
@@ -78,6 +98,23 @@ import {delay} from '../util.js';
         expect(result).to.equal('');
         // do is fire-and-forget: async side effects may not complete before render returns
         expect(called).to.equal(false);
+      });
+
+      it('should swallow discarded async poison without an unhandled rejection', async () => {
+        const context = {
+          asyncRejectedValue: async () => {
+            await delay(5);
+            throw new Error('discarded poison');
+          }
+        };
+
+        let result;
+        const unhandled = await collectUnhandledRejections(async () => {
+          result = await env.renderTemplateString('{% do asyncRejectedValue() %}ok', context);
+        });
+
+        expect(result).to.equal('ok');
+        expect(unhandled).to.eql([]);
       });
 
       it('should allow do tag inside control structures', async () => {

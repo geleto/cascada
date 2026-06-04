@@ -30,7 +30,7 @@ suite green before the next.
 - Phases that change **emitted** code regenerate precompiled/browser fixtures:
   Phase 1 (§11.14 emit helper), Phase 3 (`kind` in emitted composition),
   Phase 4 (load-failure — emitted composition sites), Phase 5 (NaN emitters),
-  Phase 6 (Do-sink).
+  Phase 6 (discard observer).
   Fixture regen is an automated build step, so the objective order (cleanup → fixes →
   features) is preferred over batching it.
 - Phase order follows the objective: **Phase 0** stability/safe foundation ·
@@ -365,21 +365,27 @@ emitters + output + call paths changed).
 
 ---
 
-## Phase 6 — Discarded-expression sink (feature; fixtures)
+## Phase 6 — Discarded-expression observer (feature; fixtures)
 
 Goal: discarded `Do`-node async results are observed (analysis §10, §11.3).
-`compileDo` evaluates arbitrary **expressions**, not just calls, so the sink must
-handle any discarded thenable result — not only `callWrapAsync` results.
+`compileDo` evaluates arbitrary **expressions**, not just calls, so the observer
+must handle any discarded thenable result — not only `callWrapAsync` results.
 
-- [ ] Design and add a narrow **discarded-expression** sink that routes a
-  compiler-known discarded async value (any thenable) through the current command
-  buffer; preserve sync-first behavior for discarded sync values; no generic ambient
-  tracker. (Avoid `callWrapAsync`-only framing — `Do` children may be lookups,
-  member reads, or any expression returning a promise.)
-- [ ] Emit it from `compileDo(...)` for each discarded expression child.
+- [x] Design and add a narrow **discarded-expression** observer for
+  compiler-known discarded async values (any thenable). Preserve sync-first behavior
+  for discarded sync values; no command-buffer/channel mutation and no generic
+  ambient promise tracker. (Avoid `callWrapAsync`-only framing — `Do` children may
+  be lookups, member reads, or any expression returning a promise.)
+- [x] Observer behavior: fulfilled values are ignored; poison rejections are
+  swallowed; raw/fatal rejections are marked handled and reported through the active
+  render state when one exists, without delaying render completion for discarded
+  work.
+- [x] Emit it from `compileDo(...)` for each discarded expression child.
 
-Verify: a discarded-async-call rejection is observed/reported, not unhandled · new
-`compileDo` tests · regenerate fixtures · `npm run build`.
+Verify: a discarded async poison rejection is swallowed and not unhandled; a
+discarded raw/fatal rejection is handled/reported and not unhandled; fulfilled
+discarded promises do not affect output · new `compileDo` tests · regenerate
+fixtures · `npm run build`.
 
 ---
 

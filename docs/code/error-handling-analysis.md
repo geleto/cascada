@@ -948,14 +948,16 @@ Criteria for future judgment:
 `Do` nodes evaluate **expressions** for side effects and discard the result
 (`compiler-async.js` `compileDo` calls `compileExpression` then `;`). The child is
 any expression — a call, a member read, anything that may return a promise — not
-only a call. A discarded thenable is not tracked by a command or awaiting consumer,
-so its async rejection can escape command-buffer observation.
+only a call. A discarded thenable is not tracked by an awaiting consumer, so its
+async rejection can escape as an unhandled rejection.
 
-The fix is narrow: route any compiler-known discarded async value through the
-current command buffer (a sink command), preserve sync-first behavior for discarded
-synchronous values, and avoid a generic ambient promise tracker. Keep it
-expression-general — not a call-only `callWrapAsyncSink`. See
-[Remaining Work](#11-remaining-work-and-gaps).
+The fix is narrow: install a discard observer for compiler-known discarded async
+values, preserve sync-first behavior for discarded synchronous values, and avoid a
+generic ambient promise tracker. Fulfilled values are ignored; poison rejections are
+swallowed because no consumer observed the value; raw/fatal rejections are marked
+handled and reported through the active render state when one exists, without
+delaying render completion for discarded work. Keep it expression-general — not a
+call-only observer. See [Remaining Work](#11-remaining-work-and-gaps).
 
 ### Deliberate cleanup promises
 
@@ -985,10 +987,11 @@ is the spec, that document is the plan.
    children. Await the values directly.
 2. **ADD** `markPromiseHandled(...)` around the component cleanup promise in
    `inheritance/component.js` ≈168 (§10).
-3. **ADD** a discarded-**expression** sink for `Do` nodes so a rejected thenable
-   from any discarded child expression (call, member read, …) is observed by the
-   current command buffer rather than escaping — expression-general, not call-only
-   (§10).
+3. **ADD** a discarded-**expression** observer for `Do` nodes so a rejected thenable
+   from any discarded child expression (call, member read, …) is marked handled
+   rather than escaping as an unhandled rejection. Discard poison; report raw/fatal
+   rejection through active render state when available; do not delay render
+   completion for discarded work. Expression-general, not call-only (§10).
 4. **FIX** the loop destructuring-error asymmetry in `loop.js` (§9). Decided
    resolution: make `Expected an array for destructuring` **poison, per-iteration**
    at all five sites (≈167, ≈254, ≈448, ≈471, ≈507) by enqueuing poison on the
@@ -1348,7 +1351,7 @@ For focused changes:
   fixed)
 - the relevant feature files for the changed area (e.g. `tests/pasync/component.js`,
   `tests/pasync/loops.js`)
-- new discarded-call tests when `compileDo(...)` gains a sink
+- new discarded-expression tests when `compileDo(...)` gains an observer
 - `npm run build`
 
 For broad error-handling changes:

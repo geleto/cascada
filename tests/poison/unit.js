@@ -23,6 +23,7 @@ import {
   RuntimeContextError,
   RuntimeError,
   envCallWrapAsync,
+  observeDiscardedExpression,
   cloneContext,
   cloneWithAddedContext
 } from '../../src/runtime/runtime.js';
@@ -676,6 +677,38 @@ describe('typed poison error contracts', () => {
       });
 
       expect(visited).to.eql([1]);
+    });
+  });
+
+  describe('discarded expression observer', () => {
+    it('reports raw discarded rejections without rethrowing or leaving them unhandled', async () => {
+      let reported = null;
+      const renderState = createRenderState((err) => {
+        reported = err;
+      });
+      const errorContext = [1, 1, 'Discarded.Expression', 'poison-unit.js', null, renderState];
+      const raw = new Error('discarded raw');
+
+      observeDiscardedExpression(Promise.reject(raw), errorContext);
+      await Promise.resolve();
+
+      expect(reported).to.be.a(RuntimeError);
+      expect(reported.message).to.contain('discarded raw');
+      expect(renderState.error).to.be(reported);
+    });
+
+    it('swallows discarded poison rejections', async () => {
+      let reported = null;
+      const renderState = createRenderState((err) => {
+        reported = err;
+      });
+      const errorContext = [1, 1, 'Discarded.Poison', 'poison-unit.js', null, renderState];
+
+      observeDiscardedExpression(Promise.reject(poisonError('discarded poison')), errorContext);
+      await Promise.resolve();
+
+      expect(reported).to.be(null);
+      expect(renderState.error).to.be(null);
     });
   });
 });

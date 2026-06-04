@@ -502,8 +502,16 @@ class CompilerAsync extends CompilerBaseAsync {
 
   compileDo(node) {
     node.children.forEach((child) => {
+      if (isSharedChainCommandExpression(child)) {
+        // Shared text/data calls enqueue commands instead of returning an
+        // expression value, so they cannot be wrapped by the discard observer.
+        this.compileExpression(child, null, child);
+        this.emit.line(';');
+        return;
+      }
+      this.emit('runtime.observeDiscardedExpression(');
       this.compileExpression(child, null, child);
-      this.emit.line(';');
+      this.emit.line(`, ${this.emitErrorContext(child)});`);
     });
   }
 
@@ -758,6 +766,15 @@ class CompilerAsync extends CompilerBaseAsync {
     // Method definitions are compiled through metadata and dedicated callable
     // entries, not by inline root-body emission.
   }
+}
+
+function isSharedChainCommandExpression(node) {
+  const specialChainCall = node?._analysis?.specialChainCall;
+  return !!(
+    specialChainCall &&
+    specialChainCall.shared &&
+    (specialChainCall.chainType === 'text' || specialChainCall.chainType === 'data')
+  );
 }
 
 export {CompilerAsync};
