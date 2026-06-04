@@ -1325,7 +1325,11 @@ const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC
             expect().fail(`Expected invalid limit error for ${testCase.desc}`);
           } catch (err) {
             expect(isPoisonError(err)).to.be(true);
-            expect(err.errors[0].message).to.contain('concurrentLimit must be a positive number or 0 / null / undefined');
+            if (testCase.desc === 'NaN') {
+              expect(err.errors[0].kind).to.be('NaNResult');
+            } else {
+              expect(err.errors[0].message).to.contain('concurrentLimit must be a positive number or 0 / null / undefined');
+            }
             expect(context.events).to.have.length(0);
             expect(context.didIterate).to.be(false);
           }
@@ -2130,7 +2134,11 @@ const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC
             expect().fail(`Expected invalid concurrentLimit for ${testCase.desc}`);
           } catch (err) {
             expect(isPoisonError(err)).to.be(true);
-            expect(err.errors[0].message).to.contain('concurrentLimit must be a positive number or 0 / null / undefined');
+            if (testCase.desc === 'NaN') {
+              expect(err.errors[0].kind).to.be('NaNResult');
+            } else {
+              expect(err.errors[0].message).to.contain('concurrentLimit must be a positive number or 0 / null / undefined');
+            }
             const innerEvents = context.events.filter(event => event.startsWith('inner'));
             expect(innerEvents).to.have.length(0);
           }
@@ -2161,7 +2169,11 @@ const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC
             expect().fail(`Expected invalid concurrentLimit for ${testCase.desc} inside nested loop`);
           } catch (err) {
             expect(isPoisonError(err)).to.be(true);
-            expect(err.errors[0].message).to.contain('concurrentLimit must be a positive number or 0 / null / undefined');
+            if (testCase.desc === 'NaN') {
+              expect(err.errors[0].kind).to.be('NaNResult');
+            } else {
+              expect(err.errors[0].message).to.contain('concurrentLimit must be a positive number or 0 / null / undefined');
+            }
             const innerEvents = context.events.filter(event => event.startsWith('inner'));
             expect(innerEvents).to.have.length(0);
           }

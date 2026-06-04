@@ -1,4 +1,4 @@
-import {PoisonError, isPoison, poisonOrReportedFatal} from '../errors.js';
+import {PoisonError, isPoison, poisonIfNaN, poisonOrReportedFatal} from '../errors.js';
 import {Chain} from './base.js';
 
 class SequenceObjectChain extends Chain {
@@ -85,14 +85,16 @@ class SequenceObjectChain extends Chain {
   }
 
   _snapshotFromSequenceTarget(sequenceTarget) {
-    if (!sequenceTarget) return sequenceTarget;
+    if (!sequenceTarget) {
+      return sequenceTarget;
+    }
     if (typeof sequenceTarget.snapshot === 'function') return sequenceTarget.snapshot();
     if (typeof sequenceTarget.getReturnValue === 'function') return sequenceTarget.getReturnValue();
     if (typeof sequenceTarget.finalize === 'function') return sequenceTarget.finalize();
     return sequenceTarget;
   }
 
-  _resolveSnapshotCommandResult() {
+  _resolveSnapshotCommandResult(errorContext) {
     const targetValue = this._ensureSequenceTargetResolved();
     if (targetValue && typeof targetValue.then === 'function') {
       return targetValue.then((resolved) => {
@@ -100,14 +102,14 @@ class SequenceObjectChain extends Chain {
         if (isPoison(target)) {
           throw PoisonError.group(target.errors);
         }
-        return this._snapshotFromSequenceTarget(resolved);
+        return normalizeSequenceValue(this._snapshotFromSequenceTarget(resolved), errorContext);
       });
     }
     const target = this._getTarget();
     if (isPoison(target)) {
       throw PoisonError.group(target.errors);
     }
-    return super._resolveSnapshotCommandResult();
+    return normalizeSequenceValue(super._resolveSnapshotCommandResult(), errorContext);
   }
 
   _getCurrentResult() {
@@ -153,6 +155,13 @@ class SequenceObjectChain extends Chain {
     }
     return restore(targetValue, state);
   }
+}
+
+function normalizeSequenceValue(value, errorContext) {
+  if (value && typeof value.then === 'function' && !isPoison(value)) {
+    return Promise.resolve(value).then(resolved => poisonIfNaN(resolved, errorContext));
+  }
+  return poisonIfNaN(value, errorContext);
 }
 
 class SequenceChain extends SequenceObjectChain {

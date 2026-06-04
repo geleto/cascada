@@ -2,7 +2,7 @@
 import {extend, keys, indexOf} from '../lib.js';
 import {CompileError} from '../errors.js';
 import {Obj} from '../object.js';
-import {createPoison, markPromiseHandled, PoisonError} from '../runtime/errors.js';
+import {createPoison, isPoison, markPromiseHandled, PoisonError, poisonIfNaN, RuntimePromise} from '../runtime/errors.js';
 
 class ContextExecutionState {
   constructor() {
@@ -48,14 +48,16 @@ class Context extends Obj {
   }
 
   //if the variable is not found, returns undefined
-  lookup(name) {
+  lookup(name, errorContext = null) {
     // This is one of the most called functions, so optimize for
     // the typical case where the name isn't in the globals
+    let value;
     if (name in this.env.globals && !(name in this.ctx)) {
-      return this.env.globals[name];
+      value = this.env.globals[name];
     } else {
-      return this.ctx[name];
+      value = this.ctx[name];
     }
+    return normalizeContextValue(value, errorContext);
   }
 
   //if the variable is not found, returns a poison value
@@ -63,10 +65,10 @@ class Context extends Obj {
     // This is one of the most called functions, so optimize for
     // the typical case where the name isn't in the globals
     if (name in this.env.globals && !(name in this.ctx)) {
-      return this.env.globals[name];
+      return normalizeContextValue(this.env.globals[name], errorContext);
     } else {
       if (name in this.ctx) {
-        return this.ctx[name];
+        return normalizeContextValue(this.ctx[name], errorContext);
       } else {
         return createPoison(PoisonError.create(
           `Can not look up unknown variable/function: ${name}`,
@@ -217,6 +219,17 @@ class Context extends Obj {
       compositionPayload.payloadContext
     );
   }
+}
+
+function normalizeContextValue(value, errorContext) {
+  if (!errorContext) {
+    return value;
+  }
+  value = poisonIfNaN(value, errorContext);
+  if (value && typeof value.then === 'function' && !isPoison(value)) {
+    return new RuntimePromise(value, errorContext, 'ValueRejected');
+  }
+  return value;
 }
 
 export { Context };

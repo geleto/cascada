@@ -545,7 +545,7 @@ function requireLoadFailureKind(kind) {
  */
 class RuntimePromise {
   constructor(promise, errorContext, kind) {
-    this.promise = Promise.resolve(promise);
+    this.promise = Promise.resolve(promise).then(value => poisonIfNaN(value, errorContext));
     // RuntimePromise instances are often passed around as values and awaited
     // only later during output application. Mark the wrapped promise as handled
     // immediately so delayed consumption does not trigger
@@ -610,6 +610,16 @@ function createPoison(poisonError) {
     );
   }
   return new PoisonedValue(poisonError.errors);
+}
+
+function poisonIfNaN(value, errorContext) {
+  if (typeof value === 'number' && Number.isNaN(value)) {
+    if (!errorContext) {
+      reportRuntimeContractError('poisonIfNaN requires a compact errorContext for NaNResult', CONTEXTLESS_FATAL_RUNTIME_CONTEXT);
+    }
+    return createPoison(PoisonError.create('value is NaN', errorContext, 'NaNResult'));
+  }
+  return value;
 }
 
 // Sync-first consumers: return poison as a value, report raw failures as fatal.
@@ -768,4 +778,4 @@ function peekError(value) {
   return null;
 }
 
-export { PoisonedValue, PoisonError, PoisonErrorGroup, RuntimeError, RuntimeContextError, RuntimePromise, createPoison, poisonOrReport, rethrowPoisonOrReport, poisonOrReportedFatal, poisonOrRethrow, isPoison, isPoisonError, isRuntimeError, isError, collectErrors, handleError, peekError, markPromiseHandled, isLoadFailureFatal, handleLoadFailure };
+export { PoisonedValue, PoisonError, PoisonErrorGroup, RuntimeError, RuntimeContextError, RuntimePromise, createPoison, poisonIfNaN, poisonOrReport, rethrowPoisonOrReport, poisonOrReportedFatal, poisonOrRethrow, isPoison, isPoisonError, isRuntimeError, isError, collectErrors, handleError, peekError, markPromiseHandled, isLoadFailureFatal, handleLoadFailure };

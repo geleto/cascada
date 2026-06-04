@@ -14,7 +14,7 @@ class SnapshotCommand extends ObservableCommand {
       throw new Error('SnapshotCommand requires a chain');
     }
 
-    return this.settleResult(chain._resolveSnapshotCommandResult());
+    return this.settleResult(chain._resolveSnapshotCommandResult(this.errorContext));
   }
 }
 

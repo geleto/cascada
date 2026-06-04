@@ -4,9 +4,8 @@ Reference for Cascada's async error-handling architecture. It gives a site-by-si
 inventory (§9) of the `catch` blocks in the async runtime and compiler-emitted code
 — what each does, why, and whether it is correct, redundant, or a known gap. The
 `catch` inventory is exhaustive; fire-and-forget promise-rejection coverage is
-current best-known and still being swept (§11), not final proof. Parts of §3 marked
-**Planned** (NaN handling) and all unchecked items in §11 are target design, not
-current implementation.
+current best-known and still being swept (§11), not final proof. Unchecked items in
+§11 are target design, not current implementation.
 
 **Scope:** the async compiler/runtime only. The frozen synchronous
 Nunjucks-compatible path (`handleError(error, lineno, colno, label, path)`,
@@ -20,7 +19,7 @@ taxonomy, compact contexts, fatal delivery — is implemented across the value p
 `guard.js`, `buffer-iterator.js`, `inheritance/*`), and compiler-emitted catches.
 Sections 1–10 are the reference for that implemented model.
 [§11](#11-remaining-work-and-gaps) is the design + plan for what is **not** yet
-implemented: NaN→poison, load-failure policy, remaining cleanups and dedups. The ordered plan lives in
+implemented: discarded-expression observation, remaining cleanups and dedups. The ordered plan lives in
 [`error-handling-implementation.md`](error-handling-implementation.md).
 
 ---
@@ -137,11 +136,10 @@ rejects a second context for an already-built `RuntimeError`.
 ### `PoisonError`
 
 One non-fatal source-origin value failure; requires compact origin context.
-**Current:** `PoisonError.create(message, errorContext)` for engine-created value
-failures; `PoisonError.wrap(error, errorContext)` for a user/JS error caught at the
-source (existing poison is returned unchanged; a `RuntimeError` is re-thrown).
-*(Planned, §11.8: a trailing `kind` argument — see
-[Poison `kind`](#poison-kind-failure-category).)*
+**Current:** `PoisonError.create(message, errorContext, kind)` for engine-created
+value failures; `PoisonError.wrap(error, errorContext, kind)` for a user/JS error
+caught at the source (existing poison is returned unchanged; a `RuntimeError` is
+re-thrown).
 
 ### `PoisonErrorGroup`
 
@@ -179,8 +177,8 @@ poison source without an explicit kind is a runtime contract error.
 
 This table is the **complete** poison-source enumeration, cross-checked against
 every `PoisonError.create` / `PoisonError.wrap` call site in `src/`. Each existing
-source is assigned its target `kind`; `DestructureMismatch` and
-`ImportBindingMissing` are implemented additions, while `NaNResult` remains planned.
+source is assigned its target `kind`; `DestructureMismatch`, `ImportBindingMissing`,
+and `NaNResult` are implemented additions.
 
 | `kind` | Source site | Factory | Status |
 |---|---|---|---|
@@ -215,7 +213,7 @@ Notes:
 
 ### NaN handling
 
-**Planned — target behavior, not yet implemented (§11.9).** Cascada is not JS: a
+**Implemented (§11.9).** Cascada is not JS: a
 `NaN` number is a value failure, not a silently propagating
 value. It is poisoned **at its production source** — the same discipline as every
 other poison source (§7). This keeps the §2/§7 source/consumer split clean: NaN
@@ -232,6 +230,9 @@ One helper, applied at each value-production point with that source's
 ```javascript
 function poisonIfNaN(value, errorContext) {
   if (typeof value === 'number' && Number.isNaN(value)) {
+    if (!errorContext) {
+      reportRuntimeContractError('poisonIfNaN requires a compact errorContext for NaNResult', CONTEXTLESS_FATAL_RUNTIME_CONTEXT);
+    }
     return createPoison(PoisonError.create('value is NaN', errorContext, 'NaNResult'));
   }
   return value;
@@ -242,10 +243,15 @@ function poisonIfNaN(value, errorContext) {
 |---|---|
 | Arithmetic result | the three operator emitters in `compiler-base-async.js` (`_emitAsyncBinOp`/`_emitAsyncBinFunc`/`_emitAsyncUnaryOp`) |
 | Function / filter / env-call result | `callWrapAsync` / `envCallWrapAsync` (the returned value) |
-| Property / bare-symbol / context read result | `memberLookupAsync` / `memberLookupScript` / `context.lookupScript` |
-| Data-method / mutating-command result | the command-apply result that lands on a chain |
+| Property / bare-symbol / context read result | `memberLookupAsync` / `memberLookupScript` / `context.lookup` / `context.lookupScript` |
+| Data-method / mutating-command result | the command-apply result that lands on a chain (`DataCommand` / `VarCommand`) |
+| Sequence call/read/snapshot result | `SequenceCallCommand` / `SequenceGetCommand` / `SequenceObjectChain` snapshot materialization |
 | Loop value | `loop.js`, where each iteration value is bound (array elements are not produced by a lookup/call) |
 | Async tail of any of the above | `RuntimePromise` fulfillment (carries the source `errorContext`/`kind`) |
+
+Promise-valued context reads are wrapped in `RuntimePromise`, so an async context
+rejection now becomes contextualized `ValueRejected` poison at the read source; this
+is intentional source-origin handling, not a NaN-only behavior.
 
 Because every value is poisoned at production, it is already poison by the time it
 reaches a consumer — so **functions never receive a `NaN` argument** and **`NaN`
@@ -1260,7 +1266,7 @@ slowness.
   `.message` access). This also simplifies the constructor, so it earns its place on
   clarity grounds regardless of the speed win.
 - **Sanity checks only (no surprises expected).** The NaN check cost
-  (`typeof`+`Number.isNaN` at call-arg/output/arithmetic sites), the `inspectTargetForErrors`
+  (`typeof`+`Number.isNaN` at value-production sites), the `inspectTargetForErrors`
   `_errorStateCache` (repeat reads should be O(1)), poison allocation
   (`PoisonedValue` + `PoisonError` + dedup `Map`), and per-command
   `cloneWithAddedContext` clones (Phase N kept eager). Act only if something

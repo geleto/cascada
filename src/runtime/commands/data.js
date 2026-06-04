@@ -1,4 +1,4 @@
-import {isPoison, isPoisonError, createPoison, PoisonError} from '../errors.js';
+import {isPoison, isPoisonError, createPoison, PoisonError, poisonIfNaN} from '../errors.js';
 import {ChainCommand} from './base.js';
 import {runWithResolvedArguments} from './arguments.js';
 import {contextualizeChainError} from './errors.js';
@@ -54,7 +54,12 @@ class DataCommand extends ChainCommand {
         ) {
           return;
         }
-        method.apply(chain._base, args);
+        const result = method.apply(chain._base, args);
+        const poisonedResult = poisonIfNaN(result, this.errorContext);
+        if (isPoison(poisonedResult)) {
+          setDataPoisonAtPath(chain, args, PoisonError.group(poisonedResult.errors));
+          return;
+        }
         chain._setTarget(chain._base.data);
       } catch (err) {
         setDataPoisonAtPath(

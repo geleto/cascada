@@ -15,6 +15,16 @@ describe('Cascada Script: Explicit Chain Declarations', function () {
     return env.renderScriptString(script, context || {});
   };
 
+  const expectPoisonKind = async (operation, kind) => {
+    try {
+      await operation();
+      expect().fail(`Expected render to fail with ${kind}`);
+    } catch (err) {
+      expect(isPoisonError(err)).to.be(true);
+      expect(err.errors[0].kind).to.be(kind);
+    }
+  };
+
   beforeEach(() => {
     env = new AsyncEnvironment();
   });
@@ -919,6 +929,59 @@ describe('Cascada Script: Explicit Chain Declarations', function () {
         })
       });
       expect(result).to.eql({ id: 9 });
+    });
+
+    it('should poison NaN sequence values at the sequence source', async () => {
+      await expectPoisonKind(
+        () => render(`
+          sequence db = makeDb()
+          var seqValue = db.getNaN()
+          return seqValue
+        `, {
+          makeDb: () => ({
+            getNaN() { return Number.NaN; }
+          })
+        }),
+        'NaNResult'
+      );
+      await expectPoisonKind(
+        () => render(`
+          sequence db = makeDb()
+          var seqValue = db.nanValue
+          return seqValue
+        `, {
+          makeDb: () => ({
+            nanValue: Number.NaN
+          })
+        }),
+        'NaNResult'
+      );
+      await expectPoisonKind(
+        () => render(`
+          sequence db = makeDb()
+          var seqValue = db.getNaNAsync()
+          return seqValue
+        `, {
+          makeDb: () => ({
+            async getNaNAsync() {
+              await delay(1);
+              return Number.NaN;
+            }
+          })
+        }),
+        'NaNResult'
+      );
+      await expectPoisonKind(
+        () => render(`
+          sequence db = makeDb()
+          return db.snapshot()
+        `, {
+          makeDb: () => ({
+            snapshot() { return Number.NaN; }
+          })
+        }),
+        'NaNResult'
+      );
     });
 
     it('should preserve source order for sequence calls', async () => {

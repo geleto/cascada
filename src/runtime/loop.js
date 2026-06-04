@@ -8,6 +8,7 @@ import {
   isRuntimeError,
   markPromiseHandled,
   PoisonError,
+  poisonIfNaN,
   RuntimeError,
 } from './errors.js';
 
@@ -150,13 +151,17 @@ function poisonIterationEffects(buffer, asyncOptions, poisonError) {
   }
 }
 
+function normalizeLoopValue(value, errorContext) {
+  return poisonIfNaN(value, errorContext);
+}
+
 function getDestructuredLoopArgs(value, loopVars, errorContext, buffer, asyncOptions) {
   // Returns null after poisoning this iteration's body effects for a malformed value.
   if (isPoison(value)) {
     return Array(loopVars.length).fill(value);
   }
   if (Array.isArray(value)) {
-    return value.slice(0, loopVars.length);
+    return value.slice(0, loopVars.length).map(arg => normalizeLoopValue(arg, errorContext));
   }
   const poisonError = PoisonError.create('Expected an array for destructuring', errorContext, 'DestructureMismatch');
   poisonIterationEffects(buffer, asyncOptions, poisonError);
@@ -179,6 +184,7 @@ async function iterateAsyncSequential(arr, loopBody, loopVars, errorContext, ret
         // own origin when present; otherwise use the iterator source boundary.
         value = createPoison(PoisonError.wrap(value, errorContext, 'IteratorThrew'));
       }
+      value = normalizeLoopValue(value, errorContext);
 
       let res;
       if (loopVars.length === 1) {
@@ -261,6 +267,7 @@ async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext, buffe
             // own origin when present; otherwise use the iterator source boundary.
             value = createPoison(PoisonError.wrap(value, errorContext, 'IteratorThrew'));
           }
+          value = normalizeLoopValue(value, errorContext);
 
           // Resolve the previous iteration's lastPromise
           if (lastPromiseResolve) {
@@ -395,6 +402,7 @@ async function iterateAsyncLimited(arr, loopBody, loopVars, errorContext, limit,
     if (value instanceof Error) {
       value = createPoison(PoisonError.wrap(value, errorContext, 'IteratorThrew'));
     }
+    value = normalizeLoopValue(value, errorContext);
 
     const res = callLoopBodyLimited(loopBody, loopVars, value, i, undefined, false, errorContext, buffer, asyncOptions);
     // Normalise sync/async body
@@ -481,6 +489,7 @@ async function iterateArraySequential(arr, loopBody, loopVars, errorContext, ret
       break;
     }
     let value = arr[i];
+    value = normalizeLoopValue(value, errorContext);
     const isLast = i === arr.length - 1;
 
     let res;
@@ -516,6 +525,7 @@ function iterateArrayParallel(arr, loopBody, loopVars, errorContext, buffer = nu
       break;
     }
     let value = arr[i];
+    value = normalizeLoopValue(value, errorContext);
     const isLast = i === arr.length - 1;
 
     if (loopVars.length === 1) {
@@ -551,6 +561,7 @@ async function iterateArrayLimited(arr, loopBody, loopVars, errorContext, limit,
 
   const runIteration = async (index) => {
     let value = arr[index];
+    value = normalizeLoopValue(value, errorContext);
 
 
 
@@ -626,6 +637,7 @@ async function iterateObject(arr, loopBody, loopVars, errorContext, effectiveSeq
         }
         const key = keys[i];
         let value = arr[key];
+        value = normalizeLoopValue(value, errorContext);
         const isLast = i === len - 1;
 
         const res = loopBody(key, value, i, len, isLast, errorContext);
@@ -646,6 +658,7 @@ async function iterateObject(arr, loopBody, loopVars, errorContext, effectiveSeq
         }
         const key = keys[i];
         let value = arr[key];
+        value = normalizeLoopValue(value, errorContext);
 
         entries[i] = [key, value];
       }
@@ -668,6 +681,7 @@ async function iterateObject(arr, loopBody, loopVars, errorContext, effectiveSeq
       for (let i = 0; i < len; i++) {
         const key = keys[i];
         let value = arr[key];
+        value = normalizeLoopValue(value, errorContext);
         const isLast = i === len - 1;
 
         loopBody(key, value, i, len, isLast, errorContext);

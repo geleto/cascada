@@ -7,6 +7,7 @@ import {
   RuntimePromise,
   collectErrors,
   poisonOrReport,
+  poisonIfNaN,
 } from './errors.js';
 
 import {resolveDuo} from './resolve.js';
@@ -88,7 +89,7 @@ function memberLookupAsync(obj, val, errorContext, currentBuffer = null) {
   if (result && typeof result.then === 'function') {
     return new RuntimePromise(result, errorContext, 'LookupThrew');
   }
-  return result;
+  return poisonIfNaN(result, errorContext);
 }
 
 async function _memberLookupAsyncComplex(obj, val, errorContext, currentBuffer = null) {
@@ -123,7 +124,7 @@ async function _memberLookupAsyncComplex(obj, val, errorContext, currentBuffer =
       return new RuntimePromise(result, errorContext, 'LookupThrew');
     }
 
-    return result;
+    return poisonIfNaN(result, errorContext);
   } catch (err) {
     return createPoison(PoisonError.wrap(err, errorContext, 'LookupThrew'));
   }
@@ -171,7 +172,7 @@ function memberLookupScript(obj, val, errorContext, currentBuffer = null) {
   if (value && typeof value.then === 'function') {
     return new RuntimePromise(value, errorContext, 'LookupThrew');
   }
-  return value;
+  return poisonIfNaN(value, errorContext);
 }
 
 async function _memberLookupScriptComplex(obj, val, errorContext, currentBuffer = null) {
@@ -208,7 +209,7 @@ async function _memberLookupScriptComplex(obj, val, errorContext, currentBuffer 
       return new RuntimePromise(result, errorContext, 'LookupThrew');
     }
 
-    return result;
+    return poisonIfNaN(result, errorContext);
   } catch (err) {
     return createPoison(PoisonError.wrap(err, errorContext, 'LookupThrew'));
   }

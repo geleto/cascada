@@ -1,5 +1,5 @@
 
-import {createPoison, isPoison, isPoisonError, RuntimePromise, collectErrors, PoisonError, RuntimeError} from './errors.js';
+import {createPoison, isPoison, isPoisonError, RuntimePromise, collectErrors, PoisonError, RuntimeError, poisonIfNaN} from './errors.js';
 import {throwReportedFatal} from './error-context.js';
 import {RESOLVE_MARKER, resolveAll} from './resolve.js';
 
@@ -99,7 +99,7 @@ function callWrapAsync(obj, name, context, args, errorContext, currentBuffer = n
       // add context to the promise that will be applied if it rejects
       return new RuntimePromise(result, errorContext, 'UserCallThrew');
     }
-    return result;
+    return poisonIfNaN(result, errorContext);
   } catch (err) {
     return createPoison(PoisonError.wrap(err, errorContext, 'UserCallThrew'));
   }
@@ -187,7 +187,7 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
       return new RuntimePromise(result, errorContext, 'UserCallThrew');
     }
 
-    return result;
+    return poisonIfNaN(result, errorContext);
   } catch (err) {
     return createPoison(PoisonError.wrap(err, errorContext, 'UserCallThrew'));
   }
@@ -204,7 +204,7 @@ function envCallWrapAsync(fn, thisArg, args, errorContext) {
     if (result && typeof result.then === 'function') {
       return new RuntimePromise(result, errorContext, 'UserCallThrew');
     }
-    return result;
+    return poisonIfNaN(result, errorContext);
   } catch (err) {
     return createPoison(PoisonError.wrap(err, errorContext, 'UserCallThrew'));
   }

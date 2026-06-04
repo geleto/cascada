@@ -1,4 +1,5 @@
 import {ChainMutatingResultCommand, ChainObservableCommand} from './base.js';
+import {poisonIfNaN} from '../errors.js';
 import {runWithResolvedArguments} from './arguments.js';
 
 class SequenceCallCommand extends ChainMutatingResultCommand {
@@ -33,7 +34,10 @@ class SequenceCallCommand extends ChainMutatingResultCommand {
           return this.settleResult(undefined);
         }
         const result = method.apply(target, args);
-        return this.settleResult(result, { rethrow: true });
+        return this.settleResult(result, {
+          mapValue: value => poisonIfNaN(value, this.errorContext),
+          rethrow: true
+        });
       };
 
       const sequenceTarget = chain._ensureSequenceTargetResolved ? chain._ensureSequenceTargetResolved() : chain._sequenceTarget;
@@ -60,7 +64,9 @@ class SequenceGetCommand extends ChainObservableCommand {
 
     const execute = (sequenceTarget) => {
       const value = resolvePath(sequenceTarget, this.path);
-      return this.settleResult(value);
+      return this.settleResult(value, {
+        mapValue: resolvedValue => poisonIfNaN(resolvedValue, this.errorContext)
+      });
     };
 
     const sequenceTarget = chain._ensureSequenceTargetResolved ? chain._ensureSequenceTargetResolved() : chain._sequenceTarget;

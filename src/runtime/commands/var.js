@@ -1,6 +1,7 @@
 import {ChainCommand} from './base.js';
 import {runWithResolvedArguments} from './arguments.js';
 import {contextualizeChainError} from './errors.js';
+import {isPoison, PoisonError, poisonIfNaN} from '../errors.js';
 
 class VarCommand extends ChainCommand {
   constructor({ chainName, args = null, errorContext, initializeIfNotSet = false }) {
@@ -35,7 +36,12 @@ class VarCommand extends ChainCommand {
       if (this.initializeIfNotSet && chain._getTarget() !== undefined) {
         return;
       }
-      chain._setTarget(args[0]);
+      const value = poisonIfNaN(args[0], this.errorContext);
+      if (isPoison(value)) {
+        chain._setTarget(this.toPoisonValue(PoisonError.group(value.errors)));
+        return;
+      }
+      chain._setTarget(value);
     });
   }
 }

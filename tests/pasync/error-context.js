@@ -929,6 +929,64 @@ describe('error context tracing runtime foundation', () => {
     );
   });
 
+  it('poisons NaN at value production sources', async () => {
+    const env = new AsyncEnvironment();
+    env.addGlobal('identity', (value) => value);
+    env.addDataMethods({
+      produceNaN() {
+        return Number.NaN;
+      }
+    });
+
+    await expectPoisonKind(
+      () => env.renderScriptString('return 0 / 0'),
+      'NaNResult'
+    );
+    await expectPoisonKind(
+      () => env.renderTemplateString('{{ value }}', { value: Number.NaN }),
+      'NaNResult'
+    );
+    await expectPoisonKind(
+      () => env.renderTemplateString('{{ identity(value) }}', { value: Number.NaN }),
+      'NaNResult'
+    );
+    await expectPoisonKind(
+      () => env.renderScriptString([
+        'data result',
+        'for item in items',
+        '  result.push(item)',
+        'endfor',
+        'return result.snapshot()'
+      ].join('\n'), { items: [Number.NaN] }),
+      'NaNResult'
+    );
+    await expectPoisonKind(
+      () => env.renderScriptString([
+        'data result',
+        'result.produceNaN()',
+        'return result.snapshot()'
+      ].join('\n')),
+      'NaNResult'
+    );
+    await expectPoisonKind(
+      () => env.renderTemplateString('{{ asyncValue }}', { asyncValue: Promise.resolve(Number.NaN) }),
+      'NaNResult'
+    );
+    await expectPoisonKind(
+      () => env.renderScriptString('return value!.toString()', { value: Promise.resolve(Number.NaN) }),
+      'NaNResult'
+    );
+    await expectPoisonKind(
+      () => env.renderTemplateString('{{ value }}', {
+        value: runtime.createPoison(PoisonError.create('already poisoned', TEST_EC, 'ValueRejected'))
+      }),
+      'ValueRejected'
+    );
+
+    expect(await env.renderTemplateString('{{ value }}', { value: Infinity })).to.be('Infinity');
+    expect(await env.renderTemplateString('{{ value }}', { value: 'NaN' })).to.be('NaN');
+  });
+
   it('stores buffer stack error context on runtime value boundaries', async () => {
     const root = new CommandBuffer({ path: 'script.casc' }, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
     const boundaryEc = [11, 6, 'FunCall', 'script.casc', null, null];

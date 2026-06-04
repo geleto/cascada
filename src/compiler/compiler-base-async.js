@@ -477,7 +477,7 @@ class CompilerBaseAsync extends CompilerCommon {
       return;
     }
 
-    this.emit(`context.lookup("${name}")`);
+    this.emit(`context.lookup("${name}", ${this.emitErrorContext(node)})`);
   }
 
   _compileAsyncBinOpShortCircuit(node, isOr) {
@@ -533,7 +533,7 @@ class CompilerBaseAsync extends CompilerCommon {
     this.emit(',');
     this.compile(node.right, null);
     this.emit(')');
-    this.emit(`.then(function([left,right]){return ${funcName}(left${separator}right);}))`);
+    this.emit(`.then(function([left,right]){return runtime.poisonIfNaN(${funcName}(left${separator}right), ${this.emitErrorContext(node)});}))`);
   }
 
   _emitAsyncBinOp(node, str) {
@@ -542,13 +542,13 @@ class CompilerBaseAsync extends CompilerCommon {
     this.emit(',');
     this.compile(node.right, null);
     this.emit(')');
-    this.emit('.then(function([left,right]){return left ' + str + ' right;})');
+    this.emit(`.then(function([left,right]){return runtime.poisonIfNaN(left ${str} right, ${this.emitErrorContext(node)});})`);
   }
 
   _emitAsyncUnaryOp(node, operator) {
     this.emit('runtime.resolveSingle(');
     this.compile(node.target, null);
-    this.emit(`).then(function(target){return ${operator}target;})`);
+    this.emit(`).then(function(target){return runtime.poisonIfNaN(${operator}target, ${this.emitErrorContext(node)});})`);
   }
 
   _emitErrorObservation(observationFacts, targetNode, mode) {
