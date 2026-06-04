@@ -135,7 +135,7 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line('  }');
     this.emit.line('  throw e;');
     this.emit.line('}');
-    this.emit.line(`if (${returnId} && typeof ${returnId}.then === "function") { ${returnId} = new runtime.RuntimePromise(${returnId}, ${errorContext}, "ValueRejected"); }`);
+    this.emit.line(`if (${returnId} && typeof ${returnId}.then === "function") { ${returnId} = new runtime.RuntimePromise(${returnId}, ${errorContext}, "ContextValueRejected"); }`);
     const textCmdExpr = this.buffer._emitTemplateTextCommandExpression(returnId, positionNode, true);
     this.emit.line(`${this.buffer.currentBuffer}.addCommand(${textCmdExpr}, "${this.buffer.currentTextChainName}");`);
     this.buffer.emitLimitedLoopCompletion(returnId, positionNode);

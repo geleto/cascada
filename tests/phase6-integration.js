@@ -5,7 +5,7 @@ import * as runtime from '../src/runtime/runtime.js';
 
 const {createPoison, isPoisonError, PoisonError} = runtime;
 const TEST_EC = [1, 1, 'LoopPoisonIntegration.TestInput', 'phase6-integration.js', null, null];
-const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC, 'ValueRejected'));
+const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC, 'UserCallThrew'));
 
 describe('Phase 6: Loop Poison Integration', () => {
   let env;

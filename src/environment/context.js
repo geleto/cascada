@@ -62,6 +62,15 @@ class Context extends Obj {
 
   //if the variable is not found, returns a poison value
   lookupScript(name, errorContext) {
+    return this._lookupScript(name, errorContext, 'UnknownVariable');
+  }
+
+  lookupScriptCall(name, errorContext) {
+    return this._lookupScript(name, errorContext, 'MissingFunction');
+  }
+
+  //if the variable is not found, returns a poison value
+  _lookupScript(name, errorContext, missingKind) {
     // This is one of the most called functions, so optimize for
     // the typical case where the name isn't in the globals
     if (name in this.env.globals && !(name in this.ctx)) {
@@ -73,7 +82,7 @@ class Context extends Obj {
         return createPoison(PoisonError.create(
           `Can not look up unknown variable/function: ${name}`,
           errorContext,
-          'UnknownVariable'
+          missingKind
         ));
       }
     }
@@ -227,7 +236,7 @@ function normalizeContextValue(value, errorContext) {
   }
   value = poisonIfNaN(value, errorContext);
   if (value && typeof value.then === 'function' && !isPoison(value)) {
-    return new RuntimePromise(value, errorContext, 'ValueRejected');
+    return new RuntimePromise(value, errorContext, 'ContextValueRejected');
   }
   return value;
 }

@@ -1,7 +1,7 @@
 import {isPoison, isPoisonError, createPoison, PoisonError, poisonIfNaN} from '../errors.js';
+import {classifyCallTarget} from '../call.js';
 import {ChainCommand} from './base.js';
 import {runWithResolvedArguments} from './arguments.js';
-import {contextualizeChainError} from './errors.js';
 
 class DataCommand extends ChainCommand {
   constructor({ chainName, operation, args = null, errorContext, initializeIfNotSet = false }) {
@@ -36,11 +36,12 @@ class DataCommand extends ChainCommand {
         return;
       }
       const method = this.operation ? chain._base[this.operation] : chain._base;
-      if (typeof method !== 'function') {
+      const methodError = classifyCallTarget(method, this.operation, this.errorContext);
+      if (methodError) {
         setDataPoisonAtPath(
           chain,
           args,
-          contextualizeChainError(this.errorContext, new Error(`has no method '${this.operation}'`))
+          methodError
         );
         return;
       }
@@ -62,11 +63,16 @@ class DataCommand extends ChainCommand {
         }
         chain._setTarget(chain._base.data);
       } catch (err) {
-        setDataPoisonAtPath(
-          chain,
-          args,
-          contextualizeChainError(this.errorContext, err)
-        );
+        const methodPoisonError = PoisonError.wrap(err, this.errorContext, 'UserCallThrew');
+        try {
+          setDataPoisonAtPath(
+            chain,
+            args,
+            methodPoisonError
+          );
+        } catch {
+          throw methodPoisonError;
+        }
       }
     });
   }

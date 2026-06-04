@@ -9,7 +9,7 @@ import * as runtimeModule from '../../src/runtime/runtime.js';
 const TEST_EC = [1, 1, 'Test', 'test.casc', null, null];
 const TEST_BUFFER_STACK_CONTEXT = runtimeModule.cloneWithAddedContext(TEST_EC, { branch: 'test' });
 const createTestPoison = (message) => runtimeModule.createPoison(
-  runtimeModule.PoisonError.create(message, TEST_EC, 'ValueRejected')
+  runtimeModule.PoisonError.create(message, TEST_EC, 'UserCallThrew')
 );
 
 function createTestRenderState(reportError = null) {
@@ -901,7 +901,7 @@ describe('Phase 8 - Component Observations', function () {
       expect().fail('Expected renderScript to reject');
     } catch (err) {
       expect(runtimeModule.isPoisonError(err)).to.be(true);
-      expect(err.kind).to.be('ValueRejected');
+      expect(err.kind).to.be('UserCallThrew');
       expect(err.kind).not.to.be('LoadFailed');
       expect(err.message).to.contain('component target poisoned');
     }

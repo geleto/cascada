@@ -64,7 +64,7 @@ class CompileBoundaries {
       this.compiler.emit.line(';');
       this.compiler.emit.line(`  return await ${resultId};`);
       this.compiler.emit.line('} catch (e) {');
-      this.compiler.emit.line(`  throw runtime.PoisonError.wrap(e, ${errorContextArg}, "ExpressionThrew");`);
+      this.compiler.emit.line(`  runtime.rethrowPoisonOrReport(e, ${errorContextArg});`);
       this.compiler.emit.line('}');
       this.compiler.emit.line(`}, ${bufferStackErrorContextArg})`);
     });
@@ -145,9 +145,12 @@ class CompileBoundaries {
   //  that the skipped region could have written.
   emitBranchPoisonCatch(bufferCompiler, poisonChains, errorContextExpr, emitCatchTail = null) {
     this.compiler.emit('} catch (e) {');
+    this.compiler.emit.line('  if (!runtime.isPoisonError(e)) {');
+    this.compiler.emit.line(`    runtime.RuntimeError.reportAndThrow(e, ${errorContextExpr});`);
+    this.compiler.emit.line('  }');
     if (poisonChains.length > 0) {
       const contextualErrorVar = this.compiler._tmpid();
-      this.compiler.emit(`  const ${contextualErrorVar} = runtime.PoisonError.wrap(e, ${errorContextExpr}, "ConditionThrew");`);
+      this.compiler.emit(`  const ${contextualErrorVar} = e;`);
       for (const chainName of poisonChains) {
         this.compiler.emit.line(
           `    ${bufferCompiler.currentBuffer}.addCommand(new runtime.ErrorCommand(${contextualErrorVar}, ${errorContextExpr}), "${chainName}");`

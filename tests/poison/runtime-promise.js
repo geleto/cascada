@@ -18,7 +18,7 @@ import {createPoison, isPoisonError, PoisonError} from '../../src/runtime/runtim
   const TEST_EC = [1, 1, 'RuntimePromise.TestInput', 'runtime-promise.njk', null, null];
 
   function createTestPoison(error) {
-    return createPoison(PoisonError.wrap(error, TEST_EC, 'ValueRejected'));
+    return createPoison(PoisonError.wrap(error, TEST_EC, 'UserCallThrew'));
   }
 
   describe('RuntimePromise Integration Tests', () => {

@@ -1040,6 +1040,9 @@ import { AsyncEnvironment, PrecompiledLoader } from 'cascada-engine/precompiled'
 //   opts:
 //     autoescape:       default true   — auto-escape template output
 //     throwOnUndefined: default false  — throw on undefined render
+//     loadFailFatal:    default true   — missing/failed import|from import|component|include is fatal;
+//                                        false → LoadFailed poison (import/component) or empty (include);
+//                                        array e.g. ['import'] → only listed kinds fatal; root & extends always fatal
 //     trimBlocks:       default false  — remove first newline after block tag
 //     lstripBlocks:     default false  — strip leading whitespace from block tag
 //     tags:             override delimiters

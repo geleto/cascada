@@ -27,17 +27,30 @@ suite green before the next.
   Phase 3 alongside the kind field — producer + first consumer together.
 - `resolve.js` is touched by §11.1 (Phase 0), §11.12 + §11.15 (Phase 1); do the
   Phase 1 ones together.
+- Phase 12 introduces `NotIterable`; Phase 13's `in`→poison may reuse it, so do 12
+  before 13 (or give the `in` case its own kind).
+- Phase 14 (`text.set` multi-arg) **removes** Phase 10's `text.set` arity validation
+  entirely (the compile-time `_failInvalidTextSetArity` in `buffer.js`/`chain.js` and the
+  runtime fatal); value rules fall back to the normal `InvalidTextValue` text-output check.
 - Phases that change **emitted** code regenerate precompiled/browser fixtures:
   Phase 1 (§11.14 emit helper), Phase 3 (`kind` in emitted composition),
   Phase 4 (load-failure — emitted composition sites), Phase 5 (NaN emitters),
-  Phase 6 (discard observer).
+  Phase 6 (discard observer), Phase 10 (`ExpressionThrew`/`text.set` compile-time),
+  Phase 13 (typed-operand emitters).
   Fixture regen is an automated build step, so the objective order (cleanup → fixes →
   features) is preferred over batching it.
 - Phase order follows the objective: **Phase 0** stability/safe foundation ·
   **Phase 1** centralize & dedup · **Phase 2** behavioral fixes + early-exit +
   audits · **Phase 3** `kind` foundation · **Phase 4** load-failure policy ·
-  **Phase 5–6** remaining features ·
-  **Phase 7** efficiency.
+  **Phase 5** NaN→poison · **Phase 6** discarded-expression observer ·
+  **Phase 7** efficiency · **Phase 8** docs sweep · **Phase 9** `!` side-effect
+  completion semantics (resolved: docs only) ·
+  **Phase 10** poison `kind` taxonomy refinement.
+- Post-Phase-10 follow-ups (surfaced during review): **Phase 11** retire
+  `SequentialPathThrew` · **Phase 12** lookup/iteration strictness
+  (`ScalarLookup`/`NotIterable`, `NotAnArray`→`NotDestructurable`) · **Phase 13**
+  script-language operator strictness (`in`→poison, strict `==`, typed operands) ·
+  **Phase 14** `text.set` multi-arg.
 
 ---
 
@@ -394,16 +407,16 @@ fixtures · `npm run build`.
 Goal: speed is not a major concern; only avoid pathological slowness (analysis §11
 "Open evaluation areas — Efficient").
 
-- [ ] Lazy diagnostic formatting (worth doing — clarity, not just speed) — build
-  `compactMessage`/`fullMessage`/stack on access (`getInfo`/`formatInfo`/`.message`),
-  not in the `RuntimeContextError` constructor. Simplifies the constructor and removes
-  per-poison formatting cost.
-- [ ] Sanity checks only, no surprises expected: NaN check cost, error-state-walk
+- [x] Lazy diagnostic formatting evaluated and intentionally skipped. The attempted
+  implementation made `RuntimeContextError` more complex and changed normal
+  `Error.message` property behavior; the current eager formatting is simpler and
+  correct. Revisit only if profiling shows diagnostic formatting is pathologically
+  expensive.
+- [x] Sanity checks only, no surprises expected: NaN check cost, error-state-walk
   cache O(1), poison allocation, inherited-context clones. Act only if something
-  profiles as pathologically slow.
+  profiles as pathologically slow. No additional code changes were needed.
 
-Verify: `npm run mocha -- tests/poison/ tests/pasync/error-context.js` ·
-benchmark before/after for the lazy-formatting change.
+Verify: `npm run mocha -- tests/poison/ tests/pasync/error-context.js`.
 
 ---
 
@@ -413,39 +426,205 @@ Goal: document the stable user-facing error semantics introduced by this work. K
 this out of the implementation phases so the docs describe the final behavior, not the
 path we took to get there.
 
-- [ ] Update API docs for `loadFailFatal`:
-  - accepted values: `true` (default), `false`, or a fatal allowlist containing
-    `'import' | 'component' | 'include'`;
-  - `import` covers both `import` and `from import`;
-  - root render and `extends` remain fatal regardless of the option.
-- [ ] Update template/script docs for load-failure behavior:
-  - non-fatal `import` / `from import` / `component` failures produce `LoadFailed`
-    poison;
-  - non-fatal `include` load failures omit the include output;
-  - `ignore missing` is per-include syntax, not a render option;
-  - target-name expression failures are not load failures (for example,
-    `{% include getName() ignore missing %}` still fails/poisons if `getName()`
-    fails);
-  - a loaded module missing a requested export remains `ImportBindingMissing`.
-- [ ] Update error docs for poison `kind` values and aggregation:
-  - every poison source has an explicit `kind`;
-  - add a compact grouped "poison origins" table, with one-line entries and short
-    parenthetical explanations:
-    - load/composition (`LoadFailed`, `ImportBindingMissing`);
-    - lookup/access (`UnknownVariable`, `NullLookup`, `LookupThrew`);
-    - calls (`NotCallable`, `NotAFunction`, `UserCallThrew`);
-    - iteration/control values (`IteratorThrew`, `DestructureMismatch`,
-      `InvalidConcurrentLimit`);
-    - generic value boundaries (`ValueRejected`, `ExpressionThrew`);
-    - numeric value sources (`NaNResult`);
-  - grouped poison retains all `.errors[]` but caps formatted messages;
-  - `PoisonErrorGroup.kind` is derived (`'Multiple'` for mixed groups, otherwise the
-    shared leaf kind), not a source kind.
-- [ ] Note `NaN` behavior and discarded-expression behavior after Phase 6 lands.
-- [ ] Remove or rewrite implementation-era notes that no longer matter to users
-  (temporary phase references, internal section numbers, and obsolete examples).
+- [x] `loadFailFatal` option documented (`script.md` Configuration list +
+  `cascada-agent.md` opts): accepted values (`true`/`false`/fatal allowlist), `import`
+  covers `from import`, root render and `extends` always fatal, non-fatal shapes
+  (`LoadFailed` poison vs empty `include`).
+- [x] Poison `kind` documented in *Anatomy of an Error Value* (`script.md`): the `kind`
+  field (diagnostic, not a frozen API) + a compact by-category kinds table covering
+  every source kind (`LoadFailed`/`ImportBindingMissing`, lookup/call/loop/boundary
+  kinds, `NaNResult`).
+- [x] `PoisonErrorGroup` shape updated: added `kind` (derived; `'Multiple'` for mixed),
+  `kinds`, `totalErrorCount`; clarified `errors[]` keeps **all** child errors (sorted by
+  source) while `message` is capped with a kind-summary header.
+- [x] `NaN` behavior noted (arithmetic → Error Value; `Infinity` stays a value) and
+  discarded-expression behavior noted (bare call / `{% do %}` failure has no consumer
+  and is dropped).
+- [x] No stale implementation-era notes in the user docs (checked; the remaining
+  "work in progress" notes are unrelated feature-status items).
 
-Verify: docs links/build · examples still match documented behavior · `npm run build`.
+Verify: examples still match documented behavior · markdown renders (tables/links).
+
+---
+
+## Phase 10 — Poison `kind` taxonomy refinement (reuse over grab-bag)
+
+Goal: every poison names a real failure category, reusing the general kinds across calls,
+`!` paths, `sequence`, data/text chains, and context values. Retire the old grab-bag kinds
+instead of carrying compatibility aliases.
+
+Done:
+- [x] Calls split missing targets (`MissingFunction`) from present non-functions (`NotAFunction`),
+  with user/env function throws classified as `UserCallThrew`.
+- [x] Genuine external async context/return rejections use `ContextValueRejected`.
+- [x] Composition and component value-producing load failures use `LoadFailed`.
+- [x] Removed `contextualizeChainError` and its cache after reclassifying every caller.
+- [x] Data method lookup uses `MissingFunction` / `NotAFunction`; data method throws use
+  `UserCallThrew`.
+- [x] Text unsupported operations use `MissingFunction`; invalid text values use
+  `InvalidTextValue`.
+- [x] `var` keeps the compiler-owned single-value command shape; `text.set(...)` invalid
+  arity is a compile-time error, with the runtime guard left fatal for direct mis-construction.
+- [x] Generic chain `_recordError` raw failures are fatal after local command sources classify
+  their own user-reachable failures.
+- [x] Value-boundary and branch raw throws are fatal; existing poison still preserves its origin
+  and branch effect-chain poisoning.
+- [x] `DestructureMismatch` renamed to `NotAnArray`.
+- [x] Unknown bare-name reads stay `UnknownVariable`; unknown bare-name calls use
+  `MissingFunction` through a call-target-only lookup variant.
+- [x] `sequence` now matches normal Cascada classification: missing/non-function methods use
+  `MissingFunction` / `NotAFunction`, method throws use `UserCallThrew`, and null path targets
+  use `NullLookup`.
+- [x] Tests and docs no longer use retired `ValueRejected`, `DataMethodThrew`,
+  `ExpressionThrew`, `ConditionThrew`, or `DestructureMismatch` as active kinds.
+
+End state: `ValueRejected`, `DataMethodThrew`, `ExpressionThrew`, `ConditionThrew`, and
+`DestructureMismatch` are retired. The active taxonomy uses `MissingFunction`, `NotAFunction`,
+`UserCallThrew`, `UnknownVariable`, `NullLookup`, `LookupThrew`, `IteratorThrew`,
+`NotAnArray`, `InvalidConcurrentLimit`, `LoadFailed`, `ImportBindingMissing`, `NaNResult`,
+`InvalidTextValue`, `SequentialPathThrew`, and `ContextValueRejected`.
+
+Verify: per-path kind assertions (call / `!` / `sequence` missing method -> `MissingFunction`;
+non-function -> `NotAFunction`; throw -> `UserCallThrew`; sequence null read -> `NullLookup`;
+text invalid output -> `InvalidTextValue`; raw throw in an expression -> fatal), `tests/poison/`,
+`tests/pasync/error-context.js`, emitted-code build checks, and
+`npm run build`.
+---
+
+## Phase 11 — Retire `SequentialPathThrew` (post-Phase 10)
+
+`SequentialPathThrew` is the last consumer-side grab-bag. A `!` call/lookup already produces
+`UserCallThrew` / `MissingFunction` / `NullLookup` via `callWrapAsync` / `memberLookup`; the
+only legitimate sync throw it catches is the `!` path **root not in the render context**
+(`contextLookupOnly` raw-throws "…is not available in context"). And the async path already
+sends raw rejections to fatal (`sequential-path.js:90-94`) — only the **sync** catch poisons,
+so the two disagree.
+
+- [ ] `contextLookupOnly` (`sequential.js`): use `lookupScript` instead of `lookup` so a
+  missing `!` root returns `UnknownVariable` poison (consistent with a bare-name read) instead
+  of raw-throwing. (Verify no other legitimate poison case reaches the sync catch first.)
+- [ ] `runSequentialPathOperation` sync catch (`sequential-path.js:84`): replace
+  `PoisonError.wrap(e, ec, 'SequentialPathThrew')` with raw → fatal (`rethrowPoisonOrReport`),
+  matching the async path. Retires `SequentialPathThrew`.
+- [ ] Docs: remove the `SequentialPathThrew` row from the kind tables (analysis §3 +
+  `script.md`).
+
+Verify: `db!.x` with `db` absent from context → `UnknownVariable` (not `SequentialPathThrew`);
+a `!` method that throws → `UserCallThrew`; an unexpected raw sequential failure → fatal ·
+`tests/poison/` · `tests/pasync/sequential-*.js` · `npm run build`.
+
+---
+
+## Phase 12 — Lookup / iteration strictness + loop-kind clarity (post-Phase 10)
+
+Don't let **scalar misuse** silently produce `undefined` or a no-op — that hides real bugs.
+Two new poisons + one rename. **Script mode** (templates stay lenient), matching the existing
+`null`-target rule. The governing split: a **`null`/`undefined`** value is *absent* (lenient —
+optional fields / `else`); a **scalar primitive** (`typeof` number/boolean/bigint/symbol) used
+as a container or collection is a *type error* (poison).
+
+- [ ] **`ScalarLookup`** (new) — `memberLookupScript`: after `obj[val]`, if the result is
+  `undefined` **and** `obj` is a scalar primitive, poison instead of returning `undefined`.
+  Built-in methods (`(5).toFixed`) resolve to functions, so they pass; objects/arrays/**strings**
+  stay lenient (optional fields, indexing, chars); `null`/`undefined` stay `NullLookup`. The
+  `typeof` check runs **only when the result is already `undefined`**, so the hot path is
+  untouched.
+- [ ] **`NotIterable`** (new) — `loop.js` `iterate`: a loop source that is a scalar primitive
+  currently funnels into `iterateObject` → `Object.keys` empty → silent zero iterations. Poison
+  it. `null`/`undefined` keep running the **`else`** branch (absent/optional collection); arrays,
+  objects, iterables, async iterators, and strings are unchanged. (iterate() is shared across
+  modes; gate on script mode to match scope, or apply to both — a scalar source is always a bug.)
+- [ ] **Rename `NotAnArray` → `NotDestructurable`** (`loop.js` create site): it is the
+  multi-variable destructuring **element** failure (`for a, b in pairs`), independent of the loop
+  source. `NotIterable` (source) and `NotDestructurable` (element) are now distinct.
+- [ ] Docs: add `ScalarLookup` + `NotIterable` rows and rename `NotAnArray` → `NotDestructurable`
+  in the kind tables (analysis §3 + `script.md`). Add the script/template divergence to
+  `template.md` "Template vs Script: Key Differences" (minimal style): scripts poison scalar
+  property access and iterating a scalar; templates stay lenient (`undefined` / no-op).
+
+Verify: `5[5]` / `5.foo` / `true.x` → `ScalarLookup`; `(5).toFixed(2)` works; `obj.missing` /
+`arr[10]` / `"abc"[9]` stay `undefined` · `for x in 5` → `NotIterable`; `for x in null` → runs
+`else`; `for x in {}` / `[]` / iterator / async iterator unchanged · `for a, b in [1, 2]`
+(element not an array) → `NotDestructurable` · `tests/poison/` · `tests/pasync/loops.js` ·
+`npm run build`.
+
+---
+
+## Phase 13 — Script-language strictness (operators)
+
+CascadaScript inherits nunjucks templating leniencies that hide programming bugs. Tighten them
+**in script mode** (templates stay nunjucks-compatible). Confirmed: the lexer has both `==` and
+`===` (`lexer.js:168`).
+
+- [ ] **`in` on a non-collection → poison** (also a Phase 10 regression fix). `runtime.inOperator`
+  (`lib.js:251`) `throw new Error(...)` for a non-array/string/object RHS; post-Phase-10 that raw
+  throw now becomes **fatal**, where before it was poison. A user type error should be recoverable
+  poison, not fatal — make `inOperator` produce a `PoisonError` (kind: reuse `NotIterable`, or a
+  dedicated `InvalidInOperand` — decide at implementation). Applies to **both** modes (it's a
+  correctness fix, not just strictness).
+- [ ] **Strict equality in script mode.** Compile `==` → `===` and `!=` → `!==` (the `compareOps`
+  tables in `compiler-base-async.js` / `compiler-base-sync.js`), gated on `scriptMode`. Removes
+  loose equality (`5 == "5"` → `false` in scripts). Templates keep loose `==` for nunjucks
+  compatibility. **Breaking** for scripts that relied on loose `==` (accepted).
+- [ ] **Typed operands in script mode** (supersedes the narrow "numeric `+`"). Result-checking
+  (`poisonIfNaN`) is leaky: JS coerces `null`→0, `true`→1, `[]`→0, `[2]`→2, `"5"`→5, so
+  `null - 1` → `-1`, `true + 1` → `2`, `"5" * 2` → `10` all slip through silently. Check **operands**,
+  not the result. Replace the `poisonIfNaN(left op right)` emit with typed runtime helpers
+  (gated on `scriptMode`):
+  - **Arithmetic** `+` `-` `*` `/` `//` `%` `**` → both operands must be `number` (or `bigint`);
+    anything else — **including numeric strings** (`"5"`), `null`, booleans, arrays, objects,
+    `undefined` — poisons. Concatenation uses the existing `~` operator (`compileConcat`). The
+    explicit numeric conversions are the `int` / `float` filters (`("5" | int) + 3`); they return a
+    default, so they never poison.
+  - **Ordering** `<` `>` `<=` `>=` → both `number` **or** both `string` (lexicographic); mixed or
+    other types poison (no coercion).
+  - **`~` (concat)** → scalars stringify; a plain object / function / symbol poisons (same rule as
+    `InvalidTextValue`).
+  This subsumes `NaNResult` for arithmetic — a bad operand poisons before a `NaN` can form. Kind:
+  one new `IncompatibleOperands` (or reuse `NaNResult` for the arithmetic ones — decide at
+  implementation). Templates keep raw JS operators + the result-only `NaNResult`.
+
+- [ ] Docs: add to `template.md` "Template vs Script: Key Differences" (minimal style) — in
+  scripts `==`/`!=` are strict and arithmetic operands must be numbers (concat uses `~`, convert
+  with `| int`/`| float`); templates keep loose `==` and JS operator coercion.
+
+**Explicitly not doing:** macro/function arity (skipping arguments is a valid pattern — stays
+silent); default `throwOnUndefined` in script mode (`undefined` stays `undefined`, JS-like).
+Follow-up (separate): a filter-input audit — filters are the other big nunjucks surface that
+coerces wrong-type input silently.
+
+Verify: `x in 5` → poison (not fatal), recoverable with `is error` · `5 == "5"` → `false` in a
+script, `true` in a template · arithmetic operand checks: `"5" + 3` / `null - 1` / `true + 1` /
+`"5" * 2` / `[] * 5` → poison (not silent `-1`/`2`/`10`/`0`); `5 + 3` → `8`; `("5" | int) + 3` → `8`;
+`"5" ~ 3` → `"53"` · ordering `5 < "abc"` → poison, `"a" < "b"` → `true` · macros with missing args
+still run · `{{ x.missing }}` still `undefined` · the same expressions stay JS-lenient in templates
+· `tests/pasync/expressions.js` · `tests/poison/` · `npm run build`.
+
+---
+
+## Phase 14 — Text `set` multi-argument support
+
+`text.set(...)` should match normal text-output ergonomics: accept any number of values,
+normalize each like appended text, and replace the chain with their concatenation. Mixing
+strings and numbers is fine; only values with no usable string form are rejected.
+
+- [ ] **Remove the arity validation entirely** — drop the compile-time `_failInvalidTextSetArity`
+  (it's duplicated in `buffer.js` **and** `chain.js`) and the runtime `args.length !== 1` fatal in
+  `text.js`. `set` already resets the chain to `[]` and appends, so removing the check is enough:
+  `body.set("A", 1, "B", 2)` → `"A1B2"` and `body.set()` → empty, with no new code.
+- [ ] **Value rules come for free** from `appendTextValues`: scalars (string/number/boolean/
+  bigint) and objects with a real `toString` concatenate; a plain object / function / symbol
+  poisons as `InvalidTextValue` (Phase 10) — same as any other text output. So mixing strings and
+  numbers works, and only non-stringifiable values poison.
+- [ ] **Poison passthrough**: a poison argument flows into the text chain exactly as normal text
+  output does; do not relabel existing poison.
+- [ ] Docs: mention multi-value `text.set(...)` in `script.md` / agent docs near text-chain
+  examples.
+
+Verify: `body.set("Number of people: ", 5, " number of kids: ", 2)` →
+`"Number of people: 5 number of kids: 2"` · `body.set()` → empty · `body.set({})` →
+`InvalidTextValue` poison · poison arguments propagate · `tests/pasync/chain-errors.js` /
+text-chain render tests · `npm run build`.
 
 ---
 

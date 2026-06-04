@@ -9,6 +9,7 @@ import * as nodes from '../language/nodes.js';
 
 import {CHAIN_TYPE_FACTS} from '../chain-types.js';
 import {validateChainObservationCall} from './validation.js';
+import {failInvalidTextSetArity} from './text-command.js';
 const DEFAULT_TEMPLATE_TEXT_CHAIN = '__text__';
 const BUFFER_STATE_KEYS = [
   'currentBuffer',
@@ -194,6 +195,7 @@ class CompileBuffer {
       this.compiler.emit(`operation: '${command}', `);
     }
     if (chainType === 'text') {
+      failInvalidTextSetArity(this.compiler, command, node.call.args, node);
       this.compiler.emit('normalizeArgs: true, ');
     }
     let argList = node.call.args;

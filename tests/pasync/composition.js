@@ -475,14 +475,14 @@ async function expectRejects(promise) {
         const poison = runtime.createPoison(runtime.PoisonError.create(
           'target poisoned',
           [1, 1, 'target', 'target-origin.njk', null, null],
-          'ValueRejected'
+          'UserCallThrew'
         ));
 
         env = new AsyncEnvironment(loader, { loadFailFatal: false });
         const err = await expectRejects(env.renderTemplate('main.njk', { target: poison }));
 
         expect(runtime.isPoisonError(err)).to.be(true);
-        expect(err.kind).to.be('ValueRejected');
+        expect(err.kind).to.be('UserCallThrew');
         expect(err.kind).not.to.be('LoadFailed');
         expect(err.message).to.contain('target poisoned');
       });

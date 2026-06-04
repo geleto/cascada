@@ -1599,6 +1599,8 @@ Once an Error Value is created, it automatically spreads to any dependent operat
   var result = 10 * myError / 2  // result becomes myError
   ```
 
+  An operation that produces `NaN` (such as `0 / 0`) also becomes an Error Value; `Infinity` stays a normal value.
+
 * **Function Calls:**
   If an Error Value is passed as an argument, the function still receives it and can detect or repair it explicitly.
 
@@ -1689,6 +1691,8 @@ return { report: primaryData.summary, recommendations: recommendations }
 #### How Scripts Fail
 
 A script fails only if the value you return is an Error Value.
+
+A statement run only for its side effect — a bare call, or `{% do %}` in templates — discards its result, so if it fails the error has no consumer and is dropped. Bind the result if you need to detect it.
 
 You can have poisoned values inside the script and still succeed, as long as you repair them or avoid returning them:
 
@@ -1844,7 +1848,28 @@ uniformly. Access the poison error with `#`.
 *   **`colno`**: (number) The column number.
 *   **`path`**: (string) The script file where the error originated.
 *   **`label`**: (string) The raw compiler classification token for the source operation (e.g., `'FunCall'`, `'LookupVal'`, `'Divide'`). The formatted `message` renders this as a human-readable phrase such as `call fetchUser(...)`.
+*   **`kind`**: (string) A stable code naming **what** failed, independent of `label` (which names **where**). Useful for inspection, but treat it as diagnostic metadata, not a frozen API — the set may grow.
 *   **`cause`**: (Error) The original JavaScript `Error` object. Always present on `PoisonError`.
+
+The `kind` values:
+
+| `kind` | Failure |
+|---|---|
+| `MissingFunction` | called name resolved to `undefined` - no such function/method or context property |
+| `NotAFunction` | call target is some other type, not a function |
+| `UserCallThrew` | a called function, filter, data method, or sequence method threw |
+| `UnknownVariable` | bare variable read names a missing context/global/script symbol |
+| `NullLookup` | property read on `null`/`undefined` |
+| `LookupThrew` | a property getter threw |
+| `IteratorThrew` | a loop iterator or generator threw |
+| `NotAnArray` | loop value is not an array to destructure |
+| `InvalidConcurrentLimit` | `of` limit is not a positive number |
+| `LoadFailed` | a non-fatal `import`/`component`/`include` load failed |
+| `ImportBindingMissing` | imported name is not exported by the module |
+| `NaNResult` | a computation produced `NaN` (`Infinity` stays a value) |
+| `InvalidTextValue` | a value that cannot be converted to text (a plain object, function, or symbol) |
+| `SequentialPathThrew` | a `!` path operation threw |
+| `ContextValueRejected` | a promise supplied by the render context (or returned directly) rejected |
 
 The single-item `errors` array is intentional. It lets code process standalone
 and grouped poison errors the same way:
@@ -1860,10 +1885,13 @@ endeach
 the inherited ones:
 
 *   **`name`**: (string) Always `'PoisonErrorGroup'`.
+*   **`kind`**: (string) Derived: the shared child `kind` if they all agree, otherwise `'Multiple'`.
+*   **`kinds`**: (array) The sorted unique child `kind`s.
+*   **`totalErrorCount`**: (number) The full number of failures.
 *   **`description`**: (string) A short aggregate description such as `Multiple errors occurred (3)`.
-*   **`message`**: (string) An aggregate intro such as `PoisonErrorGroup (3 errors):`, followed by numbered child `message` values.
-*   **`fullMessage`**: (string) The same aggregate intro, followed by numbered child `fullMessage` values (each including its own stack).
-*   **`errors`**: (array) The individual `PoisonError` objects, each with its own context and cause.
+*   **`message`**: (string) An aggregate intro followed by numbered child `message` values. When the failures exceed the message cap, the header also summarizes the total count and the kinds present.
+*   **`fullMessage`**: (string) The same aggregate intro, with each child's own stack.
+*   **`errors`**: (array) **All** the individual `PoisonError` objects, sorted by source location, each with its own context and cause. The `message` is capped for readability; `errors` is not.
 
 The following fields are inherited from `PoisonError` and come from the first
 child error, so single-error and multi-error handling code can stay the same:
@@ -2736,6 +2764,7 @@ The `AsyncEnvironment` is the primary class for orchestrating and executing Casc
     *   `opts`: Configuration flags:
         *   `autoescape` (default: `true`): Automatically escapes template output.
         *   `throwOnUndefined` (default: `false`): Throw when rendering an undefined value.
+        *   `loadFailFatal` (default: `true`): How a missing or failed `import` / `from import` / `component` / `include` is handled. `true` — fatal (Nunjucks-compatible). `false` — non-fatal: `import` / `component` become `LoadFailed` poison, `include` renders empty. An array such as `['import']` makes only the listed kinds fatal. The root render and `extends` are always fatal.
         *   `trimBlocks` (default: `false`): Remove the first newline after a block tag.
         *   `lstripBlocks` (default: `false`): Strip leading whitespace from a block tag.
         *   `tags`: Override template tag delimiters.

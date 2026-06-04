@@ -7,7 +7,7 @@ import {createPoison, PoisonError} from '../../src/runtime/runtime.js';
   const TEST_EC = [1, 1, 'IteratorIntegration.TestInput', 'poison-iterator-integration.njk', null, null];
 
   function createTestPoison(error) {
-    return createPoison(PoisonError.wrap(error, TEST_EC, 'ValueRejected'));
+    return createPoison(PoisonError.wrap(error, TEST_EC, 'UserCallThrew'));
   }
 
   describe('Iterator Poison Integration with Templates', () => {

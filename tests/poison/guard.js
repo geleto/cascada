@@ -12,7 +12,7 @@ const TEST_EC = [1, 1, 'Guard.Test', 'guard-test.njk', null, null];
   }
 
   function poison(message) {
-    return createPoison(PoisonError.create(message, TEST_EC, 'ValueRejected'));
+    return createPoison(PoisonError.create(message, TEST_EC, 'UserCallThrew'));
   }
 
   describe('Guard Block', () => {

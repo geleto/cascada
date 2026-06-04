@@ -8,7 +8,7 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
   const TEST_EC = [1, 1, 'Poison.TestInput', 'poison-error-recovery.njk', null, null];
 
   function createTestPoison(error) {
-    return runtime.createPoison(runtime.PoisonError.wrap(error, TEST_EC, 'ValueRejected'));
+    return runtime.createPoison(runtime.PoisonError.wrap(error, TEST_EC, 'UserCallThrew'));
   }
 
   describe('Poisoning Tests', () => {

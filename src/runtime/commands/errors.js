@@ -1,8 +1,6 @@
 import {PoisonError, createPoison} from '../errors.js';
 import {MutatingCommand, requireCommandErrorContext} from './base.js';
 
-const contextualizedChainErrorCache = new WeakMap();
-
 class ErrorCommand extends MutatingCommand {
   constructor(error, errorContext) {
     super();
@@ -49,22 +47,4 @@ class TargetPoisonCommand extends MutatingCommand {
   }
 }
 
-function contextualizeChainError(errorContext, err) {
-  if (err && (typeof err === 'object' || typeof err === 'function')) {
-    const cacheKey = errorContext;
-    const perError = contextualizedChainErrorCache.get(err);
-    if (perError && perError.has(cacheKey)) {
-      return perError.get(cacheKey);
-    }
-    const wrapped = PoisonError.wrap(err, errorContext, 'ValueRejected');
-    if (wrapped !== err) {
-      const nextPerError = perError || new Map();
-      nextPerError.set(cacheKey, wrapped);
-      contextualizedChainErrorCache.set(err, nextPerError);
-    }
-    return wrapped;
-  }
-  return PoisonError.wrap(err, errorContext, 'ValueRejected');
-}
-
-export {ErrorCommand, TargetPoisonCommand, contextualizeChainError};
+export {ErrorCommand, TargetPoisonCommand};

@@ -41,7 +41,7 @@ class CompileComposition {
     } else {
       this.emit.line(`  return ${getTargetFunc}(resolvedTargetName, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg});`);
     }
-    this.emit.line(`}), ${errorContext}, "ValueRejected");`);
+    this.emit.line(`}), ${errorContext}, "LoadFailed");`);
 
     return targetVar;
   }
@@ -84,7 +84,7 @@ class CompileComposition {
       this.emit.line('  resolvedTemplate.compile();');
       this.emit.line('  renderState.throwIfFatalErrorReported();');
       this.emit.line('  return runtime.resolveSingle(resolvedTemplate.getExported(null, null, renderState));');
-      this.emit.line(`}).catch((e) => runtime.handleLoadFailure(e, ${errorContext}, "import", env)), ${errorContext}, "ValueRejected");`);
+      this.emit.line(`}).catch((e) => runtime.handleLoadFailure(e, ${errorContext}, "import", env)), ${errorContext}, "LoadFailed");`);
       this.compiler.buffer.emitLimitedLoopCompletion(exportedId, node);
       this._emitValueImportBinding(target, exportedId, node);
       return;
@@ -103,7 +103,7 @@ class CompileComposition {
     this.emit.line('  resolvedTemplate.compile();');
     this.emit.line('  renderState.throwIfFatalErrorReported();');
     this.emit.line(`  return runtime.resolveSingle(resolvedTemplate.getExported(${importContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, renderState));`);
-    this.emit.line(`}).catch((e) => runtime.handleLoadFailure(e, ${errorContext}, "import", env)), ${errorContext}, "ValueRejected");`);
+    this.emit.line(`}).catch((e) => runtime.handleLoadFailure(e, ${errorContext}, "import", env)), ${errorContext}, "LoadFailed");`);
     this.compiler.buffer.emitLimitedLoopCompletion(exportedId, node);
     this._emitValueImportBinding(target, exportedId, node);
   }
@@ -150,7 +150,7 @@ class CompileComposition {
     this.emit.line('  resolvedTemplate.compile();');
     this.emit.line('  renderState.throwIfFatalErrorReported();');
     this.emit.line('  return runtime.resolveSingle(resolvedTemplate.getExported(null, null, renderState));');
-    this.emit.line(`}).catch((e) => runtime.handleLoadFailure(e, ${errorContext}, "import", env)), ${errorContext}, "ValueRejected");`);
+    this.emit.line(`}).catch((e) => runtime.handleLoadFailure(e, ${errorContext}, "import", env)), ${errorContext}, "LoadFailed");`);
     this._emitAsyncFromImportBindings(node, exportedId, bindingIds);
     this._emitFromImportCompletion(node, exportedId, bindingIds);
   }
@@ -169,7 +169,7 @@ class CompileComposition {
     this.emit.line('  resolvedTemplate.compile();');
     this.emit.line('  renderState.throwIfFatalErrorReported();');
     this.emit.line(`  return runtime.resolveSingle(resolvedTemplate.getExported(${importContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, renderState));`);
-    this.emit.line(`}).catch((e) => runtime.handleLoadFailure(e, ${errorContext}, "import", env)), ${errorContext}, "ValueRejected");`);
+    this.emit.line(`}).catch((e) => runtime.handleLoadFailure(e, ${errorContext}, "import", env)), ${errorContext}, "LoadFailed");`);
     this._emitAsyncFromImportBindings(node, exportedId, bindingIds);
     this._emitFromImportCompletion(node, exportedId, bindingIds);
   }

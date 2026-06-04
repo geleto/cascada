@@ -163,7 +163,7 @@ function getDestructuredLoopArgs(value, loopVars, errorContext, buffer, asyncOpt
   if (Array.isArray(value)) {
     return value.slice(0, loopVars.length).map(arg => normalizeLoopValue(arg, errorContext));
   }
-  const poisonError = PoisonError.create('Expected an array for destructuring', errorContext, 'DestructureMismatch');
+  const poisonError = PoisonError.create('Expected an array for destructuring', errorContext, 'NotAnArray');
   poisonIterationEffects(buffer, asyncOptions, poisonError);
   return null;
 }

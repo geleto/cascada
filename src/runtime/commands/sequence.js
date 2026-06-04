@@ -1,5 +1,6 @@
 import {ChainMutatingResultCommand, ChainObservableCommand} from './base.js';
-import {poisonIfNaN} from '../errors.js';
+import {PoisonError, poisonIfNaN} from '../errors.js';
+import {classifyCallTarget} from '../call.js';
 import {runWithResolvedArguments} from './arguments.js';
 
 class SequenceCallCommand extends ChainMutatingResultCommand {
@@ -27,17 +28,28 @@ class SequenceCallCommand extends ChainMutatingResultCommand {
       const execute = (sequenceTarget) => {
         const target = resolvePath(sequenceTarget, this.path);
         if (target === null || target === undefined) {
-          return this.settleResult(undefined);
+          const error = PoisonError.create(`Cannot read property ${formatSequencePath(this.path)} of ${target}`, this.errorContext, 'NullLookup');
+          this.rejectResult(error);
+          throw error;
         }
         const method = this.methodName ? target[this.methodName] : target;
-        if (typeof method !== 'function') {
-          return this.settleResult(undefined);
+        const methodError = classifyCallTarget(method, this.methodName, this.errorContext);
+        if (methodError) {
+          this.rejectResult(methodError);
+          throw methodError;
         }
-        const result = method.apply(target, args);
-        return this.settleResult(result, {
-          mapValue: value => poisonIfNaN(value, this.errorContext),
-          rethrow: true
-        });
+        try {
+          const result = method.apply(target, args);
+          return this.settleResult(result, {
+            mapValue: value => poisonIfNaN(value, this.errorContext),
+            mapError: err => PoisonError.wrap(err, this.errorContext, 'UserCallThrew'),
+            rethrow: true
+          });
+        } catch (err) {
+          const error = PoisonError.wrap(err, this.errorContext, 'UserCallThrew');
+          this.rejectResult(error);
+          throw error;
+        }
       };
 
       const sequenceTarget = chain._ensureSequenceTargetResolved ? chain._ensureSequenceTargetResolved() : chain._sequenceTarget;
@@ -89,6 +101,13 @@ function resolvePath(target, path) {
     current = current[segment];
   }
   return current;
+}
+
+function formatSequencePath(path) {
+  if (!Array.isArray(path) || path.length === 0) {
+    return 'undefined';
+  }
+  return path[path.length - 1];
 }
 
 export {SequenceCallCommand, SequenceGetCommand};

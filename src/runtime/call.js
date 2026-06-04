@@ -72,25 +72,13 @@ function callWrapAsync(obj, name, context, args, errorContext, currentBuffer = n
   }
 
   // No errors - validate and call
-  if (!obj) {
-    return createPoison(PoisonError.create(
-      'Unable to call `' + name + '`, which is undefined or falsey',
-      errorContext,
-      'NotCallable'
-    ));
-  } else if (typeof obj !== 'function') {
-    return createPoison(PoisonError.create(
-      'Unable to call `' + name + '`, which is not a function',
-      errorContext,
-      'NotAFunction'
-    ));
+  const targetError = classifyCallTarget(obj, name, errorContext);
+  if (targetError) {
+    return createPoison(targetError);
   }
 
   try {
-    const isGlobal = Object.prototype.hasOwnProperty.call(context.env.globals, name) &&
-                   !Object.prototype.hasOwnProperty.call(context.ctx, name);
-
-    const executionContext = isGlobal ? context : context.ctx;
+    const executionContext = getCallExecutionContext(context, name);
     const result = obj.apply(executionContext, args);
     if (isPoison(result)) {
       return result;
@@ -158,25 +146,13 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
   // All resolved successfully - validate and call the function
   throwReportedFatal(errorContext);
 
-  if (!obj) {
-    return createPoison(PoisonError.create(
-      'Unable to call `' + name + '`, which is undefined or falsey',
-      errorContext,
-      'NotCallable'
-    ));
-  } else if (typeof obj !== 'function') {
-    return createPoison(PoisonError.create(
-      'Unable to call `' + name + '`, which is not a function',
-      errorContext,
-      'NotAFunction'
-    ));
+  const targetError = classifyCallTarget(obj, name, errorContext);
+  if (targetError) {
+    return createPoison(targetError);
   }
 
   try {
-    const isGlobal = Object.prototype.hasOwnProperty.call(context.env.globals, name) &&
-                   !Object.prototype.hasOwnProperty.call(context.ctx, name);
-
-    const executionContext = isGlobal ? context : context.ctx;
+    const executionContext = getCallExecutionContext(context, name);
     const result = obj.apply(executionContext, resolvedArgs);
     if (isPoison(result)) {
       return result;
@@ -223,4 +199,69 @@ function invokeCallbackExtension(fn, ...args) {
   });
 }
 
-export { callWrap, callWrapAsync, envCallWrapAsync, invokeCallbackExtension };
+function classifyCallTarget(obj, name, errorContext) {
+  if (obj === undefined) {
+    return PoisonError.create(
+      'Unable to call `' + name + '`, which is undefined',
+      errorContext,
+      'MissingFunction'
+    );
+  }
+  if (typeof obj !== 'function') {
+    return PoisonError.create(
+      'Unable to call `' + name + '`, which is not a function',
+      errorContext,
+      'NotAFunction'
+    );
+  }
+  return null;
+}
+
+function resolveScriptCallTarget(context, name, errorContext) {
+  if (context && typeof context.lookupScriptCall === 'function') {
+    return context.lookupScriptCall(name, errorContext);
+  }
+  const value = getOwnedContextValue(context, name, errorContext);
+  if (value === undefined) {
+    return createPoison(PoisonError.create(
+      `Can not look up unknown variable/function: ${name}`,
+      errorContext,
+      'MissingFunction'
+    ));
+  }
+  if (value && typeof value.then === 'function' && !isPoison(value)) {
+    return new RuntimePromise(value, errorContext, 'ContextValueRejected');
+  }
+  return poisonIfNaN(value, errorContext);
+}
+
+function getOwnedContextValue(context, name, errorContext) {
+  if (!context) {
+    return undefined;
+  }
+  if (typeof context.lookup === 'function') {
+    return context.lookup(name, errorContext);
+  }
+  if (Object.prototype.hasOwnProperty.call(context, name)) {
+    return context[name];
+  }
+  return undefined;
+}
+
+function getCallExecutionContext(context, name) {
+  if (!context || !context.env || !context.ctx) {
+    return context;
+  }
+  const isGlobal = Object.prototype.hasOwnProperty.call(context.env.globals, name) &&
+                 !Object.prototype.hasOwnProperty.call(context.ctx, name);
+  return isGlobal ? context : context.ctx;
+}
+
+export {
+  callWrap,
+  callWrapAsync,
+  envCallWrapAsync,
+  invokeCallbackExtension,
+  classifyCallTarget,
+  resolveScriptCallTarget
+};

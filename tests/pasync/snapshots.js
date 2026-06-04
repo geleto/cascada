@@ -20,7 +20,7 @@ import {
 
 const TEST_EC = [1, 1, 'Test', 'test.casc', null, null];
 const TEST_DIAGNOSTIC_CONTEXT = cloneWithAddedContext(TEST_EC, { branch: 'test' });
-const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC, 'ValueRejected'));
+const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC, 'UserCallThrew'));
 
 describe('chain.finalSnapshot', function () {
   let env;
@@ -577,7 +577,7 @@ describe('chain.finalSnapshot', function () {
       await expectAsyncError(async () => {
         await flatten(buffer, context, 'data');
       }, (err) => {
-        expect(err.message).to.contain('has no method');
+        expect(err.message).to.contain('Unable to call `nonexistent`, which is undefined');
       });
     });
 
@@ -841,7 +841,7 @@ describe('chain.finalSnapshot', function () {
           expect().fail('Should have thrown');
         } catch (thrown) {
           expect(isPoisonError(thrown)).to.be(true);
-          expect(thrown.errors[0].message).to.contain('has no method');
+          expect(thrown.errors[0].message).to.contain('Unable to call `nonexistentMethod`, which is undefined');
         }
       });
 

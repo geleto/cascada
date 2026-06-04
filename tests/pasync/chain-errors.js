@@ -17,6 +17,7 @@ import {
   SequenceChain,
   inspectTargetForErrors,
   createChain,
+  declareBufferChain,
 } from '../../src/runtime/chains/index.js';
 
 import {CommandBuffer} from '../../src/runtime/command-buffer.js';
@@ -26,7 +27,7 @@ const TEST_EC = [1, 1, 'Test', 'test.casc', null, null];
 const TEST_DIAGNOSTIC_CONTEXT = cloneWithAddedContext(TEST_EC, { branch: 'test' });
 
 function testError(message) {
-  return PoisonError.create(message, TEST_EC, 'ValueRejected');
+  return PoisonError.create(message, TEST_EC, 'UserCallThrew');
 }
 
 describe('chain errors', function () {
@@ -80,14 +81,21 @@ describe('chain errors', function () {
       expect(output._target[0].errors[0].message).to.contain('text poison');
     });
 
-    it('VarCommand poisons target on invalid arity', () => {
+    it('VarCommand uses the first resolved value', () => {
       const output = new VarChain(null, 'value', null, 'value');
       const cmd = new VarCommand({ chainName: 'value', args: [1, 2], errorContext: TEST_EC });
 
       cmd.apply(output);
 
-      expect(isPoison(output._target)).to.be(true);
-      expect(output._target.errors[0].message).to.contain('exactly one argument');
+      expect(output._target).to.be(1);
+
+      new VarCommand({
+        chainName: 'value',
+        args: [3, createPoison(testError('ignored extra arg'))],
+        errorContext: TEST_EC
+      }).apply(output);
+
+      expect(output._target).to.be(3);
     });
 
     it('DataCommand writes poison to addressed path and allows later repair overwrite', async () => {
@@ -127,7 +135,71 @@ describe('chain errors', function () {
 
       cmd.apply(output);
       expect(isPoison(output._target.x)).to.be(true);
-      expect(output._target.x.errors[0].message).to.contain(`has no method 'doesNotExist'`);
+      expect(output._target.x.errors[0].kind).to.be('MissingFunction');
+      expect(output._target.x.errors[0].message).to.contain('Unable to call `doesNotExist`, which is undefined');
+    });
+
+    it('DataCommand encodes method failures as user call poison', () => {
+      const output = new DataChain(null, 'data', null, 'data');
+      output._base.fail = () => {
+        throw new Error('data method failed');
+      };
+      const cmd = new DataCommand({
+        chainName: 'data',
+        operation: 'fail',
+        args: [['x']],
+        errorContext: TEST_EC
+      });
+
+      cmd.apply(output);
+      expect(isPoison(output._target.x)).to.be(true);
+      expect(output._target.x.errors[0].kind).to.be('UserCallThrew');
+      expect(output._target.x.errors[0].message).to.contain('data method failed');
+    });
+
+    it('TextCommand reports text.set arity as a fatal contract error', () => {
+      const output = new TextChain(null, 'text', null, 'text');
+      const cmd = new TextCommand({
+        chainName: 'text',
+        operation: 'set',
+        args: [1, 2],
+        errorContext: TEST_EC
+      });
+
+      expect(() => cmd.apply(output)).to.throwException((err) => {
+        expect(err).to.be.a(RuntimeError);
+        expect(err.message).to.contain('text.set() accepts exactly one argument');
+      });
+    });
+
+    it('TextCommand uses specific poison kinds for unsupported operations and invalid values', async () => {
+      const unsupported = new TextChain(null, 'text', null, 'text');
+      new TextCommand({
+        chainName: 'text',
+        operation: 'weird',
+        args: [],
+        errorContext: TEST_EC
+      }).apply(unsupported);
+      expect(isPoison(unsupported._target)).to.be(true);
+      expect(unsupported._target.errors[0].kind).to.be('MissingFunction');
+
+      const invalid = new TextChain(null, 'text', null, 'text');
+      const cmd = new TextCommand({
+        chainName: 'text',
+        args: [{ wrapped: true }],
+        errorContext: TEST_EC
+      });
+
+      try {
+        cmd.apply(invalid);
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
+        expect(err.errors[0].kind).to.be('InvalidTextValue');
+        invalid._recordError(err, cmd);
+      }
+      expect(isPoison(invalid._target[0])).to.be(true);
+      expect(invalid._target[0].errors[0].kind).to.be('InvalidTextValue');
     });
 
     it('SequenceCallCommand still rejects deferred result when poison args are passed', async () => {
@@ -152,6 +224,87 @@ describe('chain errors', function () {
       } catch (err) {
         expect(isPoisonError(err)).to.be(true);
         expect(err.errors[0].message).to.contain('arg poison');
+      }
+    });
+
+    it('SequenceCallCommand classifies null target and method failures', async () => {
+      const missingTarget = new SequenceChain(null, 'seq', null, null);
+      const nullCmd = new SequenceCallCommand({
+        chainName: 'seq',
+        methodName: 'exec',
+        args: [],
+        path: ['nested'],
+        errorContext: TEST_EC
+      });
+
+      try {
+        nullCmd.apply(missingTarget);
+        await nullCmd.promise;
+        expect().fail('Should have rejected');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
+        expect(err.kind).to.be('NullLookup');
+      }
+
+      const badMethods = new SequenceChain(null, 'seq', null, { missing: undefined, bad: 1 });
+      const missingCmd = new SequenceCallCommand({
+        chainName: 'seq',
+        methodName: 'missing',
+        args: [],
+        errorContext: TEST_EC
+      });
+      const badCmd = new SequenceCallCommand({
+        chainName: 'seq',
+        methodName: 'bad',
+        args: [],
+        errorContext: TEST_EC
+      });
+
+      expect(() => missingCmd.apply(badMethods)).to.throwException((err) => {
+        expect(isPoisonError(err)).to.be(true);
+        expect(err.kind).to.be('MissingFunction');
+      });
+      expect(() => badCmd.apply(badMethods)).to.throwException((err) => {
+        expect(isPoisonError(err)).to.be(true);
+        expect(err.kind).to.be('NotAFunction');
+      });
+    });
+
+    it('SequenceCallCommand classifies method throws locally', async () => {
+      const output = new SequenceChain(null, 'seq', null, {
+        fail() {
+          throw new Error('sequence failed');
+        },
+        async failAsync() {
+          throw new Error('sequence async failed');
+        }
+      });
+
+      const syncCmd = new SequenceCallCommand({
+        chainName: 'seq',
+        methodName: 'fail',
+        args: [],
+        errorContext: TEST_EC
+      });
+      expect(() => syncCmd.apply(output)).to.throwException((err) => {
+        expect(isPoisonError(err)).to.be(true);
+        expect(err.kind).to.be('UserCallThrew');
+        expect(err.message).to.contain('sequence failed');
+      });
+
+      const asyncCmd = new SequenceCallCommand({
+        chainName: 'seq',
+        methodName: 'failAsync',
+        args: [],
+        errorContext: TEST_EC
+      });
+      try {
+        await asyncCmd.apply(output);
+        expect().fail('Should have rejected');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
+        expect(err.kind).to.be('UserCallThrew');
+        expect(err.message).to.contain('sequence async failed');
       }
     });
   });
@@ -212,6 +365,40 @@ describe('chain errors', function () {
         expect().fail('Should have thrown');
       } catch (err) {
         expect(err).to.be(raw);
+      }
+    });
+
+    it('reports unexpected raw command apply failures as fatal runtime errors', () => {
+      const output = new VarChain(null, 'value', null, 'value');
+      const raw = new Error('unexpected command failure');
+
+      expect(() => output._recordError(raw, { errorContext: TEST_EC })).to.throwException((err) => {
+        expect(err).to.be.a(RuntimeError);
+        expect(err.cause).to.be(raw);
+        expect(err.message).to.contain('unexpected command failure');
+      });
+    });
+
+    it('reports unexpected raw command apply failures through buffer iteration', async () => {
+      const buffer = new CommandBuffer(null, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+      const output = declareBufferChain(buffer, 'value', 'var', null, null);
+      const raw = new Error('unexpected iterator command failure');
+
+      try {
+        buffer.addCommand({
+          chainName: 'value',
+          errorContext: TEST_EC,
+          apply() {
+            throw raw;
+          }
+        });
+        buffer.finish();
+        await output.finalSnapshot();
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(err).to.be.a(RuntimeError);
+        expect(err.cause).to.be(raw);
+        expect(err.message).to.contain('unexpected iterator command failure');
       }
     });
 

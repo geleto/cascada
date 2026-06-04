@@ -1245,7 +1245,7 @@ return made`;
 
   describe('semantic hardening', function () {
     const TEST_POISON_EC = [1, 1, 'Return.TestInput', 'return.casc', null, null];
-    const createTestPoison = (error) => runtime.createPoison(runtime.PoisonError.wrap(error, TEST_POISON_EC, 'ValueRejected'));
+    const createTestPoison = (error) => runtime.createPoison(runtime.PoisonError.wrap(error, TEST_POISON_EC, 'UserCallThrew'));
 
     it('returns null for bare return and skips later statements', async function () {
       const events = [];

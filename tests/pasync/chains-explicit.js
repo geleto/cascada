@@ -4,7 +4,7 @@ import {AsyncEnvironment} from '../../src/environment/environment.js';
 import {createPoison, isPoisonError, PoisonError} from '../../src/runtime/runtime.js';
 
 const TEST_POISON_EC = [1, 1, 'ChainsExplicit.TestPoison', 'chains-explicit.casc', null, null];
-const testPoison = (message) => createPoison(PoisonError.create(message, TEST_POISON_EC, 'ValueRejected'));
+const testPoison = (message) => createPoison(PoisonError.create(message, TEST_POISON_EC, 'UserCallThrew'));
 
 describe('Cascada Script: Explicit Chain Declarations', function () {
   let env;
@@ -2096,7 +2096,7 @@ describe('Cascada Script: Explicit Chain Declarations', function () {
         expect().fail('Should have thrown');
       } catch (err) {
         expect(isPoisonError(err)).to.be(true);
-        expect(err.errors[0].message).to.contain('has no method');
+        expect(err.errors[0].message).to.contain('Unable to call `nonExistentMethod`, which is undefined');
       }
     });
 
@@ -2180,7 +2180,7 @@ describe('Cascada Script: Explicit Chain Declarations', function () {
         await render(script);
         expect().fail('Should have thrown');
       } catch (err) {
-        expect(err.message).to.match(/_revert|Unknown|Invalid|has no method/);
+        expect(err.message).to.match(/_revert|Unknown|Invalid|Unable to call/);
       }
     });
   });

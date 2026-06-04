@@ -165,7 +165,7 @@ went wrong**. It is **independent of `label`** (tuple slot 2), which names **whe
 line:
 
 - The same `label` yields different `kind`s — a function-call frame produces
-  `NotAFunction`, `NotCallable`, or `UserCallThrew`.
+  `MissingFunction`, `NotAFunction`, or `UserCallThrew`.
 - The same `kind` appears under many `label`s — a `NullLookup` happens at any
   number of positions.
 
@@ -177,28 +177,26 @@ poison source without an explicit kind is a runtime contract error.
 
 This table is the **complete** poison-source enumeration, cross-checked against
 every `PoisonError.create` / `PoisonError.wrap` call site in `src/`. Each existing
-source is assigned its target `kind`; `DestructureMismatch`, `ImportBindingMissing`,
-and `NaNResult` are implemented additions.
+source is assigned its target `kind`; `NotAnArray`, `ImportBindingMissing`,
+`NaNResult`, `InvalidTextValue`, and `ContextValueRejected` are implemented additions.
 
 | `kind` | Source site | Factory | Status |
 |---|---|---|---|
-| `NotAFunction` | `call.js` — call target is not a function | `create` | existing |
-| `NotCallable` | `call.js` — call target is `undefined`/`null`/falsey | `create` | existing |
+| `NotAFunction` | `call.js` — call target is some other type, not a function | `create` | existing |
+| `MissingFunction` | `call.js` — call target resolved to `undefined` (no such function/method) | `create` | existing |
 | `UserCallThrew` | `call.js` — a user/global/env function threw (`obj.apply`/`fn.apply`) | `wrap` | existing |
 | `UnknownVariable` | `environment/context.js` `lookupScript` — bare symbol names an unknown variable/function (script mode) | `create` | existing |
 | `NullLookup` | `lookup.js` — script-mode property access on `null`/`undefined` | `create` | existing |
 | `LookupThrew` | `lookup.js` — a property getter threw during the read | `wrap` | existing |
-| `DataMethodThrew` | `chains/base.js` `_recordError` — a mutating command / data method threw on apply | `wrap` | existing |
 | `SequentialPathThrew` | `commands/sequential-path.js` — a `!` path operation threw | `wrap` | existing |
 | `IteratorThrew` | `loop.js` — async iterator `.next()`/`for await` threw, or a generator yielded an `Error` | `wrap` | existing |
 | `InvalidConcurrentLimit` | `loop.js` — `concurrentLimit` is not a positive number | `create` | existing |
-| `ConditionThrew` | emitted `if`/`switch`/`while` boundary — condition/branch/body evaluation threw (`compiler-async.js`, `compiler/loop.js`) | `wrap` | existing |
-| `ExpressionThrew` | emitted value boundary — async expression threw (`compiler/boundaries.js`) | `wrap` | existing |
-| `ValueRejected` | `RuntimePromise._wrapRejection` and `commands/errors.js` `contextualizeChainError` fallback — a source-origin async value rejected / a raw chain error was contextualized with no more specific `kind` | `wrap` | existing |
-| `DestructureMismatch` | `loop.js` — loop value is not an array for multi-variable destructuring | `create` | **new** (§9 / §11.4) |
+| `ContextValueRejected` | `environment/context.js` `normalizeContextValue` and the `compiler-async` return wrap — a promise supplied by the render context (or returned directly) rejected | `wrap` | existing |
+| `InvalidTextValue` | `commands/text.js` — a value cannot be written to a text chain | `create` | implemented |
+| `NotAnArray` | `loop.js` — loop value is not an array for multi-variable destructuring | `create` | implemented |
 | `NaNResult` | value-production points (arithmetic / call / lookup / data-method / loop results) — value is `NaN` (see [NaN handling](#nan-handling)) | `create` | **new** (§11) |
 | `ImportBindingMissing` | `composition.js` — `from import` names an export the module does not have | `create` | implemented |
-| `LoadFailed` | `composition.js` / inheritance — a non-fatal **value-producing** load (`import` / `from import` / `component`) failed to resolve or compile (see [Load-failure policy](#load-failure-policy-planned)) | `wrap` | **planned** (§11.17) — one kind, many `label`s (the import/component frame). `include` failures are silent or fatal, never poison-by-default, so they carry no `kind`. |
+| `LoadFailed` | `composition.js` (target/namespace `RuntimePromise` wrappers + `handleLoadFailure`) / inheritance — a non-fatal **value-producing** load (`import` / `from import` / `component`) failed to resolve or compile (see [Load-failure policy](#load-failure-policy-planned)) | `wrap` | implemented — one kind, many `label`s (the import/component frame). `include` failures are silent or fatal, never poison-by-default, so they carry no `kind`. |
 
 Notes:
 
@@ -250,8 +248,8 @@ function poisonIfNaN(value, errorContext) {
 | Async tail of any of the above | `RuntimePromise` fulfillment (carries the source `errorContext`/`kind`) |
 
 Promise-valued context reads are wrapped in `RuntimePromise`, so an async context
-rejection now becomes contextualized `ValueRejected` poison at the read source; this
-is intentional source-origin handling, not a NaN-only behavior.
+rejection becomes contextualized `ContextValueRejected` poison at the read source;
+this is intentional source-origin handling, not a NaN-only behavior.
 
 Because every value is poisoned at production, it is already poison by the time it
 reaches a consumer — so **functions never receive a `NaN` argument** and **`NaN`
@@ -872,13 +870,13 @@ No catch. Driver only: fatal-state check + `_stopAfterFatalReport`, and
 | Site | Emitted shape | Class | Verdict |
 |---|---|---|---|
 | `compiler-async.js` callback-extension ≈132 | `if (!isPoisonError(e) && !isRuntimeError(e)) reportAndThrow(e, ec); throw e;` then wrap return `RuntimePromise` | B | KEEP |
-| `compiler-async.js` async `if` ≈423 / `switch` ≈320 | `PoisonError.wrap(e, ec)` → `ErrorCommand` on branch poison chains (no rethrow) | source boundary (wrap re-throws `RuntimeError`) | KEEP |
-| `boundaries.js` `compileValueBoundary` ≈66 | `throw runtime.PoisonError.wrap(e, ec)` | source / Pattern 3 | KEEP |
+| `compiler-async.js` async `if` / `switch` branch catch | raw throw -> `RuntimeError.reportAndThrow(e, ec)`; existing poison -> `ErrorCommand` on branch poison chains (no rethrow) | branch effect poisoning + raw fatal | KEEP |
+| `boundaries.js` `compileValueBoundary` | `runtime.rethrowPoisonOrReport(e, ec)` | poison passthrough + raw fatal | KEEP |
 | `emit.js` block catch ≈155 | sync-mode `handleError` + `cb(err)` (guarded by `asyncMode` return above) | frozen sync | KEEP (out of scope) |
 
-The async emitted `if`/`switch` catch converts only raw branch-evaluation failures
-to poison on the affected chains; `PoisonError.wrap` re-throws any `RuntimeError`,
-so fatal contract failures still propagate.
+The async emitted `if`/`switch` catch converts only existing poison into poison
+markers on the affected chains. Raw branch-evaluation failures are fatal, so the
+catch does not create a new condition-source poison kind.
 
 ### Catch redundancy and simplification
 
@@ -1261,13 +1259,11 @@ async timing.
 **Efficient** — low priority. Speed is not a major concern, but avoid pathological
 slowness.
 
-- **Lazy diagnostic formatting (worth doing — clarity, not just speed).**
-  `RuntimeContextError`'s constructor eagerly builds *both* `compactMessage` and
-  `fullMessage` (two `formatDiagnosticMessage` calls) and normalizes the diagnostic
-  stack on every construction, even though most poison is propagated/grouped/
-  discarded and never displayed. Build them lazily (on `getInfo`/`formatInfo`/
-  `.message` access). This also simplifies the constructor, so it earns its place on
-  clarity grounds regardless of the speed win.
+- **Lazy diagnostic formatting (evaluated and skipped).**
+  `RuntimeContextError` eagerly builds both compact and full diagnostic messages.
+  A lazy version reduced unused formatting work, but added custom `Error.message`
+  accessors and cache state in the core error type. Keep the eager implementation
+  unless profiling shows diagnostic formatting is pathologically expensive.
 - **Sanity checks only (no surprises expected).** The NaN check cost
   (`typeof`+`Number.isNaN` at value-production sites), the `inspectTargetForErrors`
   `_errorStateCache` (repeat reads should be O(1)), poison allocation
@@ -1353,6 +1349,25 @@ For focused changes:
   `tests/pasync/loops.js`)
 - new discarded-expression tests when `compileDo(...)` gains an observer
 - `npm run build`
+
+### Raw-error fatal coverage (audit + test)
+
+The "raw error → fatal, poison → passthrough" rule is centralized in the three Phase 1
+helpers (`poisonOrReport` / `rethrowPoisonOrReport` / `poisonOrRethrow`) and applied at each
+context-bearing owner — the call boundary, value boundary, structural boundaries, the generic
+chain-apply recorder (`base.js:144` after Phase 10), with `raceRootResult` as the contextless
+backstop. There is no single chokepoint by design: context belongs to the owning operation,
+not a generic expression root. Prove the cover is **complete** — an unexpected raw (non-poison,
+non-`RuntimeError`) error injected at each layer must surface as a **reported fatal**, never an
+unhandled rejection or a silent poison:
+
+- a resolver path (`resolve.js` `poisonOrRethrow` bare-rethrow) reached without a poison/
+  RuntimeError wrapper → fatal via its owner (call/value boundary).
+- a command `apply` that throws an unexpected raw error → fatal via `base.js:144` (the Phase 10
+  test).
+- a value boundary whose expression throws raw → fatal (not `ExpressionThrew`).
+- a fire-and-forget path (loop worker, discarded `Do`) → reported (not an unhandled rejection).
+- nothing awaited reaches the public render promise as raw → `raceRootResult` reports it.
 
 For broad error-handling changes:
 
