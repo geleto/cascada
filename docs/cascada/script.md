@@ -1243,6 +1243,8 @@ turtle!.penUp()
 
 Only the `turtle` path is serialized. Other independent work in the script can still run concurrently.
 
+`!` guarantees **order** and that the call **runs** - but not that it has *finished* when the render resolves. The render waits only on the returned value, not on a pure side effect, so a slow `db!.save(record)` may settle after the render returns. If you need it awaited, fold its result into what you return (`result.ack = db!.save(record)`).
+
 #### Context Requirement for Sequential Paths
 
 Sequential paths must reference objects from the context, not local variables.
