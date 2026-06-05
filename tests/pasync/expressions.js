@@ -595,6 +595,7 @@ const {AsyncEnvironment, Environment} = typeof window !== 'undefined'
 
         await expectPoisonKind(() => env.renderScriptString('return "5" + 3'), 'IncompatibleOperands');
         await expectPoisonKind(() => env.renderScriptString('return "x" + null'), 'IncompatibleOperands');
+        await expectPoisonKind(() => env.renderScriptString('return left + right', { left: 1n, right: 1 }), 'IncompatibleOperands');
         await expectPoisonKind(() => env.renderScriptString('return null - 1'), 'IncompatibleOperands');
         await expectPoisonKind(() => env.renderScriptString('return true + 1'), 'IncompatibleOperands');
         await expectPoisonKind(() => env.renderScriptString('return "5" * 2'), 'IncompatibleOperands');
@@ -622,11 +623,20 @@ const {AsyncEnvironment, Environment} = typeof window !== 'undefined'
         expect(await env.renderScriptString('return 1 < 2 < 3')).to.be(true);
 
         await expectPoisonKind(() => env.renderScriptString('return 5 < "abc"'), 'IncompatibleOperands');
+        await expectPoisonKind(() => env.renderScriptString('return "a" < 1'), 'IncompatibleOperands');
       });
 
       it('keeps concat explicit and rejects non-text-like operands', async () => {
         expect(await env.renderScriptString('return "5" ~ 3')).to.be('53');
         expect(await env.renderScriptString('return left ~ right', { left: ['a', 'b'], right: 3 })).to.be('a,b3');
+        expect(await env.renderScriptString('return left ~ right', {
+          left: {
+            toString() {
+              return 'custom';
+            }
+          },
+          right: '!'
+        })).to.be('custom!');
 
         await expectPoisonKind(() => env.renderScriptString('return "x" ~ value', { value: {} }), 'IncompatibleOperands');
         await expectPoisonKind(() => env.renderScriptString('return "x" ~ value', { value: Symbol('bad') }), 'IncompatibleOperands');

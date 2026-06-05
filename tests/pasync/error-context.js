@@ -1069,6 +1069,38 @@ describe('error context tracing runtime foundation', () => {
     expect([...seenKinds].sort()).to.eql(activeKinds.sort());
   });
 
+  it('groups multiple render-level poison kinds without dropping later failures', async () => {
+    const env = new AsyncEnvironment();
+
+    try {
+      await env.renderScriptString('return [missing(), 0 / 0, "5" + 3]');
+      throw new Error('Expected render to fail with grouped poison');
+    } catch (err) {
+      expect(runtime.isPoisonError(err)).to.be(true);
+      expect(err.kind).to.be('Multiple');
+      expect(err.kinds).to.eql(['IncompatibleOperands', 'MissingFunction', 'NaNResult']);
+      expect(err.totalErrorCount).to.be(3);
+      expect(err.errors.map(error => error.kind)).to.eql(['MissingFunction', 'NaNResult', 'IncompatibleOperands']);
+    }
+  });
+
+  it('caps render-level poison group messages while retaining all child errors', async () => {
+    const env = new AsyncEnvironment();
+    const failures = Array.from({ length: 12 }, (_, index) => `missing${index}()`).join(', ');
+
+    try {
+      await env.renderScriptString(`return [${failures}]`);
+      throw new Error('Expected render to fail with grouped poison');
+    } catch (err) {
+      expect(runtime.isPoisonError(err)).to.be(true);
+      expect(err.kind).to.be('MissingFunction');
+      expect(err.kinds).to.eql(['MissingFunction']);
+      expect(err.totalErrorCount).to.be(12);
+      expect(err.errors).to.have.length(12);
+      expect(err.message).to.contain('PoisonErrorGroup (12 errors, showing 10)');
+    }
+  });
+
   it('keeps script scalar strictness scoped away from template loops and optional reads', async () => {
     const env = new AsyncEnvironment();
 
@@ -1076,6 +1108,12 @@ describe('error context tracing runtime foundation', () => {
     expect(await env.renderScriptString('return obj.missing', { obj: {} })).to.be(undefined);
     expect(await env.renderScriptString('return arr[10]', { arr: [] })).to.be(undefined);
     expect(await env.renderScriptString('return "abc"[9]')).to.be(undefined);
+    await expectPoisonKind(
+      () => env.renderScriptString('return value[0]', { value: 5 }),
+      'ScalarLookup'
+    );
+    expect(await env.renderTemplateString('{{ value.name }}', { value: 5 })).to.be('');
+    expect(await env.renderTemplateString('{{ value[0] }}', { value: 5 })).to.be('');
     expect(await env.renderScriptString([
       'var result = "body"',
       'for item in null',
@@ -1088,6 +1126,60 @@ describe('error context tracing runtime foundation', () => {
     expect(await env.renderTemplateString('{% for item in value %}body{% else %}else{% endfor %}', {
       value: 5
     })).to.be('else');
+  });
+
+  it('keeps script loop iterable boundaries explicit', async () => {
+    const env = new AsyncEnvironment();
+
+    await expectPoisonKind(
+      () => env.renderScriptString([
+        'data result',
+        'for item in value',
+        '  result.push(item)',
+        'else',
+        '  result.push("else")',
+        'endfor',
+        'return result.snapshot()'
+      ].join('\n'), { value: 'ab' }),
+      'NotIterable'
+    );
+
+    expect(await env.renderScriptString([
+      'data result',
+      'for key, item in value',
+      '  result[key] = item',
+      'endfor',
+      'return result.snapshot()'
+    ].join('\n'), { value: { a: 1, b: 2 } })).to.eql({ a: 1, b: 2 });
+
+    expect(await env.renderScriptString([
+      'data result',
+      'for key, item in value',
+      '  result[key] = item',
+      'endfor',
+      'return result.snapshot()'
+    ].join('\n'), { value: new Map([['a', 1], ['b', 2]]) })).to.eql({ a: 1, b: 2 });
+
+    expect(await env.renderScriptString([
+      'text result',
+      'for item in value',
+      '  result(item)',
+      'endfor',
+      'return result.snapshot()'
+    ].join('\n'), { value: new Set(['a', 'b']) })).to.be('ab');
+
+    expect(await env.renderScriptString([
+      'text result',
+      'for item in value',
+      '  result(item)',
+      'endfor',
+      'return result.snapshot()'
+    ].join('\n'), {
+      value: (async function* values() {
+        yield 'a';
+        yield 'b';
+      })()
+    })).to.be('ab');
   });
 
   it('formats scalar lookup computed keys with diagnostic object details', async () => {
@@ -1171,6 +1263,16 @@ describe('error context tracing runtime foundation', () => {
         'endfor',
         'return result.snapshot()'
       ].join('\n'), { items: [Number.NaN] }),
+      'NaNResult'
+    );
+    await expectPoisonKind(
+      () => env.renderScriptString([
+        'data result',
+        'for item in items',
+        '  result.push(item)',
+        'endfor',
+        'return result.snapshot()'
+      ].join('\n'), { items: [Promise.resolve(Number.NaN)] }),
       'NaNResult'
     );
     await expectPoisonKind(

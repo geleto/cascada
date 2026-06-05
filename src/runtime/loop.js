@@ -9,6 +9,7 @@ import {
   markPromiseHandled,
   PoisonError,
   poisonIfNaN,
+  RuntimePromise,
   RuntimeError,
 } from './errors.js';
 
@@ -152,6 +153,9 @@ function poisonIterationEffects(buffer, asyncOptions, poisonError) {
 }
 
 function normalizeLoopValue(value, errorContext) {
+  if (!isPoison(value) && value && typeof value.then === 'function') {
+    return new RuntimePromise(value, errorContext, 'IteratorThrew');
+  }
   return poisonIfNaN(value, errorContext);
 }
 
@@ -765,17 +769,8 @@ async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOpti
     }), asyncOptions.returnCheckChainName))
     : null;
 
-  if (arr && typeof arr === 'object' && !Array.isArray(arr) && !(isAsync && typeof arr[Symbol.asyncIterator] === 'function')) {
-    arr = fromIterator(arr);
-    if (arr && !Array.isArray(arr) && loopVars.length !== 2) {
-      throw new Error(
-        `Expected two variables for key/value iteration, got ${loopVars.length} : ${loopVars.join(', ')}`
-      );
-    }
-  }
-
   try {
-    if (asyncOptions && asyncOptions.scriptMode && isScalarPrimitive(arr)) {
+    if (asyncOptions && asyncOptions.scriptMode && (typeof arr === 'string' || isScalarPrimitive(arr))) {
       poisonLoopEffects(
         buffer,
         asyncOptions,
@@ -783,6 +778,15 @@ async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOpti
         false
       );
       return;
+    }
+
+    if (arr && typeof arr === 'object' && !Array.isArray(arr) && !(isAsync && typeof arr[Symbol.asyncIterator] === 'function')) {
+      arr = fromIterator(arr);
+      if (arr && !Array.isArray(arr) && loopVars.length !== 2) {
+        throw new Error(
+          `Expected two variables for key/value iteration, got ${loopVars.length} : ${loopVars.join(', ')}`
+        );
+      }
     }
 
     // Resolve and validate concurrentLimit if present
