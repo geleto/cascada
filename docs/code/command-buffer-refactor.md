@@ -811,7 +811,6 @@ Primary files:
 - [src/compiler/emit.js](C:\Projects\cascada\src\compiler\emit.js)
 - [src/compiler/compiler-async.js](C:\Projects\cascada\src\compiler\compiler-async.js)
 - [src/compiler/macro.js](C:\Projects\cascada\src\compiler\macro.js)
-- [src/compiler/rename.js](C:\Projects\cascada\src\compiler\rename.js)
 
 Changes:
 

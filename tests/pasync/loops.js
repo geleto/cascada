@@ -222,6 +222,24 @@ const {isPoisonError} = runtime;
           expect(result).to.equal('S1|S2|SA|S1|S2|SB|');
         });
 
+        it('include inside non-empty loop should not read loop metadata implicitly', async () => {
+          const loader = new StringLoader();
+          const localEnv = new AsyncEnvironment(loader);
+          loader.addTemplate('implicit-child.njk', '{% if loop %}HAS{% else %}NO{% endif %}|');
+          loader.addTemplate('implicit-parent.njk',
+            '{% for item in [1,2] %}{% include "implicit-child.njk" %}{% endfor %}');
+          const result = await localEnv.renderTemplate('implicit-parent.njk', {});
+          expect(result).to.equal('NO|NO|');
+        });
+
+        it('macro body inside loop should not capture loop metadata implicitly', async () => {
+          const result = await env.renderTemplateString(
+            '{% for item in [1,2] %}{% macro readLoop() %}{% if loop %}HAS{% else %}NO{% endif %}{% endmacro %}{{ readLoop() }}|{% endfor %}',
+            {}
+          );
+          expect(result).to.equal('NO|NO|');
+        });
+
 
         it('include inside set capture body within loop should resolve current loop binding', async () => {
           const loader = new StringLoader();

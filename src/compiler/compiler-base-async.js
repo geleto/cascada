@@ -1,7 +1,6 @@
 
 import * as nodes from '../language/nodes.js';
 import {CompileAnalysis} from './analysis.js';
-import {CompileRename} from './rename.js';
 import {CompilerCommon} from './compiler-common.js';
 import {CompileCall} from './call.js';
 import {CompileLookup} from './lookup.js';
@@ -30,7 +29,6 @@ class CompilerBaseAsync extends CompilerCommon {
   init(options) {
     super.init(Object.assign({}, options, { asyncMode: true }));
     this.analysis = new CompileAnalysis(this);
-    this.rename = new CompileRename(this);
     this.call = new CompileCall(this);
     this.lookup = new CompileLookup(this);
   }
@@ -77,6 +75,10 @@ class CompilerBaseAsync extends CompilerCommon {
       return;
     }
     const declaredChain = node._analysis.lookupDeclaration || null;
+    if (name === 'loop' && this.currentLoopVar && !declaredChain) {
+      this.emit(this.currentLoopVar);
+      return;
+    }
     if (declaredChain && this.scriptMode && declaredChain.shared) {
       this._compileScriptAmbientOnlySymbolLookup(node, name);
       return;

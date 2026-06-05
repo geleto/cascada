@@ -528,7 +528,7 @@ Likely cruft families caused by broad `usedChains` / `mutatedChains` or
 duplicated linked-chain calculation:
 
 - synthetic-name heuristics, such as checks for `__text__t_`, `__return__`,
-  `caller`, `loop#`, or `__waited__`
+  `caller`, generated formal chain aliases, or `__waited__`
 - boundary-specific link builders, including local
   `Array.from(usedChains).filter(...)`, `used - declared`, or hand-built
   `linkedChainsArg` logic in boundary/compiler helpers

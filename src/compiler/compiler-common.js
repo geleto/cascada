@@ -50,6 +50,7 @@ class CompilerCommon extends Obj {
     // an error context; each origin still emits its own compact context.
     this.currentInheritedAddedContext = null;
     this.currentInheritedLabelOverride = null;
+    this.currentLoopVar = null;
     this.inBlock = false;
 
     this.sequential = new CompileSequential(this);
@@ -70,7 +71,12 @@ class CompilerCommon extends Obj {
   compile(node, frame) {
     var _compile = this['compile' + node.typename];
     if (_compile) {
+      if (this.currentLoopVar && node._analysis?.scopeBoundary) {
+        this.withCurrentLoopVar(null, () => _compile.call(this, node, frame));
+        return;
+      }
       _compile.call(this, node, frame);
+      return;
     } else if (node instanceof nodes.NodeList) {
       this.compileNodeList(node, frame);
     } else {
@@ -188,6 +194,16 @@ class CompilerCommon extends Obj {
       return emitFunc();
     } finally {
       this.currentInheritedLabelOverride = previousLabel;
+    }
+  }
+
+  withCurrentLoopVar(loopVar, emitFunc) {
+    const previousLoopVar = this.currentLoopVar;
+    this.currentLoopVar = loopVar;
+    try {
+      return emitFunc();
+    } finally {
+      this.currentLoopVar = previousLoopVar;
     }
   }
 

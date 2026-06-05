@@ -255,10 +255,6 @@ class CompileLoop {
           loopVars.forEach((name) => {
             this.compiler.emit.line(`runtime.declareBufferChain(${buffer}, "${name}", "var", context, null);`);
           });
-          if (node.loopRuntimeName) {
-            this.compiler.emit.line(`runtime.declareBufferChain(${buffer}, "${node.loopRuntimeName}", "var", context, null);`);
-            this._emitLoopMetadataValueBinding(node, loopMetaVar);
-          }
           this._emitLoopIterationBindings(node, loopVars, loopVarNames, (varName, valueExpr) => {
             this._emitLoopValueAssignment(node, varName, valueExpr);
           });
@@ -309,11 +305,15 @@ class CompileLoop {
         }
 
         if (!limitedWaitedChainName) {
-          compileIterationBody();
+          this.compiler.withCurrentLoopVar(loopMetaVar, compileIterationBody);
         } else {
           const waitedOwnerBufferId = this.compiler._tmpid();
           this.compiler.emit.line(`const ${waitedOwnerBufferId} = ${this.compiler.buffer.currentBuffer};`);
-          this.compiler.buffer.withOwnWaitedChain(limitedWaitedChainName, compileIterationBody, waitedOwnerBufferId);
+          this.compiler.buffer.withOwnWaitedChain(
+            limitedWaitedChainName,
+            () => this.compiler.withCurrentLoopVar(loopMetaVar, compileIterationBody),
+            waitedOwnerBufferId
+          );
         }
       });
 
@@ -411,12 +411,6 @@ class CompileLoop {
   _emitLoopValueAssignment(node, chainName, valueExpr) {
     this.compiler.emit.line(
       `${this.compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ chainName: '${chainName}', args: [${valueExpr}], errorContext: ${this.compiler.emitErrorContext(node)} }), '${chainName}');`
-    );
-  }
-
-  _emitLoopMetadataValueBinding(node, loopValueExpr) {
-    this.compiler.emit.line(
-      `${this.compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ chainName: '${node.loopRuntimeName}', args: [${loopValueExpr}], errorContext: ${this.compiler.emitErrorContext(node)} }), '${node.loopRuntimeName}');`
     );
   }
 

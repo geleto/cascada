@@ -39,7 +39,6 @@ function compile(src, asyncFilters, extensions, name, opts = {}) {
 
   if (compiler.asyncMode) {
     compiler.analysis.run(ast);
-    compiler.rename.run(ast);
   }
 
   compiler.compile(ast);

@@ -2455,11 +2455,12 @@ const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC
       expect(source).to.contain('runtime.declareBufferChain(');
     });
 
-    it('emits canonical loop runtime aliases with loop#<id>', function () {
+    it('emits loop metadata as a JS temp instead of a runtime chain alias', function () {
       const env = new AsyncEnvironment();
       const tmpl = new AsyncTemplate('{% for x in xs of 2 %}{{ loop.index }}{% endfor %}', env);
       const source = tmpl.compileSource();
-      expect(/loop#\d+/.test(source)).to.be(true);
+      expect(source).to.contain('runtime.createLoopBindings');
+      expect(/loop#\d+/.test(source)).to.be(false);
     });
 
     it('exposes canonical scope boundary coverage table in scope-boundaries', function () {
@@ -2711,36 +2712,36 @@ const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC
     it('maps formal chain names to resolved aliases in addCommand()', function () {
       const ctx = { path: 'alias-add.njk' };
       const buffer = new CommandBuffer(ctx, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
-      declareBufferChain(buffer, 'loop#4', 'text', ctx, null);
-      buffer._setChainAliases({ loop: 'loop#4' });
+      declareBufferChain(buffer, 'formal#4', 'text', ctx, null);
+      buffer._setChainAliases({ formal: 'formal#4' });
 
       buffer.addCommand(new TextCommand({
         chainName: 'text',
         args: ['x'],
         errorContext: TEST_EC
-      }), 'loop');
+      }), 'formal');
 
-      expect(buffer.arrays.loop).to.be(undefined);
-      expect(buffer.arrays['loop#4']).to.have.length(1);
+      expect(buffer.arrays.formal).to.be(undefined);
+      expect(buffer.arrays['formal#4']).to.have.length(1);
     });
 
     it('resolves SnapshotCommand through chain aliases', async function () {
       const ctx = { path: 'alias-snapshot.njk' };
       const buffer = new CommandBuffer(ctx, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
-      declareBufferChain(buffer, 'loop#4', 'text', ctx, null);
-      buffer._setChainAliases({ loop: 'loop#4' });
+      declareBufferChain(buffer, 'formal#4', 'text', ctx, null);
+      buffer._setChainAliases({ formal: 'formal#4' });
 
       buffer.addCommand(new TextCommand({
-        chainName: 'loop',
+        chainName: 'formal',
         args: ['A'],
         errorContext: TEST_EC
-      }), 'loop');
+      }), 'formal');
       buffer.finish();
 
       const snap = await buffer.addCommand(new SnapshotCommand({
-        chainName: 'loop',
+        chainName: 'formal',
         errorContext: TEST_EC
-      }), 'loop');
+      }), 'formal');
       expect(snap).to.be('A');
     });
 
@@ -2748,30 +2749,30 @@ const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC
       const ctx = { path: 'alias-child.njk' };
       const parent = new CommandBuffer(ctx, null, null, null, null, cloneWithAddedContext(TEST_EC, { branch: 'alias-parent' }));
       const child = new CommandBuffer(ctx, null, null, null, null, cloneWithAddedContext(TEST_EC, { branch: 'alias-child' }));
-      parent._setChainAliases({ loop: 'loop#4', someVar: 'someVar#9' });
-      declareBufferChain(parent, 'loop#4', 'text', ctx, null);
+      parent._setChainAliases({ formal: 'formal#4', other: 'other#9' });
+      declareBufferChain(parent, 'formal#4', 'text', ctx, null);
 
-      parent.addBuffer(child, 'loop');
+      parent.addBuffer(child, 'formal');
 
-      expect(child._chainAliases.loop).to.be('loop#4');
-      expect(child._chainAliases.someVar).to.be('someVar#9');
+      expect(child._chainAliases.formal).to.be('formal#4');
+      expect(child._chainAliases.other).to.be('other#9');
       expect(() => child.addCommand(new TextCommand({
         chainName: 'text',
         args: ['x'],
         errorContext: TEST_EC
-      }), 'someVar')).to.throwError(/has no linked lane/);
-      expect(child.arrays.someVar).to.be(undefined);
-      expect(child.arrays['someVar#9']).to.be(undefined);
+      }), 'other')).to.throwError(/has no linked lane/);
+      expect(child.arrays.other).to.be(undefined);
+      expect(child.arrays['other#9']).to.be(undefined);
     });
 
     it('reuses parent alias map reference when child has no own aliases', function () {
       const ctx = { path: 'alias-reuse.njk' };
       const parent = new CommandBuffer(ctx, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       const child = new CommandBuffer(ctx, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
-      parent._setChainAliases({ loop: 'loop#4' });
-      declareBufferChain(parent, 'loop#4', 'text', ctx, null);
+      parent._setChainAliases({ formal: 'formal#4' });
+      declareBufferChain(parent, 'formal#4', 'text', ctx, null);
 
-      parent.addBuffer(child, 'loop');
+      parent.addBuffer(child, 'formal');
 
       expect(child._chainAliases).to.be(parent._chainAliases);
     });
@@ -2780,14 +2781,14 @@ const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC
       const ctx = { path: 'alias-merge.njk' };
       const parent = new CommandBuffer(ctx, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       const child = new CommandBuffer(ctx, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
-      parent._setChainAliases({ loop: 'loop#4', shared: 'shared#1' });
+      parent._setChainAliases({ formal: 'formal#4', shared: 'shared#1' });
       child._setChainAliases({ own: 'own#7', shared: 'shared#9' });
-      declareBufferChain(parent, 'loop#4', 'text', ctx, null);
+      declareBufferChain(parent, 'formal#4', 'text', ctx, null);
 
-      parent.addBuffer(child, 'loop');
+      parent.addBuffer(child, 'formal');
 
       expect(child._chainAliases).to.not.be(parent._chainAliases);
-      expect(child._chainAliases.loop).to.be('loop#4');
+      expect(child._chainAliases.formal).to.be('formal#4');
       expect(child._chainAliases.own).to.be('own#7');
       expect(child._chainAliases.shared).to.be('shared#9');
     });
@@ -2795,16 +2796,16 @@ const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC
     it('keeps canonical input names unchanged', function () {
       const ctx = { path: 'alias-canonical.njk' };
       const buffer = new CommandBuffer(ctx, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
-      declareBufferChain(buffer, 'loop#4', 'text', ctx, null);
-      buffer._setChainAliases({ loop: 'loop#4' });
+      declareBufferChain(buffer, 'formal#4', 'text', ctx, null);
+      buffer._setChainAliases({ formal: 'formal#4' });
 
       buffer.addCommand(new TextCommand({
         chainName: 'text',
         args: ['x'],
         errorContext: TEST_EC
-      }), 'loop#4');
+      }), 'formal#4');
 
-      expect(buffer.arrays['loop#4']).to.have.length(1);
+      expect(buffer.arrays['formal#4']).to.have.length(1);
     });
   });
 

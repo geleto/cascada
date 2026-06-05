@@ -178,9 +178,6 @@ class CompilerAsync extends CompilerBaseAsync {
     declaredNames.forEach((name) => {
       declares.push({ name, type: 'var', initializer: null });
     });
-    if (!declaredNames.includes('loop')) {
-      declares.push({ name: 'loop', type: 'var', initializer: null, internal: true, isLoopMeta: true });
-    }
     if (node.concurrentLimit) {
       node.body.addAnalysis({
         waitedChainName: node.body._analysis?.waitedChainName ?? `__waited__${this._tmpid()}`

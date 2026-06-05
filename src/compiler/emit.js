@@ -176,7 +176,7 @@ class CompileEmit {
     } = this.getScopeBufferLinkedChains(analysisNode, parentBufferId);
     const bufferId = this.compiler._tmpid();
 
-    this.compiler.buffer.withBufferState({
+    const emitScope = () => this.compiler.buffer.withBufferState({
       currentBuffer: bufferId,
       currentTextChainVar: declareTextChain ? `${bufferId}_textChainVar` : null
     }, () => {
@@ -205,6 +205,13 @@ class CompileEmit {
         this.line(`${bufferId}.finish();`);
       }
     });
+    // Detached scope buffers start a fresh lexical runtime surface, so the
+    // special loop binding from an enclosing loop must not be captured.
+    if (parentBufferOverride === null) {
+      this.compiler.withCurrentLoopVar(null, emitScope);
+    } else {
+      emitScope();
+    }
 
     return { frame, bufferId };
   }
