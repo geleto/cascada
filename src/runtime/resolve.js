@@ -222,25 +222,18 @@ function resolveValueAndMarker(value) {
 }
 
 async function resolveValueAndMarkerAsync(value) {
-  let resolved = value;
-
-  if (resolved && typeof resolved.then === 'function') {
-    try {
+  try {
+    let resolved = value;
+    if (resolved && typeof resolved.then === 'function') {
       resolved = await resolved;
-    } catch (err) {
-      return poisonOrRethrow(err);
     }
-  }
-
-  if (resolved && resolved[RESOLVE_MARKER]) {
-    try {
+    if (resolved && resolved[RESOLVE_MARKER]) {
       await resolved[RESOLVE_MARKER];
-    } catch (err) {
-      return poisonOrRethrow(err);
     }
+    return resolved;
+  } catch (err) {
+    return poisonOrRethrow(err);
   }
-
-  return resolved;
 }
 
 // Resolve a plain object's properties by first marking it as a lazy Cascada object and
@@ -295,32 +288,21 @@ function resolveSingle(value) {
 }
 
 async function resolveSingleAsync(value) {
-  // Await promise, convert rejections to poison
-  let resolvedValue;
+  // Await promise (if any), then finalize a lazy RESOLVE_MARKER (if any), converting
+  // rejections to poison. A poison result has no marker, so it falls through unchanged.
   try {
-    resolvedValue = value;
+    let resolvedValue = value;
     if (typeof value.then === 'function') {
       resolvedValue = await value;
     }
+    if (resolvedValue && resolvedValue[RESOLVE_MARKER]) {
+      await resolvedValue[RESOLVE_MARKER];
+    }
+    return resolvedValue;
   } catch (err) {
     // Note: This is called from various contexts; error position added upstream
     return poisonOrRethrow(err);
   }
-
-  // Check if resolved to poison
-  if (isPoison(resolvedValue)) {
-    return resolvedValue;
-  }
-
-  if (resolvedValue && resolvedValue[RESOLVE_MARKER]) {
-    try {
-      await resolvedValue[RESOLVE_MARKER];
-    } catch (err) {
-      return poisonOrRethrow(err);
-    }
-  }
-
-  return resolvedValue;
 }
 
 // Like resolveSingle(), but preserve the historical one-element-array shape used by some
