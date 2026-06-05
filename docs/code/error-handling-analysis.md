@@ -244,7 +244,7 @@ function poisonIfNaN(value, errorContext) {
 | Arithmetic result | the three operator emitters in `compiler-base-async.js` (`_emitAsyncBinOp`/`_emitAsyncBinFunc`/`_emitAsyncUnaryOp`) |
 | Function / filter / env-call result | `callWrapAsync` / `envCallWrapAsync` (the returned value) |
 | Property / bare-symbol / context read result | `memberLookupAsync` / `memberLookupScript` / `context.lookup` / `context.lookupScript` |
-| Data-method / mutating-command result | the command-apply result that lands on a chain (`DataCommand` / `VarCommand`) |
+| Data-method / mutating-command result | the command-apply result that lands on a chain (`DataCommand`; `VarCommand` is a raw assignment store, not a value producer) |
 | Sequence call/read/snapshot result | `SequenceCallCommand` / `SequenceGetCommand` / `SequenceObjectChain` snapshot materialization |
 | Loop value | `loop.js`, where each iteration value is bound (array elements are not produced by a lookup/call) |
 | Async tail of any of the above | `RuntimePromise` fulfillment (carries the source `errorContext`/`kind`) |

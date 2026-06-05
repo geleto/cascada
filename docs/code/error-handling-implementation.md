@@ -362,7 +362,7 @@ output/call-argument check.
 - [x] Wrap the result in the three arithmetic emitters in `compiler-base-async.js`
   (`_emitAsyncBinOp`, `_emitAsyncBinFunc`, `_emitAsyncUnaryOp`).
 - [x] Apply `poisonIfNaN` at source result sites: context reads, member lookups,
-  call/filter/env-call results, data/var command writes, sequence call/read/snapshot
+  call/filter/env-call results, data-method command results, sequence call/read/snapshot
   results, loop-value binding (including destructuring), and `RuntimePromise`
   fulfillment for async tails.
 - [ ] Postpone: promise-valued loop elements can still resolve to `NaN` after loop

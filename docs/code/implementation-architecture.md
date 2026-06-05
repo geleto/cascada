@@ -144,7 +144,7 @@ Runtime value shapes:
 
 Use the runtime `resolve*` helpers (`resolveAll`, `resolveSingle`, `resolveDuo`, `resolveObjectProperties`, etc.) at consumption boundaries for arbitrary Cascada values instead of direct `await` — they know all value shapes and preserve fast paths. Direct `await` and `Promise.resolve` are fine for known internal promises, iterator cleanup, and already-classified native promises. Do not use `Promise.resolve` as a reflex on Cascada values; it collapses thenables and breaks the value-shape system.
 
-Avoid resolving or awaiting values early. Resolution belongs at true async boundaries and final consumption (function calls, condition checks, iteration, output materialization). Command arguments must be enqueued as-is and resolved only by the command/chain apply path.
+Avoid resolving or awaiting values early. Resolution belongs at true async boundaries and final consumption (function calls, condition checks, iteration, output materialization). Command arguments must be enqueued as-is; command/chain apply paths consume them only when the command's semantics require a concrete value. A `var` assignment is a raw store and keeps promise, `RESOLVE_MARKER`, and poison shapes intact.
 
 Values are awaited only at three semantic points:
 

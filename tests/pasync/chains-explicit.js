@@ -342,7 +342,7 @@ describe('Cascada Script: Explicit Chain Declarations', function () {
       expect(result).to.eql({ current: 30, doubled: 60 });
     });
 
-    it('should preserve source-order value result when parallel loop writes resolve out of order', async () => {
+    it('should preserve source-order value result when parallel loop writes are promises', async () => {
       const finished = [];
       const script = `
         var current = 0
@@ -359,8 +359,33 @@ describe('Cascada Script: Explicit Chain Declarations', function () {
         })
       });
 
-      expect(finished).to.eql([2, 3, 1]);
+      expect(finished).to.contain(3);
       expect(result).to.eql({ current: 3, doubled: 6 });
+    });
+
+    it('should not wait for an overwritten unconsumed var promise', async () => {
+      const script = `
+        var current = pending()
+        current = "done"
+        return current
+      `;
+      const result = await render(script, {
+        pending: () => new Promise(() => {})
+      });
+      expect(result).to.be('done');
+    });
+
+    it('should wait for a var promise when the value is observed before overwrite', async () => {
+      const script = `
+        var current = delayed("slow", 10)
+        var observed = current
+        current = "done"
+        return { current: current, observed: observed }
+      `;
+      const result = await render(script, {
+        delayed: (value, ms) => delay(ms, value)
+      });
+      expect(result).to.eql({ current: 'done', observed: 'slow' });
     });
 
     it('should support implicit value snapshots inside while loops', async () => {

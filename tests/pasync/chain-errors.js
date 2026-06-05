@@ -81,13 +81,15 @@ describe('chain errors', function () {
       expect(output._target[0].errors[0].message).to.contain('text poison');
     });
 
-    it('VarCommand uses the first resolved value', () => {
+    it('VarCommand stores the first value without resolving', async () => {
       const output = new VarChain(null, 'value', null, 'value');
-      const cmd = new VarCommand({ chainName: 'value', args: [1, 2], errorContext: TEST_EC });
+      const promised = Promise.resolve(1);
+      const cmd = new VarCommand({ chainName: 'value', args: [promised, 2], errorContext: TEST_EC });
 
       cmd.apply(output);
 
-      expect(output._target).to.be(1);
+      expect(output._target).to.be(promised);
+      expect(await output._target).to.be(1);
 
       new VarCommand({
         chainName: 'value',
