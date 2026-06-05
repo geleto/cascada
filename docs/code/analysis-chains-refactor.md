@@ -366,7 +366,7 @@ Work:
 - identify why linking shared lanes on the inherited block text placement boundary moves
   observations from method-invocation time to parent-render scheduling time
 - document the text-only text-placement semantic in
-  `src/compiler/boundaries.js#compileBlockTextBoundary(...)`
+  `src/compiler/async-boundaries.js#compileBlockTextBoundary(...)`
 - document the same scheduling semantic in
   `src/compiler/inheritance.js#_emitTemplateExtendsBoundaryFromSelection(...)`
 - keep inherited block text placement boundaries structural and text-only: the

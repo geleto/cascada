@@ -10,7 +10,7 @@ import {CompileInheritance} from './inheritance.js';
 import {CompileLoop} from './loop.js';
 import {CompileBuffer} from './buffer.js';
 import {CompileMacro} from './macro.js';
-import {CompileBoundaries} from './boundaries.js';
+import {CompileBoundaries} from './async-boundaries.js';
 import {CompileChain} from './chain.js';
 import {CompileComponent} from './component.js';
 import {CompileReturn} from './return.js';

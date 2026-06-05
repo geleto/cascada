@@ -875,7 +875,7 @@ No catch. Driver only: fatal-state check + `_stopAfterFatalReport`, and
 |---|---|---|---|
 | `compiler-async.js` callback-extension ≈132 | `if (!isPoisonError(e) && !isRuntimeError(e)) reportAndThrow(e, ec); throw e;` then wrap return `RuntimePromise` | B | KEEP |
 | `compiler-async.js` async `if` / `switch` branch catch | raw throw -> `RuntimeError.reportAndThrow(e, ec)`; existing poison -> `ErrorCommand` on branch poison chains (no rethrow) | branch effect poisoning + raw fatal | KEEP |
-| `boundaries.js` `compileValueBoundary` | `runtime.rethrowPoisonOrReport(e, ec)` | poison passthrough + raw fatal | KEEP |
+| `async-boundaries.js` `compileValueBoundary` | `runtime.rethrowPoisonOrReport(e, ec)` | poison passthrough + raw fatal | KEEP |
 | `emit.js` block catch ≈155 | sync-mode `createSyncRuntimeError` + `cb(err)` (guarded by `asyncMode` return above) | frozen sync | KEEP (out of scope) |
 
 The async emitted `if`/`switch` catch converts only existing poison into poison

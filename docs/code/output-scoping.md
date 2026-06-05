@@ -176,7 +176,7 @@ Keep these invariants when changing output or buffer behavior:
 
 - `src/compiler/analysis.js` - chain declaration/use/mutation analysis
 - `src/compiler/buffer.js` - command-buffer emission helpers
-- `src/compiler/boundaries.js` - control/value/text boundary lowering
+- `src/compiler/async-boundaries.js` - control/value/text boundary lowering
 - `src/compiler/compiler-async.js` - async control-flow and guard compilation
 - `src/compiler/loop.js` - loop boundary and waited-loop integration
 - `src/runtime/command-buffer.js` - command-buffer tree and chain access

@@ -195,7 +195,7 @@ correct gating and source-order output application.
 
 - `src/compiler/loop.js` - sequential/bounded loop lowering
 - `src/compiler/buffer.js` - waited-chain state and waited command emission
-- `src/compiler/boundaries.js` - waited control-flow boundary lowering
+- `src/compiler/async-boundaries.js` - waited control-flow boundary lowering
 - `src/compiler/compiler-base-async.js` - root expression waited emission
 - `src/runtime/async-boundaries.js` - waited boundary runtime helpers
 - `src/runtime/commands/wait.js` - `WaitResolveCommand`

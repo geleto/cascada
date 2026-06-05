@@ -63,7 +63,7 @@ Complete source and documentation file reference. The most critical files for da
 -   `src/compiler/analysis.js` — Chain analysis pre-pass. Computes `declaredChains`, `usedChains`, `mutatedChains`, `sequenceLocks`.
 -   `src/compiler/buffer.js` — Buffer/codegen helpers. Emits command construction and command-buffer interactions.
 -   `src/compiler/emit.js` — Low-level code generation primitives.
--   `src/compiler/boundaries.js` — Async boundary emission. Emits `runControlFlowBoundary` / `runValueBoundary` wiring.
+-   `src/compiler/async-boundaries.js` — Async boundary emission. Emits `runControlFlowBoundary` / `runValueBoundary` wiring.
 -   `src/compiler/sequential.js` — Sequential (`!`) analysis. Identifies static sequence paths, validates `!` usage.
 -   `src/compiler/scope-boundaries.js` — Canonical lexical-scope boundary definitions used by analysis and transformation.
 -   `src/compiler/loop.js` — Loop compilation helpers.

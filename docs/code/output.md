@@ -138,7 +138,7 @@ Key files:
 - `src/compiler/analysis.js`
 - `src/compiler/buffer.js`
 - `src/compiler/chain.js`
-- `src/compiler/boundaries.js`
+- `src/compiler/async-boundaries.js`
 - `src/compiler/compiler-async.js`
 
 Important analysis fields:

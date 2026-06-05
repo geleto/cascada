@@ -848,7 +848,7 @@ Important note:
 
 - same-scope return routing and true early-return control flow are related but not identical. If early-exit semantics remain out of scope for this refactor, only add tests for correct lane targeting, not for "stop executing the rest of the scope."
 - the declared-lane helper is the main prerequisite for Step 2; full `__return__` scope-uniqueness work can proceed in parallel if needed
-- the new declared-lane helper must be threaded through the same boundary creation call sites that currently use `getLinkedChainsArg(...)`, especially in `boundaries.js`, `loop.js`, and root/macro buffer creation paths
+- the new declared-lane helper must be threaded through the same boundary creation call sites that currently use `getLinkedChainsArg(...)`, especially in `async-boundaries.js`, `loop.js`, and root/macro buffer creation paths
 - lane-spec validation should begin as warnings or debug assertions during migration and only become hard errors after the remaining runtime-dynamic lane cases have been removed
 
 ### Step 2. Change `new CommandBuffer(...)` to receive static lane specs and build eager arrays
@@ -862,7 +862,7 @@ Primary files:
 - [src/runtime/command-buffer.js](C:\Projects\cascada\src\runtime\command-buffer.js)
 - [src/runtime/async-boundaries.js](C:\Projects\cascada\src\runtime\async-boundaries.js)
 - [src/compiler/buffer.js](C:\Projects\cascada\src\compiler\buffer.js)
-- [src/compiler/boundaries.js](C:\Projects\cascada\src\compiler\boundaries.js)
+- [src/compiler/async-boundaries.js](C:\Projects\cascada\src\compiler\async-boundaries.js)
 - [src/compiler/macro.js](C:\Projects\cascada\src\compiler\macro.js)
 
 Changes:
@@ -1361,7 +1361,7 @@ Primary files:
 - [src/runtime/inheritance/call.js](C:\Projects\cascada\src\runtime\inheritance\call.js)
 - [src/compiler/emit.js](C:\Projects\cascada\src\compiler\emit.js)
 - [src/compiler/buffer.js](C:\Projects\cascada\src\compiler\buffer.js)
-- [src/compiler/boundaries.js](C:\Projects\cascada\src\compiler\boundaries.js)
+- [src/compiler/async-boundaries.js](C:\Projects\cascada\src\compiler\async-boundaries.js)
 - [src/compiler/macro.js](C:\Projects\cascada\src\compiler\macro.js)
 - [src/compiler/inheritance.js](C:\Projects\cascada\src\compiler\inheritance.js)
 - [src/compiler/loop.js](C:\Projects\cascada\src\compiler\loop.js)
@@ -1517,7 +1517,7 @@ the migration scaffolding into permanent design.
   threads caller-visible linked chains and caller-local declared lanes through
   `__callerUsedChains` and `__callerDeclaredChains`.
 - Async render-boundary buffer creation in
-  [src/compiler/boundaries.js](C:\Projects\cascada\src\compiler\boundaries.js)
+  [src/compiler/async-boundaries.js](C:\Projects\cascada\src\compiler\async-boundaries.js)
   now threads the render text lane into `runRenderBoundary(...)`. Custom
   extension content bodies can still arrive as fragments whose body-local
   declarations are not summarized on the fragment analysis object; this is
