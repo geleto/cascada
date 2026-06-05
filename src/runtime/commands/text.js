@@ -1,4 +1,4 @@
-import {isPoison, PoisonError, RuntimeError} from '../errors.js';
+import {isPoison, PoisonError} from '../errors.js';
 import {isResolvedValue, unwrapResolvedValue, resolveAll} from '../resolve.js';
 import {materializeTemplateTextValue, suppressValue, suppressValueScriptRaw} from '../safe-output.js';
 import {ChainCommand} from './base.js';
@@ -40,9 +40,6 @@ class TextCommand extends ChainCommand {
         return;
       }
       if (this.operation === 'set') {
-        if (args.length !== 1) {
-          RuntimeError.reportAndThrow('text.set() accepts exactly one argument', this.errorContext);
-        }
         if (this.initializeIfNotSet && Array.isArray(chain._target) && chain._target.length > 0) {
           return;
         }
@@ -100,9 +97,32 @@ function normalizeMaterializedTextArg(value, chain, errorContext) {
   }
   const autoescape = isAutoescapeEnabled(chain);
   if (isScriptOutputMode(chain)) {
+    if (!isAppendableTextValue(value) && !isScriptTextEnvelope(value)) {
+      return value;
+    }
     return suppressValueScriptRaw(value, autoescape);
   }
   return suppressValue(value, autoescape);
+}
+
+function isAppendableTextValue(value) {
+  if (value === null || value === undefined) {
+    return true;
+  }
+  const type = typeof value;
+  if (type === 'string' || type === 'number' || type === 'boolean' || type === 'bigint') {
+    return true;
+  }
+  if (type !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  return value.toString && value.toString !== Object.prototype.toString;
+}
+
+function isScriptTextEnvelope(value) {
+  // Preserve the existing script text-output envelope shape handled by suppressValueScriptRaw.
+  return value && typeof value === 'object'
+    && Object.prototype.hasOwnProperty.call(value, 'text');
 }
 
 function appendTextValues(chain, values, errorContext) {
@@ -111,18 +131,11 @@ function appendTextValues(chain, values, errorContext) {
     if (value === null || value === undefined) {
       continue;
     }
-    const type = typeof value;
-    if (type === 'string' || type === 'number' || type === 'boolean' || type === 'bigint') {
+    if (isAppendableTextValue(value)) {
       chain._target.push(value);
       continue;
     }
-    if (type === 'object') {
-      const hasCustomToString = value.toString && value.toString !== Object.prototype.toString;
-      if (hasCustomToString) {
-        chain._target.push(value);
-        continue;
-      }
-    }
+    const type = typeof value;
     const argType = Array.isArray(value) ? 'array' : type;
     throw PoisonError.create(
       `Invalid TextCommand argument type '${argType}'. TextCommand only accepts text-like scalar values.`,

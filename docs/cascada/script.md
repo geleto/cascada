@@ -645,7 +645,7 @@ You can iterate over various collection types:
     text log
     var food = { ketchup: '5 tbsp', mustard: '1 tbsp' }
     for ingredient, amount in food
-      log("Use " + amount + " of " + ingredient)
+      log("Use ", amount, " of ", ingredient)
     endfor
     ```
 *   **Unpacking Arrays**:
@@ -653,7 +653,7 @@ You can iterate over various collection types:
     var points = [[0, 1, 2], [5, 6, 7]]
     text log
     for x, y, z in points
-      log("Point: " + x + ", " + y + ", " + z)
+      log("Point: ", x, ", ", y, ", ", z)
     endfor
     ```
 *   **Async Iterators**:
@@ -674,7 +674,7 @@ You can iterate over various collection types:
     ```javascript
     text log
     for num in generateNumbers()
-      log("Received: " + num)
+      log("Received: ", num)
     endfor
     ```
 
@@ -683,7 +683,7 @@ A `for` loop can have an `else` block that is executed only if the collection is
 ```javascript
 text log
 for item in []
-  log("Item: " + item.name)
+  log("Item: ", item.name)
 else
   log("The collection was empty.")
 endfor
@@ -821,7 +821,7 @@ Before diving into the details, here's a simple `text` channel example:
 text log
 log("Starting import\n")
 for user in users
-  log("Imported: " + user.name + "\n")
+  log("Imported: ", user.name, "\n")
 endfor
 log("Done.")
 return log.snapshot()
@@ -853,9 +853,9 @@ The `text` channel builds a string of text. It is the simplest channel to reach 
 
 ```javascript
 text log
-log("Processing user " + userId + "...")
+log("Processing user ", userId, "...")
 for item in items
-  log("Item: " + item.name)
+  log("Item: ", item.name)
 endfor
 log("...done.")
 return log.snapshot()
@@ -865,7 +865,7 @@ Two write forms:
 
 | Syntax | Description |
 |---|---|
-| `name(expr)` | Appends `expr` to the text stream |
+| `name(expr, ...)` | Appends all arguments to the text stream in order; `name()` writes nothing |
 | `name = expr` | Overwrites the entire text with `expr` |
 
 ### The `data` Channel: Building Structured Data
@@ -1885,7 +1885,7 @@ The `kind` values:
 | `LoadFailed` | a non-fatal `import`/`component`/`include` load failed |
 | `ImportBindingMissing` | imported name is not exported by the module |
 | `NaNResult` | a computation produced `NaN` (`Infinity` stays a value) |
-| `InvalidTextValue` | a value that cannot be converted to text (a plain object, function, or symbol) |
+| `InvalidTextValue` | a value that cannot be converted to text, such as a plain object without text output, a function, or a symbol |
 | `ContextValueRejected` | a promise supplied by the render context (or returned directly) rejected |
 
 The single-item `errors` array is intentional. It lets code process standalone

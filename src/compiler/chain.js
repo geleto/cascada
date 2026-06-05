@@ -3,7 +3,6 @@ import * as nodes from '../language/nodes.js';
 import {CHAIN_TYPE_FACTS} from '../chain-types.js';
 import {validateChainDeclarationNode} from './validation.js';
 import {getSharedSourceName, renameSharedName} from '../inheritance/shared-names.js';
-import {failInvalidTextSetArity} from './text-command.js';
 
 class CompileChain {
   constructor(compiler) {
@@ -434,7 +433,6 @@ class CompileChain {
       return false;
     }
     if (specialChainCall.chainType === 'text') {
-      failInvalidTextSetArity(this.compiler, specialChainCall.methodName, node.args, node);
       compiler.buffer.asyncAddValueToBuffer((resultVar) => {
         compiler.emit(`${resultVar} = new runtime.TextCommand({ chainName: ${JSON.stringify(specialChainCall.chainName)}, `);
         if (specialChainCall.methodName) {

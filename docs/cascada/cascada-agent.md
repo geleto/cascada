@@ -211,7 +211,7 @@ endfor
 
 // [LOOP-03] RULE: Iteration shapes: `for x in arr`, `for k, v in obj`, `for x, y, z in arrayPairs`, `for x in asyncIter`.
 for k, v in food
-  log("Use " + v + " of " + k)
+  log("Use ", v, " of ", k)
 endfor
 
 // [LOOP-04] RULE: `else` block in `for` runs only when iterable is empty.
@@ -934,7 +934,7 @@ Theme: {{ this.theme }}
 
 | Feature | Script | Template |
 |:---|:---|:---|
-| Text output | `text t` + `t("...")` | implicit (text outside tags) |
+| Text output | `text t` + `t("...", value)` | implicit (text outside tags) |
 | Variable decl | `var x = e` | `{% set x = e %}` |
 | Reassignment | `x = e` | `{% set x = e %}` |
 | Multi-var | `var x, y = none` | `{% set x, y = none %}` |

@@ -1129,18 +1129,17 @@ describe('error context tracing runtime foundation', () => {
     expect(missing.errors[0].kind).to.be('MissingFunction');
   });
 
-  it('rejects invalid text.set arity at compile time', () => {
+  it('allows text.set with multiple text arguments', async () => {
     const env = new AsyncEnvironment();
 
-    const script = new Script([
+    const result = await env.renderScriptString([
       'text out',
-      'out.set("a", "b")',
+      'out("before")',
+      'out.set("a", "b", 2)',
       'return out.snapshot()'
-    ].join('\n'), env);
+    ].join('\n'));
 
-    expect(() => script.compileSource()).to.throwException((err) => {
-      expect(err.message).to.contain('text.set() accepts exactly one argument');
-    });
+    expect(result).to.be('ab2');
   });
 
   it('poisons NaN at value production sources', async () => {

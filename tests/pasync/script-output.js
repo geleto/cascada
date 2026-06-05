@@ -222,12 +222,12 @@ describe('Cascada Script: Chain commands', function () {
             // Case 1: Calling macro (returns unwrapped data object)
             var dataRes = dataProducer()
             if (dataRes.value)
-                 consumerText("Data: " + dataRes.value + ". ")
+                 consumerText("Data: ", dataRes.value, ". ")
             endif
 
             // Case 2: Calling no-filter macro (returns full Result Object)
             var genRes = generic()
-            consumerText("Inner text: " + genRes.text)
+            consumerText("Inner text: ", genRes.text)
             return consumerText.snapshot()
         endfunction
 
@@ -1088,6 +1088,96 @@ describe('Cascada Script: Chain commands', function () {
       });
     });
 
+    it('should append multiple callable text arguments in order', async () => {
+      const script = `
+        text body
+        body("Number of people: ", 5, " number of kids: ", 2)
+        body()
+        return body.snapshot()`;
+
+      const result = await env.renderScriptString(script);
+
+      expect(result).to.be('Number of people: 5 number of kids: 2');
+    });
+
+    it('should reset text chains with multiple set arguments', async () => {
+      const script = `
+        text body
+        body("before")
+        body.set("Reset: ", 7, " items")
+        body.set()
+        body.set("Final: ", 3)
+        return body.snapshot()`;
+
+      const result = await env.renderScriptString(script);
+
+      expect(result).to.be('Final: 3');
+    });
+
+    it('should allow empty text set to clear the stream', async () => {
+      const script = `
+        text body
+        body("before")
+        body.set()
+        return body.snapshot()`;
+
+      const result = await env.renderScriptString(script);
+
+      expect(result).to.be('');
+    });
+
+    it('should poison callable text chains for invalid values', async () => {
+      const script = `
+        text body
+        body(makeInvalidTextValue())
+        return body.snapshot()`;
+
+      try {
+        await env.renderScriptString(script, {
+          makeInvalidTextValue() {
+            return {};
+          }
+        });
+        expect().fail('Expected invalid text value to poison');
+      } catch (err) {
+        expect(err.errors[0].kind).to.be('InvalidTextValue');
+      }
+    });
+
+    it('should materialize script text envelopes passed to callable text chains', async () => {
+      const script = `
+        text body
+        body(makeTextEnvelope())
+        return body.snapshot()`;
+
+      const result = await env.renderScriptString(script, {
+        makeTextEnvelope() {
+          return { text: 'text envelope' };
+        }
+      });
+
+      expect(result).to.be('text envelope');
+    });
+
+    it('should preserve poison arguments passed to callable text chains', async () => {
+      const script = `
+        text body
+        body("prefix", failText())
+        return body.snapshot()`;
+
+      try {
+        await env.renderScriptString(script, {
+          failText() {
+            throw new Error('text source failed');
+          }
+        });
+        expect().fail('Expected text source poison to propagate');
+      } catch (err) {
+        expect(err.errors[0].kind).to.be('UserCallThrew');
+        expect(err.message).to.contain('text source failed');
+      }
+    });
+
     it('should return a custom chain result with explicit return', async () => {
       class Turtle {
         constructor() { this.x = 0; this.y = 0; }
@@ -1235,7 +1325,7 @@ describe('Cascada Script: Chain commands', function () {
       it('should handle an expression with a binary operator', async () => {
         const script = `
           text output
-          output("Hello, " + user.name)
+          output("Hello, ", user.name)
           return { text: output.snapshot() }
         `;
         const context = { user: { name: 'Bob' } };
@@ -1303,7 +1393,7 @@ describe('Cascada Script: Chain commands', function () {
       it('should handle an expression with multiple path-like parts', async () => {
         const script = `
           text output
-          output(user.name + " " + user.lastName)
+          output(user.name, " ", user.lastName)
           return { text: output.snapshot() }
         `;
         const context = { user: { name: 'Frank', lastName: 'Castle' } };
@@ -1371,7 +1461,7 @@ describe('Cascada Script: Chain commands', function () {
         const script = `
                 data result
                 var key = "complex"
-                result.items[key + "Id"] = "value"
+                result.items[key ~ "Id"] = "value"
 
                 return result.snapshot()`;
         const result = await env.renderScriptString(script, {});
@@ -1532,7 +1622,7 @@ describe('Cascada Script: Chain commands', function () {
           result.data = dataSource
           var prefix = "user"
           var suffix = "Profile"
-          result.data[prefix + suffix].name = "Dynamic User"
+          result.data[prefix ~ suffix].name = "Dynamic User"
 
           return result.snapshot()`;
         const context = {
@@ -3119,9 +3209,9 @@ describe('Cascada Script: Chain commands', function () {
         function wrapper()
            text wrapperText
            var content = caller()
-           wrapperText("DebugContent: " + content)
+           wrapperText("DebugContent: ", content)
            if content.text
-             wrapperText(" HasText: " + content.text)
+             wrapperText(" HasText: ", content.text)
            endif
            return { text: wrapperText.snapshot() }
         endfunction

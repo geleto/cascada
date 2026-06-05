@@ -35,7 +35,7 @@ suite green before the next.
 - Phases that change **emitted** code regenerate precompiled/browser fixtures:
   Phase 1 (§11.14 emit helper), Phase 3 (`kind` in emitted composition),
   Phase 4 (load-failure — emitted composition sites), Phase 5 (NaN emitters),
-  Phase 6 (discard observer), Phase 10 (`ExpressionThrew`/`text.set` compile-time),
+  Phase 6 (discard observer), Phase 10 (`ExpressionThrew`),
   Phase 13 (typed-operand emitters).
   Fixture regen is an automated build step, so the objective order (cleanup → fixes →
   features) is preferred over batching it.
@@ -465,8 +465,9 @@ Done:
   `UserCallThrew`.
 - [x] Text unsupported operations use `MissingFunction`; invalid text values use
   `InvalidTextValue`.
-- [x] `var` keeps the compiler-owned single-value command shape; `text.set(...)` invalid
-  arity is a compile-time error, with the runtime guard left fatal for direct mis-construction.
+- [x] `var` keeps the compiler-owned single-value command shape; the old `text.set(...)`
+  arity restriction is retired in Phase 14, while invalid text values still use
+  `InvalidTextValue`.
 - [x] Generic chain `_recordError` raw failures are fatal after local command sources classify
   their own user-reachable failures.
 - [x] Value-boundary and branch raw throws are fatal; existing poison still preserves its origin
@@ -622,19 +623,21 @@ Text chains should be documented and verified around the user-facing callable fo
 text output, then appended in order. Mixing strings and numbers is fine; only values with no
 usable string form are rejected.
 
-- [ ] **Callable text chains**: ensure `body("A", 1, "B", 2)` appends `"A1B2"` and
+- [x] **Callable text chains**: ensure `body("A", 1, "B", 2)` appends `"A1B2"` and
   `body()` is a no-op / empty append, matching current text-output semantics.
-- [ ] **Remove the internal `set` arity validation**: drop the compile-time
+- [x] **Remove the internal `set` arity validation**: drop the compile-time
   `_failInvalidTextSetArity` duplication (`buffer.js` + `chain.js`) and the runtime
   `args.length !== 1` fatal in `text.js`. `set` already resets the chain to `[]` and appends, so
   without the check `body.set("A", 1, "B", 2)` naturally stores `"A1B2"` and `body.set()` stores
   empty text.
-- [ ] **Value rules come for free** from `appendTextValues`: scalars (string/number/boolean/
-  bigint) and objects with a real `toString` concatenate; a plain object / function / symbol
-  poisons as `InvalidTextValue` (Phase 10) — same as any other text output.
-- [ ] **Poison passthrough**: a poison argument flows into the text chain exactly as normal text
+- [x] **Value rules come for free** from `appendTextValues`: scalars (string/number/boolean/
+  bigint) and objects with a real `toString` concatenate; script text envelopes are materialized
+  before appending; a plain object without that envelope / function / symbol poisons
+  as `InvalidTextValue` (Phase 10) — same as any other text output. Compiled script text output
+  now routes non-appendable values to `appendTextValues` instead of string-suppressing them first.
+- [x] **Poison passthrough**: a poison argument flows into the text chain exactly as normal text
   output does; do not relabel existing poison.
-- [ ] Docs: mention multi-value callable text chains in `script.md` / agent docs near text-chain
+- [x] Docs: mention multi-value callable text chains in `script.md` / agent docs near text-chain
   examples. Treat `text.set(...)` as an internal/method-style detail, not the main user-facing
   syntax.
 

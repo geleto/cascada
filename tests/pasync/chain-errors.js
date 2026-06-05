@@ -157,19 +157,27 @@ describe('chain errors', function () {
       expect(output._target.x.errors[0].message).to.contain('data method failed');
     });
 
-    it('TextCommand reports text.set arity as a fatal contract error', () => {
+    it('TextCommand text.set accepts multiple text arguments', () => {
       const output = new TextChain(null, 'text', null, 'text');
       const cmd = new TextCommand({
         chainName: 'text',
         operation: 'set',
-        args: [1, 2],
+        args: ['A', 1, 'B', 2],
         errorContext: TEST_EC
       });
 
-      expect(() => cmd.apply(output)).to.throwException((err) => {
-        expect(err).to.be.a(RuntimeError);
-        expect(err.message).to.contain('text.set() accepts exactly one argument');
-      });
+      cmd.apply(output);
+
+      expect(output._target.join('')).to.be('A1B2');
+
+      new TextCommand({
+        chainName: 'text',
+        operation: 'set',
+        args: [],
+        errorContext: TEST_EC
+      }).apply(output);
+
+      expect(output._target.join('')).to.be('');
     });
 
     it('TextCommand uses specific poison kinds for unsupported operations and invalid values', async () => {
