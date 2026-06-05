@@ -76,6 +76,9 @@ function normalizeFinalPromise(value) {
   return resolved;
 }
 
+// Run cleanup around an already-produced Cascada value without assimilating it through
+// Promise.resolve. Use for internal finally-style cleanup; final public exits still go
+// through normalizeFinalPromise().
 function finallyValue(value, onFinally) {
   if (isResolvedValue(value)) {
     onFinally();
@@ -94,6 +97,9 @@ function finallyValue(value, onFinally) {
   return value;
 }
 
+// Chain an internal Cascada value without forcing Promise.resolve assimilation. Use when
+// replacing value.then(...) over resolveSingle/resolveDuo/resolveAll results so poison
+// propagates synchronously and resolved-value wrappers unwrap on the sync path.
 function thenValue(value, onFulfilled) {
   if (isPoison(value)) {
     return value;
@@ -202,26 +208,16 @@ async function resolveAllAsync(args) {
   // No errors - proceed with normal resolution (unwrapping)
   const resolvedArgs = [];
   for (let i = 0; i < args.length; i++) {
-    resolvedArgs.push(await resolveValueAndMarker(args[i]));
+    resolvedArgs.push(await resolveSingle(args[i]));
   }
 
   return resolvedArgs;
 }
 
-// Resolve one Cascada value far enough to expose its current concrete value:
-// unwrap resolved-value wrappers, await a real promise, and finalize a marker-backed
-// object/array in place if needed.
-function resolveValueAndMarker(value) {
-  let resolved = unwrapResolvedValue(value);
-
-  if (resolved && (typeof resolved.then === 'function' || resolved[RESOLVE_MARKER])) {
-    return resolveValueAndMarkerAsync(resolved);
-  }
-
-  return resolved;
-}
-
-async function resolveValueAndMarkerAsync(value) {
+// Async core for resolveSingle(): await a promise (if any), then finalize a lazy
+// RESOLVE_MARKER (if any), converting rejections to poison. A poison result has no
+// marker, so it falls through unchanged.
+async function resolveSingleAsync(value) {
   try {
     let resolved = value;
     if (resolved && typeof resolved.then === 'function') {
@@ -234,26 +230,6 @@ async function resolveValueAndMarkerAsync(value) {
   } catch (err) {
     return poisonOrRethrow(err);
   }
-}
-
-// Resolve a plain object's properties by first marking it as a lazy Cascada object and
-// then waiting for that object's own marker. Used when object-property resolution itself
-// is the intended consumption boundary.
-function resolveObjectProperties(obj) {
-  const marked = createObject(obj);
-  if (marked && marked[RESOLVE_MARKER]) {
-    return resolveObjectPropertiesAsync(marked);
-  }
-  return marked;
-}
-
-async function resolveObjectPropertiesAsync(marked) {
-  try {
-    await marked[RESOLVE_MARKER];
-  } catch (err) {
-    return poisonOrRethrow(err);
-  }
-  return marked;
 }
 
 // Consume exactly two independent Cascada values with the same "never miss any error"
@@ -285,24 +261,6 @@ function resolveSingle(value) {
   }
 
   return resolveSingleAsync(value);
-}
-
-async function resolveSingleAsync(value) {
-  // Await promise (if any), then finalize a lazy RESOLVE_MARKER (if any), converting
-  // rejections to poison. A poison result has no marker, so it falls through unchanged.
-  try {
-    let resolvedValue = value;
-    if (typeof value.then === 'function') {
-      resolvedValue = await value;
-    }
-    if (resolvedValue && resolvedValue[RESOLVE_MARKER]) {
-      await resolvedValue[RESOLVE_MARKER];
-    }
-    return resolvedValue;
-  } catch (err) {
-    // Note: This is called from various contexts; error position added upstream
-    return poisonOrRethrow(err);
-  }
 }
 
 // Like resolveSingle(), but preserve the historical one-element-array shape used by some
@@ -467,4 +425,4 @@ function createArray(arr) {
   });
 }
 
-export { resolveAll, resolveDuo, resolveSingle, resolveSingleArr, resolveObjectProperties, resolveArguments, normalizeFinalPromise, finallyValue, thenValue, createObject, createArray, RESOLVE_MARKER, RESOLVED_VALUE_MARKER, isResolvedValue, unwrapResolvedValue };
+export { resolveAll, resolveDuo, resolveSingle, resolveSingleArr, resolveArguments, normalizeFinalPromise, finallyValue, thenValue, createObject, createArray, RESOLVE_MARKER, RESOLVED_VALUE_MARKER, isResolvedValue, unwrapResolvedValue };

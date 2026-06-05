@@ -182,6 +182,35 @@ const {isPoisonError} = runtime;
         expect(result).to.equal('8');
       });
 
+      it('should propagate poison from async tag arguments without invoking the extension', async () => {
+        let called = false;
+        const addExtension = new AsyncExtension('add', async (context, a, b) => {
+          called = true;
+          return a + b;
+        });
+        env.addExtension('AddExtension', addExtension);
+
+        const context = {
+          boom: async () => {
+            await delay(5);
+            throw new Error('arg failure');
+          }
+        };
+        const template = '{% add boom(), 3 %}';
+
+        let error;
+        try {
+          await env.renderTemplateString(template, context);
+        } catch (e) {
+          error = e;
+        }
+        expect(error).to.be.ok();
+        expect(isPoisonError(error)).to.equal(true);
+        expect(error.message).to.contain('arg failure');
+        // Poison arguments must skip the call entirely, not be passed in as a value.
+        expect(called).to.equal(false);
+      });
+
       it('should handle async extension tags in loops', async () => {
         const getNameExtension = new AsyncExtension('getName', async (context, number) => {
           await delay(5 - number);

@@ -10,6 +10,7 @@ import {
   createSyncRuntimeError,
   isPoison,
   isPoisonError,
+  isResolvedValue,
   isError,
   isRuntimeError,
   iterate,
@@ -19,6 +20,7 @@ import {
   PoisonErrorGroup,
   peekError,
   RESOLVE_MARKER,
+  resolveSingle,
   RuntimePromise,
   RuntimeContextError,
   RuntimeError,
@@ -26,7 +28,8 @@ import {
   observeDiscardedExpression,
   scriptArithmeticOperator,
   cloneContext,
-  cloneWithAddedContext
+  cloneWithAddedContext,
+  unwrapResolvedValue
 } from '../../src/runtime/runtime.js';
 
 const TEST_EC = [1, 1, 'Poison.Unit', 'poison-unit.js', null, null];
@@ -630,6 +633,33 @@ describe('typed poison error contracts', () => {
     } catch (err) {
       expect(isPoisonError(err)).to.be(true);
       expect(err.errors).to.eql([arrayPoison]);
+    }
+  });
+
+  it('uses resolveSingle as the object-property consumption boundary', async () => {
+    const syncObject = createObject({ value: 1 });
+    const syncResolved = resolveSingle(syncObject);
+    expect(isResolvedValue(syncResolved)).to.be(true);
+    expect(unwrapResolvedValue(syncResolved)).to.be(syncObject);
+
+    const asyncObject = createObject({ value: Promise.resolve(2) });
+    expect(asyncObject[RESOLVE_MARKER]).to.be.ok();
+    const asyncResolved = await resolveSingle(asyncObject);
+    expect(asyncResolved).to.be(asyncObject);
+    expect(asyncObject.value).to.be(2);
+    expect(asyncObject[RESOLVE_MARKER]).to.be(undefined);
+  });
+
+  it('rejects with poison when resolveSingle consumes a lazy object with poisoned properties', async () => {
+    const objectPoison = poisonError('resolveSingle object poison');
+    const objectValue = createObject({ value: Promise.reject(objectPoison) });
+
+    try {
+      await resolveSingle(objectValue);
+      expect().fail('resolveSingle should reject with poison from the lazy object marker');
+    } catch (err) {
+      expect(isPoisonError(err)).to.be(true);
+      expect(err.errors).to.eql([objectPoison]);
     }
   });
 

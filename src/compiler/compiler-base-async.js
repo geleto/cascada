@@ -444,11 +444,6 @@ class CompilerBaseAsync extends CompilerCommon {
             this.emit('])');
           }
           break;
-        case '{':
-          this.emit('runtime.resolveObjectProperties({');
-          this._compileArguments(node, null, expressionRoot, startChar);
-          this.emit('})');
-          break;
         case '(': {
           this.emit('runtime.thenValue(runtime.resolveAll([');
           this._compileArguments(node, null, expressionRoot, '[');
