@@ -49,14 +49,20 @@ function initChainSnapshots(chainNames = null, buffer = null, renderState = null
       const tx = { chainName, chain, active: false, token: undefined, beginPromise: null };
       if (typeof chain.beginTransaction === 'function') {
         try {
-          tx.beginPromise = Promise.resolve(chain.beginTransaction()).then((result) => {
-            if (result && result.active) {
-              tx.active = true;
-              tx.token = result.token;
-            }
-          }, (err) => {
-            state.sequenceErrors.push(err);
-          });
+          const result = chain.beginTransaction();
+          if (result && typeof result.then === 'function') {
+            tx.beginPromise = result.then((resolvedResult) => {
+              if (resolvedResult && resolvedResult.active) {
+                tx.active = true;
+                tx.token = resolvedResult.token;
+              }
+            }, (err) => {
+              state.sequenceErrors.push(err);
+            });
+          } else if (result && result.active) {
+            tx.active = true;
+            tx.token = result.token;
+          }
         } catch (err) {
           state.sequenceErrors.push(err);
         }
@@ -274,7 +280,10 @@ async function settleSequenceTransactions(chainGuardState, mode) {
       if (typeof fn !== 'function') {
         continue;
       }
-      await Promise.resolve(fn.call(tx.chain, tx));
+      const result = fn.call(tx.chain, tx);
+      if (result && typeof result.then === 'function') {
+        await result;
+      }
     } catch (err) {
       errors.push(err);
     }

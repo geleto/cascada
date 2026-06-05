@@ -101,7 +101,7 @@ class CompileReturn {
     compiler.emit.line(
       `const ${resultVar}_snapshot = ${bufferExpr}.getChain("${RETURN_CHAIN_NAME}").finalSnapshot();`
     );
-    compiler.emit.line(`let ${resultVar} = ${resultVar}_snapshot.then((value) => value === runtime.RETURN_UNSET ? null : value);`);
+    compiler.emit.line(`let ${resultVar} = runtime.thenValue(${resultVar}_snapshot, (value) => value === runtime.RETURN_UNSET ? null : value);`);
   }
 
   excludeGuardCaptureChains(chainNames) {

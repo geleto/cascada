@@ -63,9 +63,9 @@ class PoisonedValue {
     // Call the rejection handler
     try {
       const result = onRejected(error);
-      // Handler succeeded - need Promise for fulfillment
-      // Use Promise.resolve to handle case where result is itself a thenable
-      return Promise.resolve(result);
+      // Handler succeeded. Preserve Cascada values without generic promise
+      // assimilation; PoisonedValue is intentionally sync-first, not A+ strict.
+      return result;
     } catch (err) {
       if (isPoisonError(err)) {
         return createPoison(err);
@@ -545,7 +545,9 @@ function requireLoadFailureKind(kind) {
  */
 class RuntimePromise {
   constructor(promise, errorContext, kind) {
-    this.promise = Promise.resolve(promise).then(value => poisonIfNaN(value, errorContext));
+    this.promise = promise && typeof promise.then === 'function'
+      ? promise.then(value => poisonIfNaN(value, errorContext))
+      : Promise.resolve(poisonIfNaN(promise, errorContext));
     // RuntimePromise instances are often passed around as values and awaited
     // only later during output application. Mark the wrapped promise as handled
     // immediately so delayed consumption does not trigger
@@ -581,7 +583,7 @@ class RuntimePromise {
   toPromise() { return this.promise; }
 
   static resolve(value, ctx, kind) {
-    return new RuntimePromise(Promise.resolve(value), ctx, kind);
+    return new RuntimePromise(value, ctx, kind);
   }
 
   static reject(reason, ctx, kind) {
@@ -659,7 +661,7 @@ function observeDiscardedExpression(value, errorContext) {
     return;
   }
 
-  markPromiseHandled(Promise.resolve(value).catch((err) => {
+  markPromiseHandled(value.then(undefined, (err) => {
     if (!isPoisonError(err)) {
       RuntimeError.report(err, errorContext);
     }

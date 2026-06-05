@@ -112,7 +112,7 @@ class CompileBuffer {
     const textPromiseId = this.compiler._tmpid();
     const finalExpr = `${bufferExpr}.getChain("${textChainName}").finalSnapshot()`;
     const chainedExpr = transformExpr
-      ? `Promise.resolve(${finalExpr}).then((value) => ${transformExpr.replace(/__VALUE__/g, 'value')})`
+      ? `runtime.thenValue(${finalExpr}, (value) => ${transformExpr.replace(/__VALUE__/g, 'value')})`
       : finalExpr;
 
     this.compiler.emit.line(`${bufferExpr}.finish();`);

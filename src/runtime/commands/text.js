@@ -1,5 +1,5 @@
 import {isPoison, PoisonError} from '../errors.js';
-import {isResolvedValue, unwrapResolvedValue, resolveAll} from '../resolve.js';
+import {isResolvedValue, unwrapResolvedValue, resolveAll, thenValue} from '../resolve.js';
 import {materializeTemplateTextValue, suppressValue, suppressValueScriptRaw} from '../safe-output.js';
 import {ChainCommand} from './base.js';
 import {runWithResolvedArguments} from './arguments.js';
@@ -55,22 +55,16 @@ class TextCommand extends ChainCommand {
         return;
       }
       const materializedArgs = materializeTextCommandArgs(args, chain, this.errorContext);
-      if (materializedArgs && typeof materializedArgs.then === 'function') {
-        return Promise.resolve(materializedArgs).then((finalArgs) => {
-          appendTextValues(chain, finalArgs, this.errorContext);
-        });
-      }
-      appendTextValues(chain, materializedArgs, this.errorContext);
+      return thenValue(materializedArgs, (finalArgs) => {
+        appendTextValues(chain, finalArgs, this.errorContext);
+      });
     });
   }
 }
 
 function normalizeTextCommandArg(value, chain, errorContext) {
   const materialized = materializeTemplateTextValue(value, errorContext);
-  if (materialized && typeof materialized.then === 'function') {
-    return Promise.resolve(materialized).then((resolved) => normalizeMaterializedTextArg(resolved, chain, errorContext));
-  }
-  return normalizeMaterializedTextArg(materialized, chain, errorContext);
+  return thenValue(materialized, (resolved) => normalizeMaterializedTextArg(resolved, chain, errorContext));
 }
 
 function materializeTextCommandArgs(values, chain, errorContext) {
@@ -82,7 +76,7 @@ function materializeTextCommandArgs(values, chain, errorContext) {
   if (isPoison(resolvedArgs)) {
     throw PoisonError.group(resolvedArgs.errors);
   }
-  return Promise.resolve(resolvedArgs).then((resolved) => {
+  return resolvedArgs.then((resolved) => {
     if (isPoison(resolved)) {
       throw PoisonError.group(resolved.errors);
     }

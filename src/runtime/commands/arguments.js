@@ -44,19 +44,19 @@ function runWithResolvedArguments(value, cmd, applyFn) {
   }
 
   if (value[RESOLVE_MARKER]) {
-    return Promise.resolve(value[RESOLVE_MARKER]).then(() => {
+    return value[RESOLVE_MARKER].then(() => {
       return applyFn(value);
-    }).catch((err) => {
+    }, (err) => {
       return applyFn(classifyCommandArgumentFailure(cmd, err));
     });
   }
 
-  return Promise.resolve(value).then((resolvedValue) => {
+  return value.then((resolvedValue) => {
     if (resolvedValue && resolvedValue[RESOLVE_MARKER]) {
-      return Promise.resolve(resolvedValue[RESOLVE_MARKER]).then(() => applyFn(resolvedValue));
+      return resolvedValue[RESOLVE_MARKER].then(() => applyFn(resolvedValue));
     }
     return applyFn(resolvedValue);
-  }).catch((err) => {
+  }, (err) => {
     return applyFn(classifyCommandArgumentFailure(cmd, err));
   });
 }
@@ -133,12 +133,12 @@ function markDeferredThenablesHandled(value, seen = null) {
   }
 
   if (isHandledDeferredPromise(value)) {
-    markPromiseHandled(Promise.resolve(value));
+    markPromiseHandled(value);
     return;
   }
 
   if (value && isHandledDeferredPromise(value[RESOLVE_MARKER])) {
-    markPromiseHandled(Promise.resolve(value[RESOLVE_MARKER]));
+    markPromiseHandled(value[RESOLVE_MARKER]);
     return;
   }
 

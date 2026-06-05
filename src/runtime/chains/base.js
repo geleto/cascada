@@ -169,7 +169,7 @@ class Chain {
       this._beforeApplyCommand(cmd);
       const result = cmd.apply(this);
       if (result && typeof result.then === 'function') {
-        return Promise.resolve(result).catch((err) => {
+        return result.then(undefined, (err) => {
           cmd.rejectResult(poisonOrReportedFatal(err, cmd.errorContext));
         });
       }
@@ -185,7 +185,7 @@ class Chain {
       this._beforeApplyCommand(cmd);
       const result = cmd.apply(this);
       if (result && typeof result.then === 'function') {
-        return Promise.resolve(result).catch((err) => {
+        return result.then(undefined, (err) => {
           this._recordError(err, cmd);
         });
       }
@@ -217,7 +217,7 @@ class Chain {
 
     const errorState = this._ensureErrorState();
     if (errorState && typeof errorState.then === 'function') {
-      return Promise.resolve(errorState).then(finalize);
+      return errorState.then(finalize);
     }
     return finalize(errorState);
   }

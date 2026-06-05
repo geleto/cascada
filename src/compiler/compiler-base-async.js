@@ -190,9 +190,9 @@ class CompilerBaseAsync extends CompilerCommon {
       return;
     }
 
-    this.emit('runtime.resolveSingle(');
+    this.emit('runtime.thenValue(runtime.resolveSingle(');
     this.compile(node.cond, null);
-    this.emit(').then(async function(cond) {');
+    this.emit('), async function(cond) {');
     this.emit('  if(cond) {');
     this.emit('    return ');
     this.compile(node.body, null);
@@ -297,11 +297,11 @@ class CompilerBaseAsync extends CompilerCommon {
       return;
     }
 
-    this.emit('runtime.resolveDuo(');
+    this.emit('runtime.thenValue(runtime.resolveDuo(');
     this.compile(node.expr, null);
     this.emit(',');
     this.compile(node.ops[0].expr, null);
-    this.emit(').then(async function([expr, ref1]){');
+    this.emit('), async function([expr, ref1]){');
     this.emit(`return expr ${compareOps[node.ops[0].type]} ref1`);
     node.ops.forEach((op, index) => {
       if (index > 0) {
@@ -345,11 +345,11 @@ class CompilerBaseAsync extends CompilerCommon {
     const rightId = this._tmpid();
     const resultId = this._tmpid();
 
-    this.emit('runtime.resolveDuo(');
+    this.emit('runtime.thenValue(runtime.resolveDuo(');
     this.compile(node.expr, null);
     this.emit(',');
     this.compile(node.ops[0].expr, null);
-    this.emit(`).then(async function([${leftId}, ${rightId}]){`);
+    this.emit(`), async function([${leftId}, ${rightId}]){`);
 
     this.emit(`let ${resultId} = runtime.scriptCompareOperator(${leftId}, ${rightId}, "${node.ops[0].type}", ${this.emitErrorContext(node)});`);
     this.emit(`if (runtime.isPoison(${resultId}) || !${resultId}) return ${resultId};`);
@@ -425,6 +425,9 @@ class CompilerBaseAsync extends CompilerCommon {
   _compileAsyncAggregate(node, startChar, endChar, resolveItems, expressionRoot, compileThen, asyncThen) {
     const doResolve = resolveItems;
     if (doResolve) {
+      if (compileThen) {
+        this.emit('runtime.thenValue(');
+      }
       switch (startChar) {
         case '[':
           if (node.children.length === 1) {
@@ -447,9 +450,9 @@ class CompilerBaseAsync extends CompilerCommon {
           this.emit('})');
           break;
         case '(': {
-          this.emit('runtime.resolveAll([');
+          this.emit('runtime.thenValue(runtime.resolveAll([');
           this._compileArguments(node, null, expressionRoot, '[');
-          this.emit(']).then(function(');
+          this.emit(']), function(');
           const result = this._tmpid();
           this.emit(`${result}){ return (`);
           for (let i = 0; i < node.children.length; i++) {
@@ -465,7 +468,7 @@ class CompilerBaseAsync extends CompilerCommon {
 
       if (compileThen) {
         const result = this._tmpid();
-        this.emit(`.then(${asyncThen ? 'async ' : ''}function(${result}){`);
+        this.emit(`, ${asyncThen ? 'async ' : ''}function(${result}){`);
         compileThen.call(this, result, node.children.length);
         this.emit(' })');
       }
@@ -545,9 +548,9 @@ class CompilerBaseAsync extends CompilerCommon {
       return;
     }
 
-    this.emit('runtime.resolveSingle(');
+    this.emit('runtime.thenValue(runtime.resolveSingle(');
     this.compile(node.left, null);
-    this.emit(').then(async function(left) {');
+    this.emit('), async function(left) {');
 
     const check = isOr ? 'left' : '!left';
     this.emit(`  if (${check}) {`);
@@ -581,48 +584,48 @@ class CompilerBaseAsync extends CompilerCommon {
 
   _emitAsyncBinFunc(node, funcName, separator) {
     this.emit('(');
-    this.emit('runtime.resolveDuo(');
+    this.emit('runtime.thenValue(runtime.resolveDuo(');
     this.compile(node.left, null);
     this.emit(',');
     this.compile(node.right, null);
     this.emit(')');
     if (this.scriptMode && funcName === 'Math.floor' && separator === ' / ') {
-      this.emit(`.then(function([left,right]){return runtime.scriptArithmeticOperator(left, right, "//", ${this.emitErrorContext(node)});}))`);
+      this.emit(`, function([left,right]){return runtime.scriptArithmeticOperator(left, right, "//", ${this.emitErrorContext(node)});}))`);
       return;
     }
     if (this.scriptMode && funcName === 'Math.pow') {
-      this.emit(`.then(function([left,right]){return runtime.scriptArithmeticOperator(left, right, "**", ${this.emitErrorContext(node)});}))`);
+      this.emit(`, function([left,right]){return runtime.scriptArithmeticOperator(left, right, "**", ${this.emitErrorContext(node)});}))`);
       return;
     }
     if (funcName === 'runtime.inOperator') {
-      this.emit(`.then(function([left,right]){return runtime.inOperator(left, right, ${this.emitErrorContext(node)});}))`);
+      this.emit(`, function([left,right]){return runtime.inOperator(left, right, ${this.emitErrorContext(node)});}))`);
       return;
     }
-    this.emit(`.then(function([left,right]){return runtime.poisonIfNaN(${funcName}(left${separator}right), ${this.emitErrorContext(node)});}))`);
+    this.emit(`, function([left,right]){return runtime.poisonIfNaN(${funcName}(left${separator}right), ${this.emitErrorContext(node)});}))`);
   }
 
   _emitAsyncBinOp(node, str) {
-    this.emit('runtime.resolveDuo(');
+    this.emit('runtime.thenValue(runtime.resolveDuo(');
     this.compile(node.left, null);
     this.emit(',');
     this.compile(node.right, null);
     this.emit(')');
     if (this.scriptMode && str === ' + "" + ') {
-      this.emit(`.then(function([left,right]){return runtime.scriptConcatOperator(left, right, ${this.emitErrorContext(node)});})`);
+      this.emit(`, function([left,right]){return runtime.scriptConcatOperator(left, right, ${this.emitErrorContext(node)});})`);
       return;
     }
     const scriptArithmeticOp = scriptArithmeticOps[str.trim()];
     if (this.scriptMode && scriptArithmeticOp) {
-      this.emit(`.then(function([left,right]){return runtime.scriptArithmeticOperator(left, right, "${scriptArithmeticOp}", ${this.emitErrorContext(node)});})`);
+      this.emit(`, function([left,right]){return runtime.scriptArithmeticOperator(left, right, "${scriptArithmeticOp}", ${this.emitErrorContext(node)});})`);
       return;
     }
-    this.emit(`.then(function([left,right]){return runtime.poisonIfNaN(left ${str} right, ${this.emitErrorContext(node)});})`);
+    this.emit(`, function([left,right]){return runtime.poisonIfNaN(left ${str} right, ${this.emitErrorContext(node)});})`);
   }
 
   _emitAsyncUnaryOp(node, operator) {
-    this.emit('runtime.resolveSingle(');
+    this.emit('runtime.thenValue(runtime.resolveSingle(');
     this.compile(node.target, null);
-    this.emit(`).then(function(target){return runtime.poisonIfNaN(${operator}target, ${this.emitErrorContext(node)});})`);
+    this.emit(`), function(target){return runtime.poisonIfNaN(${operator}target, ${this.emitErrorContext(node)});})`);
   }
 
   _emitErrorObservation(observationFacts, targetNode, mode) {

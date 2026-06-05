@@ -53,7 +53,7 @@ class Command {
       return undefined;
     };
     if (result && typeof result.then === 'function') {
-      return Promise.resolve(result).then(resolve, reject);
+      return result.then(resolve, reject);
     }
     return resolve(result);
   }

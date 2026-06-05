@@ -85,7 +85,7 @@ function runSequentialPathOperation(cmd, chain, isWrite) {
   }
 
   if (result && typeof result.then === 'function') {
-    return Promise.resolve(result).then(resolveValue, (err) => {
+    return result.then(resolveValue, (err) => {
       if (isPoisonError(err)) {
         rejectPoison(err);
         return;

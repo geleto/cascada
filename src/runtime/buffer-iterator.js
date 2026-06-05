@@ -102,7 +102,7 @@ class BufferIterator {
             // The chain/command path owns the apply result. This chained
             // promise only performs iterator cleanup and must not surface a
             // duplicate unhandled rejection if applyResult rejects.
-            markPromiseHandled(Promise.resolve(applyResult).finally(() => {
+            markPromiseHandled(applyResult.finally(() => {
               this._releaseProcessedEntry(buffer, nextIndex);
               if (this.finished) {
                 this._isAdvancing = false;

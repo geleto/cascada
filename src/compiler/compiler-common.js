@@ -76,7 +76,6 @@ class CompilerCommon extends Obj {
         return;
       }
       _compile.call(this, node, frame);
-      return;
     } else if (node instanceof nodes.NodeList) {
       this.compileNodeList(node, frame);
     } else {
@@ -543,36 +542,6 @@ class CompilerCommon extends Obj {
     this._compileAggregate(node, frame, '[', ']', true, true, function (result) {
       this.emit(`return ${funcName}(...${result})`);
     });
-  }
-
-  _compileResolvedPartList(partCompilers, compileThen, asyncThen) {
-    if (partCompilers.length === 1) {
-      this.emit('runtime.resolveSingleArr(');
-      partCompilers[0].call(this);
-      this.emit(')');
-    } else if (partCompilers.length === 2) {
-      this.emit('runtime.resolveDuo(');
-      partCompilers[0].call(this);
-      this.emit(',');
-      partCompilers[1].call(this);
-      this.emit(')');
-    } else {
-      this.emit('runtime.resolveAll([');
-      for (let i = 0; i < partCompilers.length; i++) {
-        if (i > 0) {
-          this.emit(',');
-        }
-        partCompilers[i].call(this);
-      }
-      this.emit('])');
-    }
-
-    if (compileThen) {
-      const result = this._tmpid();
-      this.emit(`.then(${asyncThen ? 'async ' : ''}function(${result}){`);
-      compileThen.call(this, result, partCompilers.length);
-      this.emit(' })');
-    }
   }
 
   _compileArguments(node, frame, expressionRoot, startChar) {

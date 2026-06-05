@@ -252,7 +252,7 @@ class CommandBuffer {
 
     // Finished-buffer observations are allowed only after the target chain stream is complete.
     if (!chain._completionResolved && chain._completionPromise) {
-      return Promise.resolve(chain._completionPromise).then(applyObservation);
+      return chain._completionPromise.then(applyObservation);
     }
 
     return applyObservation();

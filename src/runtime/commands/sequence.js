@@ -54,7 +54,7 @@ class SequenceCallCommand extends ChainMutatingResultCommand {
 
       const sequenceTarget = chain._ensureSequenceTargetResolved ? chain._ensureSequenceTargetResolved() : chain._sequenceTarget;
       if (sequenceTarget && typeof sequenceTarget.then === 'function') {
-        return this.settleResult(Promise.resolve(sequenceTarget).then(execute), { rethrow: true });
+        return this.settleResult(sequenceTarget.then(execute), { rethrow: true });
       }
       return execute(sequenceTarget);
     });
@@ -83,7 +83,7 @@ class SequenceGetCommand extends ChainObservableCommand {
 
     const sequenceTarget = chain._ensureSequenceTargetResolved ? chain._ensureSequenceTargetResolved() : chain._sequenceTarget;
     if (sequenceTarget && typeof sequenceTarget.then === 'function') {
-      return this.settleResult(Promise.resolve(sequenceTarget).then(execute), { rethrow: true });
+      return this.settleResult(sequenceTarget.then(execute), { rethrow: true });
     }
     return execute(sequenceTarget);
   }

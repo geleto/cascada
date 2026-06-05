@@ -410,7 +410,7 @@ async function iterateAsyncLimited(arr, loopBody, loopVars, errorContext, limit,
 
     const res = callLoopBodyLimited(loopBody, loopVars, value, i, undefined, false, errorContext, buffer, asyncOptions);
     // Normalise sync/async body
-    await Promise.resolve(res);
+    await res;
   }
 
   async function worker() {
@@ -571,7 +571,7 @@ async function iterateArrayLimited(arr, loopBody, loopVars, errorContext, limit,
 
     const isLast = index === len - 1;
     const res = callLoopBodyLimited(loopBody, loopVars, value, index, len, isLast, errorContext, buffer, asyncOptions);
-    await Promise.resolve(res);
+    await res;
   };
 
   async function worker() {

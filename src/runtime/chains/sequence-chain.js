@@ -1,4 +1,5 @@
 import {PoisonError, isPoison, poisonIfNaN, poisonOrReportedFatal} from '../errors.js';
+import {thenValue} from '../resolve.js';
 import {Chain} from './base.js';
 
 class SequenceObjectChain extends Chain {
@@ -36,7 +37,7 @@ class SequenceObjectChain extends Chain {
         this._sequenceTargetReady = true;
         return this._sequenceTarget;
       }
-      this._sequenceTargetReadyPromise = Promise.resolve(targetValue)
+      this._sequenceTargetReadyPromise = targetValue
         .then((resolvedTarget) => {
           this._sequenceTarget = resolvedTarget;
           this._sequenceTargetReady = true;
@@ -56,7 +57,7 @@ class SequenceObjectChain extends Chain {
       if (cmd.isObservable) {
         const result = cmd.apply(this);
         if (result && typeof result.then === 'function') {
-          return Promise.resolve(result).catch((err) => {
+          return result.then(undefined, (err) => {
             cmd.rejectResult(poisonOrReportedFatal(err, cmd.errorContext));
           });
         }
@@ -66,10 +67,10 @@ class SequenceObjectChain extends Chain {
       const sequenceTarget = this._ensureSequenceTargetResolved();
       const apply = () => cmd.apply(this);
       const result = (sequenceTarget && typeof sequenceTarget.then === 'function')
-        ? Promise.resolve(sequenceTarget).then(apply)
+        ? sequenceTarget.then(apply)
         : apply();
       if (result && typeof result.then === 'function') {
-        return Promise.resolve(result).catch((err) => {
+        return result.then(undefined, (err) => {
           this._recordError(err, cmd);
         });
       }
@@ -124,17 +125,8 @@ class SequenceObjectChain extends Chain {
       }
       return sequenceTarget.snapshot();
     };
-    const normalizeCapture = (captured) => {
-      if (captured && typeof captured.then === 'function') {
-        return Promise.resolve(captured);
-      }
-      return captured;
-    };
 
-    if (targetValue && typeof targetValue.then === 'function') {
-      return Promise.resolve(targetValue).then((sequenceTarget) => normalizeCapture(capture(sequenceTarget)));
-    }
-    return normalizeCapture(capture(targetValue));
+    return thenValue(targetValue, capture);
   }
 
   _restoreGuardState(state) {
@@ -150,18 +142,35 @@ class SequenceObjectChain extends Chain {
     const targetIsPromise = !!(targetValue && typeof targetValue.then === 'function');
     const stateIsPromise = !!(state && typeof state.then === 'function');
     if (targetIsPromise || stateIsPromise) {
-      return Promise.all([Promise.resolve(targetValue), Promise.resolve(state)])
-        .then(([sequenceTarget, recoveredState]) => restore(sequenceTarget, recoveredState));
+      return restoreGuardStateAsync(targetValue, state, restore);
     }
     return restore(targetValue, state);
   }
 }
 
 function normalizeSequenceValue(value, errorContext) {
-  if (value && typeof value.then === 'function' && !isPoison(value)) {
-    return Promise.resolve(value).then(resolved => poisonIfNaN(resolved, errorContext));
+  return thenValue(value, resolved => poisonIfNaN(resolved, errorContext));
+}
+
+async function restoreGuardStateAsync(targetValue, state, restore) {
+  const targetResult = observeValueSettlement(targetValue);
+  const stateResult = observeValueSettlement(state);
+  const results = await Promise.all([targetResult, stateResult]);
+  const rejected = results.find((result) => result.status === 'rejected');
+  if (rejected) {
+    throw rejected.reason;
   }
-  return poisonIfNaN(value, errorContext);
+  return restore(results[0].value, results[1].value);
+}
+
+function observeValueSettlement(value) {
+  if (value && typeof value.then === 'function') {
+    return value.then(
+      resolved => ({ status: 'fulfilled', value: resolved }),
+      reason => ({ status: 'rejected', reason })
+    );
+  }
+  return { status: 'fulfilled', value };
 }
 
 class SequenceChain extends SequenceObjectChain {
@@ -178,15 +187,12 @@ class SequenceChain extends SequenceObjectChain {
       }
       const token = sequenceTarget.begin();
       if (token && typeof token.then === 'function') {
-        return Promise.resolve(token).then((resolvedToken) => ({ active: true, token: resolvedToken }));
+        return token.then((resolvedToken) => ({ active: true, token: resolvedToken }));
       }
       return { active: true, token };
     };
 
-    if (targetValue && typeof targetValue.then === 'function') {
-      return Promise.resolve(targetValue).then(begin);
-    }
-    return begin(targetValue);
+    return thenValue(targetValue, begin);
   }
 
   commitTransaction(tx) {
@@ -201,10 +207,7 @@ class SequenceChain extends SequenceObjectChain {
       }
       return sequenceTarget.commit(tx.token);
     };
-    if (targetValue && typeof targetValue.then === 'function') {
-      return Promise.resolve(targetValue).then(commit);
-    }
-    return commit(targetValue);
+    return thenValue(targetValue, commit);
   }
 
   rollbackTransaction(tx) {
@@ -219,10 +222,7 @@ class SequenceChain extends SequenceObjectChain {
       }
       return sequenceTarget.rollback(tx.token);
     };
-    if (targetValue && typeof targetValue.then === 'function') {
-      return Promise.resolve(targetValue).then(rollback);
-    }
-    return rollback(targetValue);
+    return thenValue(targetValue, rollback);
   }
 }
 

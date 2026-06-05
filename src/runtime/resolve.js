@@ -66,14 +66,45 @@ function normalizeFinalPromise(value) {
     return Promise.reject(PoisonError.group(resolved.errors));
   }
   if (resolved && typeof resolved.then === 'function') {
-    return Promise.resolve(resolved).then((value) => {
-      if (isPoison(value)) {
-        return Promise.reject(PoisonError.group(value.errors));
+    return Promise.resolve(resolved).then((resolvedValue) => {
+      if (isPoison(resolvedValue)) {
+        return Promise.reject(PoisonError.group(resolvedValue.errors));
       }
-      return value;
+      return resolvedValue;
     });
   }
   return resolved;
+}
+
+function finallyValue(value, onFinally) {
+  if (isResolvedValue(value)) {
+    onFinally();
+    return unwrapResolvedValue(value);
+  }
+  if (value && typeof value.then === 'function') {
+    return value.then((resolved) => {
+      onFinally();
+      return resolved;
+    }, (err) => {
+      onFinally();
+      throw err;
+    });
+  }
+  onFinally();
+  return value;
+}
+
+function thenValue(value, onFulfilled) {
+  if (isPoison(value)) {
+    return value;
+  }
+  if (isResolvedValue(value)) {
+    return onFulfilled(unwrapResolvedValue(value));
+  }
+  if (value && typeof value.then === 'function') {
+    return value.then(onFulfilled);
+  }
+  return onFulfilled(value);
 }
 
 // Consume an array of independent Cascada values.
@@ -332,7 +363,7 @@ function resolveArguments(fn, skipArguments = 0) {
       }
     }
 
-    return Promise.resolve(resolvedArgs).then((finalResolvedArgs) => {
+    return resolvedArgs.then((finalResolvedArgs) => {
       return fn.apply(this, skippedArgs.concat(finalResolvedArgs));
     });
   };
@@ -454,4 +485,4 @@ function createArray(arr) {
   });
 }
 
-export { resolveAll, resolveDuo, resolveSingle, resolveSingleArr, resolveObjectProperties, resolveArguments, normalizeFinalPromise, createObject, createArray, RESOLVE_MARKER, RESOLVED_VALUE_MARKER, isResolvedValue, unwrapResolvedValue };
+export { resolveAll, resolveDuo, resolveSingle, resolveSingleArr, resolveObjectProperties, resolveArguments, normalizeFinalPromise, finallyValue, thenValue, createObject, createArray, RESOLVE_MARKER, RESOLVED_VALUE_MARKER, isResolvedValue, unwrapResolvedValue };

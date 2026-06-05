@@ -44,7 +44,7 @@ class CompileMacro {
     compiler.emit.line(`let ${invocationBufferId} = new runtime.CommandBuffer(context, ${activeContext.allCallersBufferId}, ${activeContext.rawCallerVar}.__callerLinkedChains || null, null, ${activeContext.rawCallerVar}.__callerLinkedMutatedChains || null, ${callerBufferStackErrorContext}, null, renderState);`);
     compiler.emit.line(`let ${invocationFinishedId} = ${invocationBufferId}.getFinishedPromise();`);
     compiler.emit.line(`${bufferId}.addCommand(new runtime.WaitResolveCommand({ chainName: "${CALLER_SCHED_CHAIN_NAME}", args: [${invocationFinishedId}], errorContext: ${compiler.emitErrorContext(node)} }), "${CALLER_SCHED_CHAIN_NAME}");`);
-    compiler.emit.line(`let ${invocationResultId} = Promise.resolve(runtime.invokeMacro(${activeContext.rawCallerVar}, context, ${argsId}, ${invocationBufferId})).finally(() => ${invocationBufferId}.finish());`);
+    compiler.emit.line(`let ${invocationResultId} = runtime.finallyValue(runtime.invokeMacro(${activeContext.rawCallerVar}, context, ${argsId}, ${invocationBufferId}), () => ${invocationBufferId}.finish());`);
     compiler.emit.line(`${bufferId}.addCommand(new runtime.WaitResolveCommand({ chainName: "${CALLER_SCHED_CHAIN_NAME}", args: [${invocationResultId}], errorContext: ${compiler.emitErrorContext(node)} }), "${CALLER_SCHED_CHAIN_NAME}");`);
     compiler.emit.line(`return ${invocationResultId};`);
     compiler.emit.line('}');
@@ -242,7 +242,7 @@ class CompileMacro {
     // __caller__ timing is owned only by caller invocation code. Track both:
     // 1. when this invocation child buffer stops receiving commands
     // 2. when the invocation's returned value settles
-    compiler.emit(`let ${invocationResultId} = Promise.resolve(runtime.invokeMacro(${rawCallerVar}, context, ${invocationArgsId}, ${invocationBufferId})).finally(() => ${invocationBufferId}.finish());`);
+    compiler.emit(`let ${invocationResultId} = runtime.finallyValue(runtime.invokeMacro(${rawCallerVar}, context, ${invocationArgsId}, ${invocationBufferId}), () => ${invocationBufferId}.finish());`);
     compiler.emit(`${bufferId}.addCommand(new runtime.WaitResolveCommand({ chainName: "${CALLER_SCHED_CHAIN_NAME}", args: [${invocationResultId}], errorContext: ${compiler.emitErrorContext(positionNode)} }), "${CALLER_SCHED_CHAIN_NAME}");`);
     compiler.emit(`return ${invocationResultId};`);
     compiler.emit(`} : ${rawCallerVar})`);
@@ -285,7 +285,7 @@ class CompileMacro {
         callerSyncPrefix +
         `${bufferId}.finish();` +
         `const ${returnVar}_snapshot = ${bufferId}.getChain("${RETURN_CHAIN_NAME}").finalSnapshot();` +
-        `return ${returnVar}_snapshot.then((value) => value === runtime.RETURN_UNSET ? null : value);` +
+        `return runtime.thenValue(${returnVar}_snapshot, (value) => value === runtime.RETURN_UNSET ? null : value);` +
         `})()`;
     } else {
       const textSnapshotVar = compiler._tmpid();
@@ -293,7 +293,7 @@ class CompileMacro {
         callerSyncPrefix +
         `${bufferId}.finish();` +
         `const ${textSnapshotVar} = ${bufferId}.getChain("${compiler.buffer.currentTextChainName}").finalSnapshot();` +
-        `return ${textSnapshotVar}.then((value) => runtime.markSafe(value));` +
+        `return runtime.thenValue(${textSnapshotVar}, (value) => runtime.markSafe(value));` +
         `})()`;
     }
   }
