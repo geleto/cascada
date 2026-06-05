@@ -546,11 +546,6 @@ as a container or collection is a *type error* (poison).
   add the divergence to **`template.md`** "Template vs Script: Key Differences" (minimal style):
   scripts poison scalar property access and iterating a scalar; templates stay lenient
   (`undefined` / no-op).
-- [ ] *(Postponed / optional cleanup.)* Consolidate the scalar primitive classifiers used by
-  lookup and loop strictness into one shared helper if another pass touches that area. Keep the
-  `null`/`undefined` handling at the call sites because lookup maps them to `NullLookup` while
-  loops keep the existing absent-collection behavior.
-
 Verify: `5[5]` / `(5).foo` / `true.x` → `ScalarLookup`; `(5).toFixed(2)` works; `obj.missing` /
 `arr[10]` / `"abc"[9]` stay `undefined` · `for x in 5` → `NotIterable`; `for x in null` → runs
 `else`; `for x in {}` / `[]` / iterator / async iterator unchanged · `for a, b in [1, 2]`

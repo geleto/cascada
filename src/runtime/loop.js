@@ -1,5 +1,5 @@
 
-import {isArray, asyncIter, asyncFor, keys as objectKeys} from '../lib.js';
+import {isArray, isScalarPrimitive, asyncIter, asyncFor, keys as objectKeys} from '../lib.js';
 
 import {
   createPoison,
@@ -153,15 +153,6 @@ function poisonIterationEffects(buffer, asyncOptions, poisonError) {
 
 function normalizeLoopValue(value, errorContext) {
   return poisonIfNaN(value, errorContext);
-}
-
-function isScalarIterableTarget(value) {
-  const type = typeof value;
-  return value !== null &&
-    value !== undefined &&
-    type !== 'object' &&
-    type !== 'function' &&
-    type !== 'string';
 }
 
 function getDestructuredLoopArgs(value, loopVars, errorContext, buffer, asyncOptions) {
@@ -784,7 +775,7 @@ async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOpti
   }
 
   try {
-    if (asyncOptions && asyncOptions.scriptMode && isScalarIterableTarget(arr)) {
+    if (asyncOptions && asyncOptions.scriptMode && isScalarPrimitive(arr)) {
       poisonLoopEffects(
         buffer,
         asyncOptions,

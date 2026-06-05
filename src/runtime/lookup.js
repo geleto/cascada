@@ -14,6 +14,7 @@ import {resolveDuo} from './resolve.js';
 import {SnapshotCommand, IsErrorCommand, GetErrorCommand} from './commands/observation.js';
 import {getSharedSourceName} from '../inheritance/shared-names.js';
 import {formatDiagnosticValue} from './error-format.js';
+import {isScalarPrimitive} from '../lib.js';
 /**
  * Sync member lookup for templates.
  * Returns undefined if obj is undefined or null.
@@ -34,11 +35,6 @@ function memberLookupImpl(obj, val) {
   return value;
 }
 
-function isScalarLookupTarget(obj) {
-  const type = typeof obj;
-  return type !== 'object' && type !== 'function' && type !== 'string';
-}
-
 function formatLookupValue(value) {
   return formatDiagnosticValue(value, new Set());
 }
@@ -55,7 +51,7 @@ function memberLookupScriptResolved(obj, val, errorContext) {
     return createPoison(PoisonError.wrap(err, errorContext, 'LookupThrew'));
   }
 
-  if (value === undefined && isScalarLookupTarget(obj)) {
+  if (value === undefined && isScalarPrimitive(obj)) {
     return createPoison(PoisonError.create(`Cannot read property ${formatLookupValue(val)} of ${formatLookupValue(obj)}`, errorContext, 'ScalarLookup'));
   }
   if (value && value.isMacro) {

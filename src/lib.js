@@ -46,6 +46,15 @@ function isObject(obj) {
   return ObjProto.toString.call(obj) === '[object Object]';
 }
 
+function isScalarPrimitive(value) {
+  const type = typeof value;
+  return value !== null &&
+    value !== undefined &&
+    type !== 'object' &&
+    type !== 'function' &&
+    type !== 'string';
+}
+
 
 /**
  * @param {string|number} attr
@@ -266,6 +275,7 @@ export {
   isArray,
   isString,
   isObject,
+  isScalarPrimitive,
   getAttrGetter,
   groupBy,
   toArray,
