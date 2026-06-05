@@ -458,8 +458,8 @@ You can use standard literals for common data types:
 All standard mathematical operators are available:
 `+` (addition), `-` (subtraction), `*` (multiplication), `/` (division), `//` (integer division), `%` (remainder), `**` (power).
 Operands must be numeric in scripts, except that `+` also supports `string + string`.
-Mixed coercions such as `"5" + 3`, `"x" + null`, and `"5" * 2` produce `IncompatibleOperands`; use `~` for explicit text concatenation and `| int` / `| float` for numeric conversion.
-Floating-point division by zero follows JavaScript (`5 / 0` is `Infinity`), while `5 % 0` produces `NaNResult` and BigInt division or modulo by zero produces `DivideByZero`.
+Mixed coercions such as `"5" + 3`, `"x" + null`, and `"5" * 2` produce an Error Value of [kind](#the-kind-property) [`IncompatibleOperands`](#the-kind-property); use `~` for explicit text concatenation and `| int` / `| float` for numeric conversion.
+Floating-point division by zero follows JavaScript (`5 / 0` is `Infinity`), while `5 % 0` produces [`NaNResult`](#the-kind-property) and BigInt division or modulo by zero produces [`DivideByZero`](#the-kind-property).
 
 ```javascript
 var price = (item.cost + shipping) * 1.05
@@ -1263,6 +1263,7 @@ Only the `turtle` path is serialized. Other independent work in the script can s
 #### Context Requirement for Sequential Paths
 
 Sequential paths must reference objects from the context, not local variables.
+If the root name is absent from the context, the path is an Error Value of [kind](#the-kind-property) [`UnknownVariable`](#the-kind-property).
 The JS context object:
 
 ```javascript
@@ -1866,7 +1867,11 @@ uniformly. Access the poison error with `#`.
 *   **`kind`**: (string) A stable code naming **what** failed, independent of `label` (which names **where**). Useful for inspection, but treat it as diagnostic metadata, not a frozen API — the set may grow.
 *   **`cause`**: (Error) The original JavaScript `Error` object. Always present on `PoisonError`.
 
-The `kind` values:
+##### The `kind` Property
+
+The `kind` values below are **strings** carried in the `kind` field — not error classes. When
+this documentation says a failure "is an `UnknownVariable`" or "produces a `NaNResult`", it means
+`error.kind === 'UnknownVariable'`; the runtime class is always `PoisonError` / `PoisonErrorGroup`.
 
 | `kind` | Failure |
 |---|---|
@@ -2782,7 +2787,7 @@ The `AsyncEnvironment` is the primary class for orchestrating and executing Casc
     *   `opts`: Configuration flags:
         *   `autoescape` (default: `true`): Automatically escapes template output.
         *   `throwOnUndefined` (default: `false`): Throw when rendering an undefined value.
-        *   `loadFailFatal` (default: `true`): How a missing or failed `import` / `from import` / `component` / `include` is handled. `true` — fatal (Nunjucks-compatible). `false` — non-fatal: `import` / `component` become `LoadFailed` poison, `include` renders empty. An array such as `['import']` makes only the listed kinds fatal. The root render and `extends` are always fatal.
+        *   `loadFailFatal` (default: `true`): How a missing or failed `import` / `from import` / `component` / `include` is handled. `true` — fatal (Nunjucks-compatible). `false` — non-fatal: `import` / `component` become [`LoadFailed`](#the-kind-property) poison (an Error Value of that kind), `include` renders empty. An array such as `['import']` makes only the listed kinds fatal. The root render and `extends` are always fatal.
         *   `trimBlocks` (default: `false`): Remove the first newline after a block tag.
         *   `lstripBlocks` (default: `false`): Strip leading whitespace from a block tag.
         *   `tags`: Override template tag delimiters.

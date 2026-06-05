@@ -657,18 +657,22 @@ The true docs closeout — placed **after** all behavior-changing phases. Phase 
 taxonomy and added strictness. Per-phase "Docs:" steps do the incremental writing; this phase
 verifies the whole surface agrees.
 
-- [ ] No **retired** kind (`ValueRejected`, `DataMethodThrew`, `ExpressionThrew`, `ConditionThrew`,
+- [x] No **retired** kind (`ValueRejected`, `DataMethodThrew`, `ExpressionThrew`, `ConditionThrew`,
   `DestructureMismatch`, `SequentialPathThrew`, `NotAnArray`) appears in any public/user doc.
-- [ ] Every **active** kind appears in **both** kind tables (`script.md` *Anatomy of an Error
-  Value* + analysis §3) and they match.
-- [ ] `cascada-agent.md` ERR-07 lists `kind` in the `#errors` shape (the Phase 8 catch-up), and
-  its operator/lookup rules reflect script-mode strictness (typed operands, strict `==`, scalar
-  lookup/iteration, `in`).
-- [ ] `template.md` "Template vs Script: Key Differences" lists every script/template divergence
-  (scalar lookup/iteration, strict `==`, typed script operators, `in`).
-- [ ] Examples across all docs still render / match behavior; links resolve.
+  Audited: the only hit is a "fatal (not `ExpressionThrew`)" retirement note in analysis §5.
+- [x] Every **active** kind appears in **both** kind tables (`script.md` *Anatomy* + analysis §3)
+  and they match — verified the 18 emitted kinds (incl. `DivideByZero`, `IncompatibleOperands`,
+  `ScalarLookup`, `NotIterable`, `NotDestructurable`) against `git grep` of `src/`; the tables agree.
+- [x] `cascada-agent.md` ERR-07 now lists `kind` in the `#errors` shape (Phase 8 catch-up added),
+  and its operator/lookup rules reflect script-mode strictness (EXPR-01 typed operands incl. the
+  `string + string` allowance, strict `==`; LANG-05 scalar lookup).
+- [x] `template.md` "Template vs Script: Key Differences" lists the divergences (scalar
+  lookup/iteration strictness; strict `==`/`!=` + typed operators; `in` poisons in both modes).
+- [x] Examples consistent across docs — all four surfaces agree on the `+` rule (`string + string`
+  allowed, mixed → `IncompatibleOperands`); `npm run build` passes.
 
-Verify: `npm run build` · grep the docs for retired kind names → none.
+Verify: `npm run build` · grep the docs for retired kind names → none. **Done.** The one fix this
+phase required was adding `kind` to `cascada-agent.md` ERR-07; everything else was already consistent.
 
 ---
 

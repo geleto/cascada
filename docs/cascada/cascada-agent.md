@@ -532,7 +532,9 @@ endif
 //             Duplicate primary stack frame is omitted from display.
 //   #context - normalized primary diagnostic context
 //   #errors - array of individual PoisonError objects:
-//             { message, description, fullMessage, context, name, lineno, colno, path, label, cause }
+//             { message, description, fullMessage, context, name, lineno, colno, path, label, kind, cause }
+//             kind = stable failure-category code (what went wrong: e.g. MissingFunction, NullLookup,
+//             IncompatibleOperands); label = where/which operation frame. Diagnostic, not a frozen API.
 // Multiple concurrent failures aggregate into one PoisonErrorGroup holding all.
 
 // [ERR-08] RULE: Functions still receive Error Value arguments — the function can detect/repair.
