@@ -200,11 +200,9 @@ class CompilerCommon extends Obj {
   withCurrentLoopVar(loopVar, emitFunc) {
     const previousLoopVar = this.currentLoopVar;
     this.currentLoopVar = loopVar;
-    try {
-      return emitFunc();
-    } finally {
-      this.currentLoopVar = previousLoopVar;
-    }
+    const result = emitFunc();
+    this.currentLoopVar = previousLoopVar;
+    return result;
   }
 
   getErrorContextIndex(node, addedContext = null) {
