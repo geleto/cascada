@@ -46,17 +46,6 @@ async function expectSourceKind(seenKinds, operation, kind) {
   seenKinds.add(kind);
 }
 
-async function expectDirectPoisonKind(seenKinds, operation, kind) {
-  try {
-    await operation();
-    throw new Error(`Expected operation to fail with ${kind}`);
-  } catch (err) {
-    expect(runtime.isPoisonError(err)).to.be(true);
-    expect(err.kind).to.be(kind);
-    seenKinds.add(kind);
-  }
-}
-
 function expandedStack(stack) {
   return stack.map(expandedContext);
 }
@@ -295,7 +284,7 @@ describe('error context tracing runtime foundation', () => {
       }
     };
 
-    sequentialContextLookupValue({ lookup: () => 'db' }, 'db', '!db', ec, false, buffer);
+    sequentialContextLookupValue({ lookupScript: () => 'db' }, 'db', '!db', ec, false, buffer);
 
     expect(command.errorContext).to.eql(ec);
     expect(command.pos).to.be(undefined);
@@ -902,7 +891,6 @@ describe('error context tracing runtime foundation', () => {
       'NotAFunction',
       'NotAnArray',
       'NullLookup',
-      'SequentialPathThrew',
       'UnknownVariable',
       'UserCallThrew'
     ];
@@ -912,6 +900,11 @@ describe('error context tracing runtime foundation', () => {
     await expectSourceKind(
       seenKinds,
       () => env.renderScriptString('return missing'),
+      'UnknownVariable'
+    );
+    await expectSourceKind(
+      seenKinds,
+      () => env.renderScriptString('return db!.save()'),
       'UnknownVariable'
     );
     await expectSourceKind(
@@ -1004,27 +997,6 @@ describe('error context tracing runtime foundation', () => {
         }
       }),
       'IteratorThrew'
-    );
-    await expectDirectPoisonKind(
-      seenKinds,
-      async () => {
-        const command = new runtime.SequentialPathWriteCommand({
-          chainName: 'db',
-          errorContext: TEST_EC,
-          operation() {
-            throw new Error('sequential operation failed');
-          }
-        });
-        command.apply({
-          _getSequentialPathPoisonError() {
-            return null;
-          },
-          _applySequentialPathPoisonError() {},
-          _setSequentialPathLastResult() {}
-        });
-        await command.promise;
-      },
-      'SequentialPathThrew'
     );
     await expectSourceKind(
       seenKinds,

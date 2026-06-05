@@ -46,11 +46,13 @@ suite green before the next.
   **Phase 7** efficiency · **Phase 8** docs sweep · **Phase 9** `!` side-effect
   completion semantics (resolved: docs only) ·
   **Phase 10** poison `kind` taxonomy refinement.
-- Post-Phase-10 follow-ups (surfaced during review): **Phase 11** retire
+- Post-Phase-10 follow-ups (surfaced during review): **Phase 11** retired
   `SequentialPathThrew` · **Phase 12** lookup/iteration strictness
   (`ScalarLookup`/`NotIterable`, `NotAnArray`→`NotDestructurable`) · **Phase 13**
   script-language operator strictness (`in`→poison, strict `==`, typed operands) ·
-  **Phase 14** `text.set` multi-arg.
+  **Phase 14** text-chain multi-arg · **Phase 15** documentation closeout & consistency (final).
+- **Docs are dual-tracked:** Phase 8 documented the core model (through Phase 6); each later phase
+  (10–14) carries its own "Docs:" step; **Phase 15** is the final cross-surface consistency pass.
 
 ---
 
@@ -482,7 +484,7 @@ End state: `ValueRejected`, `DataMethodThrew`, `ExpressionThrew`, `ConditionThre
 `DestructureMismatch` are retired. The active taxonomy uses `MissingFunction`, `NotAFunction`,
 `UserCallThrew`, `UnknownVariable`, `NullLookup`, `LookupThrew`, `IteratorThrew`,
 `NotAnArray`, `InvalidConcurrentLimit`, `LoadFailed`, `ImportBindingMissing`, `NaNResult`,
-`InvalidTextValue`, `SequentialPathThrew`, and `ContextValueRejected`.
+`InvalidTextValue`, and `ContextValueRejected`.
 
 Verify: per-path kind assertions (call / `!` / `sequence` missing method -> `MissingFunction`;
 non-function -> `NotAFunction`; throw -> `UserCallThrew`; sequence null read -> `NullLookup`;
@@ -500,16 +502,16 @@ only legitimate sync throw it catches is the `!` path **root not in the render c
 sends raw rejections to fatal (`sequential-path.js:90-94`) — only the **sync** catch poisons,
 so the two disagree.
 
-- [ ] `contextLookupOnly` (`sequential.js`): use `lookupScript` instead of `lookup` so a
+- [x] `contextLookupOnly` (`sequential.js`): use `lookupScript` instead of `lookup` so a
   missing `!` root returns `UnknownVariable` poison (consistent with a bare-name read) instead
   of raw-throwing. (Verify no other legitimate poison case reaches the sync catch first.)
-- [ ] `runSequentialPathOperation` sync catch (`sequential-path.js:84`): replace
+- [x] `runSequentialPathOperation` sync catch (`sequential-path.js:84`): replace
   `PoisonError.wrap(e, ec, 'SequentialPathThrew')` with raw → fatal (`rethrowPoisonOrReport`),
   matching the async path. Retires `SequentialPathThrew`.
-- [ ] Docs: remove the `SequentialPathThrew` row from the kind tables (analysis §3 +
+- [x] Docs: remove the `SequentialPathThrew` row from the kind tables (analysis §3 +
   `script.md`).
 
-Verify: `db!.x` with `db` absent from context → `UnknownVariable` (not `SequentialPathThrew`);
+Verify: `db!.save()` with `db` absent from context → `UnknownVariable` (not `SequentialPathThrew`);
 a `!` method that throws → `UserCallThrew`; an unexpected raw sequential failure → fatal ·
 `tests/poison/` · `tests/pasync/sequential-*.js` · `npm run build`.
 
@@ -537,10 +539,13 @@ as a container or collection is a *type error* (poison).
 - [ ] **Rename `NotAnArray` → `NotDestructurable`** (`loop.js` create site): it is the
   multi-variable destructuring **element** failure (`for a, b in pairs`), independent of the loop
   source. `NotIterable` (source) and `NotDestructurable` (element) are now distinct.
-- [ ] Docs: add `ScalarLookup` + `NotIterable` rows and rename `NotAnArray` → `NotDestructurable`
-  in the kind tables (analysis §3 + `script.md`). Add the script/template divergence to
-  `template.md` "Template vs Script: Key Differences" (minimal style): scripts poison scalar
-  property access and iterating a scalar; templates stay lenient (`undefined` / no-op).
+- [ ] Docs (all surfaces): add `ScalarLookup` + `NotIterable` rows and rename `NotAnArray` →
+  `NotDestructurable` in the **kind tables** (analysis §3 + `script.md` *Anatomy*); note in the
+  **`script.md`** lookup/loop sections that scalar property access and iterating a scalar poison;
+  extend **`cascada-agent.md`** LANG-05 (property access on `none`/null → Error Value) to scalars;
+  add the divergence to **`template.md`** "Template vs Script: Key Differences" (minimal style):
+  scripts poison scalar property access and iterating a scalar; templates stay lenient
+  (`undefined` / no-op).
 
 Verify: `5[5]` / `5.foo` / `true.x` → `ScalarLookup`; `(5).toFixed(2)` works; `obj.missing` /
 `arr[10]` / `"abc"[9]` stay `undefined` · `for x in 5` → `NotIterable`; `for x in null` → runs
@@ -584,9 +589,16 @@ CascadaScript inherits nunjucks templating leniencies that hide programming bugs
   one new `IncompatibleOperands` (or reuse `NaNResult` for the arithmetic ones — decide at
   implementation). Templates keep raw JS operators + the result-only `NaNResult`.
 
-- [ ] Docs: add to `template.md` "Template vs Script: Key Differences" (minimal style) — in
-  scripts `==`/`!=` are strict and arithmetic operands must be numbers (concat uses `~`, convert
-  with `| int`/`| float`); templates keep loose `==` and JS operator coercion.
+- [ ] Docs (all surfaces, not just template.md):
+  - **kind tables** (analysis §3 + `script.md` *Anatomy of an Error Value*): add the `in`→poison
+    kind and the operand kind (`IncompatibleOperands`, or note the `NaNResult` reuse for arithmetic).
+  - **`script.md` operator/expression section** (≈173, 457): scripts use strict `==`/`!=`;
+    arithmetic needs numeric operands (concat is `~`; convert with `| int` / `| float`); ordering
+    needs both number or both string; `in` on a non-collection poisons.
+  - **`cascada-agent.md`**: update the operator rule (the "arithmetic/logical operators THROW on
+    `none`/missing target" line ≈352) to the script-mode typed-operand behavior.
+  - **`template.md`** "Template vs Script: Key Differences" (minimal style): scripts use strict
+    `==` and numeric operators; templates keep loose `==` and JS coercion.
 
 **Explicitly not doing:** macro/function arity (skipping arguments is a valid pattern — stays
 silent); default `throwOnUndefined` in script mode (`undefined` stays `undefined`, JS-like).
@@ -602,29 +614,55 @@ still run · `{{ x.missing }}` still `undefined` · the same expressions stay JS
 
 ---
 
-## Phase 14 — Text `set` multi-argument support
+## Phase 14 — Text-chain multi-argument output
 
-`text.set(...)` should match normal text-output ergonomics: accept any number of values,
-normalize each like appended text, and replace the chain with their concatenation. Mixing
-strings and numbers is fine; only values with no usable string form are rejected.
+Text chains should be documented and verified around the user-facing callable form:
+`text body` then `body("num: ", 10)`. Multiple arguments are text pieces, normalized like normal
+text output, then appended in order. Mixing strings and numbers is fine; only values with no
+usable string form are rejected.
 
-- [ ] **Remove the arity validation entirely** — drop the compile-time `_failInvalidTextSetArity`
-  (it's duplicated in `buffer.js` **and** `chain.js`) and the runtime `args.length !== 1` fatal in
-  `text.js`. `set` already resets the chain to `[]` and appends, so removing the check is enough:
-  `body.set("A", 1, "B", 2)` → `"A1B2"` and `body.set()` → empty, with no new code.
+- [ ] **Callable text chains**: ensure `body("A", 1, "B", 2)` appends `"A1B2"` and
+  `body()` is a no-op / empty append, matching current text-output semantics.
+- [ ] **Remove the internal `set` arity validation**: drop the compile-time
+  `_failInvalidTextSetArity` duplication (`buffer.js` + `chain.js`) and the runtime
+  `args.length !== 1` fatal in `text.js`. `set` already resets the chain to `[]` and appends, so
+  without the check `body.set("A", 1, "B", 2)` naturally stores `"A1B2"` and `body.set()` stores
+  empty text.
 - [ ] **Value rules come for free** from `appendTextValues`: scalars (string/number/boolean/
   bigint) and objects with a real `toString` concatenate; a plain object / function / symbol
-  poisons as `InvalidTextValue` (Phase 10) — same as any other text output. So mixing strings and
-  numbers works, and only non-stringifiable values poison.
+  poisons as `InvalidTextValue` (Phase 10) — same as any other text output.
 - [ ] **Poison passthrough**: a poison argument flows into the text chain exactly as normal text
   output does; do not relabel existing poison.
-- [ ] Docs: mention multi-value `text.set(...)` in `script.md` / agent docs near text-chain
-  examples.
+- [ ] Docs: mention multi-value callable text chains in `script.md` / agent docs near text-chain
+  examples. Treat `text.set(...)` as an internal/method-style detail, not the main user-facing
+  syntax.
 
-Verify: `body.set("Number of people: ", 5, " number of kids: ", 2)` →
-`"Number of people: 5 number of kids: 2"` · `body.set()` → empty · `body.set({})` →
-`InvalidTextValue` poison · poison arguments propagate · `tests/pasync/chain-errors.js` /
-text-chain render tests · `npm run build`.
+Verify: `text body; body("Number of people: ", 5, " number of kids: ", 2)` →
+`"Number of people: 5 number of kids: 2"` · `body()` is harmless · `body({})` →
+`InvalidTextValue` poison · `body.set("A", 1, "B", 2)` stores `"A1B2"` · poison arguments
+propagate · text-chain render tests / `tests/pasync/chain-errors.js` · `npm run build`.
+
+---
+
+## Phase 15 — Documentation closeout & consistency (final)
+
+The true docs closeout — placed **after** all behavior-changing phases. Phase 8 documented the
+*core* model (kinds, `loadFailFatal`, `NaN`, groups) as of Phase 6; Phases 10–14 then reshaped the
+taxonomy and added strictness. Per-phase "Docs:" steps do the incremental writing; this phase
+verifies the whole surface agrees.
+
+- [ ] No **retired** kind (`ValueRejected`, `DataMethodThrew`, `ExpressionThrew`, `ConditionThrew`,
+  `DestructureMismatch`, `SequentialPathThrew`) appears in any doc.
+- [ ] Every **active** kind appears in **both** kind tables (`script.md` *Anatomy of an Error
+  Value* + analysis §3) and they match.
+- [ ] `cascada-agent.md` ERR-07 lists `kind` in the `#errors` shape (the Phase 8 catch-up), and
+  its operator/lookup rules reflect script-mode strictness (typed operands, strict `==`, scalar
+  lookup/iteration, `in`).
+- [ ] `template.md` "Template vs Script: Key Differences" lists every script/template divergence
+  (scalar lookup/iteration, strict `==`, numeric operators, `in`).
+- [ ] Examples across all docs still render / match behavior; links resolve.
+
+Verify: `npm run build` · grep the docs for retired kind names → none.
 
 ---
 
@@ -637,11 +675,21 @@ text-chain render tests · `npm run build`.
   retaining the full structured `.errors[]` (Phase 3).
 - **Dedup stability** — non-issue; origin context is fixed at creation, so order does
   not change the kept context. No work.
-- **Efficiency** — low priority; lazy formatting still worth doing for clarity.
+- **Efficiency** — low priority; lazy diagnostic formatting was evaluated and **intentionally
+  skipped** in Phase 7 (it complicated `RuntimeContextError` and changed `Error.message`
+  behavior; eager formatting is simpler and correct). Revisit only on a profiling surprise.
 
 ## Doc upkeep
 
 - Keep §11 items and this plan's checkboxes in sync as items land.
 - When a phase touches emitted code, note the fixture regeneration in the PR.
-- After all phases: re-run the §13 verification targets and update the analysis
-  doc's status notes (e.g. mark §11.16 fixed, drop the `it.skip`).
+- **Documentation surfaces** — every kind/behavior change must reconcile *all* of: the two kind
+  tables (`script.md` *Anatomy of an Error Value* + analysis §3), the relevant `script.md`
+  behavioral section (lookup / loops / operators / channels), `template.md` "Template vs Script:
+  Key Differences", and `cascada-agent.md` (ERR-07 error-value shape + the operator/lookup rules).
+  A per-phase "Docs:" step should name each surface it touches.
+- **Catch-up (Phase 8 gap):** `cascada-agent.md` ERR-07's `#errors` field list omits `kind`
+  (added in Phase 3 and documented in `script.md`, but never mirrored to the agent doc) — add it.
+- After all phases: re-run the §13 verification targets and update the analysis doc's status
+  notes (e.g. mark §11.16 fixed, drop the `it.skip`). The **final docs-consistency pass is
+  Phase 15** (placed after all behavior-changing work, not here).

@@ -35,7 +35,7 @@ function sequentialCallWrapValue(func, funcName, context, args, pathKey, errorCo
 
 function sequentialContextLookupValue(context, name, pathKey, errorContext, repair = false, currentBuffer) {
   return withSequentialPathChain(currentBuffer, pathKey, errorContext, repair, false, () =>
-    contextLookupOnly(context, name, pathKey, errorContext)
+    context.lookupScript(name, errorContext)
   );
 }
 
@@ -52,13 +52,3 @@ function sequentialMemberLookupScriptValue(target, key, pathKey, errorContext, r
 }
 
 export { sequentialCallWrapValue, sequentialContextLookupValue, sequentialMemberLookupAsyncValue, sequentialMemberLookupScriptValue };
-
-function contextLookupOnly(context, name, pathKey, errorContext) {
-  const value = context.lookup(name, errorContext);
-  if (value === undefined) {
-    throw new Error(
-      `Sequential path '${pathKey}' root '${name}' is not available in context`
-    );
-  }
-  return value;
-}

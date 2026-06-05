@@ -188,7 +188,6 @@ source is assigned its target `kind`; `NotAnArray`, `ImportBindingMissing`,
 | `UnknownVariable` | `environment/context.js` `lookupScript` — bare symbol names an unknown variable/function (script mode) | `create` | existing |
 | `NullLookup` | `lookup.js` — script-mode property access on `null`/`undefined` | `create` | existing |
 | `LookupThrew` | `lookup.js` — a property getter threw during the read | `wrap` | existing |
-| `SequentialPathThrew` | `commands/sequential-path.js` — a `!` path operation threw | `wrap` | existing |
 | `IteratorThrew` | `loop.js` — async iterator `.next()`/`for await` threw, or a generator yielded an `Error` | `wrap` | existing |
 | `InvalidConcurrentLimit` | `loop.js` — `concurrentLimit` is not a positive number | `create` | existing |
 | `ContextValueRejected` | `environment/context.js` `normalizeContextValue` and the `compiler-async` return wrap — a promise supplied by the render context (or returned directly) rejected | `wrap` | existing |
@@ -823,7 +822,7 @@ converts/records correctly.)
 
 | Site | Surrounds | Behavior | Class | Verdict |
 |---|---|---|---|---|
-| `runSequentialPathOperation` ≈83 | `cmd.operation()` | `PoisonError.wrap` → `rejectPoison` | C source | KEEP |
+| `runSequentialPathOperation` ≈83 | `cmd.operation()` | poison→throw unchanged, raw→`reportAndThrow` | B | fixed — raw sync failures are fatal; normal user call/lookup failures return poison before this catch |
 | `runSequentialPathOperation` ≈89 (async rejection) | awaited result | poison→`rejectPoison`, raw→`reportAndThrow` | B | KEEP |
 
 ### `runtime/async-boundaries.js`

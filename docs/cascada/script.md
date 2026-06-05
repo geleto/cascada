@@ -1868,7 +1868,6 @@ The `kind` values:
 | `ImportBindingMissing` | imported name is not exported by the module |
 | `NaNResult` | a computation produced `NaN` (`Infinity` stays a value) |
 | `InvalidTextValue` | a value that cannot be converted to text (a plain object, function, or symbol) |
-| `SequentialPathThrew` | a `!` path operation threw |
 | `ContextValueRejected` | a promise supplied by the render context (or returned directly) rejected |
 
 The single-item `errors` array is intentional. It lets code process standalone

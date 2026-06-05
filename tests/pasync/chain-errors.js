@@ -431,6 +431,31 @@ describe('chain errors', function () {
   });
 
   describe('sequential path command hardening', function () {
+    it('reports raw sync sequential operation throws as fatal runtime errors', () => {
+      const raw = new Error('raw sequential sync failure');
+      const cmd = new SequentialPathWriteCommand({
+        chainName: 'db',
+        pathKey: 'db',
+        operation: () => {
+          throw raw;
+        },
+        errorContext: TEST_EC
+      });
+      const chain = {
+        _getSequentialPathPoisonError: () => null,
+        _applySequentialPathPoisonError: () => {
+          throw new Error('raw failure should not be stored as poison');
+        },
+        _setSequentialPathLastResult: () => {}
+      };
+
+      expect(() => cmd.apply(chain)).to.throwException((err) => {
+        expect(err).to.be.a(RuntimeError);
+        expect(err.cause).to.be(raw);
+        expect(err.message).to.contain('raw sequential sync failure');
+      });
+    });
+
     it('reports raw async sequential operation rejections as fatal runtime errors', async () => {
       const raw = new Error('raw sequential failure');
       const cmd = new SequentialPathWriteCommand({
