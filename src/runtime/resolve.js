@@ -53,29 +53,27 @@ function unwrapResolvedValue(value) {
   return isResolvedValue(value) ? value.value : value;
 }
 
-// Normalize a value that is leaving Cascada and becoming an ordinary JS promise/value.
-// Keep this as the final boundary: callers may pass either a value or a promise
-// for a value, and the resolved value still gets Cascada final-value handling.
-// Only these cases are allowed here:
-// - ordinary promises: normalize the resolved final value
-// - RESOLVE_MARKER-backed lazy values: return a promise for the final resolved object/array
-// - RESOLVED_VALUE_MARKER wrappers: unwrap synchronously to the plain value
-// - PoisonedValue: convert to a normal rejecting promise
-// Keeping this narrow avoids turning it into a generic resolution helper.
+// Normalize a value that is leaving Cascada and becoming an ordinary JS
+// promise/value. Regular Cascada resolution owns promise/RESOLVE_MARKER value
+// shapes; the final boundary only translates Cascada poison into public
+// promise rejection.
 function normalizeFinalPromise(value) {
-  if (isResolvedValue(value)) {
-    return unwrapResolvedValue(value);
+  const resolved = resolveSingle(value);
+  if (isResolvedValue(resolved)) {
+    return unwrapResolvedValue(resolved);
   }
-  if (isPoison(value)) {
-    return Promise.reject(PoisonError.group(value.errors));
+  if (isPoison(resolved)) {
+    return Promise.reject(PoisonError.group(resolved.errors));
   }
-  if (value && typeof value.then === 'function') {
-    return Promise.resolve(value).then((resolved) => normalizeFinalPromise(resolved));
+  if (resolved && typeof resolved.then === 'function') {
+    return Promise.resolve(resolved).then((value) => {
+      if (isPoison(value)) {
+        return Promise.reject(PoisonError.group(value.errors));
+      }
+      return value;
+    });
   }
-  if (value && value[RESOLVE_MARKER]) {
-    return Promise.resolve(value[RESOLVE_MARKER]).then(() => value);
-  }
-  return value;
+  return resolved;
 }
 
 // Consume an array of independent Cascada values.
