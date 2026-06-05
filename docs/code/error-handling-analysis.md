@@ -8,7 +8,7 @@ current best-known and still being swept (§11), not final proof. Unchecked item
 §11 are target design, not current implementation.
 
 **Scope:** the async compiler/runtime only. The frozen synchronous
-Nunjucks-compatible path (`handleError(error, lineno, colno, label, path)`,
+Nunjucks-compatible path (`createSyncRuntimeError(error, lineno, colno, label, path)`,
 `cb(err)` callbacks, sync-mode block catches such as `emit.js`'s post-`asyncMode`
 catch) is a separate pipeline and is out of scope.
 
@@ -876,7 +876,7 @@ No catch. Driver only: fatal-state check + `_stopAfterFatalReport`, and
 | `compiler-async.js` callback-extension ≈132 | `if (!isPoisonError(e) && !isRuntimeError(e)) reportAndThrow(e, ec); throw e;` then wrap return `RuntimePromise` | B | KEEP |
 | `compiler-async.js` async `if` / `switch` branch catch | raw throw -> `RuntimeError.reportAndThrow(e, ec)`; existing poison -> `ErrorCommand` on branch poison chains (no rethrow) | branch effect poisoning + raw fatal | KEEP |
 | `boundaries.js` `compileValueBoundary` | `runtime.rethrowPoisonOrReport(e, ec)` | poison passthrough + raw fatal | KEEP |
-| `emit.js` block catch ≈155 | sync-mode `handleError` + `cb(err)` (guarded by `asyncMode` return above) | frozen sync | KEEP (out of scope) |
+| `emit.js` block catch ≈155 | sync-mode `createSyncRuntimeError` + `cb(err)` (guarded by `asyncMode` return above) | frozen sync | KEEP (out of scope) |
 
 The async emitted `if`/`switch` catch converts only existing poison into poison
 markers on the affected chains. Raw branch-evaluation failures are fatal, so the
@@ -1331,7 +1331,7 @@ complexity rather than removing it):
   reaches the environment layer. Converting operator throws to poison uniformly
   would require wrapping each operator application in try/catch (a single
   `OperatorThrew` kind), which is a separate change from the `NaN`-result work.
-- **Sync compilation mode.** `cb(err)`, `handleError(...)`, and sync-mode block
+- **Sync compilation mode.** `cb(err)`, `createSyncRuntimeError(...)`, and sync-mode block
   catches are a frozen pipeline; do not rewrite them here.
 - **Component boundary redesign.** Component creation owns isolated component
   buffers today. Letting component calls fill the caller's boundary buffer

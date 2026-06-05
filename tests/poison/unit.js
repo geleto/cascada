@@ -7,7 +7,7 @@ import {
   createObject,
   createPoison,
   createRenderState,
-  handleError,
+  createSyncRuntimeError,
   isPoison,
   isPoisonError,
   isError,
@@ -407,8 +407,8 @@ describe('typed poison error contracts', () => {
     });
   });
 
-  it('keeps handleError compatibility with legacy positional arguments', () => {
-    const err = handleError(new Error('legacy failure'), 3, 4, 'Legacy.Sync', 'legacy.casc');
+  it('creates sync runtime errors with legacy positional arguments', () => {
+    const err = createSyncRuntimeError(new Error('legacy failure'), 3, 4, 'Legacy.Sync', 'legacy.casc');
 
     expect(isRuntimeError(err)).to.be(true);
     expect(err.message).to.contain('RuntimeError: legacy failure');

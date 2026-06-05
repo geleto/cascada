@@ -195,7 +195,7 @@ class PoisonErrorGroup extends Error {
 
 `RuntimePromise` is a lightweight promise wrapper that proactively attaches contextual information (e.g., file path, line number) to a promise. If the promise rejects, this context enriches the raw error before it is collected into a `PoisonedValue`.
 
-It works by wrapping any `onRejected` handler passed to its `.then()` or `.catch()` methods. On rejection, `RuntimePromise` intercepts the error, uses its stored `errorContext` to create a `RuntimeError` via the idempotent `handleError` utility, and then passes the enriched error to the rejection handler. This lazy interception avoids suppressing native "unhandled rejection" warnings.
+It works by wrapping any `onRejected` handler passed to its `.then()` or `.catch()` methods. On rejection, `RuntimePromise` intercepts the error, uses its stored `errorContext` to create a `RuntimeError` via the idempotent `createSyncRuntimeError` utility, and then passes the enriched error to the rejection handler. This lazy interception avoids suppressing native "unhandled rejection" warnings.
 
 As the first line of defense, `RuntimePromise` guarantees that an error is stamped with its precise origin before being collected.
 
@@ -631,7 +631,7 @@ catch (err) {
 }
 ```
 
-### Bug #8: Delaying `handleError` Wrapping
+### Bug #8: Delaying `createSyncRuntimeError` Wrapping
 
 **The Problem:** If we add context too late, the precise origin (line/col/path) is lost and duplicate, generic errors can appear.
 
@@ -648,7 +648,7 @@ try {
 
 **✅ CORRECT: Attach Context Where You Have It (two valid patterns)**
 
-1) Awaiting at the call site → use try/catch + handleError
+1) Awaiting at the call site → use try/catch + createSyncRuntimeError
 ```javascript
 async function invokeAndUse() {
   const ctx = getCurrentErrorContext(); // { lineno, colno, path, ... }
@@ -656,7 +656,7 @@ async function invokeAndUse() {
     const result = await realAsyncFunc();
     return process(result);
   } catch (err) {
-    const handled = handleError(err, ctx.lineno, ctx.colno, ctx.errorContextString, ctx.path);
+    const handled = createSyncRuntimeError(err, ctx.lineno, ctx.colno, ctx.errorContextString, ctx.path);
     return createPoison(handled);
   }
 }
@@ -672,7 +672,7 @@ function invokeAndReturn() {
 ```
 
 Rule of thumb:
-- If you await where you know the context, use try/catch + handleError.
+- If you await where you know the context, use try/catch + createSyncRuntimeError.
 - If you return a promise without awaiting, return a RuntimePromise with that context.
 
 ---

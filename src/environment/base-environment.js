@@ -3,7 +3,7 @@ import * as filters from '../builtins/filters.js';
 import * as tests from '../builtins/tests.js';
 import {createGlobals} from '../builtins/globals.js';
 import {EmitterObj} from '../object.js';
-import {handleError} from '../runtime/errors.js';
+import {createSyncRuntimeError} from '../runtime/errors.js';
 import {express as expressApp} from './express-app.js';
 import {clearStringCache, callLoaders} from '../loader/loader-utils.js';
 
@@ -77,7 +77,7 @@ const noopTmplSrc = {
       try {
         cb(null, '');
       } catch (e) {
-        const err = handleError(e, null, null, null, context ? context.path : null);
+        const err = createSyncRuntimeError(e, null, null, null, context ? context.path : null);
         cb(err);
       }
     }

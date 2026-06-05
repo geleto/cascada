@@ -216,7 +216,7 @@ class TemplateRuntime extends Obj {
     try {
       rootResult = this.rootRenderFunc(this.env, context, globalRuntime, renderState, true);
     } catch (err) {
-      const handled = globalRuntime.handleError(err, 0, 0, 'Root(PosNode)', context.path);
+      const handled = globalRuntime.createSyncRuntimeError(err, 0, 0, 'Root(PosNode)', context.path);
       renderState.reportFatalError(handled);
       return Promise.reject(handled);
     }

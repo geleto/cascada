@@ -17,9 +17,9 @@ async adapters.
 - `RuntimeError.create(...)`, `RuntimeError.report(...)`, and
   `RuntimeError.reportAndThrow(...)` are the async runtime wrappers/reporting
   paths for fatal non-poison errors
-- `handleError(error, lineno, colno, label, path)` remains only for the frozen
+- `createSyncRuntimeError(error, lineno, colno, label, path)` remains only for the frozen
   synchronous Nunjucks-compatible compiler path
-- synchronous positional `handleError(...)` calls must not be rewritten as part
+- synchronous positional `createSyncRuntimeError(...)` calls must not be rewritten as part
   of this cleanup
 - wrapped errors preserve the first source-origin context assigned to them
 - `PoisonError` is the individual non-fatal contextual error; `PoisonErrorGroup`
@@ -61,7 +61,7 @@ Implemented for the async runtime:
    `createPoison(...)`, and async wrapping to compact-context inputs. Async
    runtime code uses `contextualizeError(error, errorContext)`.
    The frozen sync/Nunjucks compiler path keeps the positional
-   `handleError(error, lineno, colno, label, path)` adapter.
+   `createSyncRuntimeError(error, lineno, colno, label, path)` adapter.
 3. Collapsed `ensureDefinedAsync(...)` and its async helper to remove
    positional `lineno` and `colno` arguments. Async safe-output diagnostics use
    compact `errorContext`; synchronous `ensureDefined(...)` stays on the frozen
@@ -262,7 +262,7 @@ Phase E active taxonomy:
 | `PoisonError` | Keep as the only poisoned-value error wrapper |
 | `RuntimeError` | Fatal runtime error family |
 | `CompileError` | Keep as the compile/load-time error family |
-| `handleError(...)` | Frozen sync compiler adapter only |
+| `createSyncRuntimeError(...)` | Frozen sync compiler adapter only |
 
 1. Done: audit value-consumption boundaries before changing the fatal marker:
    command argument resolution, chain error recording, loop iteration catches,
@@ -294,7 +294,7 @@ Phase E active taxonomy:
    - Done in Phase H: shrink `resolveEffectiveErrorContext(...)` to the final
      compact-context precedence rule after non-array legacy tolerance is proven
      dead.
-   - Done in Phase H: keep `handleError(...)` isolated to the frozen sync
+   - Done in Phase H: keep `createSyncRuntimeError(...)` isolated to the frozen sync
      compiler path and publicly exported for now; final public surface
      narrowing is Phase J.
    - Done in Phase H: remove `EMPTY_ERROR_CONTEXT_INFO` and
@@ -525,7 +525,7 @@ Preflight audit performed:
    paths. Contextualizing an existing `PoisonError` preserves it unchanged, and
    consuming lookup/call/loop/output paths no longer attach their local
    `errorContext` to incoming failed values.
-7. Decision: keep `handleError(...)` publicly exported for now as the frozen
+7. Decision: keep `createSyncRuntimeError(...)` publicly exported as the frozen
    sync compiler adapter. Public export narrowing remains Phase J after the
    fatal-family cleanup.
 
@@ -662,11 +662,11 @@ contract.
 7. [x] Remove stale public TypeScript support for the `{ ec, ...metadata }`
    runtime-context wrapper and later the compact context tuple itself. Compact
    context is an internal compiled/runtime ABI, not a language-user API.
-8. [x] Keep `handleError(...)` publicly exported only as the frozen sync
+8. [x] Keep `createSyncRuntimeError(...)` publicly exported only as the frozen sync
    compiler adapter. It is not part of the async runtime error model, and new
    async/runtime code should use `RuntimeError.create(...)`,
    `RuntimeError.report(...)`, or `RuntimeError.reportAndThrow(...)`. Do not
-   include `handleError(...)` in async error API docs except as a sync
+   include `createSyncRuntimeError(...)` in async error API docs except as a sync
    compatibility note.
 9. [x] Record the import/from-import `RuntimePromise` wrapping from
    `error-handling-analysis.md` Phase 2 as complete. Async `import` and

@@ -76,7 +76,7 @@ class CompilerBaseSync extends CompilerCommon {
       this.emit(', ');
       this.compile(node.right.args, frame);
     }
-    this.emit(`) : (() => { var err = runtime.handleError(new Error("${failMsg}"), ${node.right.lineno}, ${node.right.colno}, "${errorContext}", context.path); throw err; })())`);
+    this.emit(`) : (() => { var err = runtime.createSyncRuntimeError(new Error("${failMsg}"), ${node.right.lineno}, ${node.right.colno}, "${errorContext}", context.path); throw err; })())`);
     this.emit(' === true');
   }
 

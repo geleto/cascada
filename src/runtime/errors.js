@@ -754,7 +754,7 @@ function collectThrownError(errors, err) {
 
 // Sync compatibility only. New async/runtime code should use
 // RuntimeError.report(...) or RuntimeError.reportAndThrow(...).
-function handleError(error, lineno = null, colno = null, syncLabel = null, path = null) {
+function createSyncRuntimeError(error, lineno = null, colno = null, syncLabel = null, path = null) {
   if (error instanceof RuntimeError) {
     return error;
   }
@@ -790,4 +790,4 @@ function peekError(value) {
   return null;
 }
 
-export { PoisonedValue, PoisonError, PoisonErrorGroup, RuntimeError, RuntimeContextError, RuntimePromise, createPoison, poisonIfNaN, poisonOrReport, rethrowPoisonOrReport, poisonOrReportedFatal, poisonOrRethrow, observeDiscardedExpression, isPoison, isPoisonError, isRuntimeError, isError, collectErrors, handleError, peekError, markPromiseHandled, isLoadFailureFatal, handleLoadFailure };
+export { PoisonedValue, PoisonError, PoisonErrorGroup, RuntimeError, RuntimeContextError, RuntimePromise, createPoison, poisonIfNaN, poisonOrReport, rethrowPoisonOrReport, poisonOrReportedFatal, poisonOrRethrow, observeDiscardedExpression, isPoison, isPoisonError, isRuntimeError, isError, collectErrors, createSyncRuntimeError, peekError, markPromiseHandled, isLoadFailureFatal, handleLoadFailure };

@@ -27,7 +27,7 @@ Complete source and documentation file reference. The most critical files for da
 
 ### Runtime Core
 -   `src/runtime/runtime.js` — Runtime barrel. Re-exports helpers and chain/command classes used by compiled code.
--   `src/runtime/errors.js` — Poison and error helpers: `PoisonError`, `isPoison`, `isPoisonError`, `handleError`.
+-   `src/runtime/errors.js` — Poison and error helpers: `PoisonError`, `isPoison`, `isPoisonError`, `createSyncRuntimeError`.
 -   `src/runtime/resolve.js` — Promise/poison resolution: `resolveAll`, `resolveSingle`, sync-first helpers.
 -   `src/runtime/command-buffer.js` — Command buffer implementation. Creates and links runtime buffers, routes commands to chains.
 -   `src/runtime/buffer-iterator.js` — Buffer iterator. Walks the command buffer tree depth-first in source order, applies commands, waits on unfilled child slots.

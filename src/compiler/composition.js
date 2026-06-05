@@ -243,7 +243,7 @@ class CompileComposition {
       this.emit.line(`if(Object.prototype.hasOwnProperty.call(${importedId}, "${name}")) {`);
       this.emit.line(`${id} = ${importedId}.${name};`);
       this.emit.line('} else {');
-      this.emit.line(`var err = runtime.handleError(new Error("${failMsg}"), ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}", context.path); cb(err); return;`);
+      this.emit.line(`var err = runtime.createSyncRuntimeError(new Error("${failMsg}"), ${nameNode.lineno}, ${nameNode.colno}, "${errorContext}", context.path); cb(err); return;`);
       this.emit.line('}');
 
       frame.set(alias, id);

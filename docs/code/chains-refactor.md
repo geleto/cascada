@@ -530,7 +530,7 @@ runtime.runControlFlowBoundary(astate, currentBuffer, ["__text__","data"], frame
         frame = frame.pop();
       }
     } catch (e) {
-      const contextualError = runtime.isPoisonError(e) ? e : runtime.handleError(e, ...);
+      const contextualError = runtime.isPoisonError(e) ? e : runtime.createSyncRuntimeError(e, ...);
       currentBuffer.addCommand(new ErrorCommand(contextualError), "__text__");
       currentBuffer.addCommand(new ErrorCommand(contextualError), "data");
     }

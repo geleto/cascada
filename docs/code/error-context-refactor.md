@@ -571,7 +571,7 @@ The frozen synchronous Nunjucks-compatible compiler path keeps a separate
 positional adapter:
 
 ```js
-handleError(error, lineno, colno, errorContextString, path)
+createSyncRuntimeError(error, lineno, colno, errorContextString, path)
 ```
 
 All runtime helper calls emitted by the compiler should pass compact prepared
@@ -731,7 +731,7 @@ Before implementation, audit:
 - every `_generateErrorContext(...)` legacy string-label call site
 - inline compiler-emitted context literals
 - command constructors and command application paths
-- `RuntimePromise`, `RuntimeFatalError`, `createPoison`, and `handleError`
+- `RuntimePromise`, `RuntimeFatalError`, `createPoison`, and `createSyncRuntimeError`
 - `resolveErrorContextArgs(...)` and all legacy positional context overloads
 - script symbol lookup and template symbol lookup differences
 - precompiled fixture expectations
@@ -820,12 +820,12 @@ Before implementation, audit:
 2. Source patterns to replace:
    generated JSON-stringified error-context objects, inline context object
    literals, and raw field-list calls such as
-   `handleError(e, lineno, colno, errorContextString, path)`.
+   `createSyncRuntimeError(e, lineno, colno, errorContextString, path)`.
 3. Coverage checklist:
    script symbol lookup, template lookup, composition, inheritance,
    macro/caller, loop, guard, output, return, and boundary codegen paths.
    Include legacy inheritance catch paths that still call
-   `handleError(e, lineno, colno, errorContextString, path)`.
+   `createSyncRuntimeError(e, lineno, colno, errorContextString, path)`.
    Pass `traceParent` to emitted `runRenderBoundary(...)` calls where the
    render boundary has a diagnostic caller buffer. Ensure macro, caller,
    method, block, and other callable
@@ -856,7 +856,7 @@ compiler paths are frozen at the Nunjucks compatibility layer and are not part
 of this async error-context refactor. The important boundary is that async
 compiler-emitted runtime helper calls should no longer need generated
 `{ lineno, colno, errorContextString, path }` objects or positional
-`handleError(...)` calls.
+`createSyncRuntimeError(...)` calls.
 Optional command-buffer display fields such as `loadName`, `targetIdentifier`,
 and `branch` may also be filled in after this migration; they need
 AST-specific display choices rather than broad mechanical rewrites.
@@ -956,7 +956,7 @@ metadata cleanup, runtime error taxonomy, fatal delivery, helper ownership,
 buffer API cleanup, and final fixture updates.
 
 The synchronous Nunjucks-compatible compiler path remains frozen. Any
-synchronous positional `handleError(...)` calls that remain are intentionally
+synchronous positional `createSyncRuntimeError(...)` calls that remain are intentionally
 out of scope unless a separate sync-compiler project is opened.
 
 ## Tests

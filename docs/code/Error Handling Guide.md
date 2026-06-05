@@ -51,7 +51,7 @@ later value consumption.
 ## Sync Path
 
 The frozen Nunjucks-compatible synchronous compiler path still uses positional
-`handleError(error, lineno, colno, label, path)`. Do not rewrite those call
+`createSyncRuntimeError(error, lineno, colno, label, path)`. Do not rewrite those call
 sites as part of async error cleanup.
 
 Async code should use compact prepared error contexts and the runtime error

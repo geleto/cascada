@@ -3,7 +3,7 @@ import {escape} from '../lib.js';
 import {
   isPoison,
   RuntimeError,
-  handleError,
+  createSyncRuntimeError,
   collectErrors,
   PoisonError,
   rethrowPoisonOrReport
@@ -185,7 +185,7 @@ async function _suppressValueAsyncComplex(val, autoescape, errorContext) {
 
 function ensureDefined(val, lineno, colno, context) {
   if (val === null || val === undefined) {
-    const err = handleError(
+    const err = createSyncRuntimeError(
       new Error('attempted to output null or undefined value'),
       lineno + 1,
       colno + 1,

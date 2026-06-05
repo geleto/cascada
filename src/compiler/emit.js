@@ -154,7 +154,7 @@ class CompileEmit {
     }
     this.line('} catch (e) {');
     const errorContextLabel = node ? `"${this.compiler._generateErrorContext(node)}"` : 'null';
-    this.line(`  var err = runtime.handleError(e, lineno, colno, ${errorContextLabel}, context.path);`); // Store and update the handled error
+    this.line(`  var err = runtime.createSyncRuntimeError(e, lineno, colno, ${errorContextLabel}, context.path);`); // Store and update the handled error
     this.line('  cb(err);'); // Pass the updated error to the callback
     //this.Line('  throw e;');//the returned promise should not resolve
     this.line('}');
