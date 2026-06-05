@@ -155,6 +155,15 @@ function normalizeLoopValue(value, errorContext) {
   return poisonIfNaN(value, errorContext);
 }
 
+function isScalarIterableTarget(value) {
+  const type = typeof value;
+  return value !== null &&
+    value !== undefined &&
+    type !== 'object' &&
+    type !== 'function' &&
+    type !== 'string';
+}
+
 function getDestructuredLoopArgs(value, loopVars, errorContext, buffer, asyncOptions) {
   // Returns null after poisoning this iteration's body effects for a malformed value.
   if (isPoison(value)) {
@@ -163,7 +172,7 @@ function getDestructuredLoopArgs(value, loopVars, errorContext, buffer, asyncOpt
   if (Array.isArray(value)) {
     return value.slice(0, loopVars.length).map(arg => normalizeLoopValue(arg, errorContext));
   }
-  const poisonError = PoisonError.create('Expected an array for destructuring', errorContext, 'NotAnArray');
+  const poisonError = PoisonError.create('Expected an array for destructuring', errorContext, 'NotDestructurable');
   poisonIterationEffects(buffer, asyncOptions, poisonError);
   return null;
 }
@@ -775,6 +784,16 @@ async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOpti
   }
 
   try {
+    if (asyncOptions && asyncOptions.scriptMode && isScalarIterableTarget(arr)) {
+      poisonLoopEffects(
+        buffer,
+        asyncOptions,
+        PoisonError.create(`Cannot iterate over scalar value ${String(arr)}`, errorContext, 'NotIterable'),
+        false
+      );
+      return;
+    }
+
     // Resolve and validate concurrentLimit if present
     let maxConcurrency = asyncOptions ? asyncOptions.concurrentLimit : null;
 

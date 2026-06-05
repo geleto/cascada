@@ -13,6 +13,7 @@ import {
 import {resolveDuo} from './resolve.js';
 import {SnapshotCommand, IsErrorCommand, GetErrorCommand} from './commands/observation.js';
 import {getSharedSourceName} from '../inheritance/shared-names.js';
+import {formatDiagnosticValue} from './error-format.js';
 /**
  * Sync member lookup for templates.
  * Returns undefined if obj is undefined or null.
@@ -33,17 +34,30 @@ function memberLookupImpl(obj, val) {
   return value;
 }
 
-/**
- * Sync member lookup for scripts.
- * Throws error if obj is null/undefined.
- */
-function memberLookupScriptRaw(obj, val) {
+function isScalarLookupTarget(obj) {
+  const type = typeof obj;
+  return type !== 'object' && type !== 'function' && type !== 'string';
+}
+
+function formatLookupValue(value) {
+  return formatDiagnosticValue(value, new Set());
+}
+
+function memberLookupScriptResolved(obj, val, errorContext) {
   if (obj === undefined || obj === null) {
-    //unlike in template mode, in script mode we throw an exception
-    throw new Error(`Cannot read property ${val} of ${obj}`);
+    return createPoison(PoisonError.create(`Cannot read property ${formatLookupValue(val)} of ${formatLookupValue(obj)}`, errorContext, 'NullLookup'));
   }
 
-  const value = obj[val];//some APIs (vercel ai result.elementStream) do not like multiple reads
+  let value;
+  try {
+    value = obj[val];//some APIs (vercel ai result.elementStream) do not like multiple reads
+  } catch (err) {
+    return createPoison(PoisonError.wrap(err, errorContext, 'LookupThrew'));
+  }
+
+  if (value === undefined && isScalarLookupTarget(obj)) {
+    return createPoison(PoisonError.create(`Cannot read property ${formatLookupValue(val)} of ${formatLookupValue(obj)}`, errorContext, 'ScalarLookup'));
+  }
   if (value && value.isMacro) {
     return value;
   }
@@ -51,7 +65,10 @@ function memberLookupScriptRaw(obj, val) {
     return (...args) => obj[val](...args);//use obj lookup so that 'this' binds correctly
   }
 
-  return value;
+  if (value && typeof value.then === 'function') {
+    return new RuntimePromise(value, errorContext, 'LookupThrew');
+  }
+  return poisonIfNaN(value, errorContext);
 }
 
 /**
@@ -160,19 +177,7 @@ function memberLookupScript(obj, val, errorContext, currentBuffer = null) {
     return val;
   }
 
-  if (obj === undefined || obj === null) {
-    return createPoison(PoisonError.create(`Cannot read property ${val} of ${obj}`, errorContext, 'NullLookup'));
-  }
-
-  const value = obj[val];//some APIs (vercel ai result.elementStream) do not like multiple reads
-  if (typeof value === 'function') {
-    return (...args) => obj[val](...args);//use obj lookup so that 'this' binds correctly
-  }
-
-  if (value && typeof value.then === 'function') {
-    return new RuntimePromise(value, errorContext, 'LookupThrew');
-  }
-  return poisonIfNaN(value, errorContext);
+  return memberLookupScriptResolved(obj, val, errorContext);
 }
 
 async function _memberLookupScriptComplex(obj, val, errorContext, currentBuffer = null) {
@@ -198,21 +203,7 @@ async function _memberLookupScriptComplex(obj, val, errorContext, currentBuffer 
     return poisonOrReport(err, errorContext);
   }
 
-  try {
-    // The call to memberLookupScript can throw a native TypeError if resolvedObj is null/undefined.
-    // This try/catch block will handle it and enrich the error with context.
-    const result = memberLookupScriptRaw(resolvedObj, resolvedVal);
-
-    // Wrap promise results to preserve error context
-    // This handles: 1) properties that are promises, 2) getters that return promises
-    if (result && typeof result.then === 'function') {
-      return new RuntimePromise(result, errorContext, 'LookupThrew');
-    }
-
-    return poisonIfNaN(result, errorContext);
-  } catch (err) {
-    return createPoison(PoisonError.wrap(err, errorContext, 'LookupThrew'));
-  }
+  return memberLookupScriptResolved(resolvedObj, resolvedVal, errorContext);
 }
 
 function _addObservationCommand(targetBuffer, chainName, errorContext, mode) {
@@ -282,4 +273,4 @@ function chainLookup(name, currentBuffer, errorContext) {
 
 const memberLookup = memberLookupImpl;
 
-export { memberLookup, memberLookupScriptRaw, memberLookupAsync, memberLookupScript, observeInheritanceSharedChain, chainLookup };
+export { memberLookup, memberLookupAsync, memberLookupScript, observeInheritanceSharedChain, chainLookup };

@@ -69,10 +69,11 @@ var result = 5 + 10 *
 
 // [LANG-06] RULE: Identifier names may contain letters, digits, and `_`; `$` is reserved for compiler internals.
 
-// [LANG-05] RULE: Property access on `none`/null produces an Error Value (poisoning).
+// [LANG-05] RULE: Property access on `none`/null, or missing property access on a scalar primitive, produces an Error Value (poisoning).
 // DIFFERENTIAL: Differs from JS `TypeError` throw.
 var report             // = none
 var title = report.title    // ❌ title is an Error Value
+var scalar = (5).missing     // ❌ scalar is an Error Value
 return title                // ❌ script fails
 ```
 
@@ -1007,7 +1008,7 @@ Theme: {{ this.theme }}
 | C39 | Deep-copy assignment semantics for objects/arrays | VAR-05 |
 | C40 | Errors short-circuit conditional/loop bodies AND poison every var/channel any branch would write | ERR-02, ERR-03 |
 | C41 | Multiple inheritance not supported (one parent per `extends`) | EXT-11 |
-| C42 | Property access on `none`/null produces an Error Value (not a JS TypeError throw) | LANG-05 |
+| C42 | Property access on `none`/null, or missing scalar properties, produces an Error Value (not a JS TypeError throw) | LANG-05 |
 | C43 | `cycler.next()`, `joiner()`, and similar stateful Nunjucks globals must be called in sequential context (`each`) | EXPR-08, EXPR-09 |
 | C44 | Scripts use `elif`; templates use `elseif` | CTRL-01, TPL-12 |
 | C45 | Browser/new code uses ESM imports; old UMD bundles and automatic `window.nunjucks` globals are unsupported | API-03 |

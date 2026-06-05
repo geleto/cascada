@@ -177,7 +177,7 @@ poison source without an explicit kind is a runtime contract error.
 
 This table is the **complete** poison-source enumeration, cross-checked against
 every `PoisonError.create` / `PoisonError.wrap` call site in `src/`. Each existing
-source is assigned its target `kind`; `NotAnArray`, `ImportBindingMissing`,
+source is assigned its target `kind`; `NotDestructurable`, `ImportBindingMissing`,
 `NaNResult`, `InvalidTextValue`, and `ContextValueRejected` are implemented additions.
 
 | `kind` | Source site | Factory | Status |
@@ -187,12 +187,14 @@ source is assigned its target `kind`; `NotAnArray`, `ImportBindingMissing`,
 | `UserCallThrew` | `call.js` — a user/global/env function threw (`obj.apply`/`fn.apply`) | `wrap` | existing |
 | `UnknownVariable` | `environment/context.js` `lookupScript` — bare symbol names an unknown variable/function (script mode) | `create` | existing |
 | `NullLookup` | `lookup.js` — script-mode property access on `null`/`undefined` | `create` | existing |
+| `ScalarLookup` | `lookup.js` — script-mode missing property access on a scalar primitive | `create` | implemented |
 | `LookupThrew` | `lookup.js` — a property getter threw during the read | `wrap` | existing |
 | `IteratorThrew` | `loop.js` — async iterator `.next()`/`for await` threw, or a generator yielded an `Error` | `wrap` | existing |
 | `InvalidConcurrentLimit` | `loop.js` — `concurrentLimit` is not a positive number | `create` | existing |
 | `ContextValueRejected` | `environment/context.js` `normalizeContextValue` and the `compiler-async` return wrap — a promise supplied by the render context (or returned directly) rejected | `wrap` | existing |
 | `InvalidTextValue` | `commands/text.js` — a value cannot be written to a text chain | `create` | implemented |
-| `NotAnArray` | `loop.js` — loop value is not an array for multi-variable destructuring | `create` | implemented |
+| `NotIterable` | `loop.js` — script-mode loop source is a scalar primitive, not a collection | `create` | implemented |
+| `NotDestructurable` | `loop.js` — loop element is not an array for multi-variable destructuring | `create` | implemented |
 | `NaNResult` | value-production points (arithmetic / call / lookup / data-method / loop results) — value is `NaN` (see [NaN handling](#nan-handling)) | `create` | **new** (§11) |
 | `ImportBindingMissing` | `composition.js` — `from import` names an export the module does not have | `create` | implemented |
 | `LoadFailed` | `composition.js` (target/namespace `RuntimePromise` wrappers + `handleLoadFailure`) / inheritance — a non-fatal **value-producing** load (`import` / `from import` / `component`) failed to resolve or compile (see [Load-failure policy](#load-failure-policy-planned)) | `wrap` | implemented — one kind, many `label`s (the import/component frame). `include` failures are silent or fatal, never poison-by-default, so they carry no `kind`. |

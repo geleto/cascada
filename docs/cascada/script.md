@@ -404,6 +404,15 @@ var title = report.title   // title becomes an Error Value
 return title               // returning it makes the script fail
 ```
 
+Accessing a missing property on a scalar primitive such as a number or boolean also produces an `Error Value`. Optional object, array, and string reads remain lenient:
+
+```javascript
+var bad = (5).missing      // Error Value
+var ok1 = obj.missing      // undefined
+var ok2 = items[10]        // undefined
+var ok3 = "abc"[9]         // undefined
+```
+
 ### The Context Object
 
 The context is the plain JavaScript object you pass when running a script. It is how you inject external data, functions, and services into Cascada:
@@ -777,6 +786,8 @@ endfor
 ```
 
 Similar to conditionals, the loop doesn't just skip execution - any outputs or variables that the loop body would have modified become poisoned, ensuring error detection downstream.
+
+In scripts, iterating a scalar primitive such as a number or boolean also produces an `Error Value`. Iterating `none` still runs the `else` branch because it represents an absent collection.
 
 For details on detecting and recovering from errors in your scripts, see the [Error Handling](#error-handling) section.
 
@@ -1860,9 +1871,11 @@ The `kind` values:
 | `UserCallThrew` | a called function, filter, data method, or sequence method threw |
 | `UnknownVariable` | bare variable read names a missing context/global/script symbol |
 | `NullLookup` | property read on `null`/`undefined` |
+| `ScalarLookup` | script property read on a scalar primitive with no such property |
 | `LookupThrew` | a property getter threw |
 | `IteratorThrew` | a loop iterator or generator threw |
-| `NotAnArray` | loop value is not an array to destructure |
+| `NotIterable` | script loop source is a scalar primitive, not a collection |
+| `NotDestructurable` | loop element is not array-like for multi-variable destructuring; use `for a, b in [[1, 2]]`, not `for a, b in [1, 2]` |
 | `InvalidConcurrentLimit` | `of` limit is not a positive number |
 | `LoadFailed` | a non-fatal `import`/`component`/`include` load failed |
 | `ImportBindingMissing` | imported name is not exported by the module |

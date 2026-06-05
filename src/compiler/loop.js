@@ -99,6 +99,7 @@ class CompileLoop {
         elseChains: ${JSON.stringify(elseChains || [])},
         concurrentLimit: ${node.concurrentLimit ? limitVar : 'null'},
         returnCheckChainName: ${returnCheckChainName ? `"${returnCheckChainName}"` : 'null'},
+        scriptMode: ${this.compiler.scriptMode ? 'true' : 'false'},
         errorContext: ${this.compiler.emitErrorContext(node)}
       }`;
 

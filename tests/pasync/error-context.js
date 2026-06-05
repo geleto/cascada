@@ -888,9 +888,11 @@ describe('error context tracing runtime foundation', () => {
       'LookupThrew',
       'MissingFunction',
       'NaNResult',
+      'NotDestructurable',
       'NotAFunction',
-      'NotAnArray',
+      'NotIterable',
       'NullLookup',
+      'ScalarLookup',
       'UnknownVariable',
       'UserCallThrew'
     ];
@@ -916,6 +918,16 @@ describe('error context tracing runtime foundation', () => {
       seenKinds,
       () => env.renderScriptString('return value.name', { value: null }),
       'NullLookup'
+    );
+    await expectSourceKind(
+      seenKinds,
+      () => env.renderScriptString('return value.name', { value: 5 }),
+      'ScalarLookup'
+    );
+    await expectSourceKind(
+      seenKinds,
+      () => env.renderScriptString('return value.name', { value: Symbol('s') }),
+      'ScalarLookup'
     );
     await expectSourceKind(
       seenKinds,
@@ -976,12 +988,25 @@ describe('error context tracing runtime foundation', () => {
       seenKinds,
       () => env.renderScriptString([
         'data result',
+        'for item in 5',
+        '  result.items.push(item)',
+        'else',
+        '  result.items.push("else")',
+        'endfor',
+        'return result.snapshot()'
+      ].join('\n')),
+      'NotIterable'
+    );
+    await expectSourceKind(
+      seenKinds,
+      () => env.renderScriptString([
+        'data result',
         'for key, itemValue in items',
         '  result.push(key)',
         'endfor',
         'return result.snapshot()'
       ].join('\n'), { items: [1] }),
-      'NotAnArray'
+      'NotDestructurable'
     );
     await expectSourceKind(
       seenKinds,
@@ -1030,6 +1055,41 @@ describe('error context tracing runtime foundation', () => {
     );
 
     expect([...seenKinds].sort()).to.eql(activeKinds.sort());
+  });
+
+  it('keeps script scalar strictness scoped away from template loops and optional reads', async () => {
+    const env = new AsyncEnvironment();
+
+    expect(await env.renderScriptString('return (5).toFixed(2)')).to.be('5.00');
+    expect(await env.renderScriptString('return obj.missing', { obj: {} })).to.be(undefined);
+    expect(await env.renderScriptString('return arr[10]', { arr: [] })).to.be(undefined);
+    expect(await env.renderScriptString('return "abc"[9]')).to.be(undefined);
+    expect(await env.renderScriptString([
+      'var result = "body"',
+      'for item in null',
+      '  result = item',
+      'else',
+      '  result = "else"',
+      'endfor',
+      'return result'
+    ].join('\n'))).to.be('else');
+    expect(await env.renderTemplateString('{% for item in value %}body{% else %}else{% endfor %}', {
+      value: 5
+    })).to.be('else');
+  });
+
+  it('formats scalar lookup computed keys with diagnostic object details', async () => {
+    const env = new AsyncEnvironment();
+
+    try {
+      await env.renderScriptString('return value[key]', { value: 5, key: { part: 'name' } });
+      throw new Error('Expected scalar lookup to poison');
+    } catch (err) {
+      expect(runtime.isPoisonError(err)).to.be(true);
+      expect(err.errors[0].kind).to.be('ScalarLookup');
+      expect(err.errors[0].message).to.contain('Cannot read property { part: name } of 5');
+      expect(err.errors[0].message).to.not.contain('[object Object]');
+    }
   });
 
   it('looks up bare call targets on context-like objects without prototype leakage', () => {

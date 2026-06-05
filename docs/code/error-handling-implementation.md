@@ -483,8 +483,8 @@ Done:
 End state: `ValueRejected`, `DataMethodThrew`, `ExpressionThrew`, `ConditionThrew`, and
 `DestructureMismatch` are retired. The active taxonomy uses `MissingFunction`, `NotAFunction`,
 `UserCallThrew`, `UnknownVariable`, `NullLookup`, `LookupThrew`, `IteratorThrew`,
-`NotAnArray`, `InvalidConcurrentLimit`, `LoadFailed`, `ImportBindingMissing`, `NaNResult`,
-`InvalidTextValue`, and `ContextValueRejected`.
+`NotDestructurable`, `ScalarLookup`, `NotIterable`, `InvalidConcurrentLimit`, `LoadFailed`,
+`ImportBindingMissing`, `NaNResult`, `InvalidTextValue`, and `ContextValueRejected`.
 
 Verify: per-path kind assertions (call / `!` / `sequence` missing method -> `MissingFunction`;
 non-function -> `NotAFunction`; throw -> `UserCallThrew`; sequence null read -> `NullLookup`;
@@ -525,29 +525,33 @@ Two new poisons + one rename. **Script mode** (templates stay lenient), matching
 optional fields / `else`); a **scalar primitive** (`typeof` number/boolean/bigint/symbol) used
 as a container or collection is a *type error* (poison).
 
-- [ ] **`ScalarLookup`** (new) — `memberLookupScript`: after `obj[val]`, if the result is
+- [x] **`ScalarLookup`** (new) — `memberLookupScript`: after `obj[val]`, if the result is
   `undefined` **and** `obj` is a scalar primitive, poison instead of returning `undefined`.
   Built-in methods (`(5).toFixed`) resolve to functions, so they pass; objects/arrays/**strings**
   stay lenient (optional fields, indexing, chars); `null`/`undefined` stay `NullLookup`. The
   `typeof` check runs **only when the result is already `undefined`**, so the hot path is
   untouched.
-- [ ] **`NotIterable`** (new) — `loop.js` `iterate`: a loop source that is a scalar primitive
+- [x] **`NotIterable`** (new) — `loop.js` `iterate`: a loop source that is a scalar primitive
   currently funnels into `iterateObject` → `Object.keys` empty → silent zero iterations. Poison
   it. `null`/`undefined` keep running the **`else`** branch (absent/optional collection); arrays,
   objects, iterables, async iterators, and strings are unchanged. (iterate() is shared across
   modes; gate on script mode to match scope, or apply to both — a scalar source is always a bug.)
-- [ ] **Rename `NotAnArray` → `NotDestructurable`** (`loop.js` create site): it is the
+- [x] **Rename `NotAnArray` → `NotDestructurable`** (`loop.js` create site): it is the
   multi-variable destructuring **element** failure (`for a, b in pairs`), independent of the loop
   source. `NotIterable` (source) and `NotDestructurable` (element) are now distinct.
-- [ ] Docs (all surfaces): add `ScalarLookup` + `NotIterable` rows and rename `NotAnArray` →
+- [x] Docs (all surfaces): add `ScalarLookup` + `NotIterable` rows and rename `NotAnArray` →
   `NotDestructurable` in the **kind tables** (analysis §3 + `script.md` *Anatomy*); note in the
   **`script.md`** lookup/loop sections that scalar property access and iterating a scalar poison;
   extend **`cascada-agent.md`** LANG-05 (property access on `none`/null → Error Value) to scalars;
   add the divergence to **`template.md`** "Template vs Script: Key Differences" (minimal style):
   scripts poison scalar property access and iterating a scalar; templates stay lenient
   (`undefined` / no-op).
+- [ ] *(Postponed / optional cleanup.)* Consolidate the scalar primitive classifiers used by
+  lookup and loop strictness into one shared helper if another pass touches that area. Keep the
+  `null`/`undefined` handling at the call sites because lookup maps them to `NullLookup` while
+  loops keep the existing absent-collection behavior.
 
-Verify: `5[5]` / `5.foo` / `true.x` → `ScalarLookup`; `(5).toFixed(2)` works; `obj.missing` /
+Verify: `5[5]` / `(5).foo` / `true.x` → `ScalarLookup`; `(5).toFixed(2)` works; `obj.missing` /
 `arr[10]` / `"abc"[9]` stay `undefined` · `for x in 5` → `NotIterable`; `for x in null` → runs
 `else`; `for x in {}` / `[]` / iterator / async iterator unchanged · `for a, b in [1, 2]`
 (element not an array) → `NotDestructurable` · `tests/poison/` · `tests/pasync/loops.js` ·
@@ -652,7 +656,7 @@ taxonomy and added strictness. Per-phase "Docs:" steps do the incremental writin
 verifies the whole surface agrees.
 
 - [ ] No **retired** kind (`ValueRejected`, `DataMethodThrew`, `ExpressionThrew`, `ConditionThrew`,
-  `DestructureMismatch`, `SequentialPathThrew`) appears in any doc.
+  `DestructureMismatch`, `SequentialPathThrew`, `NotAnArray`) appears in any public/user doc.
 - [ ] Every **active** kind appears in **both** kind tables (`script.md` *Anatomy of an Error
   Value* + analysis §3) and they match.
 - [ ] `cascada-agent.md` ERR-07 lists `kind` in the `#errors` shape (the Phase 8 catch-up), and

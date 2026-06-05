@@ -26,6 +26,7 @@ Cascada Templates are built on top of Nunjucks and support most CascadaScript co
 * **Tags use `{% %}`** - All logic goes inside tag delimiters (use standard Nunjucks whitespace control where needed)
 * **`set` for variables and assignment** - Use Nunjucks `{% set %}` syntax instead of Script's `var` and `=`
 * **`do` for execution-only expressions** - Standalone calls and sequential path repair (`!!`) use `{% do %}`
+* **Script is stricter about scalar misuse** - Scripts poison property access on scalar primitives and loops over scalar primitives; templates keep Nunjucks-style leniency (`undefined` / loop `else`)
 
 ## Render vs Return: The Core Difference
 

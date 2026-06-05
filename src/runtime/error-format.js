@@ -160,4 +160,10 @@ function formatDiagnosticValue(value, seen) {
   return String(value);
 }
 
-export { formatDiagnosticInfo, formatDiagnosticMessage, formatNumberedDiagnostic, formatPoisonErrorGroupMessages };
+export {
+  formatDiagnosticInfo,
+  formatDiagnosticMessage,
+  formatDiagnosticValue,
+  formatNumberedDiagnostic,
+  formatPoisonErrorGroupMessages
+};
