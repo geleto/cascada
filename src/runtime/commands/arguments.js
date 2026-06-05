@@ -5,100 +5,46 @@ import {
 } from '../errors.js';
 import {RESOLVE_MARKER, isResolvedValue, unwrapResolvedValue} from '../resolve.js';
 
+// `value` is always a command's argument array (ChainCommand: `this.arguments = args || []`).
+// Resolve each entry's top-level value (and its lazy RESOLVE_MARKER) before applying.
+// A failed argument becomes poison in its own slot, so the command still applies with the rest.
 function runWithResolvedArguments(value, cmd, applyFn) {
-  if (Array.isArray(value)) {
-    let hasAsync = false;
-
-    for (let i = 0; i < value.length; i++) {
-      if (value[i] === undefined) {
-        continue;
-      }
-      const fastValue = unwrapResolvedValue(value[i]);
-      if (fastValue !== value[i]) {
-        value[i] = fastValue;
-      }
-      if (isPoison(fastValue)) {
-        continue;
-      }
-      if (!fastValue || (typeof fastValue.then !== 'function' && !fastValue[RESOLVE_MARKER])) {
-        continue;
-      }
-      hasAsync = true;
-      break;
+  for (let i = 0; i < value.length; i++) {
+    if (value[i] === undefined) {
+      continue;
     }
-
-    if (!hasAsync) {
-      return applyFn(value);
+    const fastValue = unwrapResolvedValue(value[i]);
+    if (fastValue !== value[i]) {
+      value[i] = fastValue;
     }
-
-    return runWithResolvedArgumentsAsync(value, cmd, applyFn);
-  }
-
-  if (value === undefined) {
-    return applyFn(undefined);
-  }
-
-  value = unwrapResolvedValue(value);
-  if (isPoison(value) || !value || (typeof value.then !== 'function' && !value[RESOLVE_MARKER])) {
-    return applyFn(value);
-  }
-
-  if (value[RESOLVE_MARKER]) {
-    return value[RESOLVE_MARKER].then(() => {
-      return applyFn(value);
-    }, (err) => {
-      return applyFn(classifyCommandArgumentFailure(cmd, err));
-    });
-  }
-
-  return value.then((resolvedValue) => {
-    if (resolvedValue && resolvedValue[RESOLVE_MARKER]) {
-      return resolvedValue[RESOLVE_MARKER].then(() => applyFn(resolvedValue));
+    if (isPoison(fastValue)) {
+      continue;
     }
-    return applyFn(resolvedValue);
-  }, (err) => {
-    return applyFn(classifyCommandArgumentFailure(cmd, err));
-  });
+    if (fastValue && (typeof fastValue.then === 'function' || fastValue[RESOLVE_MARKER])) {
+      return runWithResolvedArgumentsAsync(value, cmd, applyFn);
+    }
+  }
+
+  return applyFn(value);
 }
 
 async function runWithResolvedArgumentsAsync(value, cmd, applyFn) {
   const resolvedArray = new Array(value.length);
   for (let i = 0; i < value.length; i++) {
-    const entry = value[i];
-    if (entry === undefined) {
-      resolvedArray[i] = undefined;
-      continue;
-    }
-    const fastValue = unwrapResolvedValue(entry);
-    if (isPoison(fastValue) || !fastValue || (typeof fastValue.then !== 'function' && !fastValue[RESOLVE_MARKER])) {
-      resolvedArray[i] = fastValue;
-      continue;
-    }
-    if (fastValue[RESOLVE_MARKER]) {
-      try {
-        await fastValue[RESOLVE_MARKER];
-        resolvedArray[i] = fastValue;
-      } catch (err) {
-        resolvedArray[i] = classifyCommandArgumentFailure(cmd, err);
-      }
-      continue;
-    }
-
+    // Resolve each entry to its concrete value: await a promise (if any), then finalize a
+    // lazy RESOLVE_MARKER (if any). A failure poisons only this slot; poison is stored as-is.
+    let resolved = unwrapResolvedValue(value[i]);
     try {
-      const resolvedValue = await fastValue;
-      if (resolvedValue && resolvedValue[RESOLVE_MARKER]) {
-        try {
-          await resolvedValue[RESOLVE_MARKER];
-          resolvedArray[i] = resolvedValue;
-        } catch (err) {
-          resolvedArray[i] = classifyCommandArgumentFailure(cmd, err);
-        }
-      } else {
-        resolvedArray[i] = resolvedValue;
+      if (resolved && typeof resolved.then === 'function' && !isPoison(resolved)) {
+        resolved = await resolved;
+      }
+      if (resolved && resolved[RESOLVE_MARKER]) {
+        await resolved[RESOLVE_MARKER];
       }
     } catch (err) {
-      resolvedArray[i] = classifyCommandArgumentFailure(cmd, err);
+      resolved = classifyCommandArgumentFailure(cmd, err);
     }
+    resolvedArray[i] = resolved;
   }
   return applyFn(resolvedArray);
 }
