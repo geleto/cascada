@@ -11,7 +11,10 @@ class CompileGuard {
     const compiler = this.compiler;
     node.body.addAnalysis({ createScope: true });
     if (node.recoveryBody) {
-      const recoveryAnalysis = { createScope: true };
+      const recoveryAnalysis = {
+        createScope: true,
+        createsScopeBuffer: true
+      };
       if (typeof node.errorVar === 'string' && node.errorVar) {
         recoveryAnalysis.declares = [{ name: node.errorVar, type: 'var', initializer: null }];
       } else if (node.errorVar instanceof nodes.Symbol) {
@@ -107,13 +110,7 @@ class CompileGuard {
         this.emit.line(`if (${guardErrorsVar}.length > 0) {`);
 
         if (node.recoveryBody) {
-          if (node.errorVar) {
-            this.emit.line(`runtime.declareBufferChain(${compiler.buffer.currentBuffer}, "${node.errorVar}", "var", context, null);`);
-            this.emit.line(
-              `${compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ chainName: '${node.errorVar}', args: [runtime.PoisonError.group(${guardErrorsVar})], errorContext: ${compiler.emitErrorContext(node)} }), '${node.errorVar}');`
-            );
-          }
-          compiler.compile(node.recoveryBody, null);
+          this._compileRecoveryScope(node, guardErrorsVar);
         }
 
         this.emit.line('} else {');
@@ -122,6 +119,40 @@ class CompileGuard {
         compiler.guardDepth = previousGuardDepth;
       }
     });
+  }
+
+  _compileRecoveryScope(node, guardErrorsVar) {
+    const compiler = this.compiler;
+    const errorVarName = this._getRecoveryErrorVarName(node);
+    // Recovery is terminal within the guard buffer, so this scope buffer is
+    // intentionally created only after guard finalization decides recovery runs.
+    compiler.emit.withScopeCommandBuffer({
+      analysisNode: node.recoveryBody,
+      errorContextNode: node.recoveryBody,
+      bufferStackErrorContextFields: errorVarName ? { errorVar: errorVarName } : null,
+      declareTextChain: false,
+      autoFinish: true,
+      emitFunc: () => {
+        if (errorVarName) {
+          const errorVarLiteral = JSON.stringify(errorVarName);
+          this.emit.line(`runtime.declareBufferChain(${compiler.buffer.currentBuffer}, ${errorVarLiteral}, "var", context, null);`);
+          this.emit.line(
+            `${compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ chainName: ${errorVarLiteral}, args: [runtime.PoisonError.group(${guardErrorsVar})], errorContext: ${compiler.emitErrorContext(node)} }), ${errorVarLiteral});`
+          );
+        }
+        compiler.compile(node.recoveryBody, null);
+      }
+    });
+  }
+
+  _getRecoveryErrorVarName(node) {
+    if (typeof node.errorVar === 'string') {
+      return node.errorVar || null;
+    }
+    if (node.errorVar instanceof nodes.Symbol) {
+      return node.errorVar.value;
+    }
+    return null;
   }
 
   _getResolvedGuardSequenceTargets(node, guardTargets, modifiedLocks) {

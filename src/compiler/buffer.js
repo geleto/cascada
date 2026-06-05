@@ -31,24 +31,27 @@ class CompileBuffer {
 
   // === BUFFER STACK MANAGEMENT ===
 
-  /**
-   * Initialize a managed scope-root buffer.
-   *
-   * @param {string} bufferId
-   * @param {string|null} parentBufferId
-   * @param {string} textChainVar
-   * @param {Array<string>|null} linkedChains
-   * @param {string} bufferStackErrorContextArg compact context expression
-   */
-  initManagedBuffer(bufferId, parentBufferId, textChainVar, linkedChains = null, bufferStackErrorContextArg = 'null', traceParentArg = 'null') {
+  emitScopeCommandBuffer({
+    bufferId,
+    parentBufferId = null,
+    textChainVar = null,
+    linkedChains = null,
+    linkedMutatedChains = null,
+    bufferStackErrorContextArg = 'null',
+    traceParentArg = 'null',
+    declareTextChain = true
+  }) {
     if (this.compiler.asyncMode) {
       const textId = textChainVar || `${bufferId}_textChainVar`;
       const parentArg = parentBufferId || 'null';
       const linkedChainsArg = Array.isArray(linkedChains) && linkedChains.length > 0
         ? JSON.stringify(linkedChains)
         : 'null';
-      this.compiler.emit.line(`let ${bufferId} = new runtime.CommandBuffer(context, ${parentArg}, ${linkedChainsArg}, ${parentArg}, null, ${bufferStackErrorContextArg}, ${traceParentArg}, renderState);`);
-      if (!this.compiler.scriptMode) {
+      const linkedMutatedChainsArg = Array.isArray(linkedMutatedChains) && linkedMutatedChains.length > 0
+        ? JSON.stringify(linkedMutatedChains)
+        : 'null';
+      this.compiler.emit.line(`let ${bufferId} = new runtime.CommandBuffer(context, ${parentArg}, ${linkedChainsArg}, ${parentArg}, ${linkedMutatedChainsArg}, ${bufferStackErrorContextArg}, ${traceParentArg}, renderState);`);
+      if (declareTextChain && !this.compiler.scriptMode) {
         this.compiler.emit.line(`let ${textId} = runtime.declareBufferChain(${bufferId}, "${this.currentTextChainName}", "text", context, null);`);
       }
     } else {

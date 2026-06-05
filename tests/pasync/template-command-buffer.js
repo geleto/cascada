@@ -189,6 +189,27 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       expect(Array.from(callerNode._analysis.declaredChains.keys())).to.eql(['caller', '__return__', '__text__']);
     });
 
+    it('should mark recovery scopes as scope buffers without marking guard body scopes', function () {
+      const ast = analyzeScriptSource([
+        'data result',
+        'guard result',
+        '  var local = fail()',
+        'recover err',
+        '  result.recovered = err.message',
+        'endguard',
+        'return result.snapshot()'
+      ].join('\n'), 'guard-recovery-scope-buffer-analysis.casc');
+      const guardNode = collectNodesByType(ast, 'Guard')[0];
+      const recoveryNode = collectNodesByType(ast, 'Guard.Recover')[0];
+
+      expect(guardNode.body._analysis.createScope).to.be(true);
+      expect(guardNode.body._analysis.createsScopeBuffer).to.be(false);
+      expect(recoveryNode._analysis.createScope).to.be(true);
+      expect(recoveryNode._analysis.createsScopeBuffer).to.be(true);
+      expect(Array.from(recoveryNode._analysis.linkedChains || [])).to.eql(['result']);
+      expect(Array.from(recoveryNode._analysis.linkedMutatedChains || [])).to.eql(['result']);
+    });
+
     it('should keep loop and include-owned facts local inside captures', function () {
       const ast = analyzeTemplateSource(
         '{% set outer %}' +

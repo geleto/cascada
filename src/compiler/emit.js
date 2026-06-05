@@ -106,28 +106,23 @@ class CompileEmit {
     // this.Line(`let ${this.compiler.buffer.currentBuffer} = "";`);
     if (this.compiler.asyncMode && name === 'root') {
       const rootBufferStackErrorContext = this.compiler.emitErrorContext(node, { entryName: name });
-      this.line(
-        `let ${this.compiler.buffer.currentBuffer} = ` +
-        `new runtime.CommandBuffer(context, null, null, null, null, ${rootBufferStackErrorContext}, null, renderState);`
-      );
-      if (!this.compiler.scriptMode) {
-        this.line(
-          `let ${this.compiler.buffer.currentTextChainVar} = ` +
-          `runtime.declareBufferChain(${this.compiler.buffer.currentBuffer}, "${this.compiler.buffer.currentTextChainName}", "text", context, null);`
-        );
-      }
+      this.compiler.buffer.emitScopeCommandBuffer({
+        bufferId: this.compiler.buffer.currentBuffer,
+        textChainVar: this.compiler.buffer.currentTextChainVar,
+        bufferStackErrorContextArg: rootBufferStackErrorContext
+      });
     } else {
-      const managedBufferStackErrorContext = this.compiler.asyncMode
+      const scopeBufferStackErrorContext = this.compiler.asyncMode
         ? this.compiler.emitErrorContext(node, { entryName: name })
         : null;
-      this.compiler.buffer.initManagedBuffer(
-        this.compiler.buffer.currentBuffer,
-        this.compiler.asyncMode ? 'parentBuffer' : null,
-        this.compiler.buffer.currentTextChainVar,
+      this.compiler.buffer.emitScopeCommandBuffer({
+        bufferId: this.compiler.buffer.currentBuffer,
+        parentBufferId: this.compiler.asyncMode ? 'parentBuffer' : null,
+        textChainVar: this.compiler.buffer.currentTextChainVar,
         linkedChains,
-        managedBufferStackErrorContext,
-        this.compiler.asyncMode ? 'parentBuffer' : 'null'
-      );
+        bufferStackErrorContextArg: scopeBufferStackErrorContext,
+        traceParentArg: this.compiler.asyncMode ? 'parentBuffer' : 'null'
+      });
     }
     if (!this.compiler.asyncMode) {
       this.line('try {');
@@ -161,69 +156,57 @@ class CompileEmit {
     this.line('}');
   }
 
-  // Managed block for direct scope/frame handling (optionally with a scope-root buffer).
-  // If createScopeRootBuffer=true, this is a sanctioned scope-root buffer creation
-  // site. The callback body is compiled between initialization and caller-managed finalization.
-  managedBlock({
+  withScopeCommandBuffer({
     frame,
-    createScope = false,
-    createScopeRootBuffer = false,
     emitFunc = null,
     parentBufferOverride = undefined,
     analysisNode = null,
     errorContextNode = analysisNode,
     traceParentOverride = undefined,
-    bufferStackErrorContextFields = {}
+    bufferStackErrorContextFields = null,
+    declareTextChain = true,
+    autoFinish = false
   }) {
-    let nextFrame = frame;
-    if (createScope) {
-      nextFrame = frame.push();
-      this.line('frame = frame.push();');
-    }
+    const parentBufferId = parentBufferOverride !== undefined
+      ? parentBufferOverride
+      : (this.compiler.buffer.currentBuffer || null);
+    const {
+      linkedChains,
+      linkedMutatedChains
+    } = this.getScopeBufferLinkedChains(analysisNode, parentBufferId);
+    const bufferId = this.compiler._tmpid();
 
-    let parentBufferId = null;
-    let bufferId = null;
-    let linkedChains = null;
-    if (createScopeRootBuffer) {
-      parentBufferId = parentBufferOverride !== undefined
-        ? parentBufferOverride
-        : (this.compiler.buffer.currentBuffer || null);
-      if (parentBufferId && analysisNode && analysisNode._analysis) {
-        linkedChains = analysisNode._analysis.createsLinkedChildBuffer
-          ? this.getLinkedChains(analysisNode)
-          : null;
-      }
-      bufferId = this.compiler._tmpid();
-      this.compiler.buffer.withBufferState({
-        currentBuffer: bufferId,
-        currentTextChainVar: `${bufferId}_textChainVar`
-      }, () => {
-        const traceParentArg = traceParentOverride !== undefined
-          ? traceParentOverride
-          : (parentBufferId || 'null');
-        const managedBufferStackErrorContext = this.compiler.asyncMode
-          ? this.compiler.emitErrorContext(errorContextNode, bufferStackErrorContextFields)
-          : null;
-        this.compiler.buffer.initManagedBuffer(
-          bufferId,
-          parentBufferId,
-          `${bufferId}_textOutputVar`,
-          linkedChains,
-          managedBufferStackErrorContext,
-          traceParentArg
-        );
-        if (typeof emitFunc === 'function') {
-          emitFunc(nextFrame, bufferId);
-        }
+    this.compiler.buffer.withBufferState({
+      currentBuffer: bufferId,
+      currentTextChainVar: declareTextChain ? `${bufferId}_textChainVar` : null
+    }, () => {
+      const traceParentArg = traceParentOverride !== undefined
+        ? traceParentOverride
+        : (parentBufferId || 'null');
+      const scopeBufferStackErrorContext = this.getBufferStackErrorContextArg({
+        errorContextNode,
+        stackFields: bufferStackErrorContextFields,
+        owned: false
       });
-    } else if (typeof emitFunc === 'function') {
-      emitFunc(nextFrame, bufferId);
-    }
-    if (createScope) {
-      this.line('frame = frame.pop();');
-      return { frame: nextFrame.pop(), bufferId };
-    }
-    return { frame: nextFrame, bufferId };
+      this.compiler.buffer.emitScopeCommandBuffer({
+        bufferId,
+        parentBufferId,
+        textChainVar: `${bufferId}_textOutputVar`,
+        linkedChains,
+        linkedMutatedChains,
+        bufferStackErrorContextArg: scopeBufferStackErrorContext,
+        traceParentArg,
+        declareTextChain
+      });
+      if (typeof emitFunc === 'function') {
+        emitFunc(frame, bufferId);
+      }
+      if (autoFinish && this.compiler.asyncMode) {
+        this.line(`${bufferId}.finish();`);
+      }
+    });
+
+    return { frame, bufferId };
   }
 
   _compileAsyncRenderBoundary(node, innerBodyFunction, positionNode = node) {
@@ -263,6 +246,32 @@ class CompileEmit {
   getLinkedMutatedChainsArg(node) {
     const linkedMutatedChains = this.getLinkedMutatedChains(node);
     return linkedMutatedChains.length > 0 ? JSON.stringify(linkedMutatedChains) : 'null';
+  }
+
+  getBoundaryLinkedChainArgs(node) {
+    return {
+      linkedChainsArg: this.getLinkedChainsArg(node),
+      linkedMutatedChainsArg: this.getLinkedMutatedChainsArg(node)
+    };
+  }
+
+  getScopeBufferLinkedChains(node, parentBufferId) {
+    const hasAnalysis = parentBufferId && node && node._analysis;
+    return {
+      linkedChains: hasAnalysis ? this.getLinkedChains(node) : null,
+      linkedMutatedChains: hasAnalysis ? this.getLinkedMutatedChains(node) : null
+    };
+  }
+
+  getBufferStackErrorContextArg({
+    errorContextNode,
+    stackFields = null,
+    owned = false
+  }) {
+    if (!this.compiler.asyncMode) {
+      return null;
+    }
+    return this.compiler.emitBufferStackErrorContext(errorContextNode, stackFields, { owned });
   }
 
   _getAnalysis(node, helperName) {

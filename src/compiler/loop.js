@@ -225,8 +225,10 @@ class CompileLoop {
 
     const shouldAwaitLoopBody = sequentialLoopBody || hasConcurrencyLimit;
     const parentBufferArg = this.compiler.buffer.currentBuffer;
-    const linkedChainsArg = this.compiler.emit.getLinkedChainsArg(node);
-    const linkedMutatedChainsArg = this.compiler.emit.getLinkedMutatedChainsArg(node);
+    const {
+      linkedChainsArg,
+      linkedMutatedChainsArg
+    } = this.compiler.emit.getBoundaryLinkedChainArgs(node);
     // The iteration boundary owns its label slot; loop metadata stays in added
     // context so nested commands can inherit it without changing source labels.
     const loopAddedContextVar = this.compiler.createInheritedAddedContextVar(`{ loop: ${loopMetaVar} }`);
@@ -475,9 +477,8 @@ class CompileLoop {
 
     this.compiler.emit.withScopedSyntax(() => {
       if (parallel) {
-        this.compiler.emit.managedBlock({
+        this.compiler.emit.withScopeCommandBuffer({
           frame,
-          createScopeRootBuffer: true,
           analysisNode: node.body,
           emitFunc: (managedFrame, buf) => {
             this.compiler.compile(node.body, managedFrame);

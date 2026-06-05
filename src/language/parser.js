@@ -1196,6 +1196,7 @@ class Parser extends Obj {
     let recoveryBody = null;
     let errorVar = null;
 
+    const recoverTok = this.peekToken();
     if (this.skipSymbol('recover')) {
       // Optional error variable
       if (this.peekToken().type === lexer.TOKEN_SYMBOL) {
@@ -1203,7 +1204,8 @@ class Parser extends Obj {
       }
 
       this.advanceAfterBlockEnd('recover');
-      recoveryBody = this.parseUntilBlocks('endguard');
+      const parsedRecoveryBody = this.parseUntilBlocks('endguard');
+      recoveryBody = new nodes.GuardRecover(recoverTok.lineno, recoverTok.colno, parsedRecoveryBody.children);
     }
 
     // Consume 'endguard'

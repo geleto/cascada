@@ -24,14 +24,19 @@ class CompileBoundaries {
 
   compileExpressionControlFlowBoundary(bufferCompiler, node, emitBody, stackFields = {}) {
     const parentBufferArg = bufferCompiler.currentBuffer;
-    const linkedChainsArg = this.compiler.emit.getLinkedChainsArg(node);
-    const linkedMutatedChainsArg = this.compiler.emit.getLinkedMutatedChainsArg(node);
+    const {
+      linkedChainsArg,
+      linkedMutatedChainsArg
+    } = this.compiler.emit.getBoundaryLinkedChainArgs(node);
 
     // Reserve a structural child buffer synchronously before any async
     // condition/operand resolution so later sibling operands stay ordered.
     // Expression boundaries must return a value/rejection to their expression
     // consumer; control-flow boundaries report errors through reportError instead.
-    const bufferStackErrorContextArg = this.compiler.emitErrorContext(node, stackFields);
+    const bufferStackErrorContextArg = this.compiler.emit.getBufferStackErrorContextArg({
+      errorContextNode: node,
+      stackFields
+    });
     this.compiler.emit(`runtime.runValueBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, async (currentBuffer) => {`);
     this.compiler.emit.asyncClosureDepth++;
     bufferCompiler.withBufferState({ currentBuffer: 'currentBuffer' }, () => {
@@ -43,11 +48,16 @@ class CompileBoundaries {
 
   compileValueBoundary(bufferCompiler, node, emitValue, positionNode = node, stackFields = {}) {
     const parentBufferArg = bufferCompiler.currentBuffer || 'null';
-    const linkedChainsArg = this.compiler.emit.getLinkedChainsArg(node);
-    const linkedMutatedChainsArg = this.compiler.emit.getLinkedMutatedChainsArg(node);
+    const {
+      linkedChainsArg,
+      linkedMutatedChainsArg
+    } = this.compiler.emit.getBoundaryLinkedChainArgs(node);
     const resultId = this.compiler._tmpid();
     const errorContextArg = this.compiler.emitErrorContext(positionNode);
-    const bufferStackErrorContextArg = this.compiler.emitErrorContext(positionNode, stackFields);
+    const bufferStackErrorContextArg = this.compiler.emit.getBufferStackErrorContextArg({
+      errorContextNode: positionNode,
+      stackFields
+    });
 
     this.compiler.emit.line(
       `runtime.runValueBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, async (currentBuffer) => {`
@@ -77,10 +87,16 @@ class CompileBoundaries {
     }
 
     const parentBufferArg = bufferCompiler.currentBuffer;
-    const linkedChainsArg = this.compiler.emit.getLinkedChainsArg(node);
-    const linkedMutatedChainsArg = this.compiler.emit.getLinkedMutatedChainsArg(node);
+    const {
+      linkedChainsArg,
+      linkedMutatedChainsArg
+    } = this.compiler.emit.getBoundaryLinkedChainArgs(node);
     const controlFlowPromiseId = this.compiler._tmpid();
-    const bufferStackErrorContextArg = this.compiler.emitClonedErrorContext(errorContextNode, stackFields);
+    const bufferStackErrorContextArg = this.compiler.emit.getBufferStackErrorContextArg({
+      errorContextNode,
+      stackFields,
+      owned: true
+    });
 
     this.compiler.emit(
       `let ${controlFlowPromiseId} = runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, renderState, async (currentBuffer) => {`
@@ -104,12 +120,18 @@ class CompileBoundaries {
 
   _compileAsyncWaitedControlFlowBoundary(bufferCompiler, node, emitFunc = null, errorContextNode = node, stackFields = {}) {
     const parentBufferArg = bufferCompiler.currentBuffer;
-    const linkedChainsArg = this.compiler.emit.getLinkedChainsArg(node);
-    const linkedMutatedChainsArg = this.compiler.emit.getLinkedMutatedChainsArg(node);
+    const {
+      linkedChainsArg,
+      linkedMutatedChainsArg
+    } = this.compiler.emit.getBoundaryLinkedChainArgs(node);
     const controlFlowWaitedChainName = `__waited__${this.compiler._tmpid()}`;
     const controlFlowWaitedOwnerBufferId = this.compiler._tmpid();
     const controlFlowPromiseId = this.compiler._tmpid();
-    const bufferStackErrorContextArg = this.compiler.emitClonedErrorContext(errorContextNode, stackFields);
+    const bufferStackErrorContextArg = this.compiler.emit.getBufferStackErrorContextArg({
+      errorContextNode,
+      stackFields,
+      owned: true
+    });
 
     this.compiler.emit(
       `let ${controlFlowPromiseId} = runtime.runWaitedControlFlowBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, renderState, async (currentBuffer) => {`
@@ -170,7 +192,10 @@ class CompileBoundaries {
       }
     };
 
-    const bufferStackErrorContextArg = this.compiler.emitErrorContext(positionNode, stackFields);
+    const bufferStackErrorContextArg = this.compiler.emit.getBufferStackErrorContextArg({
+      errorContextNode: positionNode,
+      stackFields
+    });
     emitCompiler.line('runtime.runRenderBoundary(context, renderState, async (currentBuffer) =>{');
     const resultId = this.compiler._tmpid();
 
@@ -213,9 +238,8 @@ class CompileBoundaries {
       }
     };
 
-    const { bufferId: id } = emitCompiler.managedBlock({
+    const { bufferId: id } = emitCompiler.withScopeCommandBuffer({
       frame,
-      createScopeRootBuffer: true,
       analysisNode: node,
       emitFunc: (blockFrame) => {
         innerBodyFunction.call(this.compiler, blockFrame);
@@ -273,7 +297,10 @@ class CompileBoundaries {
   ) {
     const boundaryPromiseId = waitedPositionNode ? this.compiler._tmpid() : null;
     const boundaryPrefix = boundaryPromiseId ? `const ${boundaryPromiseId} = ` : '';
-    const bufferStackErrorContextArg = this.compiler.emitErrorContext(positionNode, stackFields);
+    const bufferStackErrorContextArg = this.compiler.emit.getBufferStackErrorContextArg({
+      errorContextNode: positionNode,
+      stackFields
+    });
 
     this.compiler.emit.line(
       `${boundaryPrefix}runtime.runControlFlowBoundary(${parentBufferExpr}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, renderState, async ${callbackParams} => {`
@@ -328,8 +355,7 @@ class CompileBoundaries {
 
     return this._compileAsyncTextBoundary(bufferCompiler, {
       parentBufferExpr: bufferCompiler.currentBuffer,
-      linkedChainsArg: this.compiler.emit.getLinkedChainsArg(node),
-      linkedMutatedChainsArg: this.compiler.emit.getLinkedMutatedChainsArg(node),
+      ...this.compiler.emit.getBoundaryLinkedChainArgs(node),
       callbackParams: '(currentBuffer)',
       targetChainName: bufferCompiler.currentTextChainName,
       targetBufferExpr: 'currentBuffer',
@@ -343,10 +369,15 @@ class CompileBoundaries {
 
   compileCaptureBoundary(bufferCompiler, node, innerBodyFunction, positionNode = node, stackFields = {}) {
     const captureTextOutputName = node._analysis.textOutput;
-    const linkedChainsArg = this.compiler.emit.getLinkedChainsArg(node);
-    const linkedMutatedChainsArg = this.compiler.emit.getLinkedMutatedChainsArg(node);
+    const {
+      linkedChainsArg,
+      linkedMutatedChainsArg
+    } = this.compiler.emit.getBoundaryLinkedChainArgs(node);
     const outerParentBuffer = bufferCompiler.currentBuffer;
-    const bufferStackErrorContextArg = this.compiler.emitErrorContext(positionNode, stackFields);
+    const bufferStackErrorContextArg = this.compiler.emit.getBufferStackErrorContextArg({
+      errorContextNode: positionNode,
+      stackFields
+    });
 
     this.compiler.emit(
       `runtime.runControlFlowBoundary(${outerParentBuffer}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, renderState, async (currentBuffer) => {`

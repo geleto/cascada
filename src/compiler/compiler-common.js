@@ -71,6 +71,8 @@ class CompilerCommon extends Obj {
     var _compile = this['compile' + node.typename];
     if (_compile) {
       _compile.call(this, node, frame);
+    } else if (node instanceof nodes.NodeList) {
+      this.compileNodeList(node, frame);
     } else {
       this.fail(`compile: Cannot compile node: ${node.typename}`, node.lineno, node.colno, node);
     }
@@ -131,14 +133,13 @@ class CompilerCommon extends Obj {
     return `${tableExpr}[${contextIndex}]`;
   }
 
-  emitErrorContext(node, addedContext = null) {
-    const contextExpr = this._emitStaticErrorContext(node, addedContext);
+  _applyInheritedErrorContext(contextExpr, owned = false) {
     const inheritedAddedContext = this.currentInheritedAddedContext;
     const inheritedLabelOverride = this.currentInheritedLabelOverride;
     if (contextExpr === 'null') {
       return contextExpr;
     }
-    if (!inheritedAddedContext && !inheritedLabelOverride) {
+    if (!owned && !inheritedAddedContext && !inheritedLabelOverride) {
       return contextExpr;
     }
     const ownedContextExpr = inheritedAddedContext
@@ -147,6 +148,11 @@ class CompilerCommon extends Obj {
     return inheritedLabelOverride
       ? `runtime.setContextLabel(${ownedContextExpr}, ${inheritedLabelOverride})`
       : ownedContextExpr;
+  }
+
+  emitErrorContext(node, addedContext = null) {
+    const contextExpr = this._emitStaticErrorContext(node, addedContext);
+    return this._applyInheritedErrorContext(contextExpr);
   }
 
   createInheritedAddedContextVar(addedContextExpr) {
@@ -195,29 +201,34 @@ class CompilerCommon extends Obj {
     return node._analysis.errorContextIndex;
   }
 
-  emitClonedErrorContext(node, addedContextFields = {}) {
-    if (!node) {
-      throw new TypeError('emitClonedErrorContext requires an origin node');
-    }
+  _normalizeAddedContextFields(addedContextFields = {}) {
     const addedContext = {};
-    for (const [key, value] of Object.entries(addedContextFields)) {
+    for (const [key, value] of Object.entries(addedContextFields || {})) {
       if (value === undefined || value === null) {
         continue;
       }
       addedContext[key] = value;
     }
-    const staticContextExpr = Object.keys(addedContext).length === 0
+    return Object.keys(addedContext).length === 0 ? null : addedContext;
+  }
+
+  emitClonedErrorContext(node, addedContextFields = {}) {
+    if (!node) {
+      throw new TypeError('emitClonedErrorContext requires an origin node');
+    }
+    const addedContext = this._normalizeAddedContextFields(addedContextFields);
+    const staticContextExpr = addedContext === null
       ? this._emitStaticErrorContext(node)
       : this._emitStaticErrorContext(node, addedContext);
-    const inheritedAddedContext = this.currentInheritedAddedContext;
-    const inheritedLabelOverride = this.currentInheritedLabelOverride;
-    const ownedContextExpr = inheritedAddedContext
-      ? `runtime.cloneWithAddedContext(${staticContextExpr}, ${inheritedAddedContext})`
-      : `runtime.cloneContext(${staticContextExpr})`;
-    if (inheritedLabelOverride) {
-      return `runtime.setContextLabel(${ownedContextExpr}, ${inheritedLabelOverride})`;
-    }
-    return ownedContextExpr;
+    return this._applyInheritedErrorContext(staticContextExpr, true);
+  }
+
+  emitBufferStackErrorContext(node, addedContext = null, { owned = false } = {}) {
+    const contextAddedContext = owned
+      ? this._normalizeAddedContextFields(addedContext)
+      : addedContext;
+    const contextExpr = this._emitStaticErrorContext(node, contextAddedContext);
+    return this._applyInheritedErrorContext(contextExpr, owned);
   }
 
   _getAddedErrorContextIndex(node, addedContext) {

@@ -549,6 +549,32 @@ describe('error context tracing runtime foundation', () => {
     expect(contexts[contexts.length - 1].branch).to.be(undefined);
   });
 
+  it('labels guard recovery scope buffer metadata', async () => {
+    const { output, stacks } = await captureCommandStacks(async () => {
+      const env = new AsyncEnvironment();
+      return env.renderScriptString([
+        'data result',
+        'guard result',
+        '  result.before = fail()',
+        'recover err',
+        '  result.recovered = err.message',
+        'endguard',
+        'return result.snapshot()'
+      ].join('\n'), {
+        fail() {
+          throw new Error('guard boom');
+        }
+      }, { path: 'guard-recover-stack.casc' });
+    }, (command, chainName) => chainName === 'err' && command instanceof runtime.VarCommand);
+
+    expect(output.recovered).to.contain('guard boom');
+    expect(stacks.length).to.be(1);
+    expect(stacks[0][0].path).to.be('guard-recover-stack.casc');
+    expect(stacks[0][0].label).to.be('Guard.Recover');
+    expect(stacks[0][0].errorVar).to.be('err');
+    expect(stacks[0][1].label).to.be('Guard');
+  });
+
   it('labels if else branch metadata in compiled stacks', async () => {
     const render = () => {
       const env = new AsyncEnvironment();

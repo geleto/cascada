@@ -179,6 +179,10 @@ class Guard extends Node {
   }
 }
 
+class GuardRecover extends NodeList {
+  get typename() { return 'Guard.Recover'; }
+}
+
 class Revert extends Node {
   get typename() { return 'Revert'; }
   get fields() { return []; }
@@ -589,6 +593,7 @@ export {
   For,
   While,
   Guard,
+  GuardRecover,
   Revert,
   Return,
   AsyncEach,

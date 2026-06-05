@@ -2,7 +2,7 @@ import expect from 'expect.js';
 import * as cascada from '../../src/index.js';
 import {createPoison, PoisonError} from '../../src/runtime/runtime.js';
 
-const {AsyncEnvironment} = cascada;
+const {AsyncEnvironment, Script} = cascada;
 const TEST_EC = [1, 1, 'Guard.Test', 'guard-test.njk', null, null];
 
 (function () {
@@ -825,12 +825,12 @@ const TEST_EC = [1, 1, 'Guard.Test', 'guard-test.njk', null, null];
       const script = `
         data result
         guard result
-          var local = "guard"
-          result.phase = local
+          var x = "guard"
+          result.guardLocal = x
           var failed = fail()
         recover err
-          var local = "recover"
-          result.phase = local
+          var x = "recover"
+          result.recoverLocal = x
           result.recovered = true
         endguard
 
@@ -842,7 +842,7 @@ const TEST_EC = [1, 1, 'Guard.Test', 'guard-test.njk', null, null];
 
       const result = await env.renderScriptString(script, context);
       expect(result).to.eql({
-        phase: 'recover',
+        recoverLocal: 'recover',
         recovered: true
       });
     });
@@ -855,7 +855,7 @@ const TEST_EC = [1, 1, 'Guard.Test', 'guard-test.njk', null, null];
           result.before = err
           var failed = fail()
         recover err
-          result.errorSeen = err is error
+          result.errorMessage = err.message
           result.after = "recover"
         endguard
 
@@ -866,9 +866,54 @@ const TEST_EC = [1, 1, 'Guard.Test', 'guard-test.njk', null, null];
       };
 
       const result = await env.renderScriptString(script, context);
+      expect(result.after).to.equal('recover');
+      expect(result.errorMessage).to.contain('guard boom');
+    });
+
+    it('should keep recovery collision names unrenamed in generated source', () => {
+      const script = new Script(`
+        data result
+        guard result
+          var err = "guard-local"
+          var local = fail()
+        recover err
+          var local = "recover-local"
+          result.errorSeen = err is error
+          result.local = local
+        endguard
+
+        return result.snapshot()`, env, 'guard-recovery-names.casc');
+
+      const source = script._compileSource();
+      expect(source).to.not.contain('err#');
+      expect(source).to.not.contain('local#');
+      expect(source).to.contain('runtime.declareBufferChain');
+      expect(source).to.contain('"err"');
+      expect(source).to.contain('"local"');
+    });
+
+    it('should recover when a body-local declaration receives poison', async () => {
+      const script = `
+        data result
+        guard result
+          var local = fail()
+          result.unreachable = true
+        recover err
+          result.recovered = true
+          result.errorSeen = err is error
+        endguard
+
+        return result.snapshot()`;
+
+      const result = await env.renderScriptString(script, {
+        fail: () => poison('body local failed')
+      });
+
+      // The recovery variable holds a PoisonError object; `is error` only
+      // matches poisoned values.
       expect(result).to.eql({
-        errorSeen: false,
-        after: 'recover'
+        recovered: true,
+        errorSeen: false
       });
     });
 

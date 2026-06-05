@@ -493,9 +493,8 @@ class CompileMacro {
         macroName: node.name.value,
         macroSignature: compiler._describeMacroSignature(node.name.value, parameterNames)
       };
-      compiler.emit.managedBlock({
+      compiler.emit.withScopeCommandBuffer({
         frame: null,
-        createScopeRootBuffer: true,
         parentBufferOverride: null,
         analysisNode: node.body,
         errorContextNode: node,
@@ -565,9 +564,8 @@ class CompileMacro {
     );
 
     let returnStatement;
-    compiler.emit.managedBlock({
+    compiler.emit.withScopeCommandBuffer({
       frame: currFrame,
-      createScopeRootBuffer: true,
       parentBufferOverride: keepFrame ? compiler.buffer.currentBuffer : null,
       analysisNode: node.body,
       emitFunc: (managedFrame, bufferId) => {

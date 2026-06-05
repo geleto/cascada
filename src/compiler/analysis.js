@@ -107,6 +107,7 @@ class CompileAnalysis {
       // scheduling can use this to distinguish read-only child buffers.
       linkedMutatedChains: null,
       createsLinkedChildBuffer: false,
+      createsScopeBuffer: false,
       expressionControlFlowBoundary: false,
       ...existingAnalysis,
       parent: parentAnalysis,
@@ -724,7 +725,7 @@ class CompileAnalysis {
   }
 
   _deriveBoundaryLinkedChains(analysis, usedChains, declaredChains) {
-    if (!analysis.parent || !analysis.createsLinkedChildBuffer) {
+    if (!analysis.parent || !this._createsLinkableChildBuffer(analysis)) {
       return null;
     }
     const linkedChains = new Set();
@@ -739,6 +740,10 @@ class CompileAnalysis {
       });
     }
     return linkedChains.size > 0 ? linkedChains : null;
+  }
+
+  _createsLinkableChildBuffer(analysis) {
+    return !!(analysis && (analysis.createsLinkedChildBuffer || analysis.createsScopeBuffer));
   }
 
   getCurrentTextChain(analysis) {
