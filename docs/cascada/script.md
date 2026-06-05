@@ -457,6 +457,8 @@ You can use standard literals for common data types:
 #### Math
 All standard mathematical operators are available:
 `+` (addition), `-` (subtraction), `*` (multiplication), `/` (division), `//` (integer division), `%` (remainder), `**` (power).
+Operands must be numeric in scripts. Use `~` for text concatenation and `| int` / `| float` for explicit conversion.
+Floating-point division by zero follows JavaScript (`5 / 0` is `Infinity`), while `5 % 0` produces `NaNResult` and BigInt division or modulo by zero produces `DivideByZero`.
 
 ```javascript
 var price = (item.cost + shipping) * 1.05
@@ -464,6 +466,7 @@ var price = (item.cost + shipping) * 1.05
 
 #### Comparisons and Logic
 Standard comparison (`==`, `!=`, `===`, `!==`, `>`, `>=`, `<`, `<=`) and logic (`and`, `or`, `not`) operators are used for conditional logic.
+In scripts, `==` and `!=` are strict (`===` / `!==`), ordering compares only number-with-number or string-with-string, and `in` requires a collection.
 
 ```javascript
 if (user.role == "Admin" and not user.isSuspended) or user.isOwner
@@ -1874,9 +1877,11 @@ The `kind` values:
 | `ScalarLookup` | script property read on a scalar primitive with no such property |
 | `LookupThrew` | a property getter threw |
 | `IteratorThrew` | a loop iterator or generator threw |
-| `NotIterable` | script loop source is a scalar primitive, not a collection |
+| `NotIterable` | script loop source or `in` right-hand operand is not a collection |
 | `NotDestructurable` | loop element is not array-like for multi-variable destructuring; use `for a, b in [[1, 2]]`, not `for a, b in [1, 2]` |
 | `InvalidConcurrentLimit` | `of` limit is not a positive number |
+| `IncompatibleOperands` | script operator operands have incompatible types |
+| `DivideByZero` | BigInt division or modulo by zero |
 | `LoadFailed` | a non-fatal `import`/`component`/`include` load failed |
 | `ImportBindingMissing` | imported name is not exported by the module |
 | `NaNResult` | a computation produced `NaN` (`Infinity` stays a value) |

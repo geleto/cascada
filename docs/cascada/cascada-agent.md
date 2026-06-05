@@ -144,7 +144,9 @@ config.debug = true
 
 ```javascript
 // [EXPR-01] RULE: Arithmetic — `+ - * / // % **`. Comparisons — `== != === !== > >= < <=`.
-// DIFFERENTIAL: `//` is integer division; `**` is exponentiation.
+// DIFFERENTIAL: scripts use strict `==`/`!=`; arithmetic requires numeric operands; ordering compares number-number or string-string only; `in` needs a collection.
+// Use `~` for text concatenation and `| int` / `| float` for explicit numeric conversion.
+// `5 / 0` is Infinity; `5 % 0` is NaNResult; BigInt division/modulo by zero is DivideByZero.
 
 // [EXPR-02] RULE: Boolean ops use words `and`, `or`, `not` (no `&&`, `||`, `!`).
 if user.role == "Admin" and not user.isSuspended
@@ -1014,6 +1016,7 @@ Theme: {{ this.theme }}
 | C45 | Browser/new code uses ESM imports; old UMD bundles and automatic `window.nunjucks` globals are unsupported | API-03 |
 | C46 | Object literals require explicit keys (`{ name: name }`, not `{ name }`) | EXPR-06 |
 | C47 | Identifier names cannot contain `$`; it is reserved for compiler internals | LANG-06 |
+| C48 | Script arithmetic/order operators are typed; use `~` for concatenation and explicit filters for numeric conversion | EXPR-01 |
 
 ---
 

@@ -880,7 +880,9 @@ describe('error context tracing runtime foundation', () => {
   it('assigns source-specific poison kinds through runtime render paths', async () => {
     const activeKinds = [
       'ContextValueRejected',
+      'DivideByZero',
       'ImportBindingMissing',
+      'IncompatibleOperands',
       'InvalidConcurrentLimit',
       'InvalidTextValue',
       'IteratorThrew',
@@ -1052,6 +1054,16 @@ describe('error context tracing runtime foundation', () => {
       seenKinds,
       () => env.renderScriptString('return 0 / 0'),
       'NaNResult'
+    );
+    await expectSourceKind(
+      seenKinds,
+      () => env.renderScriptString('return "5" + 3'),
+      'IncompatibleOperands'
+    );
+    await expectSourceKind(
+      seenKinds,
+      () => env.renderScriptString('return left / right', { left: 5n, right: 0n }),
+      'DivideByZero'
     );
 
     expect([...seenKinds].sort()).to.eql(activeKinds.sort());
@@ -1405,7 +1417,7 @@ describe('error context tracing runtime foundation', () => {
       const loader = new StringLoader();
       loader.addTemplate('parent.script', [
         'method build(name)',
-        '  return "Parent " + name',
+        '  return "Parent " ~ name',
         'endmethod'
       ].join('\n'));
       loader.addTemplate('child.script', [

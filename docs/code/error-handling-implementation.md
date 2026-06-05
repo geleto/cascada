@@ -484,7 +484,8 @@ End state: `ValueRejected`, `DataMethodThrew`, `ExpressionThrew`, `ConditionThre
 `DestructureMismatch` are retired. The active taxonomy uses `MissingFunction`, `NotAFunction`,
 `UserCallThrew`, `UnknownVariable`, `NullLookup`, `LookupThrew`, `IteratorThrew`,
 `NotDestructurable`, `ScalarLookup`, `NotIterable`, `InvalidConcurrentLimit`, `LoadFailed`,
-`ImportBindingMissing`, `NaNResult`, `InvalidTextValue`, and `ContextValueRejected`.
+`ImportBindingMissing`, `IncompatibleOperands`, `DivideByZero`, `NaNResult`,
+`InvalidTextValue`, and `ContextValueRejected`.
 
 Verify: per-path kind assertions (call / `!` / `sequence` missing method -> `MissingFunction`;
 non-function -> `NotAFunction`; throw -> `UserCallThrew`; sequence null read -> `NullLookup`;
@@ -536,6 +537,7 @@ as a container or collection is a *type error* (poison).
   it. `null`/`undefined` keep running the **`else`** branch (absent/optional collection); arrays,
   objects, iterables, async iterators, and strings are unchanged. (iterate() is shared across
   modes; gate on script mode to match scope, or apply to both — a scalar source is always a bug.)
+  Phase 13 also reuses `NotIterable` for an invalid `in` right-hand operand.
 - [x] **Rename `NotAnArray` → `NotDestructurable`** (`loop.js` create site): it is the
   multi-variable destructuring **element** failure (`for a, b in pairs`), independent of the loop
   source. `NotIterable` (source) and `NotDestructurable` (element) are now distinct.
@@ -560,17 +562,16 @@ CascadaScript inherits nunjucks templating leniencies that hide programming bugs
 **in script mode** (templates stay nunjucks-compatible). Confirmed: the lexer has both `==` and
 `===` (`lexer.js:168`).
 
-- [ ] **`in` on a non-collection → poison** (also a Phase 10 regression fix). `runtime.inOperator`
-  (`lib.js:251`) `throw new Error(...)` for a non-array/string/object RHS; post-Phase-10 that raw
+- [x] **`in` on a non-collection → poison** (also a Phase 10 regression fix). `runtime.inOperator`
+  (`operators.js`) used to raw-throw for a non-array/string/object RHS; post-Phase-10 that raw
   throw now becomes **fatal**, where before it was poison. A user type error should be recoverable
-  poison, not fatal — make `inOperator` produce a `PoisonError` (kind: reuse `NotIterable`, or a
-  dedicated `InvalidInOperand` — decide at implementation). Applies to **both** modes (it's a
+  poison, not fatal — make `inOperator` produce a `PoisonError` (kind: `NotIterable`). Applies to **both** modes (it's a
   correctness fix, not just strictness).
-- [ ] **Strict equality in script mode.** Compile `==` → `===` and `!=` → `!==` (the `compareOps`
-  tables in `compiler-base-async.js` / `compiler-base-sync.js`), gated on `scriptMode`. Removes
+- [x] **Strict equality in script mode.** Compile `==` → `===` and `!=` → `!==` (the script-mode
+  async comparison emitter), gated on `scriptMode`. Removes
   loose equality (`5 == "5"` → `false` in scripts). Templates keep loose `==` for nunjucks
   compatibility. **Breaking** for scripts that relied on loose `==` (accepted).
-- [ ] **Typed operands in script mode** (supersedes the narrow "numeric `+`"). Result-checking
+- [x] **Typed operands in script mode** (supersedes the narrow "numeric `+`"). Result-checking
   (`poisonIfNaN`) is leaky: JS coerces `null`→0, `true`→1, `[]`→0, `[2]`→2, `"5"`→5, so
   `null - 1` → `-1`, `true + 1` → `2`, `"5" * 2` → `10` all slip through silently. Check **operands**,
   not the result. Replace the `poisonIfNaN(left op right)` emit with typed runtime helpers
@@ -584,13 +585,14 @@ CascadaScript inherits nunjucks templating leniencies that hide programming bugs
     other types poison (no coercion).
   - **`~` (concat)** → scalars stringify; a plain object / function / symbol poisons (same rule as
     `InvalidTextValue`).
-  This subsumes `NaNResult` for arithmetic — a bad operand poisons before a `NaN` can form. Kind:
-  one new `IncompatibleOperands` (or reuse `NaNResult` for the arithmetic ones — decide at
-  implementation). Templates keep raw JS operators + the result-only `NaNResult`.
+  This subsumes `NaNResult` for bad arithmetic operands — a bad operand poisons before a `NaN`
+  can form. Kind: `IncompatibleOperands`. BigInt division/modulo by zero is `DivideByZero`.
+  Floating-point `Infinity` remains a value; floating-point `NaN` remains `NaNResult`.
+  Templates keep raw JS operators + the result-only `NaNResult`.
 
-- [ ] Docs (all surfaces, not just template.md):
+- [x] Docs (all surfaces, not just template.md):
   - **kind tables** (analysis §3 + `script.md` *Anatomy of an Error Value*): add the `in`→poison
-    kind and the operand kind (`IncompatibleOperands`, or note the `NaNResult` reuse for arithmetic).
+    kind, the operand kind (`IncompatibleOperands`), and `DivideByZero`.
   - **`script.md` operator/expression section** (≈173, 457): scripts use strict `==`/`!=`;
     arithmetic needs numeric operands (concat is `~`; convert with `| int` / `| float`); ordering
     needs both number or both string; `in` on a non-collection poisons.

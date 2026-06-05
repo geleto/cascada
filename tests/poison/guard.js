@@ -678,7 +678,7 @@ const TEST_EC = [1, 1, 'Guard.Test', 'guard-test.njk', null, null];
         state = "changed"
         result.x = error("fail")
       recover err
-        state = "recovered: " + err.message
+        state = "recovered: " ~ err.message
         result.msg = err.message
       endguard
       result.finalState = state

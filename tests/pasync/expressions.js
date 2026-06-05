@@ -1,6 +1,6 @@
 import expect from 'expect.js';
 
-const {AsyncEnvironment} = typeof window !== 'undefined'
+const {AsyncEnvironment, Environment} = typeof window !== 'undefined'
   ? window.nunjucks
   : await import('../../src/environment/environment.js');
 
@@ -569,6 +569,85 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
         const template = '{% if getValue1() == getValue2() %}Equal{% else %}Not Equal{% endif %}';
         const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('Equal');
+      });
+    });
+
+    describe('Cascada Script strict operators', () => {
+      async function expectPoisonKind(operation, kind) {
+        try {
+          await operation();
+          expect().fail(`Expected render to fail with ${kind}`);
+        } catch (err) {
+          expect(err.errors[0].kind).to.be(kind);
+        }
+      }
+
+      it('uses strict equality in scripts while templates keep loose equality', async () => {
+        expect(await env.renderScriptString('return 5 == "5"')).to.be(false);
+        expect(await env.renderScriptString('return 5 != "5"')).to.be(true);
+        expect(await env.renderTemplateString('{{ 5 == "5" }}')).to.be('true');
+      });
+
+      it('requires numeric script arithmetic operands', async () => {
+        expect(await env.renderScriptString('return 5 + 3')).to.be(8);
+        expect(await env.renderScriptString('return ("5" | int) + 3')).to.be(8);
+
+        await expectPoisonKind(() => env.renderScriptString('return "5" + 3'), 'IncompatibleOperands');
+        await expectPoisonKind(() => env.renderScriptString('return null - 1'), 'IncompatibleOperands');
+        await expectPoisonKind(() => env.renderScriptString('return true + 1'), 'IncompatibleOperands');
+        await expectPoisonKind(() => env.renderScriptString('return "5" * 2'), 'IncompatibleOperands');
+        await expectPoisonKind(() => env.renderScriptString('return [] * 5'), 'IncompatibleOperands');
+
+        expect(await env.renderTemplateString('{{ "5" * 2 }}')).to.be('10');
+      });
+
+      it('distinguishes floating-point infinity, NaN, and bigint divide-by-zero', async () => {
+        expect(await env.renderScriptString('return 5 / 0')).to.be(Infinity);
+
+        await expectPoisonKind(() => env.renderScriptString('return 5 % 0'), 'NaNResult');
+        await expectPoisonKind(
+          () => env.renderScriptString('return left / right', { left: 5n, right: 0n }),
+          'DivideByZero'
+        );
+        await expectPoisonKind(
+          () => env.renderScriptString('return left % right', { left: 5n, right: 0n }),
+          'DivideByZero'
+        );
+      });
+
+      it('requires compatible script ordering operands', async () => {
+        expect(await env.renderScriptString('return "a" < "b"')).to.be(true);
+        expect(await env.renderScriptString('return 1 < 2 < 3')).to.be(true);
+
+        await expectPoisonKind(() => env.renderScriptString('return 5 < "abc"'), 'IncompatibleOperands');
+      });
+
+      it('keeps concat explicit and rejects non-text-like operands', async () => {
+        expect(await env.renderScriptString('return "5" ~ 3')).to.be('53');
+        expect(await env.renderScriptString('return left ~ right', { left: ['a', 'b'], right: 3 })).to.be('a,b3');
+
+        await expectPoisonKind(() => env.renderScriptString('return "x" ~ value', { value: {} }), 'IncompatibleOperands');
+        await expectPoisonKind(() => env.renderScriptString('return "x" ~ value', { value: Symbol('bad') }), 'IncompatibleOperands');
+      });
+
+      it('poisons invalid in operands without making them fatal', async () => {
+        const result = await env.renderScriptString([
+          'data result',
+          'var check = "x" in 5',
+          'if check is error',
+          '  result.kind = check#errors[0].kind',
+          'endif',
+          'return result.snapshot()'
+        ].join('\n'));
+
+        expect(result).to.eql({ kind: 'NotIterable' });
+        await expectPoisonKind(() => env.renderTemplateString('{{ "x" in 5 }}'), 'NotIterable');
+
+        const syncEnv = new Environment();
+        expect(() => syncEnv.renderString('{{ "x" in 5 }}')).to.throwException((err) => {
+          expect(err.message).to.contain('Cannot use "in" operator');
+          expect(err.message).to.not.contain('PoisonError requires compact origin context');
+        });
       });
     });
   });

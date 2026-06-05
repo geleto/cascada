@@ -18,6 +18,14 @@ const compareOps = {
   '>=': '>='
 };
 
+const scriptArithmeticOps = {
+  '+': '+',
+  '-': '-',
+  '*': '*',
+  '/': '/',
+  '%': '%'
+};
+
 class CompilerBaseAsync extends CompilerCommon {
   init(options) {
     super.init(Object.assign({}, options, { asyncMode: true }));
@@ -282,6 +290,11 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   compileCompare(node) {
+    if (this.scriptMode) {
+      this._compileScriptCompare(node);
+      return;
+    }
+
     this.emit('runtime.resolveDuo(');
     this.compile(node.expr, null);
     this.emit(',');
@@ -323,6 +336,36 @@ class CompilerBaseAsync extends CompilerCommon {
       const errorContext = this.emitErrorContext(node);
       this.emit(`return runtime.envCallWrapAsync(env.getFilter("${node.name.value}"), context, ${result}, ${errorContext});`);
     }, false);
+  }
+
+  _compileScriptCompare(node) {
+    const leftId = this._tmpid();
+    const rightId = this._tmpid();
+    const resultId = this._tmpid();
+
+    this.emit('runtime.resolveDuo(');
+    this.compile(node.expr, null);
+    this.emit(',');
+    this.compile(node.ops[0].expr, null);
+    this.emit(`).then(async function([${leftId}, ${rightId}]){`);
+
+    this.emit(`let ${resultId} = runtime.scriptCompareOperator(${leftId}, ${rightId}, "${node.ops[0].type}", ${this.emitErrorContext(node)});`);
+    this.emit(`if (runtime.isPoison(${resultId}) || !${resultId}) return ${resultId};`);
+
+    node.ops.forEach((op, index) => {
+      if (index === 0) {
+        return;
+      }
+      this.emit(`${leftId} = ${rightId};`);
+      this.emit(`${rightId} = `);
+      this.compileAwaited(op.expr, null);
+      this.emit(';');
+      this.emit(`${resultId} = runtime.scriptCompareOperator(${leftId}, ${rightId}, "${op.type}", ${this.emitErrorContext(node)});`);
+      this.emit(`if (runtime.isPoison(${resultId}) || !${resultId}) return ${resultId};`);
+    });
+
+    this.emit('return true;');
+    this.emit('})');
   }
 
   compileFilterAsync(node) {
@@ -541,6 +584,18 @@ class CompilerBaseAsync extends CompilerCommon {
     this.emit(',');
     this.compile(node.right, null);
     this.emit(')');
+    if (this.scriptMode && funcName === 'Math.floor' && separator === ' / ') {
+      this.emit(`.then(function([left,right]){return runtime.scriptArithmeticOperator(left, right, "//", ${this.emitErrorContext(node)});}))`);
+      return;
+    }
+    if (this.scriptMode && funcName === 'Math.pow') {
+      this.emit(`.then(function([left,right]){return runtime.scriptArithmeticOperator(left, right, "**", ${this.emitErrorContext(node)});}))`);
+      return;
+    }
+    if (funcName === 'runtime.inOperator') {
+      this.emit(`.then(function([left,right]){return runtime.inOperator(left, right, ${this.emitErrorContext(node)});}))`);
+      return;
+    }
     this.emit(`.then(function([left,right]){return runtime.poisonIfNaN(${funcName}(left${separator}right), ${this.emitErrorContext(node)});}))`);
   }
 
@@ -550,6 +605,15 @@ class CompilerBaseAsync extends CompilerCommon {
     this.emit(',');
     this.compile(node.right, null);
     this.emit(')');
+    if (this.scriptMode && str === ' + "" + ') {
+      this.emit(`.then(function([left,right]){return runtime.scriptConcatOperator(left, right, ${this.emitErrorContext(node)});})`);
+      return;
+    }
+    const scriptArithmeticOp = scriptArithmeticOps[str.trim()];
+    if (this.scriptMode && scriptArithmeticOp) {
+      this.emit(`.then(function([left,right]){return runtime.scriptArithmeticOperator(left, right, "${scriptArithmeticOp}", ${this.emitErrorContext(node)});})`);
+      return;
+    }
     this.emit(`.then(function([left,right]){return runtime.poisonIfNaN(left ${str} right, ${this.emitErrorContext(node)});})`);
   }
 

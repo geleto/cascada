@@ -191,9 +191,11 @@ source is assigned its target `kind`; `NotDestructurable`, `ImportBindingMissing
 | `LookupThrew` | `lookup.js` — a property getter threw during the read | `wrap` | existing |
 | `IteratorThrew` | `loop.js` — async iterator `.next()`/`for await` threw, or a generator yielded an `Error` | `wrap` | existing |
 | `InvalidConcurrentLimit` | `loop.js` — `concurrentLimit` is not a positive number | `create` | existing |
+| `IncompatibleOperands` | `operators.js` — script operator operands have incompatible types | `create` / `wrap` | implemented |
+| `DivideByZero` | `operators.js` — BigInt division or modulo by zero | `create` | implemented |
 | `ContextValueRejected` | `environment/context.js` `normalizeContextValue` and the `compiler-async` return wrap — a promise supplied by the render context (or returned directly) rejected | `wrap` | existing |
 | `InvalidTextValue` | `commands/text.js` — a value cannot be written to a text chain | `create` | implemented |
-| `NotIterable` | `loop.js` — script-mode loop source is a scalar primitive, not a collection | `create` | implemented |
+| `NotIterable` | `loop.js` / `operators.js` — script-mode loop source or `in` right-hand operand is not a collection | `create` | implemented |
 | `NotDestructurable` | `loop.js` — loop element is not an array for multi-variable destructuring | `create` | implemented |
 | `NaNResult` | value-production points (arithmetic / call / lookup / data-method / loop results) — value is `NaN` (see [NaN handling](#nan-handling)) | `create` | **new** (§11) |
 | `ImportBindingMissing` | `composition.js` — `from import` names an export the module does not have | `create` | implemented |
@@ -205,10 +207,9 @@ Notes:
   `PoisonError.wrap`, and `RuntimePromise`, then passing it at each source above.
 - `ErrorCommand` / `TargetPoisonCommand` and `resolve.js`'s `createPoison(group)`
   only **aggregate** existing poison; they are not sources and get no `kind`.
-- There is no `DivideByZero` kind: `/` and `%` by zero produce `Infinity`/`NaN`,
-  not an exception. The `NaN` outcome is covered by `NaNResult`; `Infinity` stays
-  a value (see [NaN handling](#nan-handling) and §12). Add a new `kind` only when a
-  real source operation can fail.
+- Floating-point division by zero follows JavaScript: `/` produces `Infinity`
+  (a value) and `%` produces `NaN` (`NaNResult`). BigInt division or modulo by
+  zero throws in JavaScript, so Cascada classifies it as `DivideByZero`.
 
 ### NaN handling
 

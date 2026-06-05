@@ -24,6 +24,7 @@ import {
   RuntimeError,
   envCallWrapAsync,
   observeDiscardedExpression,
+  scriptArithmeticOperator,
   cloneContext,
   cloneWithAddedContext
 } from '../../src/runtime/runtime.js';
@@ -99,6 +100,13 @@ describe('typed poison error contracts', () => {
     expect(() => new RuntimePromise(Promise.resolve('ok'), TEST_EC)).to.throwException((err) => {
       expect(isRuntimeError(err)).to.be(true);
       expect(err.message).to.contain('RuntimePromise requires kind');
+    });
+  });
+
+  it('keeps unsupported script arithmetic operators fatal', () => {
+    expect(() => scriptArithmeticOperator(1, 2, '???', TEST_EC)).to.throwException((err) => {
+      expect(err.message).to.contain('Unsupported script arithmetic operator \'???\'');
+      expect(isPoisonError(err)).to.be(false);
     });
   });
 
