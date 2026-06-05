@@ -205,7 +205,7 @@ describe('Cascada Script: Variables', function () {
       const script = `
         var item = "parent"
         for i in range(2)
-          var item = "child " + i
+          var item = "child " ~ i
         endfor
         return item
       `;
@@ -223,7 +223,7 @@ describe('Cascada Script: Variables', function () {
         data result
         var parentVar = "parent value"
         for i in range(2)
-          result.items.push(parentVar + " " + i)
+          result.items.push(parentVar ~ " " ~ i)
         endfor
 
         return result.snapshot()`;
@@ -237,8 +237,8 @@ describe('Cascada Script: Variables', function () {
         data result
         var outerVar = "outer"
         for i in range(2)
-          var innerVar = "inner " + i
-          result.items.push(outerVar + " - " + innerVar)
+          var innerVar = "inner " ~ i
+          result.items.push(outerVar ~ " - " ~ innerVar)
         endfor
 
         return result.snapshot()`;
@@ -440,7 +440,7 @@ describe('Cascada Script: Variables', function () {
       const script = `
         var values = []
         for i in [1, 2]
-          var scopedValue = "inner-" + i
+          var scopedValue = "inner-" ~ i
           values.push(scopedValue)
         endfor
         var scopedValue = "outer"
@@ -456,7 +456,7 @@ describe('Cascada Script: Variables', function () {
         var n = 0
         var values = []
         while n < 2
-          var scopedValue = "w-" + n
+          var scopedValue = "w-" ~ n
           values.push(scopedValue)
           n = n + 1
         endwhile

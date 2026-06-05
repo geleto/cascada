@@ -588,11 +588,13 @@ const {AsyncEnvironment, Environment} = typeof window !== 'undefined'
         expect(await env.renderTemplateString('{{ 5 == "5" }}')).to.be('true');
       });
 
-      it('requires numeric script arithmetic operands', async () => {
+      it('supports numeric addition and string-only concatenation without coercion', async () => {
         expect(await env.renderScriptString('return 5 + 3')).to.be(8);
+        expect(await env.renderScriptString('return "hello" + " " + name', { name: 'Ada' })).to.be('hello Ada');
         expect(await env.renderScriptString('return ("5" | int) + 3')).to.be(8);
 
         await expectPoisonKind(() => env.renderScriptString('return "5" + 3'), 'IncompatibleOperands');
+        await expectPoisonKind(() => env.renderScriptString('return "x" + null'), 'IncompatibleOperands');
         await expectPoisonKind(() => env.renderScriptString('return null - 1'), 'IncompatibleOperands');
         await expectPoisonKind(() => env.renderScriptString('return true + 1'), 'IncompatibleOperands');
         await expectPoisonKind(() => env.renderScriptString('return "5" * 2'), 'IncompatibleOperands');

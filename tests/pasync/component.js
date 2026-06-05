@@ -3,6 +3,7 @@
 
 import expect from 'expect.js';
 import {AsyncEnvironment, Script} from '../../src/environment/environment.js';
+import {Context} from '../../src/environment/context.js';
 import {StringLoader} from '../util.js';
 import * as runtimeModule from '../../src/runtime/runtime.js';
 
@@ -693,29 +694,12 @@ describe('Phase 8 - Component Observations', function () {
 
   it('should reject non-observational component shared commands', async function () {
     const env = { globals: {} };
-    const makeContext = (path) => ({
-      path,
-      env,
-      ctx: {},
-      getRenderContextVariables() {
-        return {};
-      },
-      lookupScript(name) {
-        return env.globals[name];
-      },
-      forkForPath(nextPath) {
-        return makeContext(nextPath);
-      },
-      forkForComposition(nextPath) {
-        return makeContext(nextPath);
-      }
-    });
-
-    const ownerContext = makeContext('Main.script');
+    const ownerContext = new Context({}, {}, env, 'Main.script', true);
     const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null, null, TEST_BUFFER_STACK_CONTEXT);
     runtimeModule.declareBufferChain(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
 
-    const sharedRootBuffer = new runtimeModule.CommandBuffer(makeContext('Component.script'), null, null, null, null, TEST_BUFFER_STACK_CONTEXT);
+    const componentContext = new Context({}, {}, env, 'Component.script', true);
+    const sharedRootBuffer = new runtimeModule.CommandBuffer(componentContext, null, null, null, null, TEST_BUFFER_STACK_CONTEXT);
     runtimeModule.declareBufferChain(sharedRootBuffer, 'status', 'var', ownerContext, null);
 
     ownerBuffer.addCommand(new runtimeModule.VarCommand({
@@ -731,7 +715,7 @@ describe('Phase 8 - Component Observations', function () {
         env: {},
         runtime: runtimeModule,
         renderState: createTestRenderState(),
-        context: makeContext('Component.script'),
+        context: componentContext,
         rootBuffer: sharedRootBuffer,
         sharedRootBuffer
       })],
@@ -1168,25 +1152,7 @@ describe('Phase 8 - Component Lifecycle', function () {
       'endmethod',
       'record("ctor-start")'
     ].join('\n'), env, 'Component.script');
-    const makeContext = (path) => ({
-      path,
-      env,
-      ctx: {},
-      getRenderContextVariables() {
-        return {};
-      },
-      lookupScript(name) {
-        return env.globals[name];
-      },
-      forkForPath(nextPath) {
-        return makeContext(nextPath);
-      },
-      forkForComposition(nextPath) {
-        return makeContext(nextPath);
-      }
-    });
-
-    const ownerContext = makeContext('Main.script');
+    const ownerContext = new Context({}, {}, env, 'Main.script', true);
     const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null, null, TEST_BUFFER_STACK_CONTEXT);
     runtimeModule.declareBufferChain(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
 
@@ -1248,25 +1214,7 @@ describe('Phase 8 - Component Lifecycle', function () {
       'endmethod',
       'record("constructor")'
     ].join('\n'));
-    const makeContext = (path) => ({
-      path,
-      env,
-      ctx: {},
-      getRenderContextVariables() {
-        return {};
-      },
-      lookupScript(name) {
-        return env.globals[name];
-      },
-      forkForPath(nextPath) {
-        return makeContext(nextPath);
-      },
-      forkForComposition(nextPath) {
-        return makeContext(nextPath);
-      }
-    });
-
-    const ownerContext = makeContext('Main.script');
+    const ownerContext = new Context({}, {}, env, 'Main.script', true);
     const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null, null, TEST_BUFFER_STACK_CONTEXT);
     runtimeModule.declareBufferChain(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
 

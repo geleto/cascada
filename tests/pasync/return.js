@@ -680,7 +680,7 @@ return made`;
         '  function inner()',
         '    return item',
         '  endfunction',
-        '  record("outer-" + item)',
+        '  record("outer-" ~ item)',
         'endfor',
         'return "done"'
       ].join('\n'), {
@@ -1059,11 +1059,11 @@ return made`;
       const events = [];
       const result = await env.renderScriptString([
         'each item in [1, 2, 3]',
-        '  record("before-" + item)',
+        '  record("before-" ~ item)',
         '  if item == 2',
         '    return item',
         '  endif',
-        '  record("after-" + item)',
+        '  record("after-" ~ item)',
         'endeach',
         'record("after-loop")'
       ].join('\n'), {
@@ -1080,7 +1080,7 @@ return made`;
       const events = [];
       const result = await env.renderScriptString([
         'each key, val in items',
-        '  record(key + ":" + val)',
+        '  record(key ~ ":" ~ val)',
         '  return key',
         'endeach',
         'return null'
@@ -1198,7 +1198,7 @@ return made`;
       const events = [];
       const result = await env.renderScriptString([
         'for item in [1, 2]',
-        '  record("body-" + item)',
+        '  record("body-" ~ item)',
         '  if item == 1',
         '    return delay("first", 30)',
         '  endif',
@@ -1527,7 +1527,7 @@ return made`;
       try {
         await env.renderScriptString([
           'each item in [1, 2]',
-          '  record("item-" + item)',
+          '  record("item-" ~ item)',
           '  if item == 1',
           '    return poisonValue()',
           '  endif',

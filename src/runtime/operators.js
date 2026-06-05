@@ -23,6 +23,9 @@ function scriptArithmeticOperator(left, right, operator, errorContext) {
   if (!isArithmeticOperator(operator)) {
     throw new Error(`Unsupported script arithmetic operator '${operator}'`);
   }
+  if (operator === '+' && isStringPair(left, right)) {
+    return left + right;
+  }
   if (!isNumericPair(left, right)) {
     return incompatibleOperands(operator, left, right, errorContext);
   }
@@ -90,6 +93,10 @@ function isNumericPair(left, right) {
   const rightType = typeof right;
   return (leftType === 'number' && rightType === 'number') ||
     (leftType === 'bigint' && rightType === 'bigint');
+}
+
+function isStringPair(left, right) {
+  return typeof left === 'string' && typeof right === 'string';
 }
 
 function isComparablePair(left, right) {

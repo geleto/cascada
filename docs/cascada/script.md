@@ -169,10 +169,10 @@ What makes CascadaScript remarkable is how unremarkable it looks. Despite execut
 |---|---|---|
 | Variable declaration | `var name = value` | Always declare before use with `var` |
 | Assignment | `name = value`, `obj.prop = value` | Assign or reassign a variable or property to a new value |
-| Arithmetic | `+`, `-`, `*`, `/`, `//`, `%`, `**` | `//` is integer division, `**` is exponentiation |
+| Arithmetic | `+`, `-`, `*`, `/`, `//`, `%`, `**` | `+` also concatenates `string + string`; `//` is integer division, `**` is exponentiation |
 | Comparisons | `==`, `!=`, `<`, `>`, `<=`, `>=`, `===` | Standard comparisons |
 | Logic | `and`, `or`, `not` | Word-form boolean operators |
-| Strings | `"text"`, `'text'` | Concatenation with `+` |
+| Strings | `"text"`, `'text'` | `+` concatenates two strings; `~` explicitly stringifies text-like values |
 | Arrays | `[1, 2, 3]` | Array literals |
 | Objects / dicts | `{key: "value"}` | Object literals |
 | Expressions | `obj.prop`, `arr[i]`, `2*x + 1` | Member access, indexing, compound expressions; any expression is a valid standalone statement |
@@ -457,7 +457,8 @@ You can use standard literals for common data types:
 #### Math
 All standard mathematical operators are available:
 `+` (addition), `-` (subtraction), `*` (multiplication), `/` (division), `//` (integer division), `%` (remainder), `**` (power).
-Operands must be numeric in scripts. Use `~` for text concatenation and `| int` / `| float` for explicit conversion.
+Operands must be numeric in scripts, except that `+` also supports `string + string`.
+Mixed coercions such as `"5" + 3`, `"x" + null`, and `"5" * 2` produce `IncompatibleOperands`; use `~` for explicit text concatenation and `| int` / `| float` for numeric conversion.
 Floating-point division by zero follows JavaScript (`5 / 0` is `Infinity`), while `5 % 0` produces `NaNResult` and BigInt division or modulo by zero produces `DivideByZero`.
 
 ```javascript

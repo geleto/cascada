@@ -1659,7 +1659,7 @@ describe('Cascada Script: Explicit Chain Declarations', function () {
           data outData
           text outText
           outData.value = num
-          outText("v" + num)
+          outText("v", num)
           return { data: outData.snapshot(), text: outText.snapshot() }
         endcall
 

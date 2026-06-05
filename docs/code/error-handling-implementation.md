@@ -578,10 +578,11 @@ CascadaScript inherits nunjucks templating leniencies that hide programming bugs
   not the result. Replace the `poisonIfNaN(left op right)` emit with typed runtime helpers
   (gated on `scriptMode`):
   - **Arithmetic** `+` `-` `*` `/` `//` `%` `**` → both operands must be `number` (or `bigint`);
-    anything else — **including numeric strings** (`"5"`), `null`, booleans, arrays, objects,
-    `undefined` — poisons. Concatenation uses the existing `~` operator (`compileConcat`). The
-    explicit numeric conversions are the `int` / `float` filters (`("5" | int) + 3`); they return a
-    default, so they never poison.
+    `+` also allows `string + string`. Anything else — **including numeric strings mixed with
+    numbers** (`"5" + 3`), `null`, booleans, arrays, objects, `undefined` — poisons. Broader
+    text concatenation uses the existing `~` operator (`compileConcat`). The explicit numeric
+    conversions are the `int` / `float` filters (`("5" | int) + 3`); they return a default, so they
+    never poison.
   - **Ordering** `<` `>` `<=` `>=` → both `number` **or** both `string` (lexicographic); mixed or
     other types poison (no coercion).
   - **`~` (concat)** → scalars stringify; a plain object / function / symbol poisons (same rule as
@@ -595,12 +596,13 @@ CascadaScript inherits nunjucks templating leniencies that hide programming bugs
   - **kind tables** (analysis §3 + `script.md` *Anatomy of an Error Value*): add the `in`→poison
     kind, the operand kind (`IncompatibleOperands`), and `DivideByZero`.
   - **`script.md` operator/expression section** (≈173, 457): scripts use strict `==`/`!=`;
-    arithmetic needs numeric operands (concat is `~`; convert with `| int` / `| float`); ordering
-    needs both number or both string; `in` on a non-collection poisons.
+    arithmetic needs numeric operands except `string + string`; mixed string/number concat uses
+    `~` or explicit conversion with `| int` / `| float`; ordering needs both number or both string;
+    `in` on a non-collection poisons.
   - **`cascada-agent.md`**: update the operator rule (the "arithmetic/logical operators THROW on
     `none`/missing target" line ≈352) to the script-mode typed-operand behavior.
   - **`template.md`** "Template vs Script: Key Differences" (minimal style): scripts use strict
-    `==` and numeric operators; templates keep loose `==` and JS coercion.
+    `==` and typed script operators; templates keep loose `==` and JS coercion.
 
 **Explicitly not doing:** macro/function arity (skipping arguments is a valid pattern — stays
 silent); default `throwOnUndefined` in script mode (`undefined` stays `undefined`, JS-like).
@@ -609,8 +611,8 @@ coerces wrong-type input silently.
 
 Verify: `x in 5` → poison (not fatal), recoverable with `is error` · `5 == "5"` → `false` in a
 script, `true` in a template · arithmetic operand checks: `"5" + 3` / `null - 1` / `true + 1` /
-`"5" * 2` / `[] * 5` → poison (not silent `-1`/`2`/`10`/`0`); `5 + 3` → `8`; `("5" | int) + 3` → `8`;
-`"5" ~ 3` → `"53"` · ordering `5 < "abc"` → poison, `"a" < "b"` → `true` · macros with missing args
+`"5" * 2` / `[] * 5` → poison (not silent `-1`/`2`/`10`/`0`); `5 + 3` → `8`; `"a" + "b"` → `"ab"`;
+`("5" | int) + 3` → `8`; `"5" ~ 3` → `"53"` · ordering `5 < "abc"` → poison, `"a" < "b"` → `true` · macros with missing args
 still run · `{{ x.missing }}` still `undefined` · the same expressions stay JS-lenient in templates
 · `tests/pasync/expressions.js` · `tests/poison/` · `npm run build`.
 
@@ -663,7 +665,7 @@ verifies the whole surface agrees.
   its operator/lookup rules reflect script-mode strictness (typed operands, strict `==`, scalar
   lookup/iteration, `in`).
 - [ ] `template.md` "Template vs Script: Key Differences" lists every script/template divergence
-  (scalar lookup/iteration, strict `==`, numeric operators, `in`).
+  (scalar lookup/iteration, strict `==`, typed script operators, `in`).
 - [ ] Examples across all docs still render / match behavior; links resolve.
 
 Verify: `npm run build` · grep the docs for retired kind names → none.

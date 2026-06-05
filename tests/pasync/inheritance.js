@@ -493,7 +493,7 @@ describe('Inheritance rebuild', function () {
           'shared text trace',
           'extends "base.script"',
           'var result = this.mark()',
-          'this.trace("after:" + result + "|")',
+          'this.trace("after:" ~ result ~ "|")',
           'return this.trace.snapshot()'
         ].join('\n')
       });

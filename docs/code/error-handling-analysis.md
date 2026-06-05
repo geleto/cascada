@@ -256,8 +256,10 @@ this is intentional source-origin handling, not a NaN-only behavior.
 Because every value is poisoned at production, it is already poison by the time it
 reaches a consumer — so **functions never receive a `NaN` argument** and **`NaN`
 never reaches output or a returned `snapshot()`**, with no check at those
-consumption points. The `typeof === 'number'` guard leaves string concat (`"a"+1`),
-comparisons, and `in` (booleans) untouched — no per-operator special-casing.
+consumption points. Later script-operator strictness adds typed operand checks:
+`string + string` is valid concatenation, but mixed/coercive cases such as
+`"a" + 1`, comparisons across incompatible types, and `in` on non-collections
+produce poison instead of relying on JavaScript coercion.
 
 If a `NaN` ever reaches output, a production point was missed — that is an engine
 bug, not a data error; an optional dev-only assertion at output can catch it, but it

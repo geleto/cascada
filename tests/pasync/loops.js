@@ -2819,7 +2819,7 @@ endfor
 // Summary - simplified to avoid complex filtering
 result.summary.totalUsers = userIds.length
 for user in userIds
-  result.summary.userNames.push("User " + user)
+  result.summary.userNames.push("User " ~ user)
 endfor
 
 return result.snapshot()`;
@@ -2863,7 +2863,7 @@ data output
 var counter = 0
 var iterations = 0
 while checkCondition(counter)
-  var processed = processItem("item-" + counter)
+  var processed = processItem("item-" ~ counter)
   output.whileResults.push(processed)
   iterations = iterations + 1
   counter = incrementCounter(counter)
