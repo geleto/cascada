@@ -1,5 +1,4 @@
-import {isPoison, PoisonError, createPoison} from '../errors.js';
-import {markDeferredThenablesHandled} from './arguments.js';
+import {isPoison, PoisonError, createPoison, markPromiseHandled, markValuePromiseHandled} from '../errors.js';
 
 class Command {
   constructor() {
@@ -17,7 +16,7 @@ class Command {
       this.resolve = resolve;
       this.reject = reject;
     });
-    markDeferredThenablesHandled(this.promise);
+    markPromiseHandled(this.promise);
   }
 
   resolveResult(value) {
@@ -101,7 +100,7 @@ class ChainCommand extends MutatingCommand {
     this.chainName = chainName;
     this.arguments = args || [];
     if (this.arguments.length > 0) {
-      markDeferredThenablesHandled(this.arguments);
+      markValuePromiseHandled(this.arguments);
     }
     this.errorContext = requireCommandErrorContext(errorContext, this.constructor.name);
   }
@@ -146,7 +145,7 @@ class ChainObservableCommand extends ObservableCommand {
     this.chainName = spec.chainName;
     this.arguments = spec.args || [];
     if (this.arguments.length > 0) {
-      markDeferredThenablesHandled(this.arguments);
+      markValuePromiseHandled(this.arguments);
     }
     this.errorContext = requireCommandErrorContext(spec.errorContext, this.constructor.name);
   }

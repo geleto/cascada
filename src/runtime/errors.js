@@ -1,5 +1,5 @@
 
-import {POISON_KEY, RESOLVE_MARKER} from './markers.js';
+import {POISON_KEY, RESOLVE_MARKER, RESOLVED_VALUE_MARKER} from './markers.js';
 import {CascadaError} from '../errors.js';
 import {
   formatDiagnosticInfo,
@@ -31,6 +31,53 @@ function markPromiseHandled(promise) {
     promise.catch(() => {});
   }
   return promise;
+}
+
+function isOwnedDeferredPromise(value) {
+  return value instanceof Promise;
+}
+
+function markValuePromiseHandled(value, seen = null) {
+  if (value === null || value === undefined) {
+    return value;
+  }
+
+  if (isPoison(value) || value[RESOLVED_VALUE_MARKER]) {
+    return value;
+  }
+
+  const nextSeen = seen || new WeakSet();
+  if (typeof value === 'object' || typeof value === 'function') {
+    if (nextSeen.has(value)) {
+      return value;
+    }
+    nextSeen.add(value);
+  }
+
+  if (isOwnedDeferredPromise(value)) {
+    markPromiseHandled(value);
+    return value;
+  }
+
+  if (isOwnedDeferredPromise(value[RESOLVE_MARKER])) {
+    markPromiseHandled(value[RESOLVE_MARKER]);
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      markValuePromiseHandled(entry, nextSeen);
+    }
+    return value;
+  }
+
+  if (typeof value === 'object') {
+    for (const key of Object.keys(value)) {
+      markValuePromiseHandled(value[key], nextSeen);
+    }
+  }
+
+  return value;
 }
 
 /**
@@ -792,4 +839,4 @@ function peekError(value) {
   return null;
 }
 
-export { PoisonedValue, PoisonError, PoisonErrorGroup, RuntimeError, RuntimeContextError, RuntimePromise, createPoison, poisonIfNaN, poisonOrReport, rethrowPoisonOrReport, poisonOrReportedFatal, poisonOrRethrow, observeDiscardedExpression, isPoison, isPoisonError, isRuntimeError, isError, collectErrors, createSyncRuntimeError, peekError, markPromiseHandled, isLoadFailureFatal, handleLoadFailure };
+export { PoisonedValue, PoisonError, PoisonErrorGroup, RuntimeError, RuntimeContextError, RuntimePromise, createPoison, poisonIfNaN, poisonOrReport, rethrowPoisonOrReport, poisonOrReportedFatal, poisonOrRethrow, observeDiscardedExpression, isPoison, isPoisonError, isRuntimeError, isError, collectErrors, createSyncRuntimeError, peekError, markPromiseHandled, markValuePromiseHandled, isLoadFailureFatal, handleLoadFailure };

@@ -15,6 +15,7 @@ import {
   isRuntimeError,
   iterate,
   markPromiseHandled,
+  markValuePromiseHandled,
   PoisonedValue,
   PoisonError,
   PoisonErrorGroup,
@@ -369,6 +370,28 @@ describe('typed poison error contracts', () => {
 
     expect(markPromiseHandled(fakePromise)).to.be(fakePromise);
     expect(called).to.be(true);
+  });
+
+  it('marks promise-bearing Cascada values handled', () => {
+    let directCalled = false;
+    const directPromise = Promise.resolve('direct');
+    directPromise.catch = (handler) => {
+      directCalled = typeof handler === 'function';
+      return directPromise;
+    };
+
+    let markerCalled = false;
+    const markerPromise = Promise.resolve('marker');
+    markerPromise.catch = (handler) => {
+      markerCalled = typeof handler === 'function';
+      return markerPromise;
+    };
+
+    const value = [{ directPromise }, { [RESOLVE_MARKER]: markerPromise }];
+
+    expect(markValuePromiseHandled(value)).to.be(value);
+    expect(directCalled).to.be(true);
+    expect(markerCalled).to.be(true);
   });
 
   it('keeps RuntimeError factory and reporting behavior idempotent', () => {

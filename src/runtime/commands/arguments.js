@@ -1,9 +1,8 @@
 import {
   isPoison,
-  markPromiseHandled,
   poisonOrReport,
 } from '../errors.js';
-import {RESOLVE_MARKER, isResolvedValue, unwrapResolvedValue} from '../resolve.js';
+import {RESOLVE_MARKER, unwrapResolvedValue} from '../resolve.js';
 
 // `value` is always a command's argument array (ChainCommand: `this.arguments = args || []`).
 // Resolve each entry's top-level value (and its lazy RESOLVE_MARKER) before applying.
@@ -53,53 +52,4 @@ function classifyCommandArgumentFailure(cmd, err) {
   return poisonOrReport(err, cmd.errorContext);
 }
 
-function isHandledDeferredPromise(value) {
-  return value instanceof Promise;
-}
-
-function markDeferredThenablesHandled(value, seen = null) {
-  if (value === null || value === undefined) {
-    return;
-  }
-
-  if (isPoison(value)) {
-    return;
-  }
-
-  if (isResolvedValue(value)) {
-    return;
-  }
-
-  const nextSeen = seen || new WeakSet();
-  if (typeof value === 'object' || typeof value === 'function') {
-    if (nextSeen.has(value)) {
-      return;
-    }
-    nextSeen.add(value);
-  }
-
-  if (isHandledDeferredPromise(value)) {
-    markPromiseHandled(value);
-    return;
-  }
-
-  if (value && isHandledDeferredPromise(value[RESOLVE_MARKER])) {
-    markPromiseHandled(value[RESOLVE_MARKER]);
-    return;
-  }
-
-  if (Array.isArray(value)) {
-    for (const entry of value) {
-      markDeferredThenablesHandled(entry, nextSeen);
-    }
-    return;
-  }
-
-  if (typeof value === 'object') {
-    for (const key of Object.keys(value)) {
-      markDeferredThenablesHandled(value[key], nextSeen);
-    }
-  }
-}
-
-export {runCommandWithResolvedArguments, markDeferredThenablesHandled};
+export {runCommandWithResolvedArguments};
