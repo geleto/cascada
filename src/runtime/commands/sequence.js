@@ -1,7 +1,7 @@
 import {ChainMutatingResultCommand, ChainObservableCommand} from './base.js';
 import {PoisonError, poisonIfNaN} from '../errors.js';
 import {classifyCallTarget} from '../call.js';
-import {runWithResolvedArguments} from './arguments.js';
+import {runCommandWithResolvedArguments} from './arguments.js';
 
 class SequenceCallCommand extends ChainMutatingResultCommand {
   constructor({ chainName, methodName, args = null, path = null, errorContext }) {
@@ -16,7 +16,7 @@ class SequenceCallCommand extends ChainMutatingResultCommand {
 
   apply(chain) {
     super.apply(chain);
-    return runWithResolvedArguments(this.arguments, this, (resolvedArgs) => {
+    return runCommandWithResolvedArguments(this.arguments, this, (resolvedArgs) => {
       if (!chain) return undefined;
       const args = Array.isArray(resolvedArgs) ? resolvedArgs : [];
       const poisonError = this.getPoisonFromArgs(args);

@@ -1,7 +1,7 @@
 import {isPoison, isPoisonError, createPoison, PoisonError, poisonIfNaN} from '../errors.js';
 import {classifyCallTarget} from '../call.js';
 import {ChainCommand} from './base.js';
-import {runWithResolvedArguments} from './arguments.js';
+import {runCommandWithResolvedArguments} from './arguments.js';
 
 class DataCommand extends ChainCommand {
   constructor({ chainName, operation, args = null, errorContext, initializeIfNotSet = false }) {
@@ -16,7 +16,7 @@ class DataCommand extends ChainCommand {
 
   apply(chain) {
     super.apply(chain);
-    return runWithResolvedArguments(this.arguments, this, (resolvedArgs) => {
+    return runCommandWithResolvedArguments(this.arguments, this, (resolvedArgs) => {
       if (!chain || !chain._base) return;
       const args = Array.isArray(resolvedArgs) ? resolvedArgs : [];
       const rawPath = args.length > 0 ? args[0] : null;

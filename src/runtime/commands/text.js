@@ -2,7 +2,7 @@ import {isPoison, PoisonError} from '../errors.js';
 import {isResolvedValue, unwrapResolvedValue, resolveAll, thenValue} from '../resolve.js';
 import {materializeTemplateTextValue, suppressValue, suppressValueScriptRaw} from '../safe-output.js';
 import {ChainCommand} from './base.js';
-import {runWithResolvedArguments} from './arguments.js';
+import {runCommandWithResolvedArguments} from './arguments.js';
 
 class TextCommand extends ChainCommand {
   constructor({
@@ -25,7 +25,7 @@ class TextCommand extends ChainCommand {
 
   apply(chain) {
     super.apply(chain);
-    return runWithResolvedArguments(this.arguments, this, (resolvedArgs) => {
+    return runCommandWithResolvedArguments(this.arguments, this, (resolvedArgs) => {
       if (!chain || !Array.isArray(chain._target)) {
         if (!chain) {
           return;

@@ -8,7 +8,7 @@ import {RESOLVE_MARKER, isResolvedValue, unwrapResolvedValue} from '../resolve.j
 // `value` is always a command's argument array (ChainCommand: `this.arguments = args || []`).
 // Resolve each entry's top-level value (and its lazy RESOLVE_MARKER) before applying.
 // A failed argument becomes poison in its own slot, so the command still applies with the rest.
-function runWithResolvedArguments(value, cmd, applyFn) {
+function runCommandWithResolvedArguments(value, cmd, applyFn) {
   for (let i = 0; i < value.length; i++) {
     if (value[i] === undefined) {
       continue;
@@ -21,14 +21,14 @@ function runWithResolvedArguments(value, cmd, applyFn) {
       continue;
     }
     if (fastValue && (typeof fastValue.then === 'function' || fastValue[RESOLVE_MARKER])) {
-      return runWithResolvedArgumentsAsync(value, cmd, applyFn);
+      return runCommandWithResolvedArgumentsAsync(value, cmd, applyFn);
     }
   }
 
   return applyFn(value);
 }
 
-async function runWithResolvedArgumentsAsync(value, cmd, applyFn) {
+async function runCommandWithResolvedArgumentsAsync(value, cmd, applyFn) {
   const resolvedArray = new Array(value.length);
   for (let i = 0; i < value.length; i++) {
     // Resolve each entry to its concrete value: await a promise (if any), then finalize a
@@ -102,4 +102,4 @@ function markDeferredThenablesHandled(value, seen = null) {
   }
 }
 
-export {runWithResolvedArguments, markDeferredThenablesHandled};
+export {runCommandWithResolvedArguments, markDeferredThenablesHandled};
