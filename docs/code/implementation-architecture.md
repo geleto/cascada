@@ -37,6 +37,12 @@ Cascada implements the **Cascading Chain Network** — a concurrency model for i
 
 -   **Command iterator** (`BufferIterator`) — Each chain has its own command iterator that walks the command buffer tree depth-first, independently of the execution flow. Mutations execute strictly in sequence; observations between the same two mutations run concurrently. When the iterator reaches a child buffer slot, it waits until the child's mutations complete. The execution flow and command iterator run concurrently — the iterator may already be applying earlier commands while the flow is still filling later child buffers. This is safe because each child buffer reserves its slot synchronously before any async work begins.
 
+-   **Copy-on-write** — The mechanism behind `var`'s independent-value semantics (assignment creates a deep copy, never a shared reference). A value stays shared internally until something needs to change part of it; only the affected parts are then copied, transformed, and replaced as a whole. This keeps plain assignment cheap while preserving the guarantee that each variable owns independent data.
+
+-   **`var` chain** — Its only mutation command replaces the whole value (`set`). Any in-place-looking change — `obj.x = …`, `arr.push(…)` — compiles to observe the current value, transform it through a pure function (copy-on-write), then set the new value back. Great for values built or transformed in one place, and for cheap `snapshot()` reads — a direct read of current state, no assembly.
+
+-   **`data` chain** — Transformations happen inside the mutation commands themselves (`push`, `merge`, `set_path`, …): the chain mutates its internal structure directly instead of round-tripping through observe → pure-function transform → set. This lets many concurrent branches issue path-based commands against the same chain without racing or deep-copying, while the command iterator still applies and assembles them in strict source order. Great for building arrays/objects from concurrent branches whose final shape must match source-code order.
+
 ---
 
 ## Compile-to-Runtime Pipeline
