@@ -31,7 +31,7 @@
  *    - On success, it **mutates the object in-place**, replacing promises with real values.
  *    - This ensures subsequent reads are instant and synchronous.
  */
-import {createPoison, isPoison, collectErrors, PoisonError, poisonOrRethrow} from './errors.js';
+import {createPoison, isPoison, collectErrors, PoisonError, poisonOrRethrow, markPromiseHandled} from './errors.js';
 import {RESOLVE_MARKER, RESOLVED_VALUE_MARKER} from './markers.js';
 
 function makeResolvedValue(value, mapper = null) {
@@ -362,6 +362,11 @@ function attachResolveMarker(container, dependencies, finalize) {
     return container;
   }
 
+  // Own absorbed dependencies before collectErrors reaches them later.
+  for (const dependency of dependencies) {
+    markPromiseHandled(dependency);
+  }
+
   const resolver = (async () => {
     const errors = await collectErrors(dependencies);
     if (errors.length > 0) {
@@ -372,6 +377,9 @@ function attachResolveMarker(container, dependencies, finalize) {
     delete container[RESOLVE_MARKER];
     return container;
   })();
+
+  // The eager resolver is a separate runtime-owned rejection surface.
+  markPromiseHandled(resolver);
 
   Object.defineProperty(container, RESOLVE_MARKER, {
     value: resolver,

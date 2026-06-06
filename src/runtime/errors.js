@@ -59,11 +59,6 @@ function markValuePromiseHandled(value, seen = null) {
     return value;
   }
 
-  if (isOwnedDeferredPromise(value[RESOLVE_MARKER])) {
-    markPromiseHandled(value[RESOLVE_MARKER]);
-    return value;
-  }
-
   if (Array.isArray(value)) {
     for (const entry of value) {
       markValuePromiseHandled(entry, nextSeen);

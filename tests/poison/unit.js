@@ -372,7 +372,7 @@ describe('typed poison error contracts', () => {
     expect(called).to.be(true);
   });
 
-  it('marks promise-bearing Cascada values handled', () => {
+  it('marks raw promise leaves in Cascada values handled', () => {
     let directCalled = false;
     const directPromise = Promise.resolve('direct');
     directPromise.catch = (handler) => {
@@ -380,18 +380,36 @@ describe('typed poison error contracts', () => {
       return directPromise;
     };
 
-    let markerCalled = false;
-    const markerPromise = Promise.resolve('marker');
-    markerPromise.catch = (handler) => {
-      markerCalled = typeof handler === 'function';
-      return markerPromise;
-    };
-
-    const value = [{ directPromise }, { [RESOLVE_MARKER]: markerPromise }];
+    const value = [{ directPromise }];
 
     expect(markValuePromiseHandled(value)).to.be(value);
     expect(directCalled).to.be(true);
-    expect(markerCalled).to.be(true);
+  });
+
+  it('marks lazy composite dependencies and resolver handled at creation', () => {
+    const originalCatch = Promise.prototype.catch;
+    let dependencyCalled = false;
+    const dependency = Promise.resolve('ok');
+    dependency.catch = (handler) => {
+      dependencyCalled = typeof handler === 'function';
+      return originalCatch.call(dependency, handler);
+    };
+
+    let resolverCatchCalls = 0;
+    Promise.prototype.catch = function(handler) {
+      resolverCatchCalls++;
+      return originalCatch.call(this, handler);
+    };
+
+    try {
+      const value = createObject({ nested: dependency });
+
+      expect(value[RESOLVE_MARKER]).to.be.ok();
+      expect(dependencyCalled).to.be(true);
+      expect(resolverCatchCalls).to.be.greaterThan(0);
+    } finally {
+      Promise.prototype.catch = originalCatch;
+    }
   });
 
   it('keeps RuntimeError factory and reporting behavior idempotent', () => {
