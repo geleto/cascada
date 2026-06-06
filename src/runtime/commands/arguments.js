@@ -2,54 +2,49 @@ import {
   isPoison,
   poisonOrReport,
 } from '../errors.js';
-import {RESOLVE_MARKER, unwrapResolvedValue} from '../resolve.js';
+import {isResolvedValue, resolveSingle, thenValue, unwrapResolvedValue} from '../resolve.js';
 
 // `value` is always a command's argument array (ChainCommand: `this.arguments = args || []`).
 // Resolve each entry's top-level value (and its lazy RESOLVE_MARKER) before applying.
 // A failed argument becomes poison in its own slot, so the command still applies with the rest.
 function runCommandWithResolvedArguments(value, cmd, applyFn) {
+  const resolvedArgs = new Array(value.length);
   for (let i = 0; i < value.length; i++) {
-    if (value[i] === undefined) {
+    const resolved = resolveSingle(value[i]);
+    if (isResolvedValue(resolved)) {
+      resolvedArgs[i] = unwrapResolvedValue(resolved);
       continue;
     }
-    const fastValue = unwrapResolvedValue(value[i]);
-    if (fastValue !== value[i]) {
-      value[i] = fastValue;
-    }
-    if (isPoison(fastValue)) {
+    if (isPoison(resolved)) {
+      resolvedArgs[i] = resolved;
       continue;
     }
-    if (fastValue && (typeof fastValue.then === 'function' || fastValue[RESOLVE_MARKER])) {
-      return runCommandWithResolvedArgumentsAsync(value, cmd, applyFn);
-    }
+    return thenValue(
+      runCommandWithResolvedArgumentsAsync(value, resolvedArgs, i, resolved, cmd),
+      applyFn
+    );
   }
-
-  return applyFn(value);
+  return applyFn(resolvedArgs);
 }
 
-async function runCommandWithResolvedArgumentsAsync(value, cmd, applyFn) {
-  const resolvedArray = new Array(value.length);
-  for (let i = 0; i < value.length; i++) {
-    // Resolve each entry to its concrete value: await a promise (if any), then finalize a
-    // lazy RESOLVE_MARKER (if any). A failure poisons only this slot; poison is stored as-is.
-    let resolved = unwrapResolvedValue(value[i]);
+async function runCommandWithResolvedArgumentsAsync(value, resolvedArgs, startIndex, firstResolved, cmd) {
+  for (let i = startIndex; i < value.length; i++) {
+    const resolved = i === startIndex ? firstResolved : resolveSingle(value[i]);
+    if (isResolvedValue(resolved)) {
+      resolvedArgs[i] = unwrapResolvedValue(resolved);
+      continue;
+    }
+    if (isPoison(resolved)) {
+      resolvedArgs[i] = resolved;
+      continue;
+    }
     try {
-      if (resolved && typeof resolved.then === 'function' && !isPoison(resolved)) {
-        resolved = await resolved;
-      }
-      if (resolved && resolved[RESOLVE_MARKER]) {
-        await resolved[RESOLVE_MARKER];
-      }
+      resolvedArgs[i] = await resolved;
     } catch (err) {
-      resolved = classifyCommandArgumentFailure(cmd, err);
+      resolvedArgs[i] = poisonOrReport(err, cmd.errorContext);
     }
-    resolvedArray[i] = resolved;
   }
-  return applyFn(resolvedArray);
-}
-
-function classifyCommandArgumentFailure(cmd, err) {
-  return poisonOrReport(err, cmd.errorContext);
+  return resolvedArgs;
 }
 
 export {runCommandWithResolvedArguments};
