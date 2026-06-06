@@ -10,7 +10,7 @@ import {
   createSyncRuntimeError,
   isPoison,
   isPoisonError,
-  isResolvedValue,
+  isWrappedResolvedValue,
   isError,
   isRuntimeError,
   iterate,
@@ -680,7 +680,7 @@ describe('typed poison error contracts', () => {
   it('uses resolveSingle as the object-property consumption boundary', async () => {
     const syncObject = createObject({ value: 1 });
     const syncResolved = resolveSingle(syncObject);
-    expect(isResolvedValue(syncResolved)).to.be(true);
+    expect(isWrappedResolvedValue(syncResolved)).to.be(true);
     expect(unwrapResolvedValue(syncResolved)).to.be(syncObject);
 
     const asyncObject = createObject({ value: Promise.resolve(2) });

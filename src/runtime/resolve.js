@@ -45,12 +45,12 @@ function makeResolvedValue(value, mapper = null) {
   };
 }
 
-function isResolvedValue(value) {
+function isWrappedResolvedValue(value) {
   return !!(value && value[RESOLVED_VALUE_MARKER]);
 }
 
 function unwrapResolvedValue(value) {
-  return isResolvedValue(value) ? value.value : value;
+  return isWrappedResolvedValue(value) ? value.value : value;
 }
 
 // Normalize a value that is leaving Cascada and becoming an ordinary JS
@@ -59,7 +59,7 @@ function unwrapResolvedValue(value) {
 // promise rejection.
 function normalizeFinalPromise(value) {
   const resolved = resolveSingle(value);
-  if (isResolvedValue(resolved)) {
+  if (isWrappedResolvedValue(resolved)) {
     return unwrapResolvedValue(resolved);
   }
   if (isPoison(resolved)) {
@@ -80,7 +80,7 @@ function normalizeFinalPromise(value) {
 // Promise.resolve. Use for internal finally-style cleanup; final public exits still go
 // through normalizeFinalPromise().
 function finallyValue(value, onFinally) {
-  if (isResolvedValue(value)) {
+  if (isWrappedResolvedValue(value)) {
     onFinally();
     return unwrapResolvedValue(value);
   }
@@ -104,7 +104,7 @@ function thenValue(value, onFulfilled) {
   if (isPoison(value)) {
     return value;
   }
-  if (isResolvedValue(value)) {
+  if (isWrappedResolvedValue(value)) {
     return onFulfilled(unwrapResolvedValue(value));
   }
   if (value && typeof value.then === 'function') {
@@ -295,7 +295,7 @@ function resolveArguments(fn, skipArguments = 0) {
     const remainingArgs = args.slice(skipArguments);
     const resolvedArgs = resolveAll(remainingArgs);
 
-    if (isResolvedValue(resolvedArgs)) {
+    if (isWrappedResolvedValue(resolvedArgs)) {
       try {
         return fn.apply(this, skippedArgs.concat(resolvedArgs.value));
       } catch (err) {
@@ -433,4 +433,4 @@ function createArray(arr) {
   });
 }
 
-export { resolveAll, resolveDuo, resolveSingle, resolveSingleArr, resolveArguments, normalizeFinalPromise, finallyValue, thenValue, createObject, createArray, RESOLVE_MARKER, RESOLVED_VALUE_MARKER, isResolvedValue, unwrapResolvedValue };
+export { resolveAll, resolveDuo, resolveSingle, resolveSingleArr, resolveArguments, normalizeFinalPromise, finallyValue, thenValue, createObject, createArray, RESOLVE_MARKER, RESOLVED_VALUE_MARKER, isWrappedResolvedValue, unwrapResolvedValue };

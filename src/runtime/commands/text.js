@@ -1,5 +1,5 @@
 import {isPoison, PoisonError} from '../errors.js';
-import {isResolvedValue, unwrapResolvedValue, resolveAll, thenValue} from '../resolve.js';
+import {isWrappedResolvedValue, unwrapResolvedValue, resolveAll, thenValue} from '../resolve.js';
 import {materializeTemplateTextValue, suppressValue, suppressValueScriptRaw} from '../safe-output.js';
 import {ChainCommand} from './base.js';
 import {runCommandWithResolvedArguments} from './arguments.js';
@@ -70,7 +70,7 @@ function normalizeTextCommandArg(value, chain, errorContext) {
 function materializeTextCommandArgs(values, chain, errorContext) {
   const normalizedArgs = values.map((value) => normalizeTextCommandArg(value, chain, errorContext));
   const resolvedArgs = resolveAll(normalizedArgs);
-  if (isResolvedValue(resolvedArgs)) {
+  if (isWrappedResolvedValue(resolvedArgs)) {
     return unwrapResolvedValue(resolvedArgs);
   }
   if (isPoison(resolvedArgs)) {
