@@ -100,17 +100,21 @@ function finallyValue(value, onFinally) {
 // Chain an internal Cascada value without forcing Promise.resolve assimilation. Use when
 // replacing value.then(...) over resolveSingle/resolveDuo/resolveAll results so poison
 // propagates synchronously and resolved-value wrappers unwrap on the sync path.
-function thenValue(value, onFulfilled) {
+function thenValue(value, onFulfilled, onRejected = null) {
   if (isPoison(value)) {
-    return value;
+    return onRejected ? onRejected(PoisonError.group(value.errors)) : value;
   }
   if (isWrappedResolvedValue(value)) {
     return onFulfilled(unwrapResolvedValue(value));
   }
   if (value && typeof value.then === 'function') {
-    return value.then(onFulfilled);
+    return value.then(onFulfilled, onRejected || undefined);
   }
   return onFulfilled(value);
+}
+
+function resolveThen(value, onFulfilled, onRejected = null) {
+  return thenValue(resolveSingle(value), onFulfilled, onRejected);
 }
 
 // Consume an array of independent Cascada values.
@@ -433,4 +437,4 @@ function createArray(arr) {
   });
 }
 
-export { resolveAll, resolveDuo, resolveSingle, resolveSingleArr, resolveArguments, normalizeFinalPromise, finallyValue, thenValue, createObject, createArray, RESOLVE_MARKER, RESOLVED_VALUE_MARKER, isWrappedResolvedValue, unwrapResolvedValue };
+export { resolveAll, resolveDuo, resolveSingle, resolveSingleArr, resolveArguments, normalizeFinalPromise, finallyValue, thenValue, resolveThen, createObject, createArray, RESOLVE_MARKER, RESOLVED_VALUE_MARKER, isWrappedResolvedValue, unwrapResolvedValue };

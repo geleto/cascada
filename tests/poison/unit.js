@@ -21,6 +21,7 @@ import {
   PoisonErrorGroup,
   peekError,
   RESOLVE_MARKER,
+  resolveThen,
   resolveSingle,
   RuntimePromise,
   RuntimeContextError,
@@ -28,6 +29,7 @@ import {
   envCallWrapAsync,
   observeDiscardedExpression,
   scriptArithmeticOperator,
+  thenValue,
   cloneContext,
   cloneWithAddedContext,
   unwrapResolvedValue
@@ -702,6 +704,45 @@ describe('typed poison error contracts', () => {
       expect(isPoisonError(err)).to.be(true);
       expect(err.errors).to.eql([objectPoison]);
     }
+  });
+
+  it('chains Cascada values with rejection callbacks without promise assimilation', async () => {
+    const poison = poisonValue('thenValue poison');
+    let syncRejected = null;
+
+    expect(thenValue(resolveSingle(2), value => value + 1)).to.be(3);
+    expect(thenValue(poison, () => 'unused')).to.be(poison);
+    expect(thenValue(poison, () => 'unused', (err) => {
+      syncRejected = err;
+      return 'handled poison';
+    })).to.be('handled poison');
+    expect(isPoisonError(syncRejected)).to.be(true);
+    expect(syncRejected.errors).to.eql(poison.errors);
+
+    expect(await thenValue(
+      Promise.reject(poisonError('thenValue rejected')),
+      () => 'unused',
+      (err) => {
+        expect(isPoisonError(err)).to.be(true);
+        return 'handled rejected';
+      }
+    )).to.be('handled rejected');
+  });
+
+  it('resolves then chains a single Cascada value', async () => {
+    expect(resolveThen(4, value => value * 2)).to.be(8);
+    expect(await resolveThen(Promise.resolve(5), value => value + 1)).to.be(6);
+
+    const poison = poisonError('resolveThen rejected');
+    expect(await resolveThen(
+      Promise.reject(poison),
+      () => 'unused',
+      (err) => {
+        expect(isPoisonError(err)).to.be(true);
+        expect(err.errors).to.eql([poison]);
+        return 'handled resolveThen';
+      }
+    )).to.be('handled resolveThen');
   });
 
   describe('fatal render state early exits', () => {
