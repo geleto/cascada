@@ -645,7 +645,7 @@ class CompileInheritance {
   }
 
   _emitConstructorSuperReturn(constructorDefinition) {
-    this.emit.line(`return runtime.thenValue(runtime.resolveSingle(currentInstance.invokeSuper(methodData, [], context, ${this.compiler.buffer.currentBuffer}, ${this.compiler.emitErrorContext(constructorDefinition)})), (parentResult) => {`);
+    this.emit.line(`return runtime.resolveThen(currentInstance.invokeSuper(methodData, [], context, ${this.compiler.buffer.currentBuffer}, ${this.compiler.emitErrorContext(constructorDefinition)}), (parentResult) => {`);
     this.emit.line(`  ${this.compiler.buffer.currentBuffer}.finish();`);
     this.emit.line('  return parentResult;');
     this.emit.line('});');

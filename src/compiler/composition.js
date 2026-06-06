@@ -30,7 +30,7 @@ class CompileComposition {
     this.emit(`const ${resolvedTargetValue} = `);
     this.compiler.compileExpression(node.template, null, positionNode, true);
     this.emit.line(';');
-    this.emit.line(`let ${targetVar} = new runtime.RuntimePromise(runtime.thenValue(runtime.resolveSingle(${resolvedTargetValue}), (resolvedTargetName) => {`);
+    this.emit.line(`let ${targetVar} = new runtime.RuntimePromise(runtime.resolveThen(${resolvedTargetValue}, (resolvedTargetName) => {`);
     if (allowNoParent) {
       this.emit.line('  if (resolvedTargetName === null || resolvedTargetName === undefined) {');
       this.emit.line('    return null;');
@@ -80,7 +80,7 @@ class CompileComposition {
       const id = this.compileAsyncResolveTargetFile(node, false, false, false, 'import');
       const exportedId = this.compiler._tmpid();
       const errorContext = this.compiler.emitErrorContext(node);
-      this.emit.line(`let ${exportedId} = new runtime.RuntimePromise(runtime.thenValue(runtime.resolveSingle(${id}), (resolvedTemplate) => {`);
+      this.emit.line(`let ${exportedId} = new runtime.RuntimePromise(runtime.resolveThen(${id}, (resolvedTemplate) => {`);
       this.emit.line('  resolvedTemplate.compile();');
       this.emit.line('  renderState.throwIfFatalErrorReported();');
       this.emit.line('  return runtime.resolveSingle(resolvedTemplate.getExported(null, null, renderState));');
@@ -99,7 +99,7 @@ class CompileComposition {
     this.emit.line(`let ${importVarsVar} = {};`);
     this.compiler.compositionPayload.emitCompiledInputs(node, importVarsVar);
     this.compiler.compositionPayload.emitContext(importContextVar, importVarsVar, node.withContext);
-    this.emit.line(`let ${exportedId} = new runtime.RuntimePromise(runtime.thenValue(runtime.resolveSingle(${id}), (resolvedTemplate) => {`);
+    this.emit.line(`let ${exportedId} = new runtime.RuntimePromise(runtime.resolveThen(${id}, (resolvedTemplate) => {`);
     this.emit.line('  resolvedTemplate.compile();');
     this.emit.line('  renderState.throwIfFatalErrorReported();');
     this.emit.line(`  return runtime.resolveSingle(resolvedTemplate.getExported(${importContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, renderState));`);
@@ -146,7 +146,7 @@ class CompileComposition {
     const exportedId = this.compiler._tmpid();
     const bindingIds = [];
     const errorContext = this.compiler.emitErrorContext(node);
-    this.emit.line(`let ${exportedId} = new runtime.RuntimePromise(runtime.thenValue(runtime.resolveSingle(${importedId}), (resolvedTemplate) => {`);
+    this.emit.line(`let ${exportedId} = new runtime.RuntimePromise(runtime.resolveThen(${importedId}, (resolvedTemplate) => {`);
     this.emit.line('  resolvedTemplate.compile();');
     this.emit.line('  renderState.throwIfFatalErrorReported();');
     this.emit.line('  return runtime.resolveSingle(resolvedTemplate.getExported(null, null, renderState));');
@@ -165,7 +165,7 @@ class CompileComposition {
     this.emit.line(`let ${importVarsVar} = {};`);
     this.compiler.compositionPayload.emitCompiledInputs(node, importVarsVar);
     this.compiler.compositionPayload.emitContext(importContextVar, importVarsVar, node.withContext);
-    this.emit.line(`let ${exportedId} = new runtime.RuntimePromise(runtime.thenValue(runtime.resolveSingle(${importedId}), (resolvedTemplate) => {`);
+    this.emit.line(`let ${exportedId} = new runtime.RuntimePromise(runtime.resolveThen(${importedId}, (resolvedTemplate) => {`);
     this.emit.line('  resolvedTemplate.compile();');
     this.emit.line('  renderState.throwIfFatalErrorReported();');
     this.emit.line(`  return runtime.resolveSingle(resolvedTemplate.getExported(${importContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, renderState));`);

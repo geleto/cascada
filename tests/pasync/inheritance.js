@@ -245,7 +245,7 @@ describe('Inheritance rebuild', function () {
     it('resolves implicit template constructor super before finishing text', function () {
       const source = compileSource('{% extends "base.njk" %}child text{% block body %}x{% endblock %}');
 
-      expect(source).to.contain('runtime.resolveSingle(currentInstance.invokeSuper(methodData, []');
+      expect(source).to.contain('runtime.resolveThen(currentInstance.invokeSuper(methodData, []');
       expect(source).not.to.contain('Promise.resolve(currentInstance.invokeSuper');
     });
 

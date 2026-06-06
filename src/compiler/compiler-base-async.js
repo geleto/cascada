@@ -190,9 +190,9 @@ class CompilerBaseAsync extends CompilerCommon {
       return;
     }
 
-    this.emit('runtime.thenValue(runtime.resolveSingle(');
+    this.emit('runtime.resolveThen(');
     this.compile(node.cond, null);
-    this.emit('), async function(cond) {');
+    this.emit(', async function(cond) {');
     this.emit('  if(cond) {');
     this.emit('    return ');
     this.compile(node.body, null);
@@ -543,9 +543,9 @@ class CompilerBaseAsync extends CompilerCommon {
       return;
     }
 
-    this.emit('runtime.thenValue(runtime.resolveSingle(');
+    this.emit('runtime.resolveThen(');
     this.compile(node.left, null);
-    this.emit('), async function(left) {');
+    this.emit(', async function(left) {');
 
     const check = isOr ? 'left' : '!left';
     this.emit(`  if (${check}) {`);
@@ -618,9 +618,9 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   _emitAsyncUnaryOp(node, operator) {
-    this.emit('runtime.thenValue(runtime.resolveSingle(');
+    this.emit('runtime.resolveThen(');
     this.compile(node.target, null);
-    this.emit(`), function(target){return runtime.poisonIfNaN(${operator}target, ${this.emitErrorContext(node)});})`);
+    this.emit(`, function(target){return runtime.poisonIfNaN(${operator}target, ${this.emitErrorContext(node)});})`);
   }
 
   _emitErrorObservation(observationFacts, targetNode, mode) {
