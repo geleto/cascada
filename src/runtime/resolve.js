@@ -291,28 +291,6 @@ async function _resolveSingleArrAsync(value) {
   }
 }
 
-// Wrap a JS function so its trailing arguments are consumed as Cascada values before the
-// underlying function is called. Used for APIs that explicitly want resolved arguments.
-function resolveArguments(fn, skipArguments = 0) {
-  return function (...args) {
-    const skippedArgs = args.slice(0, skipArguments);
-    const remainingArgs = args.slice(skipArguments);
-    const resolvedArgs = resolveAll(remainingArgs);
-
-    if (isWrappedResolvedValue(resolvedArgs)) {
-      try {
-        return fn.apply(this, skippedArgs.concat(resolvedArgs.value));
-      } catch (err) {
-        return Promise.reject(err);
-      }
-    }
-
-    return resolvedArgs.then((finalResolvedArgs) => {
-      return fn.apply(this, skippedArgs.concat(finalResolvedArgs));
-    });
-  };
-}
-
 /**
  * Enhances an object with specific runtime capabilities (Lazy Resolution).
  * Scans shallow properties for Promises or other Lazy Objects.
@@ -437,4 +415,4 @@ function createArray(arr) {
   });
 }
 
-export { resolveAll, resolveDuo, resolveSingle, resolveSingleArr, resolveArguments, normalizeFinalPromise, finallyValue, thenValue, resolveThen, createObject, createArray, RESOLVE_MARKER, RESOLVED_VALUE_MARKER, isWrappedResolvedValue, unwrapResolvedValue };
+export { resolveAll, resolveDuo, resolveSingle, resolveSingleArr, normalizeFinalPromise, finallyValue, thenValue, resolveThen, createObject, createArray, RESOLVE_MARKER, RESOLVED_VALUE_MARKER, isWrappedResolvedValue, unwrapResolvedValue };

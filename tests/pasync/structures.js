@@ -678,10 +678,8 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
         async getRole() { return 'Admin'; },
 
         formatUser(user) {
-          // the runtime (resolveArguments) MUST ensure it is resolved before calling this function?
-          // OR the function receives the promise/marker?
-
-          // Current design: resolveArguments (used by call usage) triggers resolving of arguments.
+          // The runtime must ensure lazy markers are resolved before calling this function.
+          // Current design: call argument normalization resolves arguments before invocation.
           // So 'user' should be a plain object with 'name' and 'role' fully resolved.
           return user.name + ':' + user.role;
         }
@@ -692,7 +690,7 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
            var user = { name: getName(), role: getRole() }
 
            // Passing 'user' to formatUser.
-           // The compiler generates code that wraps args in runtime.resolveArguments or resolves them before call.
+           // The compiler generates code that resolves args before the call.
            result.formatted = formatUser(user)
 
            return result`;

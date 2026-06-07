@@ -1,5 +1,5 @@
 
-import {createPoison, isPoison, isPoisonError, RuntimePromise, collectErrors, PoisonError, RuntimeError, poisonIfNaN} from './errors.js';
+import {createPoison, isPoison, isPoisonError, RuntimePromise, PoisonError, RuntimeError, poisonIfNaN} from './errors.js';
 import {throwReportedFatal} from './error-context.js';
 import {RESOLVE_MARKER, resolveAll} from './resolve.js';
 
@@ -125,12 +125,7 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
 
   let resolvedArgs = args;
   try {
-    const argErrors = await collectErrors(args);
-    if (argErrors.length > 0) {
-      errors.push(...argErrors);
-    } else {
-      resolvedArgs = await resolveAll(args);
-    }
+    resolvedArgs = await resolveAll(args);
   } catch (err) {
     if (isPoisonError(err)) {
       errors.push(...err.errors);

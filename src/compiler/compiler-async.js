@@ -47,11 +47,15 @@ class CompilerAsync extends CompilerBaseAsync {
     var resolveArgs = node.resolveArgs;
     const positionNode = args || node;
 
-    const emitCallArgs = (extId) => {
+    const emitExtensionArgs = () => {
       if ((args && args.children.length) || contentArgs.length) {
         this.emit(',');
       }
 
+      emitArgs();
+    };
+
+    const emitArgs = () => {
       if (args) {
         if (!(args instanceof nodes.NodeList)) {
           this.fail('compileCallExtension: arguments must be a NodeList, use `parser.parseSignature`', node.lineno, node.colno, node);
@@ -114,21 +118,25 @@ class CompilerAsync extends CompilerBaseAsync {
     const errorContext = this.emitErrorContext(positionNode);
     this.emit.line(`let ${returnId};`);
     this.emit(`try { ${returnId} = `);
-    if (!async) {
-      if (!resolveArgs) {
-        this.emit(`${ext}["${node.prop}"](context`);
+    if (resolveArgs) {
+      this.emit('runtime.thenValue(runtime.resolveAll([');
+      emitArgs();
+      this.emit(']), (resolvedArgs) => { try { return ');
+      if (!async) {
+        this.emit(`${ext}["${node.prop}"](context, ...resolvedArgs)`);
       } else {
-        this.emit(`runtime.resolveArguments(${ext}["${node.prop}"].bind(${ext}), 1)(context`);
+        this.emit(`runtime.invokeCallbackExtension(${ext}["${node.prop}"].bind(${ext}), context, ...resolvedArgs)`);
       }
+      this.emit('; } catch (e) { return Promise.reject(e); } })');
+    } else if (!async) {
+      this.emit(`${ext}["${node.prop}"](context`);
+      emitExtensionArgs();
+      this.emit(')');
     } else {
-      if (!resolveArgs) {
-        this.emit(`runtime.invokeCallbackExtension(${ext}["${node.prop}"].bind(${ext}), context`);
-      } else {
-        this.emit(`runtime.resolveArguments(runtime.invokeCallbackExtension, 2)(${ext}["${node.prop}"].bind(${ext}), context`);
-      }
+      this.emit(`runtime.invokeCallbackExtension(${ext}["${node.prop}"].bind(${ext}), context`);
+      emitExtensionArgs();
+      this.emit(')');
     }
-    emitCallArgs(ext);
-    this.emit(')');
     this.emit.line('; } catch (e) {');
     this.emit.line('  if (!runtime.isPoisonError(e) && !runtime.isRuntimeError(e)) {');
     this.emit.line(`    runtime.RuntimeError.reportAndThrow(e, ${errorContext});`);
