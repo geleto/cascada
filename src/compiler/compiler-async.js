@@ -112,6 +112,14 @@ class CompilerAsync extends CompilerBaseAsync {
       }
     };
 
+    const emitCallPrefix = () => {
+      if (!async) {
+        this.emit(`${ext}["${node.prop}"](context`);
+      } else {
+        this.emit(`runtime.invokeCallbackExtension(${ext}["${node.prop}"].bind(${ext}), context`);
+      }
+    };
+
     const ext = this._tmpid();
     this.emit.line(`let ${ext} = env.getExtension("${node.extName}");`);
     const returnId = this._tmpid();
@@ -122,18 +130,10 @@ class CompilerAsync extends CompilerBaseAsync {
       this.emit('runtime.thenValue(runtime.resolveAll([');
       emitArgs();
       this.emit(']), (resolvedArgs) => { try { return ');
-      if (!async) {
-        this.emit(`${ext}["${node.prop}"](context, ...resolvedArgs)`);
-      } else {
-        this.emit(`runtime.invokeCallbackExtension(${ext}["${node.prop}"].bind(${ext}), context, ...resolvedArgs)`);
-      }
-      this.emit('; } catch (e) { return Promise.reject(e); } })');
-    } else if (!async) {
-      this.emit(`${ext}["${node.prop}"](context`);
-      emitExtensionArgs();
-      this.emit(')');
+      emitCallPrefix();
+      this.emit(', ...resolvedArgs); } catch (e) { return Promise.reject(e); } })');
     } else {
-      this.emit(`runtime.invokeCallbackExtension(${ext}["${node.prop}"].bind(${ext}), context`);
+      emitCallPrefix();
       emitExtensionArgs();
       this.emit(')');
     }
