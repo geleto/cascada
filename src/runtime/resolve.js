@@ -31,7 +31,7 @@
  *    - On success, it **mutates the object in-place**, replacing promises with real values.
  *    - This ensures subsequent reads are instant and synchronous.
  */
-import {createPoison, isPoison, collectErrors, PoisonError, poisonOrRethrow, markPromiseHandled} from './errors.js';
+import {createPoison, isPoison, isPoisonError, collectErrors, PoisonError, poisonOrRethrow, markPromiseHandled} from './errors.js';
 import {RESOLVE_MARKER, RESOLVED_VALUE_MARKER} from './markers.js';
 
 function makeResolvedValue(value, mapper = null) {
@@ -202,17 +202,30 @@ function resolveMany(args) {
   return makeResolvedValue(resolvedArgs);
 }
 
+// Resolve and finalize each arg, collecting poison as we go. resolveSingle awaits
+// the promise, finalizes any RESOLVE_MARKER in place, and (via poisonOrRethrow)
+// surfaces value failures as a thrown PoisonError while letting real fatal errors
+// propagate. Args are eager/in-flight, so sequential await still settles them in
+// parallel wall-clock time. Poison is grouped and deduplicated by
+// PoisonError.group()/createPoison().
 async function resolveAllAsync(args) {
-  const errors = await collectErrors(args);
+  const errors = [];
+  const resolvedArgs = [];
 
-  if (errors.length > 0) {
-    return createPoison(PoisonError.group(errors)); // Errors already have position info from collectErrors
+  for (let i = 0; i < args.length; i++) {
+    try {
+      resolvedArgs.push(await resolveSingle(args[i]));
+    } catch (err) {
+      if (isPoisonError(err)) {
+        errors.push(...err.errors);
+      } else {
+        throw err; // Real fatal error: not our value to poison; let it propagate.
+      }
+    }
   }
 
-  // No errors - proceed with normal resolution (unwrapping)
-  const resolvedArgs = [];
-  for (let i = 0; i < args.length; i++) {
-    resolvedArgs.push(await resolveSingle(args[i]));
+  if (errors.length > 0) {
+    return createPoison(PoisonError.group(errors));
   }
 
   return resolvedArgs;

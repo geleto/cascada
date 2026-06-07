@@ -5,7 +5,6 @@ import {
   PoisonError,
   RuntimeError,
   RuntimePromise,
-  collectErrors,
   poisonOrReport,
   poisonIfNaN,
 } from './errors.js';
@@ -106,20 +105,9 @@ function memberLookupAsync(obj, val, errorContext, currentBuffer = null) {
 }
 
 async function _memberLookupAsyncComplex(obj, val, errorContext, currentBuffer = null) {
-  // Collect errors from both inputs (await all promises)
-  let errors;
-  try {
-    errors = await collectErrors([obj, val]);
-  } catch (err) {
-    RuntimeError.reportAndThrow(err, errorContext);
-  }
-  if (errors.length > 0) {
-    return createPoison(PoisonError.group(errors));
-  }
-
-  // Resolve the values. Non-poison resolution failures indicate a missing
-  // source wrapper or runtime bug; lookup itself only owns errors thrown while
-  // reading the resolved value below.
+  // Resolve both inputs. Poison input values propagate as poison; a non-poison
+  // failure indicates a missing source wrapper or runtime bug. Lookup itself only
+  // owns errors thrown while reading the resolved value below.
   let resolvedObj;
   let resolvedVal;
   try {
@@ -177,20 +165,9 @@ function memberLookupScript(obj, val, errorContext, currentBuffer = null) {
 }
 
 async function _memberLookupScriptComplex(obj, val, errorContext, currentBuffer = null) {
-  // Collect errors from both inputs
-  let errors;
-  try {
-    errors = await collectErrors([obj, val]);
-  } catch (err) {
-    RuntimeError.reportAndThrow(err, errorContext);
-  }
-  if (errors.length > 0) {
-    return createPoison(PoisonError.group(errors));
-  }
-
-  // Resolve the values. Non-poison resolution failures indicate a missing
-  // source wrapper or runtime bug; script lookup itself only owns errors thrown
-  // while reading the resolved value below.
+  // Resolve both inputs. Poison input values propagate as poison; a non-poison
+  // failure indicates a missing source wrapper or runtime bug. Script lookup
+  // itself only owns errors thrown while reading the resolved value below.
   let resolvedObj;
   let resolvedVal;
   try {
