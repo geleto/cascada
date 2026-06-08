@@ -1,3 +1,5 @@
+import {isPoison} from '../errors.js';
+
 /**
  * DataChainTarget manages the assembly of the script's data object.
  * It encapsulates all data-assembly logic and path traversal for chain commands.
@@ -31,8 +33,15 @@ class DataChainTarget {
       // Special case: null path or [null] means we're working on the root object itself
       if (path === null || (Array.isArray(path) && path.length === 1 && path[0] === null)) {
         // Replace this data with the return
-        this.data = func.apply(this.methods, [this.data, ...args]);
-        return this.data;
+        const result = func.apply(this.methods, [this.data, ...args]);
+        if (!isPoison(result) && result && typeof result.then === 'function') {
+          return result.then((resolved) => {
+            this.data = resolved;
+            return this.data;
+          });
+        }
+        this.data = result;
+        return result;
       }
 
       // Find the target location in the data object
@@ -44,23 +53,15 @@ class DataChainTarget {
       // Call the original method with the correct context and arguments
       const result = func.apply(this.methods, [currentValue, ...args]);
 
-      // Update the target with the result
-      if (result !== undefined) {
-        if (key === '[]') {
-          // If the key is specifically '[]', it means append/push
-          if (Array.isArray(target)) {
-            target.push(result);
-          } else {
-            // Should have been caught by _findPathTarget but safety check
-            throw new Error('Cannot append to non-array');
-          }
-        } else {
-          target[key] = result;
-        }
-      } else if (key !== '[]') {
-        delete target[key];
+      if (!isPoison(result) && result && typeof result.then === 'function') {
+        return result.then((resolved) => {
+          applyDataMethodResult(target, key, resolved);
+          return resolved;
+        });
       }
 
+      // Update the target with the result
+      applyDataMethodResult(target, key, result);
       return result;
     };
 
@@ -144,6 +145,24 @@ class DataChainTarget {
    */
   getReturnValue() {
     return this.data;
+  }
+}
+
+function applyDataMethodResult(target, key, result) {
+  if (result !== undefined) {
+    if (key === '[]') {
+      // If the key is specifically '[]', it means append/push
+      if (Array.isArray(target)) {
+        target.push(result);
+      } else {
+        // Should have been caught by _findPathTarget but safety check
+        throw new Error('Cannot append to non-array');
+      }
+    } else {
+      target[key] = result;
+    }
+  } else if (key !== '[]') {
+    delete target[key];
   }
 }
 

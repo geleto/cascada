@@ -24,6 +24,7 @@ import {CommandBuffer} from '../../src/runtime/command-buffer.js';
 import {createArray} from '../../src/runtime/resolve.js';
 
 const TEST_EC = [1, 1, 'Test', 'test.casc', null, null];
+const ORIGIN_EC = [9, 9, 'Origin', 'origin.casc', null, null];
 const TEST_DIAGNOSTIC_CONTEXT = cloneWithAddedContext(TEST_EC, { branch: 'test' });
 
 function testError(message) {
@@ -157,6 +158,61 @@ describe('chain errors', function () {
       expect(isPoison(output._target.x)).to.be(true);
       expect(output._target.x.errors[0].kind).to.be('UserCallThrew');
       expect(output._target.x.errors[0].message).to.contain('data method failed');
+    });
+
+    it('DataCommand applies async method results after resolution', async () => {
+      const output = new DataChain(null, 'data', null, 'data');
+      output._base.addMethod('asyncSet', async (_target, value) => value);
+      const cmd = new DataCommand({
+        chainName: 'data',
+        operation: 'asyncSet',
+        args: [['x'], 'ok'],
+        errorContext: TEST_EC
+      });
+
+      await cmd.apply(output);
+
+      expect(output._target.x).to.be('ok');
+    });
+
+    it('DataCommand encodes async method rejections as user call poison', async () => {
+      const output = new DataChain(null, 'data', null, 'data');
+      output._base.addMethod('failAsync', async () => {
+        throw new Error('async data method failed');
+      });
+      const cmd = new DataCommand({
+        chainName: 'data',
+        operation: 'failAsync',
+        args: [['x']],
+        errorContext: TEST_EC
+      });
+
+      await cmd.apply(output);
+
+      expect(isPoison(output._target.x)).to.be(true);
+      expect(output._target.x.errors[0].kind).to.be('UserCallThrew');
+      expect(output._target.x.errors[0].message).to.contain('async data method failed');
+      expect(output._target.x.errors[0].context.label).to.be('Test');
+    });
+
+    it('DataCommand preserves existing poison origin from async method rejections', async () => {
+      const output = new DataChain(null, 'data', null, 'data');
+      const originError = PoisonError.create('origin failure', ORIGIN_EC, 'LookupThrew');
+      output._base.addMethod('failPoisonAsync', async () => {
+        throw originError;
+      });
+      const cmd = new DataCommand({
+        chainName: 'data',
+        operation: 'failPoisonAsync',
+        args: [['x']],
+        errorContext: TEST_EC
+      });
+
+      await cmd.apply(output);
+
+      expect(isPoison(output._target.x)).to.be(true);
+      expect(output._target.x.errors[0]).to.be(originError);
+      expect(output._target.x.errors[0].context.label).to.be('Origin');
     });
 
     it('TextCommand text.set accepts multiple text arguments', () => {
@@ -315,6 +371,43 @@ describe('chain errors', function () {
         expect(isPoisonError(err)).to.be(true);
         expect(err.kind).to.be('UserCallThrew');
         expect(err.message).to.contain('sequence async failed');
+      }
+    });
+
+    it('SequenceCallCommand preserves existing poison origin from method failures', async () => {
+      const originError = PoisonError.create('sequence origin failure', ORIGIN_EC, 'LookupThrew');
+      const output = new SequenceChain(null, 'seq', null, {
+        failPoison() {
+          throw originError;
+        },
+        async failPoisonAsync() {
+          throw originError;
+        }
+      });
+
+      const syncCmd = new SequenceCallCommand({
+        chainName: 'seq',
+        methodName: 'failPoison',
+        args: [],
+        errorContext: TEST_EC
+      });
+      expect(() => syncCmd.apply(output)).to.throwException((err) => {
+        expect(err).to.be(originError);
+        expect(err.context.label).to.be('Origin');
+      });
+
+      const asyncCmd = new SequenceCallCommand({
+        chainName: 'seq',
+        methodName: 'failPoisonAsync',
+        args: [],
+        errorContext: TEST_EC
+      });
+      try {
+        await asyncCmd.apply(output);
+        expect().fail('Should have rejected');
+      } catch (err) {
+        expect(err).to.be(originError);
+        expect(err.context.label).to.be('Origin');
       }
     });
   });

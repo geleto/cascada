@@ -56,25 +56,39 @@ class DataCommand extends ChainCommand {
           return;
         }
         const result = method.apply(chain._base, args);
-        const poisonedResult = poisonIfNaN(result, this.errorContext);
-        if (isPoison(poisonedResult)) {
-          setDataPoisonAtPath(chain, args, PoisonError.group(poisonedResult.errors));
-          return;
-        }
-        chain._setTarget(chain._base.data);
-      } catch (err) {
-        const methodPoisonError = PoisonError.wrap(err, this.errorContext, 'UserCallThrew');
-        try {
-          setDataPoisonAtPath(
-            chain,
-            args,
-            methodPoisonError
+        if (!isPoison(result) && result && typeof result.then === 'function') {
+          return result.then(
+            (resolved) => finalizeDataMethodResult(chain, args, resolved, this.errorContext),
+            (err) => poisonDataMethodFailure(chain, args, err, this.errorContext)
           );
-        } catch {
-          throw methodPoisonError;
         }
+        finalizeDataMethodResult(chain, args, result, this.errorContext);
+      } catch (err) {
+        poisonDataMethodFailure(chain, args, err, this.errorContext);
       }
     });
+  }
+}
+
+function finalizeDataMethodResult(chain, args, result, errorContext) {
+  const poisonedResult = poisonIfNaN(result, errorContext);
+  if (isPoison(poisonedResult)) {
+    setDataPoisonAtPath(chain, args, PoisonError.group(poisonedResult.errors));
+    return;
+  }
+  chain._setTarget(chain._base.data);
+}
+
+function poisonDataMethodFailure(chain, args, err, errorContext) {
+  const methodPoisonError = isPoisonError(err) ? err : PoisonError.wrap(err, errorContext, 'UserCallThrew');
+  try {
+    setDataPoisonAtPath(
+      chain,
+      args,
+      methodPoisonError
+    );
+  } catch {
+    throw methodPoisonError;
   }
 }
 

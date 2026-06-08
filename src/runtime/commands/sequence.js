@@ -1,5 +1,5 @@
 import {ChainMutatingResultCommand, ChainObservableCommand} from './base.js';
-import {PoisonError, poisonIfNaN} from '../errors.js';
+import {isPoisonError, PoisonError, poisonIfNaN} from '../errors.js';
 import {classifyCallTarget} from '../call.js';
 import {runCommandWithResolvedArguments} from './arguments.js';
 
@@ -42,11 +42,11 @@ class SequenceCallCommand extends ChainMutatingResultCommand {
           const result = method.apply(target, args);
           return this.settleResult(result, {
             mapValue: value => poisonIfNaN(value, this.errorContext),
-            mapError: err => PoisonError.wrap(err, this.errorContext, 'UserCallThrew'),
+            mapError: err => (isPoisonError(err) ? err : PoisonError.wrap(err, this.errorContext, 'UserCallThrew')),
             rethrow: true
           });
         } catch (err) {
-          const error = PoisonError.wrap(err, this.errorContext, 'UserCallThrew');
+          const error = isPoisonError(err) ? err : PoisonError.wrap(err, this.errorContext, 'UserCallThrew');
           this.rejectResult(error);
           throw error;
         }
