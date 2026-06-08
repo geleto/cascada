@@ -578,12 +578,12 @@ function requireLoadFailureKind(kind) {
 }
 
 /**
- * Wraps a Promise to add contextual error information the *first time* it rejects.
- * - Does NOT attach a catch in the constructor, so global unhandled rejections still fire.
- * - Adds context only when a rejection handler is actually invoked (then/catch/await).
- * - Each chaining method returns a new RuntimePromise, preserving behavior through chains.
- * - Converts rejections through idempotent error factories so context is added
- *   only once per error.
+ * Promise wrapper for scalar runtime values that may reject later.
+ *
+ * Keeps the error origin via errorContext/kind and converts raw rejections into
+ * typed PoisonErrors. Chaining returns another RuntimePromise with the same
+ * metadata. The native promise is marked handled because commands/chains often
+ * consume these values later.
  */
 class RuntimePromise {
   constructor(promise, errorContext, kind) {
@@ -644,6 +644,18 @@ class RuntimePromise {
     requirePoisonKind(kind, errorContext, 'RuntimePromise rejection requires kind');
     return PoisonError.wrap(err, errorContext, kind);
   }
+}
+
+function isRuntimePromise(value) {
+  return value instanceof RuntimePromise;
+}
+
+function valueWithOrigin(value, errorContext, kind) {
+  value = poisonIfNaN(value, errorContext);
+  if (isRuntimePromise(value) || isPoison(value) || !value || typeof value.then !== 'function') {
+    return value;
+  }
+  return new RuntimePromise(value, errorContext, kind);
 }
 
 function createPoison(poisonError) {
@@ -834,4 +846,4 @@ function peekError(value) {
   return null;
 }
 
-export { PoisonedValue, PoisonError, PoisonErrorGroup, RuntimeError, RuntimeContextError, RuntimePromise, createPoison, poisonIfNaN, poisonOrReport, rethrowPoisonOrReport, poisonOrReportedFatal, poisonOrRethrow, observeDiscardedExpression, isPoison, isPoisonError, isRuntimeError, isError, collectErrors, createSyncRuntimeError, peekError, markPromiseHandled, markValuePromiseHandled, isLoadFailureFatal, handleLoadFailure };
+export { PoisonedValue, PoisonError, PoisonErrorGroup, RuntimeError, RuntimeContextError, RuntimePromise, valueWithOrigin, createPoison, poisonIfNaN, poisonOrReport, rethrowPoisonOrReport, poisonOrReportedFatal, poisonOrRethrow, observeDiscardedExpression, isPoison, isPoisonError, isRuntimePromise, isRuntimeError, isError, collectErrors, createSyncRuntimeError, peekError, markPromiseHandled, markValuePromiseHandled, isLoadFailureFatal, handleLoadFailure };

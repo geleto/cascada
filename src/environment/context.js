@@ -2,7 +2,7 @@
 import {extend, keys, indexOf} from '../lib.js';
 import {CompileError} from '../errors.js';
 import {Obj} from '../object.js';
-import {createPoison, isPoison, markPromiseHandled, PoisonError, poisonIfNaN, RuntimePromise} from '../runtime/errors.js';
+import {createPoison, markPromiseHandled, PoisonError, valueWithOrigin} from '../runtime/errors.js';
 
 class ContextExecutionState {
   constructor() {
@@ -234,11 +234,7 @@ function normalizeContextValue(value, errorContext) {
   if (!errorContext) {
     return value;
   }
-  value = poisonIfNaN(value, errorContext);
-  if (value && typeof value.then === 'function' && !isPoison(value)) {
-    return new RuntimePromise(value, errorContext, 'ContextValueRejected');
-  }
-  return value;
+  return valueWithOrigin(value, errorContext, 'ContextValueRejected');
 }
 
 export { Context };

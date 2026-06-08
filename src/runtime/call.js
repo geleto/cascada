@@ -1,5 +1,5 @@
 
-import {createPoison, isPoison, isPoisonError, RuntimePromise, PoisonError, RuntimeError, poisonIfNaN} from './errors.js';
+import {createPoison, isPoison, isPoisonError, PoisonError, RuntimeError, valueWithOrigin} from './errors.js';
 import {throwReportedFatal} from './error-context.js';
 import {RESOLVE_MARKER, resolveAll} from './resolve.js';
 
@@ -83,11 +83,7 @@ function callWrapAsync(obj, name, context, args, errorContext, currentBuffer = n
     if (isPoison(result)) {
       return result;
     }
-    if (result && typeof result.then === 'function') {// && !isPoison(result)) {
-      // add context to the promise that will be applied if it rejects
-      return new RuntimePromise(result, errorContext, 'UserCallThrew');
-    }
-    return poisonIfNaN(result, errorContext);
+    return valueWithOrigin(result, errorContext, 'UserCallThrew');
   } catch (err) {
     return createPoison(PoisonError.wrap(err, errorContext, 'UserCallThrew'));
   }
@@ -153,12 +149,7 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
       return result;
     }
 
-    // Wrap promise results to preserve error context
-    if (result && typeof result.then === 'function') {
-      return new RuntimePromise(result, errorContext, 'UserCallThrew');
-    }
-
-    return poisonIfNaN(result, errorContext);
+    return valueWithOrigin(result, errorContext, 'UserCallThrew');
   } catch (err) {
     return createPoison(PoisonError.wrap(err, errorContext, 'UserCallThrew'));
   }
@@ -172,10 +163,7 @@ function envCallWrapAsync(fn, thisArg, args, errorContext) {
     if (isPoison(result)) {
       return result;
     }
-    if (result && typeof result.then === 'function') {
-      return new RuntimePromise(result, errorContext, 'UserCallThrew');
-    }
-    return poisonIfNaN(result, errorContext);
+    return valueWithOrigin(result, errorContext, 'UserCallThrew');
   } catch (err) {
     return createPoison(PoisonError.wrap(err, errorContext, 'UserCallThrew'));
   }
@@ -224,10 +212,7 @@ function resolveScriptCallTarget(context, name, errorContext) {
       'MissingFunction'
     ));
   }
-  if (value && typeof value.then === 'function' && !isPoison(value)) {
-    return new RuntimePromise(value, errorContext, 'ContextValueRejected');
-  }
-  return poisonIfNaN(value, errorContext);
+  return valueWithOrigin(value, errorContext, 'ContextValueRejected');
 }
 
 function getOwnedContextValue(context, name, errorContext) {

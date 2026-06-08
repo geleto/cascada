@@ -8,9 +8,8 @@ import {
   isRuntimeError,
   markPromiseHandled,
   PoisonError,
-  poisonIfNaN,
-  RuntimePromise,
   RuntimeError,
+  valueWithOrigin,
 } from './errors.js';
 
 import {VarCommand} from './commands/var.js';
@@ -153,10 +152,7 @@ function poisonIterationEffects(buffer, asyncOptions, poisonError) {
 }
 
 function normalizeLoopValue(value, errorContext) {
-  if (!isPoison(value) && value && typeof value.then === 'function') {
-    return new RuntimePromise(value, errorContext, 'IteratorThrew');
-  }
-  return poisonIfNaN(value, errorContext);
+  return valueWithOrigin(value, errorContext, 'IteratorThrew');
 }
 
 function getDestructuredLoopArgs(value, loopVars, errorContext, buffer, asyncOptions) {

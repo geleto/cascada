@@ -10,6 +10,7 @@ import {
   createSyncRuntimeError,
   isPoison,
   isPoisonError,
+  isRuntimePromise,
   isWrappedResolvedValue,
   isError,
   isRuntimeError,
@@ -30,6 +31,7 @@ import {
   observeDiscardedExpression,
   scriptArithmeticOperator,
   thenValue,
+  valueWithOrigin,
   cloneContext,
   cloneWithAddedContext,
   unwrapResolvedValue
@@ -359,6 +361,25 @@ describe('typed poison error contracts', () => {
     expect(seen.cause).to.be(raw);
     expect(seen.context.label).to.be('Poison.Unit');
     expect(seen.kind).to.be('UserCallThrew');
+  });
+
+  it('wraps promise values with origin only once', async () => {
+    const raw = new Error('first origin');
+    const wrapped = valueWithOrigin(Promise.reject(raw), TEST_EC, 'LookupThrew');
+    const rewrapped = valueWithOrigin(wrapped, OTHER_EC, 'UserCallThrew');
+
+    expect(isRuntimePromise(wrapped)).to.be(true);
+    expect(rewrapped).to.be(wrapped);
+
+    try {
+      await rewrapped;
+      expect().fail('rewrapped promise should reject');
+    } catch (err) {
+      expect(err).to.be.a(PoisonError);
+      expect(err.cause).to.be(raw);
+      expect(err.context.label).to.be('Poison.Unit');
+      expect(err.kind).to.be('LookupThrew');
+    }
   });
 
   it('marks promises handled by installing a rejection handler', () => {

@@ -4,9 +4,8 @@ import {
   isPoison,
   PoisonError,
   RuntimeError,
-  RuntimePromise,
   poisonOrReport,
-  poisonIfNaN,
+  valueWithOrigin,
 } from './errors.js';
 
 import {resolveDuo} from './resolve.js';
@@ -60,10 +59,7 @@ function memberLookupScriptResolved(obj, val, errorContext) {
     return (...args) => obj[val](...args);//use obj lookup so that 'this' binds correctly
   }
 
-  if (value && typeof value.then === 'function') {
-    return new RuntimePromise(value, errorContext, 'LookupThrew');
-  }
-  return poisonIfNaN(value, errorContext);
+  return valueWithOrigin(value, errorContext, 'LookupThrew');
 }
 
 /**
@@ -98,10 +94,7 @@ function memberLookupAsync(obj, val, errorContext, currentBuffer = null) {
 
   // No errors - proceed with lookup
   const result = memberLookup(obj, val);
-  if (result && typeof result.then === 'function') {
-    return new RuntimePromise(result, errorContext, 'LookupThrew');
-  }
-  return poisonIfNaN(result, errorContext);
+  return valueWithOrigin(result, errorContext, 'LookupThrew');
 }
 
 async function _memberLookupAsyncComplex(obj, val, errorContext, currentBuffer = null) {
@@ -118,14 +111,7 @@ async function _memberLookupAsyncComplex(obj, val, errorContext, currentBuffer =
 
   try {
     const result = memberLookup(resolvedObj, resolvedVal);
-
-    // Wrap promise results to preserve error context
-    // This handles: 1) properties that are promises, 2) getters that return promises
-    if (result && typeof result.then === 'function') {
-      return new RuntimePromise(result, errorContext, 'LookupThrew');
-    }
-
-    return poisonIfNaN(result, errorContext);
+    return valueWithOrigin(result, errorContext, 'LookupThrew');
   } catch (err) {
     return createPoison(PoisonError.wrap(err, errorContext, 'LookupThrew'));
   }
