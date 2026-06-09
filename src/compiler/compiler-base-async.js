@@ -27,7 +27,7 @@ const scriptArithmeticOps = {
 
 class CompilerBaseAsync extends CompilerCommon {
   init(options) {
-    super.init(Object.assign({}, options, { asyncMode: true }));
+    super.init({ ...options, asyncMode: true });
     this.analysis = new CompileAnalysis(this);
     this.call = new CompileCall(this);
     this.lookup = new CompileLookup(this);

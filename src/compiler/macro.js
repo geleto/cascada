@@ -208,12 +208,13 @@ class CompileMacro {
       label: 'macro signature',
       ownerNode: node
     });
-    return Object.assign({}, signature, {
+    return {
+      ...signature,
       callableSignature: signature,
       emittedArgNames: signature.positionalNames.map((name) => `"${name}"`),
       emittedKwargNames: signature.keywordNames.map((name) => `"${name}"`),
       emittedParamNames: signature.positionalNames.map((name) => `l_${name}`).concat('kwargs')
-    });
+    };
   }
 
   _emitCallerBindingValue({ bufferId, rawCallerVar, allCallersBufferId, positionNode }) {

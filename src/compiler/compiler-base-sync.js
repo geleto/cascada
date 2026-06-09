@@ -15,7 +15,7 @@ const compareOps = {
 
 class CompilerBaseSync extends CompilerCommon {
   init(options) {
-    super.init(Object.assign({}, options, { asyncMode: false }));
+    super.init({ ...options, asyncMode: false });
   }
 
   compileSymbol(node, frame) {

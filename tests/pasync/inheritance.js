@@ -1220,7 +1220,7 @@ describe('Inheritance rebuild', function () {
           return values;
         },
         forkForComposition(nextPath, payload = {}) {
-          return createRuntimeContext(Object.assign({}, values, payload), nextPath);
+          return createRuntimeContext({ ...values, ...payload }, nextPath);
         },
         forkForPath(nextPath) {
           return createRuntimeContext(values, nextPath);

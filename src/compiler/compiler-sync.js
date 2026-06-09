@@ -6,7 +6,7 @@ import {CompileBuffer} from './buffer.js';
 
 class CompilerSync extends CompilerBaseSync {
   init(sourcePath, options) {
-    super.init(Object.assign({}, options, { asyncMode: false, sourcePath }));
+    super.init({ ...options, asyncMode: false, sourcePath });
   }
 
   compileCallExtension(node, frame) {

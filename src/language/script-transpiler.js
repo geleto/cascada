@@ -1453,7 +1453,7 @@ class ScriptTranspiler {
   }
 
   _cloneTokenWithValue(token, value, start, end) {
-    const cloned = Object.assign({}, token);
+    const cloned = { ...token };
     cloned.value = value;
     cloned.start = start;
     cloned.end = end;

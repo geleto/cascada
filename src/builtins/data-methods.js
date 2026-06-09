@@ -65,7 +65,7 @@ const defaultMethods = {
     // Auto-initialize missing target to a new object
     if (target === undefined) {
       // Avoid aliasing the caller's object by returning a shallow clone
-      return Object.assign({}, value);
+      return { ...value };
     }
     if (target === null) {
       throw new Error('Error: Target for \'merge\' cannot be null.');
