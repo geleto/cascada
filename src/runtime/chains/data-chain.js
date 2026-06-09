@@ -68,14 +68,14 @@ class DataChain extends Chain {
     if (this._fatalError) {
       return true;
     }
-    return inspectSettledTargetForErrors(this._target).hasError;
+    return !!inspectSettledTargetForErrors(this._target);
   }
 
   _getErrors() {
     if (this._fatalError) {
       return this._fatalError;
     }
-    return inspectSettledTargetForErrors(this._target).error;
+    return inspectSettledTargetForErrors(this._target);
   }
 
   _computeTargetErrorState(target) {
@@ -187,14 +187,7 @@ function inspectSettledTargetForErrors(target) {
 
   visit(target);
 
-  if (errors.length === 0) {
-    return { hasError: false, error: null };
-  }
-
-  return {
-    hasError: true,
-    error: PoisonError.group(errors)
-  };
+  return errors.length === 0 ? null : PoisonError.group(errors);
 }
 
 export {DataChain};

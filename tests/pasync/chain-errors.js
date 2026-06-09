@@ -387,9 +387,8 @@ describe('chain errors', function () {
       output._recordError(fatal, { errorContext: TEST_EC });
 
       const result = await output._ensureErrorState();
-      expect(result.hasError).to.be(true);
-      expect(result.error).to.be.a(RuntimeError);
-      expect(result.error.message).to.contain('fatal inspection failure');
+      expect(result).to.be.a(RuntimeError);
+      expect(result.message).to.contain('fatal inspection failure');
     });
 
     it('collects poison from nested arrays/objects/promises', async () => {
@@ -404,10 +403,9 @@ describe('chain errors', function () {
 
       const result = await inspectTargetForErrors(target);
 
-      expect(result.hasError).to.be(true);
-      expect(isPoisonError(result.error)).to.be(true);
+      expect(isPoisonError(result)).to.be(true);
 
-      const messages = result.error.errors.map((err) => err.message).join(' | ');
+      const messages = result.errors.map((err) => err.message).join(' | ');
       expect(messages).to.contain('direct poison');
       expect(messages).to.contain('resolved poison');
       expect(messages).to.contain('rejected promise');
@@ -422,9 +420,8 @@ describe('chain errors', function () {
 
       const result = await inspectTargetForErrors(target);
 
-      expect(result.hasError).to.be(true);
-      expect(isPoisonError(result.error)).to.be(true);
-      expect(result.error.errors[0].message).to.contain('marker rejection');
+      expect(isPoisonError(result)).to.be(true);
+      expect(result.errors[0].message).to.contain('marker rejection');
     });
 
     it('treats raw promise failures during target inspection as fatal', async () => {
@@ -478,8 +475,7 @@ describe('chain errors', function () {
       target.err = createPoison(testError('cycle poison'));
 
       const result = await inspectTargetForErrors(target);
-      expect(result.hasError).to.be(true);
-      expect(result.error.errors[0].message).to.contain('cycle poison');
+      expect(result.errors[0].message).to.contain('cycle poison');
     });
 
     it('caches inspection by state version and invalidates on writes', async () => {
@@ -487,7 +483,7 @@ describe('chain errors', function () {
       let inspectCalls = 0;
       output._computeTargetErrorState = async () => {
         inspectCalls += 1;
-        return { hasError: false, error: null };
+        return null;
       };
 
       await output._ensureErrorState();
@@ -497,6 +493,37 @@ describe('chain errors', function () {
       output._setTarget(2);
       await output._ensureErrorState();
       expect(inspectCalls).to.be(2);
+    });
+
+    it('does not cache an async inspection result under a newer state version', async () => {
+      const output = new Chain(null, 'value', null, 'var', 'old', null);
+      let resolveInspection;
+      const inspectedTargets = [];
+
+      output._computeTargetErrorState = async (target) => {
+        inspectedTargets.push(target);
+        await new Promise((resolve) => {
+          resolveInspection = resolve;
+        });
+        return null;
+      };
+
+      const firstInspection = output._ensureErrorState();
+      output._setTarget('new');
+      resolveInspection();
+
+      await firstInspection;
+      expect(output._errorStateCache.version).to.be(-1);
+      expect(inspectedTargets).to.eql(['old']);
+
+      output._computeTargetErrorState = async (target) => {
+        inspectedTargets.push(target);
+        return null;
+      };
+      await output._ensureErrorState();
+
+      expect(output._errorStateCache.version).to.be(output._stateVersion);
+      expect(inspectedTargets).to.eql(['old', 'new']);
     });
   });
 

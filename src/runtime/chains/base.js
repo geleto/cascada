@@ -26,7 +26,6 @@ class Chain {
     this._fatalError = null;
     this._errorStateCache = {
       version: -1,
-      hasError: false,
       error: null
     };
     this._completionResolved = false;
@@ -57,7 +56,6 @@ class Chain {
   _invalidateErrorStateCache() {
     this._errorStateCache = {
       version: -1,
-      hasError: false,
       error: null
     };
   }
@@ -74,40 +72,29 @@ class Chain {
 
   async _ensureErrorState() {
     if (this._errorStateCache.version === this._stateVersion) {
-      return {
-        hasError: this._errorStateCache.hasError,
-        error: this._errorStateCache.error
-      };
+      return this._errorStateCache.error;
     }
 
     if (this._fatalError) {
       this._errorStateCache = {
         version: this._stateVersion,
-        hasError: true,
         error: this._fatalError
       };
-      return {
-        hasError: true,
-        error: this._fatalError
+      return this._fatalError;
+    }
+
+    const inspectedVersion = this._stateVersion;
+    const inspectedTarget = this._getTarget();
+    const error = await this._computeTargetErrorState(inspectedTarget);
+
+    if (this._stateVersion === inspectedVersion) {
+      this._errorStateCache = {
+        version: inspectedVersion,
+        error
       };
     }
 
-    const errorState = await this._computeTargetErrorState(this._getTarget());
-    const hasError = !!(errorState && errorState.hasError);
-    const error = hasError
-      ? errorState.error
-      : null;
-
-    this._errorStateCache = {
-      version: this._stateVersion,
-      hasError,
-      error
-    };
-
-    return {
-      hasError: this._errorStateCache.hasError,
-      error: this._errorStateCache.error
-    };
+    return error;
   }
 
   _getCurrentResult() {
@@ -208,18 +195,18 @@ class Chain {
   }
 
   _getResultOrThrow() {
-    const finalize = (inspection) => {
-      if (inspection && inspection.error) {
-        throw inspection.error;
+    const finalize = (error) => {
+      if (error) {
+        throw error;
       }
       return this._getCurrentResult();
     };
 
-    const errorState = this._ensureErrorState();
-    if (errorState && typeof errorState.then === 'function') {
-      return errorState.then(finalize);
+    const error = this._ensureErrorState();
+    if (error && typeof error.then === 'function') {
+      return error.then(finalize);
     }
-    return finalize(errorState);
+    return finalize(error);
   }
 
   _resolveSnapshotCommandResult() {
@@ -231,25 +218,19 @@ class Chain {
   }
 
   _isError() {
-    if (this._fatalError) {
-      return true;
+    const error = this._ensureErrorState();
+    if (error && typeof error.then === 'function') {
+      return error.then((settledError) => !!settledError);
     }
-    const errorState = this._computeTargetErrorState(this._target);
-    if (errorState && typeof errorState.then === 'function') {
-      return errorState.then((inspection) => !!(inspection && inspection.hasError));
-    }
-    return !!(errorState && errorState.hasError);
+    return !!error;
   }
 
   _getErrors() {
-    if (this._fatalError) {
-      return this._fatalError;
+    const error = this._ensureErrorState();
+    if (error && typeof error.then === 'function') {
+      return error.then((settledError) => settledError || null);
     }
-    const errorState = this._computeTargetErrorState(this._target);
-    if (errorState && typeof errorState.then === 'function') {
-      return errorState.then((inspection) => (inspection ? inspection.error : null));
-    }
-    return errorState ? errorState.error : null;
+    return error || null;
   }
 
   getFinishedPromise() {
@@ -444,13 +425,6 @@ async function inspectTargetForErrors(target) {
 
   await visit(target);
 
-  if (errors.length === 0) {
-    return { hasError: false, error: null };
-  }
-
-  return {
-    hasError: true,
-    error: PoisonError.group(errors)
-  };
+  return errors.length === 0 ? null : PoisonError.group(errors);
 }
 

@@ -94,6 +94,18 @@ class SequenceObjectChain extends Chain {
     return isPoison(this._target) ? PoisonError.group(this._target.errors) : null;
   }
 
+  _computeTargetErrorState() {
+    return this._getSequencePoisonError();
+  }
+
+  _isError() {
+    return !!(this._fatalError || this._getSequencePoisonError());
+  }
+
+  _getErrors() {
+    return this._fatalError || this._getSequencePoisonError();
+  }
+
   _captureGuardState() {
     const sequencedObjectValue = this._ensureSequencedObjectResolved();
     const capture = (sequencedObject) => {
