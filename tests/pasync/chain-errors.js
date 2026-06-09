@@ -2,10 +2,11 @@
 import expect from 'expect.js';
 import {AsyncEnvironment} from '../../src/environment/environment.js';
 import {cloneWithAddedContext} from '../../src/runtime/error-context.js';
-import {createPoison, isPoison, isPoisonError, PoisonError, RuntimeError} from '../../src/runtime/errors.js';
+import {createPoison, isPoison, isPoisonError, isRuntimeError, PoisonError, RuntimeError} from '../../src/runtime/errors.js';
 import {TextCommand} from '../../src/runtime/commands/text.js';
 import {VarCommand} from '../../src/runtime/commands/var.js';
 import {DataCommand} from '../../src/runtime/commands/data.js';
+import {SnapshotCommand} from '../../src/runtime/commands/observation.js';
 import {SequenceCallCommand} from '../../src/runtime/commands/sequence.js';
 import {SequentialPathWriteCommand} from '../../src/runtime/commands/sequential-path.js';
 
@@ -160,7 +161,7 @@ describe('chain errors', function () {
       expect(output._target.x.errors[0].message).to.contain('data method failed');
     });
 
-    it('DataCommand applies async method results after resolution', async () => {
+    it('DataCommand reports async method returns as fatal runtime errors', async () => {
       const output = new DataChain(null, 'data', null, 'data');
       output._base.addMethod('asyncSet', async (_target, value) => value);
       const cmd = new DataCommand({
@@ -170,49 +171,15 @@ describe('chain errors', function () {
         errorContext: TEST_EC
       });
 
-      await cmd.apply(output);
-
-      expect(output._target.x).to.be('ok');
-    });
-
-    it('DataCommand encodes async method rejections as user call poison', async () => {
-      const output = new DataChain(null, 'data', null, 'data');
-      output._base.addMethod('failAsync', async () => {
-        throw new Error('async data method failed');
-      });
-      const cmd = new DataCommand({
-        chainName: 'data',
-        operation: 'failAsync',
-        args: [['x']],
-        errorContext: TEST_EC
-      });
-
-      await cmd.apply(output);
-
-      expect(isPoison(output._target.x)).to.be(true);
-      expect(output._target.x.errors[0].kind).to.be('UserCallThrew');
-      expect(output._target.x.errors[0].message).to.contain('async data method failed');
-      expect(output._target.x.errors[0].context.label).to.be('Test');
-    });
-
-    it('DataCommand preserves existing poison origin from async method rejections', async () => {
-      const output = new DataChain(null, 'data', null, 'data');
-      const originError = PoisonError.create('origin failure', ORIGIN_EC, 'LookupThrew');
-      output._base.addMethod('failPoisonAsync', async () => {
-        throw originError;
-      });
-      const cmd = new DataCommand({
-        chainName: 'data',
-        operation: 'failPoisonAsync',
-        args: [['x']],
-        errorContext: TEST_EC
-      });
-
-      await cmd.apply(output);
-
-      expect(isPoison(output._target.x)).to.be(true);
-      expect(output._target.x.errors[0]).to.be(originError);
-      expect(output._target.x.errors[0].context.label).to.be('Origin');
+      try {
+        cmd.apply(output);
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(isRuntimeError(err)).to.be(true);
+        expect(err.message).to.contain('Data chain methods must return synchronously resolved values.');
+      }
+      expect(output._target.x).to.be(undefined);
+      await Promise.resolve();
     });
 
     it('TextCommand text.set accepts multiple text arguments', () => {
@@ -655,6 +622,64 @@ describe('chain errors', function () {
 
       const result = await env.renderScriptString(script, {});
       expect(result).to.eql({ k: 7 });
+    });
+
+    it('lets var observations capture immediately without waiting for immutable promised target', async () => {
+      const buffer = new CommandBuffer(null, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+      const out = declareBufferChain(buffer, 'value', 'var', null, null);
+      let resolveOld;
+      const oldValue = new Promise((resolve) => {
+        resolveOld = resolve;
+      });
+
+      buffer.addCommand(new VarCommand({
+        chainName: 'value',
+        args: [oldValue],
+        errorContext: TEST_EC
+      }), 'value');
+      const snap = buffer.addCommand(new SnapshotCommand({
+        chainName: 'value',
+        errorContext: TEST_EC
+      }), 'value');
+      buffer.addCommand(new VarCommand({
+        chainName: 'value',
+        args: ['new'],
+        errorContext: TEST_EC
+      }), 'value');
+      buffer.finish();
+
+      await Promise.resolve();
+      expect(out._target).to.be('new');
+
+      resolveOld('old');
+      expect(await snap).to.be('old');
+      expect(await out.finalSnapshot()).to.be('new');
+    });
+
+    it('captures data snapshots before later copy-on-write mutations', async () => {
+      const buffer = new CommandBuffer(null, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+      const out = declareBufferChain(buffer, 'data', 'data', null, null);
+
+      buffer.addCommand(new DataCommand({
+        chainName: 'data',
+        operation: 'set',
+        args: [['x'], 1],
+        errorContext: TEST_EC
+      }), 'data');
+      const snap = buffer.addCommand(new SnapshotCommand({
+        chainName: 'data',
+        errorContext: TEST_EC
+      }), 'data');
+      buffer.addCommand(new DataCommand({
+        chainName: 'data',
+        operation: 'set',
+        args: [['x'], 2],
+        errorContext: TEST_EC
+      }), 'data');
+      buffer.finish();
+
+      expect(await snap).to.eql({ x: 1 });
+      expect(await out.finalSnapshot()).to.eql({ x: 2 });
     });
 
     it('observes errors from a promise resolving to a lazy structure built in script', async () => {

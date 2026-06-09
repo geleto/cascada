@@ -226,19 +226,37 @@ class Chain {
     return this._getResultOrThrow();
   }
 
+  _makeSnapshot() {
+    return this._resolveSnapshotCommandResult();
+  }
+
+  _isError() {
+    if (this._fatalError) {
+      return true;
+    }
+    const errorState = this._computeTargetErrorState(this._target);
+    if (errorState && typeof errorState.then === 'function') {
+      return errorState.then((inspection) => !!(inspection && inspection.hasError));
+    }
+    return !!(errorState && errorState.hasError);
+  }
+
+  _getErrors() {
+    if (this._fatalError) {
+      return this._fatalError;
+    }
+    const errorState = this._computeTargetErrorState(this._target);
+    if (errorState && typeof errorState.then === 'function') {
+      return errorState.then((inspection) => (inspection ? inspection.error : null));
+    }
+    return errorState ? errorState.error : null;
+  }
+
   getFinishedPromise() {
     if (this._completionResolved) {
       return Promise.resolve();
     }
     return this._completionPromise;
-  }
-
-  _isErrorNow() {
-    return this._ensureErrorState().then((errorState) => !!(errorState && errorState.hasError));
-  }
-
-  _getErrorNow() {
-    return this._ensureErrorState().then((errorState) => (errorState ? errorState.error : null));
   }
 
   _captureGuardState() {

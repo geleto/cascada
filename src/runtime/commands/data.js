@@ -1,7 +1,26 @@
-import {isPoison, isPoisonError, createPoison, PoisonError, poisonIfNaN} from '../errors.js';
+import {
+  isPoison,
+  isPoisonError,
+  createPoison,
+  PoisonError,
+  RuntimeError,
+  markPromiseHandled,
+  poisonIfNaN
+} from '../errors.js';
 import {classifyCallTarget} from '../call.js';
+import {isAsyncDataMethodResult} from '../chains/data-target.js';
 import {ChainCommand} from './base.js';
 import {runCommandWithResolvedArguments} from './arguments.js';
+
+// Current data-chain contract:
+// - data command arguments are resolved before the data method runs;
+// - data methods are sync-only, so DataChain._target is fully settled after
+//   apply() readiness completes;
+// - stored errors are PoisonedValue leaves, not raw PoisonError objects.
+//
+// Future async data-chain work should allow promises at unresolved branches and
+// branch-level copy-on-write marks so later data writes do not mutate immutable
+// snapshots or partially materialized subtrees.
 
 class DataCommand extends ChainCommand {
   constructor({ chainName, operation, args = null, errorContext, initializeIfNotSet = false }) {
@@ -24,7 +43,7 @@ class DataCommand extends ChainCommand {
       const poisonError = this.getPoisonFromArgs(args);
       if (this.operation !== 'set') {
         const existing = readDataValueAtPath(chain._base.data, dataPath);
-        if (isPoison(existing) || isPoisonError(existing)) {
+        if (isPoison(existing)) {
           if (poisonError) {
             setDataPoisonAtPath(chain, args, poisonError);
           }
@@ -56,17 +75,25 @@ class DataCommand extends ChainCommand {
           return;
         }
         const result = method.apply(chain._base, args);
-        if (!isPoison(result) && result && typeof result.then === 'function') {
-          return result.then(
-            (resolved) => finalizeDataMethodResult(chain, args, resolved, this.errorContext),
-            (err) => poisonDataMethodFailure(chain, args, err, this.errorContext)
-          );
+        if (isAsyncDataMethodResult(result)) {
+          markPromiseHandled(result);
+          throw new AsyncDataMethodResultError();
         }
         finalizeDataMethodResult(chain, args, result, this.errorContext);
       } catch (err) {
+        if (err instanceof AsyncDataMethodResultError) {
+          RuntimeError.reportAndThrow(err, this.errorContext);
+        }
         poisonDataMethodFailure(chain, args, err, this.errorContext);
       }
     });
+  }
+}
+
+class AsyncDataMethodResultError extends Error {
+  constructor() {
+    super('Data chain methods must return synchronously resolved values.');
+    this.name = 'AsyncDataMethodResultError';
   }
 }
 
@@ -130,9 +157,6 @@ function readDataValueAtPath(root, path) {
 function getPoisonError(value) {
   if (isPoison(value)) {
     return PoisonError.group(value.errors);
-  }
-  if (isPoisonError(value)) {
-    return value;
   }
   return null;
 }

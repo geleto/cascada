@@ -351,7 +351,8 @@ class CompileChain {
     const isSequenceGet = !callNode && chainDecl && chainDecl.type === 'sequence';
     const isObservation = isSequenceGet ||
       (callNode && path.length === 2 &&
-       (path[1] === 'snapshot' || path[1] === 'isError' || path[1] === 'getError'));
+       (path[1] === 'isError' || path[1] === 'getError' ||
+        (path[1] === 'snapshot' && (!chainDecl || chainDecl.type !== 'sequence'))));
     return isObservation ? { uses: [chainName] } : { uses: [chainName], mutates: [chainName] };
   }
 
@@ -379,6 +380,9 @@ class CompileChain {
   _compileChainObservationFunCall(node, specialChainCall) {
     const compiler = this.compiler;
     if (specialChainCall.pathPrefix.length !== 0) {
+      return false;
+    }
+    if (specialChainCall.chainType === 'sequence' && specialChainCall.methodName === 'snapshot') {
       return false;
     }
     if (specialChainCall.methodName === 'snapshot') {
@@ -410,7 +414,7 @@ class CompileChain {
 
   _compileSequenceChainFunCall(node, specialChainCall) {
     const compiler = this.compiler;
-    if (specialChainCall.chainType !== 'sequence' || specialChainCall.methodName === 'snapshot') {
+    if (specialChainCall.chainType !== 'sequence') {
       return false;
     }
     compiler._compileAggregate(node.args, null, '[', ']', false, false, function (resolvedArgs) {

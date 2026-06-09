@@ -22,6 +22,13 @@ class VarChain extends Chain {
   _getCurrentResult() {
     return this._target;
   }
+
+  _makeSnapshot() {
+    if (this._fatalError) {
+      throw this._fatalError;
+    }
+    return this._target;
+  }
 }
 
 export {VarChain};

@@ -34,11 +34,8 @@ class DataChainTarget {
       if (path === null || (Array.isArray(path) && path.length === 1 && path[0] === null)) {
         // Replace this data with the return
         const result = func.apply(this.methods, [this.data, ...args]);
-        if (!isPoison(result) && result && typeof result.then === 'function') {
-          return result.then((resolved) => {
-            this.data = resolved;
-            return this.data;
-          });
+        if (isAsyncDataMethodResult(result)) {
+          return result;
         }
         this.data = result;
         return result;
@@ -52,12 +49,8 @@ class DataChainTarget {
 
       // Call the original method with the correct context and arguments
       const result = func.apply(this.methods, [currentValue, ...args]);
-
-      if (!isPoison(result) && result && typeof result.then === 'function') {
-        return result.then((resolved) => {
-          applyDataMethodResult(target, key, resolved);
-          return resolved;
-        });
+      if (isAsyncDataMethodResult(result)) {
+        return result;
       }
 
       // Update the target with the result
@@ -148,6 +141,10 @@ class DataChainTarget {
   }
 }
 
+function isAsyncDataMethodResult(result) {
+  return !isPoison(result) && result && typeof result.then === 'function';
+}
+
 function applyDataMethodResult(target, key, result) {
   if (result !== undefined) {
     if (key === '[]') {
@@ -173,4 +170,4 @@ Object.keys(defaultMethods).forEach((methodName) => {
   DataChainTarget.prototype.addMethod(methodName, defaultMethods[methodName]);
 });
 
-export {DataChainTarget};
+export {DataChainTarget, isAsyncDataMethodResult};

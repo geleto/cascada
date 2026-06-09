@@ -1,51 +1,51 @@
-import {PoisonError, isPoison, poisonIfNaN, poisonOrReportedFatal} from '../errors.js';
+import {isPoison, PoisonError, poisonOrReportedFatal} from '../errors.js';
 import {thenValue} from '../resolve.js';
 import {Chain} from './base.js';
 
 class SequenceObjectChain extends Chain {
-  constructor(buffer, chainName, context, targetObject) {
+  constructor(buffer, chainName, context, sequencedObject) {
     super(buffer, chainName, context, 'sequence', undefined, null);
-    this._sequenceTarget = targetObject;
-    this._sequenceTargetReady = false;
-    this._sequenceTargetReadyPromise = null;
+    this._sequencedObject = sequencedObject;
+    this._sequencedObjectReady = false;
+    this._sequencedObjectReadyPromise = null;
   }
 
-  _resolveSequenceTarget() {
-    return this._sequenceTarget;
+  _resolveSequencedObject() {
+    return this._sequencedObject;
   }
 
-  _setSequenceTarget(targetObject) {
-    this._sequenceTarget = targetObject;
-    this._sequenceTargetReady = false;
-    this._sequenceTargetReadyPromise = null;
+  _setSequencedObject(sequencedObject) {
+    this._sequencedObject = sequencedObject;
+    this._sequencedObjectReady = false;
+    this._sequencedObjectReadyPromise = null;
     this._setTarget(undefined);
-    return this._sequenceTarget;
+    return this._sequencedObject;
   }
 
-  setInitialValue(targetObject) {
-    return this._setSequenceTarget(targetObject);
+  setInitialValue(sequencedObject) {
+    return this._setSequencedObject(sequencedObject);
   }
 
-  _ensureSequenceTargetResolved() {
-    if (this._sequenceTargetReady) {
-      return this._sequenceTarget;
+  _ensureSequencedObjectResolved() {
+    if (this._sequencedObjectReady) {
+      return this._sequencedObject;
     }
-    if (!this._sequenceTargetReadyPromise) {
-      const targetValue = this._resolveSequenceTarget();
-      if (!targetValue || typeof targetValue.then !== 'function') {
-        this._sequenceTarget = targetValue;
-        this._sequenceTargetReady = true;
-        return this._sequenceTarget;
+    if (!this._sequencedObjectReadyPromise) {
+      const sequencedObjectValue = this._resolveSequencedObject();
+      if (!sequencedObjectValue || typeof sequencedObjectValue.then !== 'function') {
+        this._sequencedObject = sequencedObjectValue;
+        this._sequencedObjectReady = true;
+        return this._sequencedObject;
       }
-      this._sequenceTargetReadyPromise = targetValue
-        .then((resolvedTarget) => {
-          this._sequenceTarget = resolvedTarget;
-          this._sequenceTargetReady = true;
-          this._sequenceTargetReadyPromise = null;
-          return resolvedTarget;
+      this._sequencedObjectReadyPromise = sequencedObjectValue
+        .then((resolvedSequencedObject) => {
+          this._sequencedObject = resolvedSequencedObject;
+          this._sequencedObjectReady = true;
+          this._sequencedObjectReadyPromise = null;
+          return resolvedSequencedObject;
         });
     }
-    return this._sequenceTargetReadyPromise;
+    return this._sequencedObjectReadyPromise;
   }
 
   _applyCommand(cmd) {
@@ -64,13 +64,14 @@ class SequenceObjectChain extends Chain {
         return result;
       }
 
-      const sequenceTarget = this._ensureSequenceTargetResolved();
+      const sequencedObject = this._ensureSequencedObjectResolved();
       const apply = () => cmd.apply(this);
-      const result = (sequenceTarget && typeof sequenceTarget.then === 'function')
-        ? sequenceTarget.then(apply)
+      const result = (sequencedObject && typeof sequencedObject.then === 'function')
+        ? sequencedObject.then(apply)
         : apply();
       if (result && typeof result.then === 'function') {
         return result.then(undefined, (err) => {
+          cmd.rejectResult(poisonOrReportedFatal(err, cmd.errorContext));
           this._recordError(err, cmd);
         });
       }
@@ -85,77 +86,49 @@ class SequenceObjectChain extends Chain {
     }
   }
 
-  _snapshotFromSequenceTarget(sequenceTarget) {
-    if (!sequenceTarget) {
-      return sequenceTarget;
-    }
-    if (typeof sequenceTarget.snapshot === 'function') return sequenceTarget.snapshot();
-    if (typeof sequenceTarget.getReturnValue === 'function') return sequenceTarget.getReturnValue();
-    if (typeof sequenceTarget.finalize === 'function') return sequenceTarget.finalize();
-    return sequenceTarget;
-  }
-
-  _resolveSnapshotCommandResult(errorContext) {
-    const targetValue = this._ensureSequenceTargetResolved();
-    if (targetValue && typeof targetValue.then === 'function') {
-      return targetValue.then((resolved) => {
-        const target = this._getTarget();
-        if (isPoison(target)) {
-          throw PoisonError.group(target.errors);
-        }
-        return normalizeSequenceValue(this._snapshotFromSequenceTarget(resolved), errorContext);
-      });
-    }
-    const target = this._getTarget();
-    if (isPoison(target)) {
-      throw PoisonError.group(target.errors);
-    }
-    return normalizeSequenceValue(super._resolveSnapshotCommandResult(), errorContext);
-  }
-
   _getCurrentResult() {
-    return this._snapshotFromSequenceTarget(this._sequenceTarget);
+    return this._sequencedObject;
+  }
+
+  _getSequencePoisonError() {
+    return isPoison(this._target) ? PoisonError.group(this._target.errors) : null;
   }
 
   _captureGuardState() {
-    const targetValue = this._ensureSequenceTargetResolved();
-    const capture = (sequenceTarget) => {
-      if (!sequenceTarget || typeof sequenceTarget.snapshot !== 'function') {
+    const sequencedObjectValue = this._ensureSequencedObjectResolved();
+    const capture = (sequencedObject) => {
+      if (!sequencedObject || typeof sequencedObject.snapshot !== 'function') {
         return undefined;
       }
-      return sequenceTarget.snapshot();
+      return sequencedObject.snapshot();
     };
 
-    return thenValue(targetValue, capture);
+    return thenValue(sequencedObjectValue, capture);
   }
 
   _restoreGuardState(state) {
-    const targetValue = this._ensureSequenceTargetResolved();
-    const restore = (sequenceTarget, recoveredState) => {
+    const sequencedObjectValue = this._ensureSequencedObjectResolved();
+    const restore = (sequencedObject, recoveredState) => {
       this._setTarget(undefined);
-      if (!sequenceTarget || typeof sequenceTarget.recover !== 'function') {
+      if (!sequencedObject || typeof sequencedObject.recover !== 'function') {
         return undefined;
       }
-      return sequenceTarget.recover(recoveredState);
+      return sequencedObject.recover(recoveredState);
     };
 
-    const targetIsPromise = !!(targetValue && typeof targetValue.then === 'function');
+    const sequencedObjectIsPromise = !!(sequencedObjectValue && typeof sequencedObjectValue.then === 'function');
     const stateIsPromise = !!(state && typeof state.then === 'function');
-    if (targetIsPromise || stateIsPromise) {
-      return restoreGuardStateAsync(targetValue, state, restore);
+    if (sequencedObjectIsPromise || stateIsPromise) {
+      return restoreGuardStateAsync(sequencedObjectValue, state, restore);
     }
-    return restore(targetValue, state);
+    return restore(sequencedObjectValue, state);
   }
 }
 
-function normalizeSequenceValue(value, errorContext) {
-  return thenValue(value, resolved => poisonIfNaN(resolved, errorContext));
-}
-
-async function restoreGuardStateAsync(targetValue, state, restore) {
-  const targetResult = observeValueSettlement(targetValue);
+async function restoreGuardStateAsync(sequencedObjectValue, state, restore) {
+  const sequencedObjectResult = observeValueSettlement(sequencedObjectValue);
   const stateResult = observeValueSettlement(state);
-  const results = await Promise.all([targetResult, stateResult]);
+  const results = await Promise.all([sequencedObjectResult, stateResult]);
   const rejected = results.find((result) => result.status === 'rejected');
   if (rejected) {
     throw rejected.reason;
@@ -174,25 +147,25 @@ function observeValueSettlement(value) {
 }
 
 class SequenceChain extends SequenceObjectChain {
-  constructor(buffer, chainName, context, targetObject) {
-    super(buffer, chainName, context, targetObject);
+  constructor(buffer, chainName, context, sequencedObject) {
+    super(buffer, chainName, context, sequencedObject);
     this._chainType = 'sequence';
   }
 
   beginTransaction() {
-    const targetValue = this._ensureSequenceTargetResolved();
-    const begin = (sequenceTarget) => {
-      if (!sequenceTarget || typeof sequenceTarget.begin !== 'function') {
+    const sequencedObjectValue = this._ensureSequencedObjectResolved();
+    const begin = (sequencedObject) => {
+      if (!sequencedObject || typeof sequencedObject.begin !== 'function') {
         return { active: false, token: undefined };
       }
-      const token = sequenceTarget.begin();
+      const token = sequencedObject.begin();
       if (token && typeof token.then === 'function') {
         return token.then((resolvedToken) => ({ active: true, token: resolvedToken }));
       }
       return { active: true, token };
     };
 
-    return thenValue(targetValue, begin);
+    return thenValue(sequencedObjectValue, begin);
   }
 
   commitTransaction(tx) {
@@ -200,14 +173,14 @@ class SequenceChain extends SequenceObjectChain {
       return undefined;
     }
 
-    const targetValue = this._ensureSequenceTargetResolved();
-    const commit = (sequenceTarget) => {
-      if (!sequenceTarget || typeof sequenceTarget.commit !== 'function') {
+    const sequencedObjectValue = this._ensureSequencedObjectResolved();
+    const commit = (sequencedObject) => {
+      if (!sequencedObject || typeof sequencedObject.commit !== 'function') {
         return undefined;
       }
-      return sequenceTarget.commit(tx.token);
+      return sequencedObject.commit(tx.token);
     };
-    return thenValue(targetValue, commit);
+    return thenValue(sequencedObjectValue, commit);
   }
 
   rollbackTransaction(tx) {
@@ -215,14 +188,14 @@ class SequenceChain extends SequenceObjectChain {
       return undefined;
     }
 
-    const targetValue = this._ensureSequenceTargetResolved();
-    const rollback = (sequenceTarget) => {
-      if (!sequenceTarget || typeof sequenceTarget.rollback !== 'function') {
+    const sequencedObjectValue = this._ensureSequencedObjectResolved();
+    const rollback = (sequencedObject) => {
+      if (!sequencedObject || typeof sequencedObject.rollback !== 'function') {
         return undefined;
       }
-      return sequenceTarget.rollback(tx.token);
+      return sequencedObject.rollback(tx.token);
     };
-    return thenValue(targetValue, rollback);
+    return thenValue(sequencedObjectValue, rollback);
   }
 }
 

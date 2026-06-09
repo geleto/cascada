@@ -813,7 +813,7 @@ describe('Cascada Script: Explicit Chain Declarations', function () {
       expect(result).to.eql(['msg']);
     });
 
-    it('should use getReturnValue when snapshot is missing', async () => {
+    it('should call explicit getReturnValue sequence methods', async () => {
       const context = {
         makeLogger() {
           return {
@@ -826,13 +826,13 @@ describe('Cascada Script: Explicit Chain Declarations', function () {
       const script = `
         sequence logger = makeLogger()
         logger.write("msg")
-        return logger.snapshot()
+        return logger.getReturnValue()
       `;
       const result = await render(script, context);
       expect(result).to.eql(['msg']);
     });
 
-    it('should use finalize when snapshot and getReturnValue are missing', async () => {
+    it('should call explicit finalize sequence methods', async () => {
       const context = {
         makeLogger() {
           return {
@@ -845,7 +845,7 @@ describe('Cascada Script: Explicit Chain Declarations', function () {
       const script = `
         sequence logger = makeLogger()
         logger.write("msg")
-        return logger.snapshot()
+        return logger.finalize()
       `;
       const result = await render(script, context);
       expect(result).to.eql(['msg']);

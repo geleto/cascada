@@ -653,7 +653,7 @@ function isRuntimePromise(value) {
 // Use when you want to add origin to a value that may be a promise.
 // Other origin-adding paths:
 // - PoisonError.create/wrap for source failures you can throw/poison now
-// - command settleResult(..., { mapError }) for command-owned async results
+// - command settleResult(..., ..., mapError) for command-owned async results
 // - handleLoadFailure for import/component/include load failures
 function valueWithOrigin(value, errorContext, kind) {
   value = poisonIfNaN(value, errorContext);

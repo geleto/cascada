@@ -293,7 +293,8 @@ class CompileCall {
         pathPrefix: thisSharedFacts.pathPrefix,
         isObservation:
           thisSharedFacts.chainPath.length === 2 &&
-          (methodName === 'snapshot' || methodName === 'isError' || methodName === 'getError')
+          (methodName === 'isError' || methodName === 'getError' ||
+            (methodName === 'snapshot' && thisSharedFacts.chainType !== 'sequence'))
       };
     }
 
@@ -321,7 +322,8 @@ class CompileCall {
       pathPrefix: sequencePath.slice(1, -1),
       isObservation:
         sequencePath.length === 2 &&
-        (methodName === 'snapshot' || methodName === 'isError' || methodName === 'getError')
+        (methodName === 'isError' || methodName === 'getError' ||
+          (methodName === 'snapshot' && chainDecl.type !== 'sequence'))
     };
   }
 

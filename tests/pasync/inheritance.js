@@ -1605,7 +1605,7 @@ describe('Inheritance rebuild', function () {
       const chain = runtime.declareInheritanceSharedChain(buffer, 'db', 'sequence', null, firstTarget, TEST_EC);
       runtime.declareInheritanceSharedChain(buffer, 'db', 'sequence', null, secondTarget, TEST_EC);
 
-      expect(chain._sequenceTarget).to.be(secondTarget);
+      expect(chain._sequencedObject).to.be(secondTarget);
     });
 
     it('creates an inheritance instance without invoking constructors', async function () {

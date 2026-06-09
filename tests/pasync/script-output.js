@@ -902,11 +902,13 @@ describe('Cascada Script: Chain commands', function () {
         warn(message) {
           this.warnings.push(message);
         }
+        snapshot() {
+          return this;
+        }
       }
       const util = {
         output: new OutputLogger()
       };
-      util.snapshot = () => util;
 
       const script = `
         sequence utilSequence = utilRef.output

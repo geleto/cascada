@@ -37,7 +37,7 @@ class Command {
     this.reject = null;
   }
 
-  settleResult(result, { mapValue = null, mapError = null, rethrow = false } = {}) {
+  settleResult(result, mapValue = null, mapError = null, rethrow = false) {
     const resolve = (value) => {
       const resolvedValue = mapValue ? mapValue(value) : value;
       this.resolveResult(resolvedValue);
@@ -52,7 +52,7 @@ class Command {
       return undefined;
     };
     if (result && typeof result.then === 'function') {
-      return result.then(resolve, reject);
+      return markPromiseHandled(result.then(resolve, reject));
     }
     return resolve(result);
   }

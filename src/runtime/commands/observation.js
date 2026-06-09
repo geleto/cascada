@@ -1,4 +1,5 @@
 import {RETURN_UNSET} from '../markers.js';
+import {poisonOrReportedFatal} from '../errors.js';
 import {ObservableCommand, MutatingResultCommand, requireCommandErrorContext} from './base.js';
 
 class SnapshotCommand extends ObservableCommand {
@@ -14,7 +15,12 @@ class SnapshotCommand extends ObservableCommand {
       throw new Error('SnapshotCommand requires a chain');
     }
 
-    return this.settleResult(chain._resolveSnapshotCommandResult(this.errorContext));
+    this.settleResult(
+      chain._makeSnapshot(this.errorContext),
+      null,
+      (err) => poisonOrReportedFatal(err, this.errorContext)
+    );
+    return undefined;
   }
 }
 
@@ -63,10 +69,12 @@ class IsErrorCommand extends ObservableCommand {
       throw new Error('IsErrorCommand requires a chain');
     }
 
-    const result = chain._isErrorNow();
-    return this.settleResult(result, {
-      mapValue: (value) => !!value
-    });
+    this.settleResult(
+      chain._isError(),
+      (value) => !!value,
+      (err) => poisonOrReportedFatal(err, this.errorContext)
+    );
+    return undefined;
   }
 }
 
@@ -83,10 +91,12 @@ class GetErrorCommand extends ObservableCommand {
       throw new Error('GetErrorCommand requires a chain');
     }
 
-    const result = chain._getErrorNow();
-    return this.settleResult(result, {
-      mapValue: (value) => value || null
-    });
+    this.settleResult(
+      chain._getErrors(),
+      (value) => value || null,
+      (err) => poisonOrReportedFatal(err, this.errorContext)
+    );
+    return undefined;
   }
 }
 

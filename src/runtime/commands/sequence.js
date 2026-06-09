@@ -18,6 +18,7 @@ class SequenceCallCommand extends ChainMutatingResultCommand {
     super.apply(chain);
     return runCommandWithResolvedArguments(this.arguments, this, (resolvedArgs) => {
       if (!chain) return undefined;
+      throwIfSequenceChainPoisoned(this, chain);
       const args = Array.isArray(resolvedArgs) ? resolvedArgs : [];
       const poisonError = this.getPoisonFromArgs(args);
       if (poisonError) {
@@ -25,8 +26,8 @@ class SequenceCallCommand extends ChainMutatingResultCommand {
         throw poisonError;
       }
 
-      const execute = (sequenceTarget) => {
-        const target = resolvePath(sequenceTarget, this.path);
+      const execute = (sequencedObject) => {
+        const target = resolvePath(sequencedObject, this.path);
         if (target === null || target === undefined) {
           const error = PoisonError.create(`Cannot read property ${formatSequencePath(this.path)} of ${target}`, this.errorContext, 'NullLookup');
           this.rejectResult(error);
@@ -40,11 +41,12 @@ class SequenceCallCommand extends ChainMutatingResultCommand {
         }
         try {
           const result = method.apply(target, args);
-          return this.settleResult(result, {
-            mapValue: value => poisonIfNaN(value, this.errorContext),
-            mapError: err => (isPoisonError(err) ? err : PoisonError.wrap(err, this.errorContext, 'UserCallThrew')),
-            rethrow: true
-          });
+          return this.settleResult(
+            result,
+            value => poisonIfNaN(value, this.errorContext),
+            err => (isPoisonError(err) ? err : PoisonError.wrap(err, this.errorContext, 'UserCallThrew')),
+            true
+          );
         } catch (err) {
           const error = isPoisonError(err) ? err : PoisonError.wrap(err, this.errorContext, 'UserCallThrew');
           this.rejectResult(error);
@@ -52,11 +54,7 @@ class SequenceCallCommand extends ChainMutatingResultCommand {
         }
       };
 
-      const sequenceTarget = chain._ensureSequenceTargetResolved ? chain._ensureSequenceTargetResolved() : chain._sequenceTarget;
-      if (sequenceTarget && typeof sequenceTarget.then === 'function') {
-        return this.settleResult(sequenceTarget.then(execute), { rethrow: true });
-      }
-      return execute(sequenceTarget);
+      return runWithSequencedObject(this, chain, execute);
     });
   }
 }
@@ -73,20 +71,32 @@ class SequenceGetCommand extends ChainObservableCommand {
 
   apply(chain) {
     if (!chain) return undefined;
+    throwIfSequenceChainPoisoned(this, chain);
 
-    const execute = (sequenceTarget) => {
-      const value = resolvePath(sequenceTarget, this.path);
-      return this.settleResult(value, {
-        mapValue: resolvedValue => poisonIfNaN(resolvedValue, this.errorContext)
-      });
+    const execute = (sequencedObject) => {
+      const value = resolvePath(sequencedObject, this.path);
+      return this.settleResult(value, resolvedValue => poisonIfNaN(resolvedValue, this.errorContext));
     };
 
-    const sequenceTarget = chain._ensureSequenceTargetResolved ? chain._ensureSequenceTargetResolved() : chain._sequenceTarget;
-    if (sequenceTarget && typeof sequenceTarget.then === 'function') {
-      return this.settleResult(sequenceTarget.then(execute), { rethrow: true });
-    }
-    return execute(sequenceTarget);
+    return runWithSequencedObject(this, chain, execute);
   }
+}
+
+function runWithSequencedObject(command, chain, execute) {
+  const sequencedObject = chain._ensureSequencedObjectResolved();
+  if (sequencedObject && typeof sequencedObject.then === 'function') {
+    return command.settleResult(sequencedObject.then(execute), null, null, true);
+  }
+  return execute(sequencedObject);
+}
+
+function throwIfSequenceChainPoisoned(command, chain) {
+  const error = chain._getSequencePoisonError ? chain._getSequencePoisonError() : null;
+  if (!error) {
+    return;
+  }
+  command.rejectResult(error);
+  throw error;
 }
 
 function resolvePath(target, path) {

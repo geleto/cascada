@@ -222,13 +222,11 @@ describe('chain.finalSnapshot', function () {
         }
       }));
 
-      buffer.finish();
+      const result = await sequenceChain._ensureSequencedObjectResolved();
 
-      const result = await sequenceChain.finalSnapshot();
-
-      expect(result).to.eql(['ok']);
-      expect(sequenceChain._sequenceTargetReady).to.be(true);
-      expect(sequenceChain._sequenceTargetReadyPromise).to.be(null);
+      expect(result.snapshot()).to.eql(['ok']);
+      expect(sequenceChain._sequencedObjectReady).to.be(true);
+      expect(sequenceChain._sequencedObjectReadyPromise).to.be(null);
     });
 
     it('creates declared chain lanes and finishes unused lanes', function () {

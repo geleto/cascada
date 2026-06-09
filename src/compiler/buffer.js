@@ -141,7 +141,8 @@ class CompileBuffer {
     const receiverPath = staticPath.length > 2 ? staticPath.slice(1, -1) : null;
     const isObservationCall = isCallNode &&
       !receiverPath &&
-      (command === 'snapshot' || command === 'isError' || command === 'getError');
+      (command === 'isError' || command === 'getError' ||
+        (command === 'snapshot' && chainType !== 'sequence'));
 
     if (isObservationCall) {
       validateChainObservationCall(this.compiler, { node, command, chainName, chainType });
