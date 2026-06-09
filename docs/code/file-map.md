@@ -35,6 +35,8 @@ Complete source and documentation file reference. The most critical files for da
 -   `src/runtime/markers.js` — `RESOLVE_MARKER` and related value-shape markers.
 -   `src/runtime/guard.js` — Guard snapshot/restore for conditional error-recovery blocks.
 -   `src/runtime/loop.js` — Loop runtime helpers: `asyncAll` (parallel `for`) and `asyncEach` (sequential `each`).
+-   `docs/code/runtime-helper-arguments.md` — Positional-first guidelines for runtime helper arguments: the decision rule, standard argument order, and the named records already in use.
+-   `docs/code/runtime-helper-arguments-cleanup.md` — Two concrete do-now cleanups: structural-boundary body consolidation and a readable `CommandBuffer.fromSpec` factory.
 
 ### Runtime Chains
 -   `src/runtime/chains/data-chain.js` — Data chain state and custom data-method dispatch.

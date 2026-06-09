@@ -9,7 +9,8 @@ import {
   createRenderState,
   declareBufferChain,
   isPoisonError,
-  isRuntimeError
+  isRuntimeError,
+  runControlFlowBoundary
 } from '../../src/runtime/runtime.js';
 
 // Coverage for two findings from docs/code/error-handling-analysis.md §11:
@@ -85,6 +86,55 @@ import {
         process.removeListener('unhandledRejection', onUnhandled);
       }
       expect(seen.length).to.be(0);
+    });
+
+    it('stops entering later sibling boundaries after fatal state is already reported', async () => {
+      const renderState = createRenderState();
+      const errorContext = [1, 1, 'Fatal.Sibling', 'fatal-sibling.njk', null, renderState];
+      const rootBuffer = new CommandBuffer({}, null, null, null, null, errorContext, null, renderState);
+      let laterSiblingStarted = false;
+
+      const result = runControlFlowBoundary(
+        rootBuffer,
+        null,
+        null,
+        {},
+        renderState,
+        async (outerBuffer) => {
+          runControlFlowBoundary(
+            outerBuffer,
+            null,
+            null,
+            {},
+            renderState,
+            async (siblingBuffer) => {
+              RuntimeError.report('sibling fatal', errorContext, siblingBuffer);
+            },
+            errorContext
+          );
+          runControlFlowBoundary(
+            outerBuffer,
+            null,
+            null,
+            {},
+            renderState,
+            async () => {
+              laterSiblingStarted = true;
+            },
+            errorContext
+          );
+        },
+        errorContext
+      );
+
+      try {
+        await result;
+        expect().fail('expected the outer boundary to reject with the reported fatal');
+      } catch (err) {
+        expect(isRuntimeError(err)).to.be(true);
+        expect(err.message).to.contain('sibling fatal');
+      }
+      expect(laterSiblingStarted).to.be(false);
     });
 
     it('rejects abandoned observable command promises after fatal stop', async () => {
