@@ -18,11 +18,12 @@ function createIdPool() {
 }
 
 function compile(src, asyncFilters, extensions, name, opts = {}) {
+  const sourceName = opts.sourceName || opts.templateName || name;
   const compileOptions = {
     ...opts,
     idPool: createIdPool(),
-    sourcePath: opts.sourcePath || opts.templateName || name,
-    templateName: opts.templateName || name
+    sourceName,
+    sourcePath: opts.sourcePath || sourceName
   };
   const CompilerClass = compileOptions.asyncMode ? CompilerAsync : CompilerSync;
   const compiler = new CompilerClass(name, compileOptions);

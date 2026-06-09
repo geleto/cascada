@@ -41,9 +41,12 @@ class CompilerCommon extends Obj {
     this.scriptMode = options.scriptMode || false;
     this.guardDepth = 0;
     this.importedBindings = new Set();
+    this.sourceName = typeof options.sourceName === 'string'
+      ? options.sourceName
+      : (typeof options.templateName === 'string' ? options.templateName : undefined);
     this.sourcePath = typeof options.sourcePath === 'string'
       ? options.sourcePath
-      : (typeof options.templateName === 'string' ? options.templateName : undefined);
+      : this.sourceName;
     this.errorContextEntries = [];
     this.errorContextTableBuilt = false;
     // Added diagnostic metadata inherited by nested AST origins. This is not
