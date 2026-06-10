@@ -29,10 +29,12 @@ class CompileGuard {
   }
 
   postAnalyzeGuard(node) {
+    const compiler = this.compiler;
     const guardTargets = node._analysis.guardTargets;
-    const bodyUsedChains = Array.from(node.body._analysis.usedChains ?? []);
+    const bodyUsedChains = compiler.analysis.getChainsUsedFromParent(node.body);
+    const bodyMutatedChains = compiler.analysis.getChainsMutatedFromParent(node.body);
     const modifiedLocks = new Set();
-    bodyUsedChains.forEach((chainName) => {
+    bodyMutatedChains.forEach((chainName) => {
       if (chainName && chainName.startsWith('!')) {
         modifiedLocks.add(chainName);
       }

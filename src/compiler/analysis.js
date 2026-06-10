@@ -73,9 +73,9 @@ class CompileAnalysis {
     // the analyzer that owns that feature.
     //
     // Analysis facts are populated in two passes: node analyzers seed local
-    // declarations/uses/boundary flags during the walk, then post-analyzers
-    // run after declaration ownership and aggregate used/mutated/linked facts
-    // have been derived.
+    // declarations/uses/boundary flags during the walk. Post-analyzers run
+    // after child facts are ready and before this node's aggregate chain
+    // footprint is derived.
     node._analysis = {
       node,
       createScope: false,
@@ -89,6 +89,8 @@ class CompileAnalysis {
       declaredChains: null,
       usedChains: null,
       mutatedChains: null,
+      usedChainsFromParent: null,
+      mutatedChainsFromParent: null,
       linkedChains: null,
       // Parent-owned linked chains this boundary may mutate. Future command-buffer
       // scheduling can use this to distinguish read-only child buffers.
@@ -128,13 +130,12 @@ class CompileAnalysis {
 
   getChainsUsedFromParent(node) {
     const analysis = node?._analysis;
-    const chains = new Set(analysis?.usedChains ?? []);
-    if (analysis?.declaredChains instanceof Map) {
-      for (const name of analysis.declaredChains.keys()) {
-        chains.delete(name);
-      }
-    }
-    return Array.from(chains);
+    return Array.from(analysis?.usedChainsFromParent ?? []);
+  }
+
+  getChainsMutatedFromParent(node) {
+    const analysis = node?._analysis;
+    return Array.from(analysis?.mutatedChainsFromParent ?? []);
   }
 
   extractSymbols(targetNode) {
@@ -478,9 +479,6 @@ class CompileAnalysis {
         this._validateMissingDeclaration(analysis, name, 'mutation');
         continue;
       }
-      if (name.charAt(0) === '!') {
-        continue;
-      }
       if (declaration.shared) {
         continue;
       }
@@ -599,6 +597,7 @@ class CompileAnalysis {
     const childUsedChains = new Set();
     const childMutatedChains = new Set();
 
+    // Children finalize first, so post-analyzers can inspect immediate child facts.
     node.fields.forEach((field) => {
       const childAggregate = this._finalizeChainUsage(node[field]);
       childAggregate.usedChains.forEach((name) => childUsedChains.add(name));
@@ -606,6 +605,9 @@ class CompileAnalysis {
     });
 
     const postAnalysisFacts = this._postAnalyzeNode(node);
+    if (postAnalysisFacts) {
+      node.addAnalysis(postAnalysisFacts);
+    }
 
     const localUses = analysis.uses;
     const localMutates = analysis.mutates;
@@ -631,8 +633,25 @@ class CompileAnalysis {
     analysis.usedChains = usedChains.size > 0 ? usedChains : null;
     analysis.mutatedChains = mutatedChains.size > 0 ? mutatedChains : null;
     const declaredHere = analysis.declaredChains;
-    analysis.linkedChains = this._deriveBoundaryLinkedChains(analysis, usedChains, declaredHere);
-    analysis.linkedMutatedChains = this._deriveBoundaryLinkedChains(analysis, mutatedChains, declaredHere);
+    const chainsFromParent = this._deriveChainsFromParent(usedChains, mutatedChains, declaredHere);
+    const hasCustomLinkedChains = !!(
+      postAnalysisFacts &&
+      Object.prototype.hasOwnProperty.call(postAnalysisFacts, 'linkedChains')
+    );
+    const hasCustomLinkedMutatedChains = !!(
+      postAnalysisFacts &&
+      Object.prototype.hasOwnProperty.call(postAnalysisFacts, 'linkedMutatedChains')
+    );
+    analysis.usedChainsFromParent = chainsFromParent.usedChains.size > 0 ? chainsFromParent.usedChains : null;
+    analysis.mutatedChainsFromParent = chainsFromParent.mutatedChains.size > 0 ? chainsFromParent.mutatedChains : null;
+    if (!hasCustomLinkedChains) {
+      analysis.linkedChains = this._deriveBoundaryLinkedChains(analysis, chainsFromParent.usedChains);
+    }
+    if (!hasCustomLinkedMutatedChains) {
+      analysis.linkedMutatedChains = this._deriveBoundaryLinkedChains(analysis, chainsFromParent.mutatedChains);
+    }
+    analysis.linkedChains = this._normalizeChainSet(analysis.linkedChains);
+    analysis.linkedMutatedChains = this._normalizeChainSet(analysis.linkedMutatedChains);
     if (analysis.expressionControlFlowBoundary) {
       analysis.createsLinkedChildBuffer = analysis.linkedMutatedChains !== null &&
         analysis.linkedMutatedChains.size > 0;
@@ -641,22 +660,33 @@ class CompileAnalysis {
         analysis.linkedMutatedChains = null;
       }
     }
-    if (postAnalysisFacts) {
-      node.addAnalysis(postAnalysisFacts);
-    }
-
-    return this._getParentVisibleChainUsage(
+    return this._getPropagatedChainUsage(
       analysis,
       localUses,
       localMutates,
-      usedChains,
-      mutatedChains,
-      declaredHere
+      chainsFromParent
     );
   }
 
-  _getParentVisibleChainUsage(analysis, localUses, localMutates, usedChains, mutatedChains, declaredHere) {
-    let parentUsage;
+  _deriveChainsFromParent(usedChains, mutatedChains, declaredChains) {
+    const parentUsage = {
+      usedChains: new Set(usedChains),
+      mutatedChains: new Set(mutatedChains)
+    };
+    if (declaredChains) {
+      declaredChains.forEach((_decl, name) => {
+        if (name) {
+          parentUsage.usedChains.delete(name);
+          parentUsage.mutatedChains.delete(name);
+        }
+      });
+    }
+    return parentUsage;
+  }
+
+  _getPropagatedChainUsage(analysis, localUses, localMutates, chainsFromParent) {
+    // This is the read-only footprint this node contributes to its parent,
+    // not the parent-visible footprint this node consumes from its parent.
     if (analysis.scopeBoundary) {
       const nodeType = analysis.node && analysis.node.typename;
       const isMethodOrBlockBoundary = nodeType === 'Block' || nodeType === 'MethodDefinition';
@@ -666,7 +696,7 @@ class CompileAnalysis {
           mutatedChains: new Set()
         };
       }
-      parentUsage = {
+      const parentUsage = {
         usedChains: new Set(),
         mutatedChains: new Set()
       };
@@ -681,39 +711,39 @@ class CompileAnalysis {
           parentUsage.mutatedChains.add(name);
         }
       });
-    } else {
-      parentUsage = {
-        usedChains: new Set(usedChains),
-        mutatedChains: new Set(mutatedChains)
-      };
+      return this._deriveChainsFromParent(
+        parentUsage.usedChains,
+        parentUsage.mutatedChains,
+        analysis.declaredChains
+      );
     }
-    if (declaredHere) {
-      declaredHere.forEach((_decl, name) => {
-        if (name) {
-          parentUsage.usedChains.delete(name);
-          parentUsage.mutatedChains.delete(name);
-        }
-      });
-    }
-    return parentUsage;
+    return chainsFromParent;
   }
 
-  _deriveBoundaryLinkedChains(analysis, usedChains, declaredChains) {
+  _deriveBoundaryLinkedChains(analysis, chainsFromParent) {
     if (!analysis.parent || !this._createsLinkableChildBuffer(analysis)) {
       return null;
     }
     const linkedChains = new Set();
-    usedChains.forEach((name) => {
+    chainsFromParent.forEach((name) => {
       if (name) {
         linkedChains.add(name);
       }
     });
-    if (declaredChains) {
-      declaredChains.forEach((_decl, name) => {
-        linkedChains.delete(name);
-      });
-    }
     return linkedChains.size > 0 ? linkedChains : null;
+  }
+
+  _normalizeChainSet(value) {
+    if (!value) {
+      return null;
+    }
+    const chains = new Set();
+    value.forEach((name) => {
+      if (name) {
+        chains.add(name);
+      }
+    });
+    return chains.size > 0 ? chains : null;
   }
 
   _createsLinkableChildBuffer(analysis) {

@@ -865,7 +865,7 @@ class CompileInheritance {
     const ownLinkedChainNames = callableFootprint.linkedChains;
     // Keep mutations separate from links so inherited/component calls can
     // later distinguish read-only participation from write barriers.
-    const ownMutatedChainNames = callableFootprint.mutatedChains;
+    const ownMutatedChainNames = callableFootprint.linkedMutatedChains;
     const ownLinkedChains = JSON.stringify(ownLinkedChainNames);
     const ownMutatedChains = JSON.stringify(ownMutatedChainNames);
     const errorContextIndex = this.compiler.getErrorContextIndex(entry.errorContextNode);
@@ -904,16 +904,16 @@ class CompileInheritance {
   }
 
   _getCallableChainFootprint(ownerNode) {
-    const bodyAnalysis = ownerNode.body ? ownerNode.body._analysis : ownerNode._analysis;
-    const usedChains = bodyAnalysis.usedChains ?? new Set();
-    const mutatedChains = bodyAnalysis.mutatedChains ?? new Set();
+    const bodyNode = ownerNode.body || ownerNode;
+    const usedChains = this.compiler.analysis.getChainsUsedFromParent(bodyNode);
+    const mutatedChains = this.compiler.analysis.getChainsMutatedFromParent(bodyNode);
     const rootNode = this.compiler.analysis.getRootNode(ownerNode._analysis);
     const sharedStorageNames = new Set(this._getSharedDeclarations(rootNode).map((declaration) => declaration.name));
-    const linkedChainNames = Array.from(usedChains).filter((name) => sharedStorageNames.has(name));
-    const mutatedChainNames = Array.from(mutatedChains).filter((name) => sharedStorageNames.has(name));
+    const linkedChainNames = usedChains.filter((name) => sharedStorageNames.has(name));
+    const linkedMutatedChainNames = mutatedChains.filter((name) => sharedStorageNames.has(name));
     return {
       linkedChains: linkedChainNames,
-      mutatedChains: mutatedChainNames
+      linkedMutatedChains: linkedMutatedChainNames
     };
   }
 

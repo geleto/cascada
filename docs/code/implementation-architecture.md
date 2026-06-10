@@ -43,7 +43,7 @@ Cascada implements the **Cascading Chain Network** — a concurrency model for i
 
 Prevents race conditions and ensures sequential equivalence when concurrent blocks read/write the same outer-scope variables, via compile-time chain analysis and the command buffer tree.
 
--   **Compile-time analysis** (`src/compiler/analysis.js`): Annotates AST nodes with declaration/use/mutation metadata. Important fields include `declaredChains`, `usedChains`, `mutatedChains`, and `sequenceLocks`.
+-   **Compile-time analysis** (`src/compiler/analysis.js`): Annotates AST nodes with declaration/use/mutation metadata. Important fields include `declaredChains`, `usedChains`, `mutatedChains`, `usedChainsFromParent`, `mutatedChainsFromParent`, and `sequenceLocks`.
 -   **Buffer code generation** (`src/compiler/buffer.js`, `src/compiler/emit.js`): Emits command creation, linked-chain metadata, child buffer creation, and async boundary wiring.
 -   **Implicit Variable Synchronization**: Chain observations and `resolveAll`/`resolveSingle` await pending values only when consumed. Data dependencies serialize naturally without explicit locks.
 -   **Linked chains**: `analysis.js` derives `linkedChains` and `linkedMutatedChains` from the boundary's chain footprint (see Chain Scope And Visibility). `emit.js`/`buffer.js` pass these to `new CommandBuffer(...)` and the boundary functions so the child buffer routes commands to the correct parent lanes. Pure-observation boundaries set `createsLinkedChildBuffer = false` and drop both link sets. If a chain is not linked, fix analysis/emit rather than adding runtime fallbacks.
@@ -55,11 +55,12 @@ Prevents race conditions and ensures sequential equivalence when concurrent bloc
 A chain is visible in a scope only if it is declared there or linked from a parent. Visibility is fixed at compile time — there is no runtime fallback lookup.
 
 -   `declaredChains` — chains introduced at this scope level; not linked to the parent even if the parent has the same name.
--   `usedChains` / `mutatedChains` — full read and write footprint of a boundary's body, computed by `analysis.js`.
--   `linkedChains` — parent-visible chains the child can observe: `usedChains` minus locally declared.
--   `linkedMutatedChains` — parent-visible chains the child can mutate: `mutatedChains` minus locally declared.
+-   `usedChains` / `mutatedChains` — full aggregate read and write footprint, including chains declared by this node.
+-   `usedChainsFromParent` / `mutatedChainsFromParent` — parent-visible read and write footprint, derived from the aggregate footprint minus local declarations. Compiler consumers that need outer dependencies should use the `analysis.getChainsUsedFromParent(...)` / `analysis.getChainsMutatedFromParent(...)` helpers.
+-   `linkedChains` — parent-visible chains the child can observe, derived from `usedChainsFromParent` unless custom node analysis narrows it.
+-   `linkedMutatedChains` — parent-visible chains the child can mutate, derived from `mutatedChainsFromParent` unless custom node analysis narrows it.
 
-If a child cannot see a chain, fix `usedChains`/`mutatedChains` in `analysis.js` or the `linkedChainNames`/`linkedMutatedChainNames` emit path. Do not add runtime lookup fallbacks.
+If a child cannot see a chain, fix `usedChainsFromParent`/`mutatedChainsFromParent` in `analysis.js` or the `linkedChainNames`/`linkedMutatedChainNames` emit path. Do not add runtime lookup fallbacks.
 
 Function, macro, and method bodies create scope boundaries where outer chains are not automatically visible; their linked sets must cover every chain the body touches.
 
@@ -239,7 +240,7 @@ Cascada treats errors as data ("Poison") flowing through the system.
 ## Debugging
 
 -   **Inspect generated JS** — call `script._compileSource()` or `template._compileSource()` on a compiled object to log or step through the emitted buffer/chain code.
--   **Check analysis metadata** — `node._analysis.usedChains`, `.linkedChains`, `.mutatedChains`, etc. on a parsed AST node to verify chain footprints before they reach codegen.
+-   **Check analysis metadata** — `node._analysis.usedChains`, `.usedChainsFromParent`, `.linkedChains`, `.mutatedChains`, etc. on a parsed AST node to verify chain footprints before they reach codegen.
 -   **Render hangs** — find the buffer or chain where `finished === false`; trace why `markFinished()` / `markChainFinished()` was not called on all code paths.
 -   **Unhandled rejection** — locate where the promise was created and verify it is either staged as a command argument or has `markPromiseHandled()` called before deferral.
 -   **Wrong output order** — trace which `CommandBuffer` `currentBuffer` points to at the emit site; commands added to the wrong buffer break source-order assembly.

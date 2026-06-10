@@ -480,7 +480,7 @@ class CompilerAsync extends CompilerBaseAsync {
         }
         return;
       }
-      if (child._analysis?.mutatedChains?.size > 0) {
+      if (this.analysis.getChainsMutatedFromParent(child).length > 0) {
         // The boundary is emitted for this mutating child expression, but the
         // link metadata comes from the parent Output aggregate so all child
         // boundaries participate in the same source-order text slot.

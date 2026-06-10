@@ -205,8 +205,8 @@ function _validateTemplateExtendsExpression(compiler, rootNode, extendsNode) {
     return;
   }
   _validateExtendsTargetDoesNotUseThis(compiler, extendsNode);
-  const usedChains = extendsNode.template._analysis?.usedChains;
-  if (!usedChains) {
+  const usedChains = compiler.analysis.getChainsUsedFromParent(extendsNode.template);
+  if (usedChains.length === 0) {
     return;
   }
   const inferredSharedNames = new Set();

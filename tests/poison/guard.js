@@ -1115,6 +1115,25 @@ return { text: output.snapshot(), data: result.snapshot() }`;
       }
     });
 
+    it('should not count sequence status checks as guarded sequence modifications', async () => {
+      const script = `
+        var setup = lock!.success()
+        guard lock!
+          var seen = lock! is error
+        endguard
+      `;
+      try {
+        await env.renderScriptString(script, {
+          lock: {
+            success: () => 'ok'
+          }
+        });
+        throw new Error('Should have failed');
+      } catch (e) {
+        expect(e.message).to.contain('guard sequence lock "lock!" is not modified inside guard');
+      }
+    });
+
     it('should guard all paths when global ! is guarded', async () => {
       const script = `
         var result = {}

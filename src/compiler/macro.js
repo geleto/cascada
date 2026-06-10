@@ -149,9 +149,9 @@ class CompileMacro {
   }
 
   postAnalyzeMacro(node) {
-    const bodyUsedChains = node.body._analysis.usedChains;
+    const bodyUsedChains = this.compiler.analysis.getChainsUsedFromParent(node.body);
     return {
-      hasCallerSupport: !!(bodyUsedChains && bodyUsedChains.has(CALLER_SCHED_CHAIN_NAME))
+      hasCallerSupport: bodyUsedChains.includes(CALLER_SCHED_CHAIN_NAME)
     };
   }
 

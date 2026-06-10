@@ -70,6 +70,7 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       const ast = analyzeTemplateSource('{% block body %}{{ this.__text__.snapshot() }}{{ this.theme }}{% endblock %}');
       const inferred = ast._analysis.inheritanceSharedDeclarations;
       const rootTextDeclares = ast._analysis.declares.filter((declaration) => declaration.name === '__text__' && !declaration.shared);
+      const blockNode = collectNodesByType(ast, 'Block')[0];
 
       expect(inferred.map((declaration) => [declaration.name, declaration.type])).to.eql([
         ['__text__', 'text'],
@@ -78,6 +79,8 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       expect(rootTextDeclares).to.have.length(1);
       expect(rootTextDeclares[0].type).to.be('text');
       expect(rootTextDeclares[0].shared).to.not.be(true);
+      expect(blockNode._analysis.linkedChains instanceof Set).to.be(true);
+      expect(blockNode._analysis.linkedMutatedChains instanceof Set).to.be(true);
     });
 
     it('should keep nested capture text outputs out of outer stored chain facts', function () {
@@ -94,6 +97,10 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       expect(Array.from(outer.mutatedChains || [])).to.eql([outer.textOutput]);
       expect(Array.from(inner.usedChains || [])).to.eql([inner.textOutput, 'x']);
       expect(Array.from(inner.mutatedChains || [])).to.eql([inner.textOutput]);
+      expect(Array.from(outer.usedChainsFromParent || [])).to.eql(['x']);
+      expect(Array.from(outer.mutatedChainsFromParent || [])).to.eql([]);
+      expect(Array.from(inner.usedChainsFromParent || [])).to.eql(['x']);
+      expect(Array.from(inner.mutatedChainsFromParent || [])).to.eql([]);
       expect(outer.usedChains.has(inner.textOutput)).to.be(false);
       expect(outer.mutatedChains.has(inner.textOutput)).to.be(false);
     });
@@ -112,6 +119,10 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       expect(Array.from(outer.mutatedChains || [])).to.eql(['x']);
       expect(Array.from(inner.usedChains || [])).to.eql([inner.textOutput, 'x']);
       expect(Array.from(inner.mutatedChains || [])).to.eql([inner.textOutput, 'x']);
+      expect(Array.from(outer.usedChainsFromParent || [])).to.eql(['x']);
+      expect(Array.from(outer.mutatedChainsFromParent || [])).to.eql(['x']);
+      expect(Array.from(inner.usedChainsFromParent || [])).to.eql(['x']);
+      expect(Array.from(inner.mutatedChainsFromParent || [])).to.eql(['x']);
       expect(outer.usedChains.has(inner.textOutput)).to.be(false);
       expect(outer.mutatedChains.has(inner.textOutput)).to.be(false);
     });
@@ -160,6 +171,7 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       expect(Array.from(includeNode._analysis.linkedChains || [])).to.eql(['__text__']);
       expect(Array.from(extendsNode._analysis.linkedChains || [])).to.eql(['__text__']);
       expect(Array.from(blockNode._analysis.linkedChains || [])).to.eql([]);
+      expect(Array.from(blockNode._analysis.mutatedChains || [])).to.eql(['__text__']);
     });
 
     it('should derive inline-if boundary links for parent-owned command effects', function () {
