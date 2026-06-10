@@ -135,14 +135,20 @@ class CompileBuffer {
 
     const chainName = staticPath[0];
     const chainDecl = node._analysis.lookupDeclaration || null;
-    const chainType = node.chainType || (chainDecl ? chainDecl.type : null);
-    const command = staticPath.length >= 2 ? staticPath[staticPath.length - 1] : null;
+    const commandFacts = node._analysis.chainCommandFacts || {};
+    const chainType = commandFacts.chainType || node.chainType || (chainDecl ? chainDecl.type : null);
+    const command = commandFacts.command ?? (staticPath.length >= 2 ? staticPath[staticPath.length - 1] : null);
     const path = staticPath.length > 1 ? staticPath.slice(1) : null;
     const receiverPath = staticPath.length > 2 ? staticPath.slice(1, -1) : null;
-    const isObservationCall = isCallNode &&
-      !receiverPath &&
-      (command === 'isError' || command === 'getError' ||
-        (command === 'snapshot' && chainType !== 'sequence'));
+    const isObservationCall = isCallNode && (
+      commandFacts.callNode === node.call
+        ? commandFacts.isObservation
+        : (
+          !receiverPath &&
+          (command === 'isError' || command === 'getError' ||
+            (command === 'snapshot' && chainType !== 'sequence'))
+        )
+    );
 
     if (isObservationCall) {
       validateChainObservationCall(this.compiler, { node, command, chainName, chainType });
@@ -200,29 +206,13 @@ class CompileBuffer {
     if (chainType === 'text') {
       this.compiler.emit('normalizeArgs: true, ');
     }
-    let argList = node.call.args;
+    const argList = chainType === 'data'
+      ? node._analysis.dataCommandArgs
+      : node.call.args;
     if (chainType === 'data') {
-      // For data chains, we create a new "virtual" AST for the arguments,
-      // where the first argument is a path like "user.posts[0].title" that
-      // needs to be converted into a JavaScript array like ['user', 'posts', 0, 'title'].
-      const originalArgs = node.call.args.children;
-      if (originalArgs.length === 0) {
-        this.compiler.fail(`data command '${command}' requires at least a path argument.`, node.lineno, node.colno, node);
+      if (!argList) {
+        this.compiler.fail(`Compiler error: analysis did not prepare data command arguments.`, node.lineno, node.colno, node);
       }
-
-      const pathArg = originalArgs[0];
-
-      // Convert the path argument into a flat array of segments (Literal/Symbol)
-      // @todo - move this to the transformer phase?
-      // expected by the runtime data handlers.
-      const pathNodeList = this.compiler._flattenPathToNodeList(pathArg);
-      const dataPathNode = new nodes.Array(pathArg.lineno, pathArg.colno, pathNodeList.children);
-      dataPathNode.mustResolve = true;
-
-      // Our array node at the front.
-      const newArgs = [dataPathNode, ...originalArgs.slice(1)];
-
-      argList = new nodes.NodeList(node.call.args.lineno, node.call.args.colno, newArgs);
     }
 
     this.compiler.emit('args: ');

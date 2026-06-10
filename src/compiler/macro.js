@@ -137,17 +137,21 @@ class CompileMacro {
     const parentMacroDecl = { name: node.name.value, type: 'var', initializer: null, parentOwned: true, isMacro: true };
     declares.push(macroDecl);
     declaresInParent.push(parentMacroDecl);
-    const hasCallerSupport = this._macroUsesCaller(node.body);
-    const declaresExtra = hasCallerSupport
-      ? [{ name: CALLER_SCHED_CHAIN_NAME, type: 'var', initializer: null, internal: true }]
-      : [];
+    declares.push({ name: CALLER_SCHED_CHAIN_NAME, type: 'var', initializer: null, internal: true });
     return {
       createScope: true,
       scopeBoundary: true,
-      declares: declares.concat(declaresExtra),
+      declares,
       declaresInParent,
-      hasCallerSupport,
+      hasCallerSupport: false,
       compiledMacroFuncId
+    };
+  }
+
+  postAnalyzeMacro(node) {
+    const bodyUsedChains = node.body._analysis.usedChains;
+    return {
+      hasCallerSupport: !!(bodyUsedChains && bodyUsedChains.has(CALLER_SCHED_CHAIN_NAME))
     };
   }
 
@@ -168,37 +172,6 @@ class CompileMacro {
         compiler.emit.line(`context.addDeferredExport("${name}", "${name}", ${compiler.buffer.currentBuffer});`);
       }
     }
-  }
-
-  _macroUsesCaller(node) {
-    if (!node) {
-      return false;
-    }
-    if (Array.isArray(node)) {
-      for (let i = 0; i < node.length; i++) {
-        if (this._macroUsesCaller(node[i])) {
-          return true;
-        }
-      }
-      return false;
-    }
-    if (!(node instanceof nodes.Node)) {
-      return false;
-    }
-    if (node instanceof nodes.FunCall && node.name) {
-      const isCallerCall =
-        (node.name instanceof nodes.Symbol && node.name.value === 'caller') ||
-        this.compiler.sequential._extractStaticPathRoot(node.name) === 'caller';
-      if (isCallerCall) {
-        return true;
-      }
-    }
-    for (let i = 0; i < node.fields.length; i++) {
-      if (this._macroUsesCaller(node[node.fields[i]])) {
-        return true;
-      }
-    }
-    return false;
   }
 
   _parseMacroSignature(node) {

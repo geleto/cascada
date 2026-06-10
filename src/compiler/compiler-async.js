@@ -532,6 +532,10 @@ class CompilerAsync extends CompilerBaseAsync {
     return this.macro.analyzeMacro(node);
   }
 
+  postAnalyzeMacro(node) {
+    return this.macro.postAnalyzeMacro(node);
+  }
+
   compileMacro(node) {
     this.macro.compileAsyncMacro(node);
   }
@@ -612,6 +616,10 @@ class CompilerAsync extends CompilerBaseAsync {
     return this.chain.analyzeChainCommand(node);
   }
 
+  postAnalyzeChainCommand(node) {
+    return this.chain.postAnalyzeChainCommand(node);
+  }
+
   compileChainCommand(node) {
     this.chain.compileChainCommand(node);
   }
@@ -654,10 +662,6 @@ class CompilerAsync extends CompilerBaseAsync {
   analyzeRoot(node) {
     const inheritanceAnalysis = this.inheritance.analyzeRoot(node);
     const declares = this._getRootDeclarations(node);
-    const sequenceLocks = node._analysis.sequenceLocks ?? [];
-    sequenceLocks.forEach((lockName) => {
-      declares.push({ name: lockName, type: 'sequential_path', initializer: null });
-    });
     return {
       createScope: true,
       scopeBoundary: true,
@@ -668,6 +672,7 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   postAnalyzeRoot(node) {
+    this.sequential.validateSequenceLockUsages(node);
     const inheritanceFacts = this.inheritance.computeRootInheritanceFacts(node);
     validateScriptExtendsSourceOrder(this, node);
     validateScriptExtendsExpression(this, node);

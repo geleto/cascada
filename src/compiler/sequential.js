@@ -8,10 +8,10 @@ class CompileSequential {
 
   getSequenceLockLookup(node) {
     const analysis = node._analysis;
-    const sequenceLocks = this._getSequenceLockSet(analysis);
     const funCallLockKey = analysis.inheritedSequenceFunCallLockKey || null;
-    const parent = analysis.parent ? analysis.parent.node : null;
     let nodeLockKey = null;
+    let definesLock = false;
+    let validatesLock = false;
 
     if (node.sequential) {
       const currentPathKey = this._extractStaticPathKey(node);
@@ -27,42 +27,78 @@ class CompileSequential {
       } else if (funCallLockKey !== currentPathKey) {
         this.compiler.fail('Cannot use more than one sequence marker (!) in a single effective path segment.', node.lineno, node.colno, node);
       }
-    } else if ((node instanceof nodes.Symbol || node instanceof nodes.LookupVal)) {
-      const pathKey = this._extractStaticPathKey(node);
-      if (pathKey && pathKey !== funCallLockKey && this._isSequenceLockDeclared(sequenceLocks, pathKey)) {
-        nodeLockKey = pathKey;
-      } else if (node instanceof nodes.LookupVal) {
-        const isOutermostLookup = !parent || !(parent instanceof nodes.LookupVal) || parent.target !== node;
-        if (isOutermostLookup) {
-          let root = node;
-          while (root && root.typename === 'LookupVal') {
-            root = root.target;
-          }
-          if (root && root.typename === 'Symbol') {
-            const baseKey = '!' + root.value;
-            if (baseKey !== funCallLockKey && this._isSequenceLockDeclared(sequenceLocks, baseKey)) {
-              nodeLockKey = baseKey;
-            }
-          }
-        }
-      } else if (node instanceof nodes.Symbol && parent instanceof nodes.LookupVal) {
-        const parentLockKey = parent._analysis.sequenceLockLookup?.key;
-        if (parentLockKey && parentLockKey === '!' + node.value) {
-          return null;
-        }
-      }
+      validatesLock = !!nodeLockKey;
     } else if (node instanceof nodes.FunCall) {
       const lockKey = this._getSequenceKey(node.name);
       analysis.sequenceFunCallLockKey = lockKey || null;
       if (lockKey) {
         nodeLockKey = lockKey;
+        definesLock = true;
         if (this._hasSequentialRepair(node.name)) {
           node.sequentialRepair = true;
         }
       }
     }
 
-    return nodeLockKey ? { key: nodeLockKey, repair: !!node.sequentialRepair } : null;
+    if (!nodeLockKey) {
+      return null;
+    }
+    if (definesLock) {
+      this._recordSequenceLockDefinition(analysis, nodeLockKey);
+    } else if (validatesLock) {
+      this._recordSequenceLockUsage(analysis, nodeLockKey, node);
+    }
+    return { key: nodeLockKey, repair: !!node.sequentialRepair };
+  }
+
+  postAnalyzeSequenceLockLookup(node, analysisPass) {
+    const analysis = node._analysis;
+    if (analysis.sequenceLockLookup || node.sequential) {
+      return null;
+    }
+    if (!(node instanceof nodes.Symbol || node instanceof nodes.LookupVal)) {
+      return null;
+    }
+    const sequenceLockLookup = this._getBareSequenceLockLookup(node);
+    if (!sequenceLockLookup) {
+      return null;
+    }
+    this.compiler._failIfSequenceRootIsDeclared(node, sequenceLockLookup.key, analysisPass);
+    analysis.uses.push(sequenceLockLookup.key);
+    return sequenceLockLookup;
+  }
+
+  _getBareSequenceLockLookup(node) {
+    const analysis = node._analysis;
+    const sequenceLocks = this._getSequenceLockSet(analysis);
+    const funCallLockKey = analysis.inheritedSequenceFunCallLockKey || null;
+    const parent = analysis.parent ? analysis.parent.node : null;
+
+    if (node instanceof nodes.Symbol && parent instanceof nodes.LookupVal && parent.target === node) {
+      return null;
+    }
+
+    let nodeLockKey = null;
+    const pathKey = this._extractStaticPathKey(node);
+    if (pathKey && pathKey !== funCallLockKey && this._isSequenceLockDeclared(sequenceLocks, pathKey)) {
+      nodeLockKey = pathKey;
+    } else if (node instanceof nodes.LookupVal) {
+      const isOutermostLookup = !parent || !(parent instanceof nodes.LookupVal) || parent.target !== node;
+      if (isOutermostLookup) {
+        let root = node;
+        while (root && root.typename === 'LookupVal') {
+          root = root.target;
+        }
+        if (root && root.typename === 'Symbol') {
+          const baseKey = '!' + root.value;
+          if (baseKey !== funCallLockKey && this._isSequenceLockDeclared(sequenceLocks, baseKey)) {
+            nodeLockKey = baseKey;
+          }
+        }
+      }
+    }
+
+    return nodeLockKey ? { key: nodeLockKey, repair: false } : null;
   }
 
 
@@ -255,73 +291,6 @@ class CompileSequential {
     return null;
   }
 
-  /**
-   * Collect all sequence lock names from the AST.
-   * Walks the entire AST looking for sequence-marked operations.
-   * @param {Node} node - Root AST node
-   * @returns {Set<string>} Set of lock names (e.g., '!account', '!db')
-   */
-  collectSequenceLocks(node) {
-    const definedVars = new Set();
-    const atomicUsage = new Map();
-
-    const walk = (n) => {
-      if (!n) {
-        return;
-      }
-
-      // 1. Check for Sequence Definition (FunCall)
-      if (n.typename === 'FunCall') {
-        // Check if this function call defines a sequence
-        const lock = this._getSequenceKey(n.name);
-        if (lock) {
-          definedVars.add(lock);
-          // Only recurse into arguments; do not recurse into the name (callee)
-          // because it contains the sequence markers that are DEFINING this lock.
-          // We don't want to count them as "usages".
-          if (n.args) {
-            n.args.children.forEach(walk);
-          }
-          return;
-        }
-      }
-
-      // 2. Check for Sequence Usage (Independent !)
-      // Unlike standard usage (that does not employ the `!` symbol),
-      // FunCall can use the `!` marker explicitly to define a sequence lock.
-      // Checking a sequence status (e.g. `service! is error`) also uses the `!` marker
-      // and is a "Usage" of the lock, which requires the lock to have been defined.
-      if (n.sequential) {
-        const lock = this._getSequenceKey(n);
-        if (lock) {
-          atomicUsage.set(n, lock);
-        }
-        // We treat the sequential node (e.g. path!) as an atomic usage unit and do not recurse.
-        return;
-      }
-
-      // 3. Default Recursion
-      // Handles NodeList, Block, Expressions, etc.
-      // Use _getImmediateChildren to safely traverse custom node structures
-      const children = this.compiler._getImmediateChildren(n);
-      children.forEach(child => walk(child));
-    };
-
-    walk(node);
-
-    // Validate: All used locks must have been defined by a FunCall
-    for (const [n, lock] of atomicUsage) {
-      if (!definedVars.has(lock)) {
-        this.compiler.fail(
-          `Sequence path '${lock}' does not exist. You must define a sequential path (e.g. path!.method()) before checking it.`,
-          n.lineno, n.colno, n
-        );
-      }
-    }
-
-    return definedVars;
-  }
-
   _isSequenceLockDeclared(sequenceLocks, lockKey) {
     if (!lockKey) {
       return false;
@@ -330,11 +299,55 @@ class CompileSequential {
   }
 
   _getSequenceLockSet(analysis) {
+    const current = this._getRootAnalysis(analysis);
+    return new Set(current && Array.isArray(current.sequenceLocks) ? current.sequenceLocks : []);
+  }
+
+  _getRootAnalysis(analysis) {
     let current = analysis;
     while (current && current.parent) {
       current = current.parent;
     }
-    return new Set(current && Array.isArray(current.sequenceLocks) ? current.sequenceLocks : []);
+    return current;
+  }
+
+  _recordSequenceLockDefinition(analysis, lockKey) {
+    const rootAnalysis = this._getRootAnalysis(analysis);
+    if (!rootAnalysis || !lockKey) {
+      return;
+    }
+    rootAnalysis.sequenceLocks = rootAnalysis.sequenceLocks || [];
+    if (!rootAnalysis.sequenceLocks.includes(lockKey)) {
+      rootAnalysis.sequenceLocks.push(lockKey);
+    }
+  }
+
+  _recordSequenceLockUsage(analysis, lockKey, node) {
+    const rootAnalysis = this._getRootAnalysis(analysis);
+    if (!rootAnalysis || !lockKey) {
+      return;
+    }
+    rootAnalysis.sequenceLockUsages = rootAnalysis.sequenceLockUsages || [];
+    rootAnalysis.sequenceLockUsages.push({ lockKey, node });
+  }
+
+  validateSequenceLockUsages(rootNode) {
+    const rootAnalysis = rootNode && rootNode._analysis;
+    if (!rootAnalysis || !rootAnalysis.sequenceLockUsages) {
+      return;
+    }
+    const definedLocks = new Set(rootAnalysis.sequenceLocks ?? []);
+    for (const usage of rootAnalysis.sequenceLockUsages) {
+      if (definedLocks.has(usage.lockKey)) {
+        continue;
+      }
+      this.compiler.fail(
+        `Sequence path '${usage.lockKey}' does not exist. You must define a sequential path (e.g. path!.method()) before checking it.`,
+        usage.node.lineno,
+        usage.node.colno,
+        usage.node
+      );
+    }
   }
 
   /**

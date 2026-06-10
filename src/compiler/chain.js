@@ -348,12 +348,80 @@ class CompileChain {
     }
     const chainName = path[0];
     const chainDecl = chainName ? compiler.analysis.markLookupDeclaration(node, chainName) : null;
+    const chainType = node.chainType || (chainDecl ? chainDecl.type : null);
+    const command = path.length >= 2 ? path[path.length - 1] : null;
     const isSequenceGet = !callNode && chainDecl && chainDecl.type === 'sequence';
     const isObservation = isSequenceGet ||
       (callNode && path.length === 2 &&
        (path[1] === 'isError' || path[1] === 'getError' ||
         (path[1] === 'snapshot' && (!chainDecl || chainDecl.type !== 'sequence'))));
-    return isObservation ? { uses: [chainName] } : { uses: [chainName], mutates: [chainName] };
+    if (chainType === 'data' && callNode && !isObservation && callNode.args.children.length > 0) {
+      callNode.args.children[0].addAnalysis({ isDataCommandPath: true });
+    }
+    const result = isObservation ? { uses: [chainName] } : { uses: [chainName], mutates: [chainName] };
+    result.chainCommandFacts = {
+      callNode,
+      chainType,
+      command,
+      isObservation
+    };
+    return result;
+  }
+
+  postAnalyzeChainCommand(node) {
+    const facts = node._analysis.chainCommandFacts;
+    if (!facts || facts.chainType !== 'data' || facts.isObservation) {
+      return {};
+    }
+    if (!facts.callNode) {
+      return {};
+    }
+    const originalArgs = facts.callNode.args.children;
+    if (originalArgs.length === 0) {
+      this.compiler.fail(`data command '${facts.command}' requires at least a path argument.`, node.lineno, node.colno, node);
+    }
+    const pathArg = originalArgs[0];
+    const pathSegments = pathArg._analysis.dataPathSegments;
+    if (!pathSegments) {
+      this.compiler.fail(
+        'Invalid node type in path for data command. Only symbols, lookups, null, or array-literals are allowed.',
+        pathArg.lineno,
+        pathArg.colno,
+        pathArg
+      );
+    }
+
+    const dataPathNode = new nodes.Array(pathArg.lineno, pathArg.colno, pathSegments);
+    dataPathNode.mustResolve = true;
+    return {
+      dataCommandArgs: new nodes.NodeList(
+        facts.callNode.args.lineno,
+        facts.callNode.args.colno,
+        [dataPathNode, ...originalArgs.slice(1)]
+      )
+    };
+  }
+
+  postAnalyzeDataPathSegment(node) {
+    if (!node._analysis.isDataCommandPath) {
+      return {};
+    }
+    return {
+      dataPathSegments: [
+        node instanceof nodes.Symbol
+          ? new nodes.Literal(node.lineno, node.colno, node.value)
+          : node
+      ]
+    };
+  }
+
+  postAnalyzeDataPathArray(node) {
+    if (!node._analysis.isDataCommandPath) {
+      return {};
+    }
+    return {
+      dataPathSegments: node.children
+    };
   }
 
   compileChainCommand(node) {

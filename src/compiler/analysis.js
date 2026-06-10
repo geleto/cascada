@@ -3,15 +3,13 @@ import * as nodes from '../language/nodes.js';
 import {CHAIN_TYPES} from '../chain-types.js';
 
 /**
- * Chain analysis pre-pass.
+ * Chain analysis pass.
  *
- * This pass annotates AST nodes with `_analysis` metadata and precomputes
- * declaration/use/mutation sets without changing compile-time behavior yet.
- *
- * Initial migration target:
- * - establish stable `_analysis` structure and scope ownership
- * - compute declaration placement inline during traversal
- * - collect a conservative first version of usage/mutation metadata
+ * This pass annotates AST nodes with `_analysis` metadata, validates scope
+ * ownership, and derives declaration/use/mutation/link metadata for codegen.
+ * Node analyzers seed local facts during the first walk. Post-analyzers run
+ * after children in the finalization pass so custom nodes can aggregate
+ * immediate child facts without walking whole subtrees.
  */
 class CompileAnalysis {
   constructor(compiler) {
@@ -23,20 +21,10 @@ class CompileAnalysis {
       return null;
     }
 
-    this._annotateSequenceMetadata(rootNode);
     this._walk(rootNode, null, null);
     this._finalizeDeclarations(rootNode);
     this._finalizeChainUsage(rootNode);
     return null;
-  }
-
-  _annotateSequenceMetadata(rootNode) {
-    if (!this.compiler || !this.compiler.asyncMode || !this.compiler.sequential || !rootNode) {
-      return;
-    }
-
-    const sequenceLocks = Array.from(new Set(this.compiler.sequential.collectSequenceLocks(rootNode)));
-    rootNode.addAnalysis({ sequenceLocks });
   }
 
   _walk(node, parentNode, parentField) {
@@ -94,7 +82,6 @@ class CompileAnalysis {
       scopeBoundary: false,
       parentReadOnly: false,
       textOutput: null,
-      sequenceLocks: null,
       declares: [],
       declaresInParent: [],
       uses: [],
@@ -133,9 +120,10 @@ class CompileAnalysis {
     if (typeof analyzer === 'function') {
       const returned = analyzer.call(this.compiler, node, this);
       if (returned && typeof returned === 'object' && returned !== node._analysis) {
-        node.addAnalysis(returned);
+        return returned;
       }
     }
+    return null;
   }
 
   getChainsUsedFromParent(node) {
@@ -328,28 +316,6 @@ class CompileAnalysis {
       }
     }
 
-    if (rootNode && rootNode._analysis) {
-      const rootAnalysis = rootNode._analysis;
-      const sequenceLocks = new Set();
-      for (let i = 0; i < nodesList.length; i++) {
-        const analysis = nodesList[i]._analysis;
-        const localUses = analysis.uses;
-        for (let j = 0; j < localUses.length; j++) {
-          const name = localUses[j];
-          if (name && name.charAt(0) === '!') {
-            sequenceLocks.add(name);
-          }
-        }
-        const localMutates = analysis.mutates;
-        for (let j = 0; j < localMutates.length; j++) {
-          const name = localMutates[j];
-          if (name && name.charAt(0) === '!') {
-            sequenceLocks.add(name);
-          }
-        }
-      }
-      rootAnalysis.sequenceLocks = Array.from(sequenceLocks);
-    }
   }
 
   _registerDeclarations(analysis) {
@@ -512,7 +478,7 @@ class CompileAnalysis {
         this._validateMissingDeclaration(analysis, name, 'mutation');
         continue;
       }
-      if (declaration.type === 'sequential_path' || name.charAt(0) === '!') {
+      if (name.charAt(0) === '!') {
         continue;
       }
       if (declaration.shared) {
@@ -630,6 +596,17 @@ class CompileAnalysis {
     }
 
     const analysis = node._analysis;
+    const childUsedChains = new Set();
+    const childMutatedChains = new Set();
+
+    node.fields.forEach((field) => {
+      const childAggregate = this._finalizeChainUsage(node[field]);
+      childAggregate.usedChains.forEach((name) => childUsedChains.add(name));
+      childAggregate.mutatedChains.forEach((name) => childMutatedChains.add(name));
+    });
+
+    const postAnalysisFacts = this._postAnalyzeNode(node);
+
     const localUses = analysis.uses;
     const localMutates = analysis.mutates;
     const usedChains = new Set();
@@ -648,12 +625,8 @@ class CompileAnalysis {
       usedChains.add(name);
       mutatedChains.add(name);
     });
-
-    node.fields.forEach((field) => {
-      const childAggregate = this._finalizeChainUsage(node[field]);
-      childAggregate.usedChains.forEach((name) => usedChains.add(name));
-      childAggregate.mutatedChains.forEach((name) => mutatedChains.add(name));
-    });
+    childUsedChains.forEach((name) => usedChains.add(name));
+    childMutatedChains.forEach((name) => mutatedChains.add(name));
 
     analysis.usedChains = usedChains.size > 0 ? usedChains : null;
     analysis.mutatedChains = mutatedChains.size > 0 ? mutatedChains : null;
@@ -668,8 +641,9 @@ class CompileAnalysis {
         analysis.linkedMutatedChains = null;
       }
     }
-
-    this._postAnalyzeNode(node);
+    if (postAnalysisFacts) {
+      node.addAnalysis(postAnalysisFacts);
+    }
 
     return this._getParentVisibleChainUsage(
       analysis,

@@ -68,6 +68,25 @@ class CompilerBaseAsync extends CompilerCommon {
     return { uses, mutates };
   }
 
+  postAnalyzeSymbol(node, analysisPass) {
+    const facts = this.chain.postAnalyzeDataPathSegment(node);
+    if (!node._analysis?.declarationTarget && !node.isCompilerInternal) {
+      const sequenceLockLookup = this.sequential.postAnalyzeSequenceLockLookup(node, analysisPass);
+      if (sequenceLockLookup) {
+        facts.sequenceLockLookup = sequenceLockLookup;
+      }
+    }
+    return facts;
+  }
+
+  postAnalyzeLiteral(node) {
+    return this.chain.postAnalyzeDataPathSegment(node);
+  }
+
+  postAnalyzeArray(node) {
+    return this.chain.postAnalyzeDataPathArray(node);
+  }
+
   compileSymbol(node) {
     const name = node.value;
     if (node.isCompilerInternal) {
@@ -314,6 +333,10 @@ class CompilerBaseAsync extends CompilerCommon {
 
   analyzeLookupVal(node, analysisPass) {
     return this.lookup.analyzeLookupVal(node, analysisPass);
+  }
+
+  postAnalyzeLookupVal(node, analysisPass) {
+    return this.lookup.postAnalyzeLookupVal(node, analysisPass);
   }
 
   compileLookupVal(node) {

@@ -690,72 +690,6 @@ class CompilerCommon extends Obj {
     this.emit(')');
   }
 
-  /**
-   * Compiles a virtual "DataPath" node into a JavaScript array literal.
-   * While there is no DataPath node in the AST, we create a temporary node with
-   * typename 'DataPath' and pathNode property to store the actual AST for the path.
-   * This is used to compile the first argument (path) of data commands
-   * where a path like "user.posts[0].title"
-   * needs to be converted into a JavaScript array like ['user', 'posts', 0, 'title'].
-   * The method recursively traverses the AST nodes representing the path and generates
-   * JavaScript code that builds this array. It handles:
-   * - Symbol nodes (variable names like 'user')
-   * - LookupVal nodes (property access like '.posts' or array access like '[0]')
-   * - Special case for empty bracket notation '[]'
-   * - Special case for null (represents root of data object)
-   */
-  compileDataPath(node, frame) {
-    // Flatten the path into a NodeList and use _compileAggregate
-    // _compileAggregate automatically handles the compiler's sync vs async mode.
-    const pathNodes = this._flattenPathToNodeList(node.pathNode);
-    this._compileAggregate(pathNodes, frame, '[', ']', true, true);
-  }
-
-  /**
-   * Helper to flatten a path into a NodeList of path segments.
-   * Converts a path AST (Symbol, LookupVal, Literal nodes) into a flat array
-   * of path segments that can be compiled into a JavaScript array literal.
-   *
-   * @param {nodes.Node} pathNode - The AST node representing the path
-   * @returns {nodes.NodeList} A NodeList containing the flattened path segments
-   */
-  _flattenPathToNodeList(pathNode) {
-    // Support two forms:
-    // 1) Normal expression path (symbols/lookups/null) -> flatten recursively
-    // 2) Array literal of segments (e.g., ['[]', 'status'] or [0, 'status'])
-    //    which allows root-level bracket indexing without a leading symbol
-    const segments = [];
-
-    if (pathNode instanceof nodes.Array) {
-      // Directly use the array items as path segments
-      for (const item of pathNode.children) {
-        segments.push(item);
-      }
-      return new nodes.NodeList(pathNode.lineno, pathNode.colno, segments);
-    }
-
-    const flatten = (node) => {
-      if (node instanceof nodes.Symbol) {
-        segments.push(new nodes.Literal(node.lineno, node.colno, node.value));
-      } else if (node instanceof nodes.LookupVal) {
-        flatten(node.target);
-        if (node.val === null) {
-          segments.push(new nodes.Literal(node.lineno, node.colno, '[]'));
-        } else {
-          segments.push(node.val);
-        }
-      } else if (node instanceof nodes.Literal) {
-        segments.push(node);
-      } else {
-        this.fail('Invalid node type in path for data command. Only symbols, lookups, null, or array-literals are allowed.',
-          node.lineno, node.colno, node);
-      }
-    };
-    flatten(pathNode);
-
-    return new nodes.NodeList(pathNode.lineno, pathNode.colno, segments);
-  }
-
   // --- Expression Dispatchers ---
 
   // Statement/root-expression wrapper.
@@ -827,34 +761,6 @@ class CompilerCommon extends Obj {
 
   compileTemplateData(node, frame) {
     this.compileLiteral(node, frame);
-  }
-
-  /**
-   * Retrieves the direct child AST nodes of a given node by iterating over all properties
-   * and checking if they are instances of nodes.Node or arrays of nodes.Node
-   * @todo public
-   * @param {nodes.Node} node - The node to get children from
-   * @returns {Array<nodes.Node>} Array of child nodes
-   */
-  _getImmediateChildren(node) {
-    const children = [];
-
-    for (const key in node) {
-      if (Array.isArray(node[key])) {
-        // If the field is an array, iterate through it and add any Node instances
-        node[key].forEach(item => {
-          if (item instanceof nodes.Node) {
-            children.push(item);
-          }
-        });
-      }
-      else if (node[key] instanceof nodes.Node) {
-        // If the field is a Node instance, add it
-        children.push(node[key]);
-      }
-    }
-
-    return children;
   }
 
   getCode() {

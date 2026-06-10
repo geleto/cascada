@@ -215,7 +215,7 @@ Cascada treats errors as data ("Poison") flowing through the system.
 ## Sequential Operations (`!`)
 
 -   **Sequence Keys**: Each static `!` path (e.g., `account!.deposit`) maps to a named sequence chain key.
--   **Compiler Pass** (`src/compiler/sequential.js` + `src/compiler/analysis.js`): `collectSequenceLocks()` identifies `!` markers, validates static paths, and records `sequenceLocks` on analysis metadata.
+-   **Compiler Pass** (`src/compiler/sequential.js` + `src/compiler/analysis.js`): analysis records explicit `!` definitions/usages as local node facts. In post-analysis, ordinary static reads are matched against the completed root `sequenceLocks` set so bare reads can share the same runtime sequence chain without a separate tree walk.
 -   **Runtime Commands**: `SequenceCallCommand` (for `db!.method()` calls) and `SequenceGetCommand` (for `db!.property` reads) each carry a deferred-result promise. The command iterator applies them in source order; each awaits the prior result for that sequence chain before executing.
 -   **Poison propagation**: If a `!`-call fails, `SequentialPathWriteCommand` marks the path poisoned. All subsequent commands on that path see the poison via `_getSequentialPathPoisonErrors()` and skip execution, rejecting their deferred promises.
 
@@ -231,7 +231,7 @@ Cascada treats errors as data ("Poison") flowing through the system.
 | Unhandled-rejection warning | Promise not handled before deferred consumption | Call `markPromiseHandled()` or stage as command argument immediately |
 | Poison silently swallowed | Wrong boundary primitive | Control-flow errors need `cb`; expression errors need `runValueBoundary` |
 | Final render hangs | Buffer or chain never finished | Ensure `markFinished()` / `markChainFinished()` is called on all paths |
-| `!` path not serializing | Sequence lock not recorded | Check `collectSequenceLocks()` in `sequential.js` |
+| `!` path not serializing | Sequence lock not recorded or bare read not matched in post-analysis | Check `getSequenceLockLookup()` / `postAnalyzeSequenceLockLookup()` in `sequential.js` |
 | Chain not found at runtime | `declareBufferChain()` not emitted | Emit chain declaration at codegen time |
 
 ---

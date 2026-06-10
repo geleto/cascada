@@ -114,6 +114,159 @@ describe('Sequential Operations - Two Lock System', function () {
     expect(read2Start).to.be.lessThan(read1End);
   });
 
+  it('should sequence bare reads that appear before a later write definition', async () => {
+    Object.defineProperty(context.db, 'readBeforeDefinition', {
+      get: function () {
+        logs.push('start-read-before-definition');
+        return (async () => {
+          await delay(20);
+          logs.push('end-read-before-definition');
+          return 'R-before';
+        })();
+      }
+    });
+
+    const script = `
+      var read = db.readBeforeDefinition
+      var write = db!.write("after", 1)
+      return { read: read, write: write, logs: logs }
+    `;
+
+    const result = await env.renderScriptString(script, context);
+
+    expect(result.read).to.equal('R-before');
+    expect(result.write).to.equal('Wafter');
+    expect(logs.indexOf('start-write-after')).to.be.greaterThan(logs.indexOf('end-read-before-definition'));
+  });
+
+  it('should sequence loop bare reads that appear before a later write definition', async () => {
+    let readCount = 0;
+    Object.defineProperty(context.db, 'loopReadBeforeDefinition', {
+      get: function () {
+        const id = ++readCount;
+        logs.push(`start-loop-read-${id}`);
+        return (async () => {
+          await delay(20);
+          logs.push(`end-loop-read-${id}`);
+          return `R${id}`;
+        })();
+      }
+    });
+
+    const script = `
+      data out
+      for item in [1, 2]
+        out.items.push(db.loopReadBeforeDefinition)
+      endfor
+      var write = db!.write("loop", 1)
+      return { out: out.snapshot(), write: write, logs: logs }
+    `;
+
+    const result = await env.renderScriptString(script, context);
+
+    expect(result.out.items).to.eql(['R1', 'R2']);
+    expect(result.write).to.equal('Wloop');
+    const writeStart = logs.indexOf('start-write-loop');
+    expect(writeStart).to.be.greaterThan(logs.indexOf('end-loop-read-1'));
+    expect(writeStart).to.be.greaterThan(logs.indexOf('end-loop-read-2'));
+  });
+
+  it('should sequence nested bare reads (deep path) that appear before a later write definition', async () => {
+    // Exercises the outermost-lookup walk in _getBareSequenceLockLookup: the
+    // deep path db.users.nestedBeforeDefinition has no exact lock key, so it
+    // must be matched to the base lock !db by walking to the root symbol. The
+    // reads appear BEFORE the db!.write that defines !db, so this only works if
+    // the bare-read matching runs in post-analysis against the completed root
+    // sequenceLocks set rather than the partial set seen during the walk.
+    let readCount = 0;
+    context.db.users = {};
+    Object.defineProperty(context.db.users, 'nestedBeforeDefinition', {
+      get: function () {
+        const id = ++readCount;
+        logs.push(`start-nested-${id}`);
+        return (async () => {
+          await delay(20);
+          logs.push(`end-nested-${id}`);
+          return `N${id}`;
+        })();
+      }
+    });
+
+    const script = `
+      var r1 = db.users.nestedBeforeDefinition
+      var r2 = db.users.nestedBeforeDefinition
+      var write = db!.write("nested", 1)
+      return { r1: r1, r2: r2, write: write, logs: logs }
+    `;
+
+    const result = await env.renderScriptString(script, context);
+
+    expect(result.r1).to.equal('N1');
+    expect(result.r2).to.equal('N2');
+    expect(result.write).to.equal('Wnested');
+
+    // The base-path write must wait for both nested reads under !db.
+    const write = logs.indexOf('start-write-nested');
+    expect(write).to.be.greaterThan(logs.indexOf('end-nested-1'));
+    expect(write).to.be.greaterThan(logs.indexOf('end-nested-2'));
+    // The two reads share no ordering dependency, so they run in parallel.
+    expect(logs.indexOf('start-nested-2')).to.be.lessThan(logs.indexOf('end-nested-1'));
+  });
+
+  it('should keep two independent locks separate when bare reads precede their definitions', async () => {
+    // Two distinct sequenced bases (!db and !api), each read BEFORE its own !
+    // definition. Verifies the reordered bare-read matching keeps locks
+    // independent: the slow db read must not block the fast api lane.
+    context.api = {
+      async write(id, ms) {
+        logs.push(`start-write-${id}`);
+        await delay(ms);
+        logs.push(`end-write-${id}`);
+        return `W${id}`;
+      },
+      get beforeRead() {
+        logs.push('start-read-api');
+        return (async () => {
+          await delay(5);
+          logs.push('end-read-api');
+          return 'R-api';
+        })();
+      }
+    };
+    Object.defineProperty(context.db, 'beforeRead', {
+      get: function () {
+        logs.push('start-read-db');
+        return (async () => {
+          await delay(50);
+          logs.push('end-read-db');
+          return 'R-db';
+        })();
+      }
+    });
+
+    const script = `
+      var dbRead = db.beforeRead
+      var apiRead = api.beforeRead
+      var dbWrite = db!.write("db", 1)
+      var apiWrite = api!.write("api", 1)
+      return { dbRead: dbRead, apiRead: apiRead, dbWrite: dbWrite, apiWrite: apiWrite, logs: logs }
+    `;
+
+    const result = await env.renderScriptString(script, context);
+
+    expect(result.dbRead).to.equal('R-db');
+    expect(result.apiRead).to.equal('R-api');
+    expect(result.dbWrite).to.equal('Wdb');
+    expect(result.apiWrite).to.equal('Wapi');
+
+    // Each write waits for the read on its OWN lock.
+    expect(logs.indexOf('start-write-db')).to.be.greaterThan(logs.indexOf('end-read-db'));
+    expect(logs.indexOf('start-write-api')).to.be.greaterThan(logs.indexOf('end-read-api'));
+
+    // The locks are independent: the fast api lane is not blocked by the slow db read.
+    expect(logs.indexOf('start-write-api')).to.be.lessThan(logs.indexOf('end-read-db'));
+  });
+
   it('should treat marked method calls as writes (exclusive)', async () => {
     // db!.readMethod("1", 20) + db!.readMethod("2", 20)
     // Since method calls are Writes, these should invoke SEQUENTIALLY.

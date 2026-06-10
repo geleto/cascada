@@ -226,6 +226,20 @@ describe('Cascada Script: Explicit Chain Declarations', function () {
       expect(result).to.eql({ user: { address: { city: 'London' } } });
     });
 
+    it('should reject array literal lookups as data command paths', async () => {
+      const script = `
+        data myData
+        myData.set(["user"].name, "Alice")
+        return myData.snapshot()
+      `;
+      try {
+        await render(script);
+        expect().fail('Should have thrown');
+      } catch (err) {
+        expect(err.message).to.contain('Invalid node type in path for data command');
+      }
+    });
+
     it('should overwrite the same key (last write wins)', async () => {
       const script = `
         data myData
