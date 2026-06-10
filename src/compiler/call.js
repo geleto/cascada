@@ -149,7 +149,7 @@ class CompileCall {
     const isCallerCall = node.name &&
       (
         (node.name instanceof nodes.Symbol && node.name.value === 'caller') ||
-        compiler.sequential._extractStaticPathRoot(node.name) === 'caller'
+        compiler.sequential.extractStaticPathRoot(node.name) === 'caller'
       );
     if (!isCallerCall) {
       return null;
@@ -218,7 +218,7 @@ class CompileCall {
       return null;
     }
 
-    const importedRoot = compiler.sequential._extractStaticPathRoot(node.name);
+    const importedRoot = compiler.sequential.extractStaticPathRoot(node.name);
     const importedDecl = importedRoot ? analysisPass.markLookupDeclaration(node.name, importedRoot, node._analysis) : null;
     const isImportedCallable =
       (importedDecl && importedDecl.imported) ||
@@ -302,7 +302,7 @@ class CompileCall {
       return null;
     }
 
-    const sequencePath = compiler.sequential._extractStaticPath(node.name);
+    const sequencePath = compiler.sequential.extractStaticPathSegments(node.name);
     if (!sequencePath || sequencePath.length < 2) {
       return null;
     }

@@ -91,7 +91,7 @@ class CompileChain {
       return null;
     }
     const target = node.targets[0];
-    const staticPath = compiler.sequential._extractStaticPath(target);
+    const staticPath = compiler.sequential.extractStaticPathSegments(target);
     if (!staticPath || staticPath.length < 2 || staticPath[0] !== 'this') {
       return null;
     }
@@ -163,7 +163,7 @@ class CompileChain {
     if (!node) {
       return null;
     }
-    const staticPath = compiler.sequential._extractStaticPath(node);
+    const staticPath = compiler.sequential.extractStaticPathSegments(node);
     if (!staticPath || staticPath.length < 2 || staticPath[0] !== 'this') {
       return null;
     }
@@ -342,7 +342,7 @@ class CompileChain {
   analyzeChainCommand(node) {
     const compiler = this.compiler;
     const callNode = node.call instanceof nodes.FunCall ? node.call : null;
-    const path = compiler.sequential._extractStaticPath(callNode ? callNode.name : node.call);
+    const path = compiler.sequential.extractStaticPathSegments(callNode ? callNode.name : node.call);
     if (!path || path.length === 0) {
       return {};
     }

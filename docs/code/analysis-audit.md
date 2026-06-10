@@ -179,12 +179,12 @@ read finalized facts (valid from post-analyzers and codegen, null in first-pass
 analyzers).
 
 For the invariant, keep one **always-on lightweight shape check**
-(`_assertFinalizedChainSetFields`: each finalized fact is `Set | null`) rather
-than a dev-only gate — there is no debug-flag convention in the compiler to gate
-on, and the shape check is cheap (no per-name iteration). Chain-name validity is
-enforced once at the `_normalizeChainSet` boundary, where untrusted custom
-post-analysis facts enter; the internally built `used`/`mutated` sets are strings
-by construction, so re-validating their names per node would be redundant.
+(`_assertFinalizedChainSetFields`: each finalized fact is `Set | null` with
+string chain names) rather
+than a dev-only gate; there is no debug-flag convention in the compiler to gate
+on, and the shape check is cheap. Chain-name validity is enforced when untrusted
+custom post-analysis linked facts enter through `_normalizeChainSet`, and the
+final assertion keeps compiler-owned facts honest before codegen observes them.
 
 **Risk:** low. The suite already pins `linkedChains instanceof Set`.
 
@@ -192,31 +192,40 @@ by construction, so re-validating their names per node would be redundant.
 
 ## 3. Consolidate Static-Path Extraction, Then Revisit Sequence Facts
 
+**Status: implemented.** `CompileSequential.extractStaticPath(...)` is now the
+canonical pure lookup-path walker. Segment/root/key projections derive from it,
+generic callers use the public projection helpers, and `_getSequentialPath`
+remains the `!`-aware validation layer. No new sequence read/observed facts were
+introduced; a code comment documents that bare lock lookups currently share the
+existing `uses` fact for both value reads and status observations.
+
+Two sequence error messages were intentionally changed: the two-marker case now
+uses the same `'Cannot use more than one sequence marker (!)'` text as the
+sibling check (previously a divergent `'Using two sequence markers'`), and a
+dynamic inner segment (e.g. `a[i].b!`) now reports the user-facing
+"prefix must be static" error instead of a mislabeled "Internal Compiler Error".
+No test asserted the old strings.
+
 **Why third:** concrete duplication, good test coverage, and it cleans the
 substrate for any future sequence fact split.
 
 ### Problem
 
-`sequential.js` has several walkers over `Symbol` / `LookupVal` chains:
+Before this item, `sequential.js` had several walkers over `Symbol` /
+`LookupVal` chains:
 
-- `_extractStaticPath(node)` -> segment array
-  ([sequential.js](../../src/compiler/sequential.js#L361)).
-- `_extractStaticPathRoot(node, expectedLength?)` -> root symbol, optional length
-  ([sequential.js](../../src/compiler/sequential.js#L404)).
-- `_extractStaticPathKey(node)` -> `!a!b` key string
-  ([sequential.js](../../src/compiler/sequential.js#L105)).
+- `_extractStaticPath(node)` -> segment array.
+- `_extractStaticPathRoot(node, expectedLength?)` -> root symbol, optional length.
+- `_extractStaticPathKey(node)` -> `!a!b` key string.
 - `_getSequenceKey` -> `_getSequentialPath` -> the `!`-aware variant with
-  validation ([sequential.js](../../src/compiler/sequential.js#L137)).
+  validation.
 - `_getBareSequenceLockLookup` and `_hasSequentialRepair` perform adjacent
   lookup-chain walks for sequence-specific decisions.
 
-At the current audit point, generic static-path consumers include `buffer.js`
-(`128`, `371`), `call.js` (`152`, `221`, `305`), `chain.js` (`94`, `166`,
-`345`), `compiler-base-async.js` (`728`), `component.js` (`106`), and
-`lookup.js` (`143`). `sequential.js` also has local `@todo` markers around
-making `_getSequenceKey` public/inline and moving the generic static-path
-extractor out of the sequence module. Those notes point at the same
-consolidation target.
+Generic static-path consumers included `buffer.js`, `call.js`, `chain.js`,
+`compiler-base-async.js`, `component.js`, and `lookup.js`. The cleanup keeps
+those consumers on projection helpers while centralizing the actual lookup-chain
+walk in `CompileSequential.extractStaticPath(...)`.
 
 The pure extractors differ mostly in projection over the same walk. The
 `!`-aware path is different because it raises compile errors (two `!` in a path,

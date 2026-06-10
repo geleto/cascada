@@ -103,7 +103,7 @@ class CompileComponent {
       return null;
     }
 
-    const staticPath = this.compiler.sequential._extractStaticPath(node);
+    const staticPath = this.compiler.sequential.extractStaticPathSegments(node);
     if (!staticPath || staticPath.length < 2) {
       return null;
     }

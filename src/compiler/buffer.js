@@ -125,7 +125,7 @@ class CompileBuffer {
 
   _compileCommandConstruction(node) {
     const isCallNode = node.call instanceof nodes.FunCall;
-    const staticPath = this.compiler.sequential._extractStaticPath(isCallNode ? node.call.name : node.call);
+    const staticPath = this.compiler.sequential.extractStaticPathSegments(isCallNode ? node.call.name : node.call);
     if (!staticPath || staticPath.length === 0) {
       this.compiler.fail(
         'Invalid command syntax. Expected format is chain(...) or chain.command(...) or chain.subpath.command(...).',
@@ -368,7 +368,7 @@ class CompileBuffer {
   compileChainCommand(node) {
     // Preserve chain routing in asyncAddToBuffer; validation remains in _compileCommandConstruction.
     const pathNode = node.call instanceof nodes.FunCall ? node.call.name : node.call;
-    const chainName = this.compiler.sequential._extractStaticPathRoot(pathNode);
+    const chainName = this.compiler.sequential.extractStaticPathRoot(pathNode);
 
     this.asyncAddValueToBuffer((resultVar) => {
       this.compiler.emit(`${resultVar} = `);

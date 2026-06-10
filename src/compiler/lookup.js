@@ -140,7 +140,7 @@ class CompileLookup {
 
   _analyzeSequenceChainLookup(node, analysisPass) {
     const compiler = this.compiler;
-    const sequencePath = compiler.sequential._extractStaticPath(node);
+    const sequencePath = compiler.sequential.extractStaticPathSegments(node);
     if (!sequencePath || sequencePath.length < 2) {
       return null;
     }

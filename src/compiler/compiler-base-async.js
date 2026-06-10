@@ -725,7 +725,7 @@ class CompilerBaseAsync extends CompilerCommon {
     }
 
     if (targetNode instanceof nodes.FunCall) {
-      const candidate = this.sequential._extractStaticPathRoot(targetNode.name, 2);
+      const candidate = this.sequential.extractStaticPathRoot(targetNode.name, 2);
       if (candidate) {
         const chainDecl = targetNode.name?._analysis?.lookupDeclaration || null;
         if (chainDecl) {
