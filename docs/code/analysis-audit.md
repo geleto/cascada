@@ -272,37 +272,46 @@ sequential test coverage.
 
 ## 4. Split Source-Order Declarations From Finalized Declarations
 
+**Status: implemented.** First-pass lookup validation now writes
+`sourceVisibleDeclarations`, while `_finalizeDeclarations` rebuilds
+`declaredChains` as the finalized scope ownership table. Declaration lookup uses
+the source-order table during the walk and the finalized table after declaration
+finalization. The old `declaredChains` reset loop at the top of
+`_finalizeDeclarations` (dead once the walk stopped writing `declaredChains`) was
+removed.
+
 **Why fourth:** it names a real architectural split without touching the deeper
 flag model yet.
 
 ### Problem
 
-`_registerDeclarations` builds `declaredChains` during the walk
-([analysis.js](../../src/compiler/analysis.js#L322)), then
-`_finalizeDeclarations` nulls every `declaredChains`
-([analysis.js](../../src/compiler/analysis.js#L276)) and rebuilds from scratch.
+Before this item, `_registerDeclarations` built `declaredChains` during the
+walk, then `_finalizeDeclarations` nulled every `declaredChains` and rebuilt it
+from scratch.
 
 The walk-time build exists because in-walk `_validateUses` /
-`_validateMutations` call `findDeclaration`, which reads `declaredChains`.
+`_validateMutations` call `findDeclaration`, which needs source-order
+declarations.
 That source-order table is intentional: earlier same-scope uses must stay
 ambient before a later local declaration. Tests in `chains-explicit.js` cover
 this behavior for function calls, sequence paths, and chain initializers.
 
-The issue is not that the walk-time map is useless. The issue is that the
-source-order map and the finalized all-declarations map reuse the same field
+The issue was not that the walk-time map was useless. The issue was that the
+source-order map and the finalized all-declarations map reused the same field
 name and shape.
 
 ### Action
 
-Do **not** delete the walk-time source-order declaration index.
+The walk-time source-order declaration index was kept, but it is now named
+separately from the finalized ownership table:
 
-Instead, consider splitting the concepts explicitly:
+- `sourceVisibleDeclarations` is used for first-pass source-order lookup
+  validation;
+- `declaredChains` is rebuilt during declaration finalization and used as the
+  finalized scope ownership table.
 
-- `sourceVisibleDeclarations` for first-pass source-order lookup validation;
-- `declaredChains` for finalized scope ownership.
-
-This should keep source-order semantics while making finalization easier to
-reason about.
+This keeps source-order semantics while making finalization easier to reason
+about.
 
 **Risk:** medium-high. Must preserve source-order ambient lookup behavior and
 current error positions/messages.

@@ -81,9 +81,9 @@ class CompileInheritance {
 
     declaration.shared = true;
     declaration.declarationOrigin = this.compiler.analysis.getTopmostChildAnalysis(sourceAnalysis);
-    rootOwner.declaredChains = rootOwner.declaredChains || new Map();
-    if (!rootOwner.declaredChains.has(declaration.name)) {
-      rootOwner.declaredChains.set(declaration.name, declaration);
+    rootOwner.sourceVisibleDeclarations = rootOwner.sourceVisibleDeclarations || new Map();
+    if (!rootOwner.sourceVisibleDeclarations.has(declaration.name)) {
+      rootOwner.sourceVisibleDeclarations.set(declaration.name, declaration);
     }
     // The declaration table is rebuilt during finalization, so keep implicit
     // shared declarations in the root declaration list as their source of truth.

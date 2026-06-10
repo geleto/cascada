@@ -166,6 +166,26 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       });
     });
 
+    it('should keep source-order declarations separate from finalized declarations', function () {
+      const ast = analyzeScriptSource(
+        'var before = someVar\n' +
+        'var someVar = "local"\n' +
+        'return someVar',
+        'source-visible-declarations.casc'
+      );
+      const rootAnalysis = ast._analysis;
+      const someVarUses = collectNodesByType(ast, 'Symbol')
+        .filter((node) => node.value === 'someVar' && !node._analysis.declarationTarget)
+        .sort((left, right) => left.lineno - right.lineno || left.colno - right.colno);
+
+      expect(someVarUses).to.have.length(2);
+      expect(someVarUses[0]._analysis.lookupDeclaration).to.be(null);
+      expect(someVarUses[1]._analysis.lookupDeclaration.name).to.be('someVar');
+      expect(rootAnalysis.sourceVisibleDeclarations).to.not.be(rootAnalysis.declaredChains);
+      expect(rootAnalysis.sourceVisibleDeclarations.has('someVar')).to.be(true);
+      expect(rootAnalysis.declaredChains.has('someVar')).to.be(true);
+    });
+
     it('should keep nested capture text outputs out of outer stored chain facts', function () {
       const ast = analyzeTemplateSource(
         '{% set x = "v" %}' +
