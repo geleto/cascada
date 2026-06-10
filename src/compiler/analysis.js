@@ -2,6 +2,15 @@
 import * as nodes from '../language/nodes.js';
 import {CHAIN_TYPES} from '../chain-types.js';
 
+const FINALIZED_CHAIN_SET_FIELDS = [
+  'usedChains',
+  'mutatedChains',
+  'usedChainsFromParent',
+  'mutatedChainsFromParent',
+  'linkedChains',
+  'linkedMutatedChains'
+];
+
 /**
  * Chain analysis pass.
  *
@@ -120,6 +129,10 @@ class CompileAnalysis {
     const analyzerName = `postAnalyze${node.typename}`;
     const analyzer = this.compiler && this.compiler[analyzerName];
     if (typeof analyzer === 'function') {
+      // Post-analyzers run after immediate children are finalized. They may
+      // return node-owned custom facts and, narrowly, custom linked-chain
+      // iterables. Finalization below normalizes linked-chain facts before
+      // codegen observes them; ordinary uses/mutates belong to the first pass.
       const returned = analyzer.call(this.compiler, node, this);
       if (returned && typeof returned === 'object' && returned !== node._analysis) {
         return returned;
@@ -128,6 +141,10 @@ class CompileAnalysis {
     return null;
   }
 
+  // Lifecycle: these read the finalized `*ChainsFromParent` facts, which only
+  // exist after `_finalizeChainUsage` has run for the node. They are valid from
+  // post-analyzers (children finalize before their parent) and from codegen.
+  // First-pass analyzers must not call them — the facts are still null there.
   getChainsUsedFromParent(node) {
     const analysis = node?._analysis;
     return Array.from(analysis?.usedChainsFromParent ?? []);
@@ -650,8 +667,8 @@ class CompileAnalysis {
     if (!hasCustomLinkedMutatedChains) {
       analysis.linkedMutatedChains = this._deriveBoundaryLinkedChains(analysis, chainsFromParent.mutatedChains);
     }
-    analysis.linkedChains = this._normalizeChainSet(analysis.linkedChains);
-    analysis.linkedMutatedChains = this._normalizeChainSet(analysis.linkedMutatedChains);
+    analysis.linkedChains = this._normalizeChainSet(analysis.linkedChains, 'linkedChains', analysis);
+    analysis.linkedMutatedChains = this._normalizeChainSet(analysis.linkedMutatedChains, 'linkedMutatedChains', analysis);
     if (analysis.expressionControlFlowBoundary) {
       analysis.createsLinkedChildBuffer = analysis.linkedMutatedChains !== null &&
         analysis.linkedMutatedChains.size > 0;
@@ -660,6 +677,7 @@ class CompileAnalysis {
         analysis.linkedMutatedChains = null;
       }
     }
+    this._assertFinalizedChainSetFields(analysis);
     return this._getPropagatedChainUsage(
       analysis,
       localUses,
@@ -733,17 +751,78 @@ class CompileAnalysis {
     return linkedChains.size > 0 ? linkedChains : null;
   }
 
-  _normalizeChainSet(value) {
-    if (!value) {
+  _normalizeChainSet(value, field = 'chain set', analysis = null) {
+    if (value == null) {
       return null;
     }
     const chains = new Set();
-    value.forEach((name) => {
-      if (name) {
-        chains.add(name);
+    const addChainName = (name) => this._addNormalizedChainName(chains, name, field, analysis);
+    if (typeof value === 'string') {
+      this._throwInvalidChainSet(value, field, analysis);
+    }
+    if (typeof value.forEach === 'function') {
+      value.forEach(addChainName);
+    } else if (typeof value[Symbol.iterator] === 'function') {
+      for (const name of value) {
+        addChainName(name);
+      }
+    } else {
+      this._throwInvalidChainSet(value, field, analysis);
+    }
+    return chains.size > 0 ? chains : null;
+  }
+
+  _addNormalizedChainName(chains, name, field, analysis) {
+    if (typeof name !== 'string' || name === '') {
+      this._throwInvalidChainName(name, field, analysis);
+    }
+    chains.add(name);
+  }
+
+  // Lightweight always-on shape guard: every finalized chain-set fact must be
+  // `Set | null` so codegen never observes a stray array/iterable. This is a
+  // cheap per-field check; chain-name validity is enforced once at the
+  // `_normalizeChainSet` boundary where untrusted custom facts enter, and the
+  // internally built `used`/`mutated` sets are strings by construction.
+  _assertFinalizedChainSetFields(analysis) {
+    FINALIZED_CHAIN_SET_FIELDS.forEach((field) => {
+      const value = analysis[field];
+      if (value !== null && !(value instanceof Set)) {
+        throw new TypeError(
+          `Finalized analysis fact '${field}' on ${this._describeAnalysisNode(analysis)} must be Set or null`
+        );
       }
     });
-    return chains.size > 0 ? chains : null;
+  }
+
+  _throwInvalidChainSet(value, field = 'chain set', analysis = null) {
+    throw new TypeError(
+      `Analysis fact '${field}' on ${this._describeAnalysisNode(analysis)} must be a Set, array, or iterable collection of chain names; got ${this._describeValue(value)}`
+    );
+  }
+
+  _throwInvalidChainName(name, field = 'chain set', analysis = null) {
+    throw new TypeError(
+      `Analysis fact '${field}' on ${this._describeAnalysisNode(analysis)} contains an invalid chain name (${this._describeValue(name)})`
+    );
+  }
+
+  _describeAnalysisNode(analysis) {
+    const node = analysis && analysis.node;
+    if (!node) {
+      return 'unknown node';
+    }
+    return `${node.typename || node.constructor.name} at ${node.lineno}:${node.colno}`;
+  }
+
+  _describeValue(value) {
+    if (value === null) {
+      return 'null';
+    }
+    if (Array.isArray(value)) {
+      return 'array';
+    }
+    return typeof value;
   }
 
   _createsLinkableChildBuffer(analysis) {

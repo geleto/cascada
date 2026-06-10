@@ -123,6 +123,11 @@ end.
 
 ## 2. Lock Down Analysis Fact Invariants
 
+**Status: implemented.** Finalized chain-set facts are asserted as `Set | null`
+with string chain names after chain-usage finalization. Custom linked-chain
+facts returned by post-analyzers are normalized through `_normalizeChainSet`;
+invalid shapes fail during analysis instead of leaking to codegen.
+
 **Why second:** cheap guardrails before broader refactors. This combines the
 chain-set typing issue and lifecycle rules.
 
@@ -143,7 +148,7 @@ Current relevant fields include:
 - `linkedMutatedChains`
 
 `_normalizeChainSet` now coerces custom post-analysis linked-chain iterables back
-to a `Set` ([analysis.js](../../src/compiler/analysis.js#L736)). This is a useful
+to a `Set` ([analysis.js](../../src/compiler/analysis.js)). This is a useful
 normalization boundary, not merely a temporary shim, as long as the invariant is
 documented and tested.
 
@@ -167,9 +172,19 @@ Adopt and enforce:
 - `_normalizeChainSet` remains the single normalization boundary unless the
   codebase later chooses a stricter "producers must return Sets" rule.
 
-Add comments or lightweight assertions near `CompileAnalysis._postAnalyzeNode`
-and finalization to document the lifecycle contract. Consider a dev-only
-assertion after normalization that finalized chain-set fields are `Set | null`.
+Document the lifecycle contract in code: a comment near
+`CompileAnalysis._postAnalyzeNode` for post-analyzer/normalization ordering, and
+a comment on `getChainsUsedFromParent` / `getChainsMutatedFromParent` noting they
+read finalized facts (valid from post-analyzers and codegen, null in first-pass
+analyzers).
+
+For the invariant, keep one **always-on lightweight shape check**
+(`_assertFinalizedChainSetFields`: each finalized fact is `Set | null`) rather
+than a dev-only gate — there is no debug-flag convention in the compiler to gate
+on, and the shape check is cheap (no per-name iteration). Chain-name validity is
+enforced once at the `_normalizeChainSet` boundary, where untrusted custom
+post-analysis facts enter; the internally built `used`/`mutated` sets are strings
+by construction, so re-validating their names per node would be redundant.
 
 **Risk:** low. The suite already pins `linkedChains instanceof Set`.
 

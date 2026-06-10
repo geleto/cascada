@@ -65,6 +65,45 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
     return out;
   }
 
+  function collectAllNodes(node, out = []) {
+    if (!node) {
+      return out;
+    }
+    if (Array.isArray(node)) {
+      node.forEach((child) => collectAllNodes(child, out));
+      return out;
+    }
+    if (!(node instanceof nodes.Node)) {
+      return out;
+    }
+    out.push(node);
+    node.fields.forEach((field) => collectAllNodes(node[field], out));
+    return out;
+  }
+
+  function expectFinalizedChainSetFacts(ast) {
+    const fields = [
+      'usedChains',
+      'mutatedChains',
+      'usedChainsFromParent',
+      'mutatedChainsFromParent',
+      'linkedChains',
+      'linkedMutatedChains'
+    ];
+    collectAllNodes(ast).forEach((node) => {
+      fields.forEach((field) => {
+        const value = node._analysis[field];
+        expect(value === null || value instanceof Set).to.be(true);
+        if (value) {
+          Array.from(value).forEach((name) => {
+            expect(typeof name).to.be('string');
+            expect(name).to.not.be('');
+          });
+        }
+      });
+    });
+  }
+
   describe('Async template command buffering parity', function () {
     it('should infer this.__text__ as the template text chain', function () {
       const ast = analyzeTemplateSource('{% block body %}{{ this.__text__.snapshot() }}{{ this.theme }}{% endblock %}');
@@ -81,6 +120,50 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       expect(rootTextDeclares[0].shared).to.not.be(true);
       expect(blockNode._analysis.linkedChains instanceof Set).to.be(true);
       expect(blockNode._analysis.linkedMutatedChains instanceof Set).to.be(true);
+    });
+
+    it('should finalize analysis chain-set facts as Set or null', function () {
+      const ast = analyzeTemplateSource(
+        '{% extends parentTemplate %}' +
+        '{% set x = "v" %}' +
+        '{% set outer %}A{{ x }}{% set inner %}B{{ x }}{% endset %}C{% endset %}' +
+        '{% block body %}{{ this.__text__.snapshot() }}{{ this.theme }}{% endblock %}',
+        'finalized-chain-set-facts.njk'
+      );
+
+      expectFinalizedChainSetFacts(ast);
+    });
+
+    it('should reject invalid custom linked chain fact shapes during finalization', function () {
+      const opts = {
+        asyncMode: true,
+        scriptMode: false,
+        idPool: createIdPool()
+      };
+      const compiler = new CompilerAsync('invalid-linked-chain-facts.njk', opts);
+      const ast = transform(parse('{% if flag %}{{ x }}{% endif %}', [], opts), [], 'invalid-linked-chain-facts.njk', opts);
+      compiler.postAnalyzeIf = () => ({ linkedChains: 'x' });
+
+      expect(() => compiler.analysis.run(ast)).to.throwException((err) => {
+        expect(err.message).to.contain('Analysis fact \'linkedChains\'');
+        expect(err.message).to.contain('must be a Set, array, or iterable collection of chain names');
+      });
+    });
+
+    it('should reject invalid custom linked chain names during finalization', function () {
+      const opts = {
+        asyncMode: true,
+        scriptMode: false,
+        idPool: createIdPool()
+      };
+      const compiler = new CompilerAsync('invalid-linked-chain-names.njk', opts);
+      const ast = transform(parse('{% if flag %}{{ x }}{% endif %}', [], opts), [], 'invalid-linked-chain-names.njk', opts);
+      compiler.postAnalyzeIf = () => ({ linkedChains: [''] });
+
+      expect(() => compiler.analysis.run(ast)).to.throwException((err) => {
+        expect(err.message).to.contain('Analysis fact \'linkedChains\'');
+        expect(err.message).to.contain('contains an invalid chain name');
+      });
     });
 
     it('should keep nested capture text outputs out of outer stored chain facts', function () {
