@@ -62,7 +62,7 @@ class CompileLoop {
       const loopBodyFuncId = this.compiler._tmpid();
       this.compiler.emit(`let ${loopBodyFuncId} = `);
       const hasConcurrentLimit = Boolean(node.concurrentLimit);
-      const poisonChains = whileConditionNode ? node._analysis.poisonChains : [];
+      const whilePoisonTargetChains = whileConditionNode ? node._analysis.poisonTargetChains : [];
       this._compileAsyncLoopBody(
         node,
         loopVars,
@@ -70,17 +70,20 @@ class CompileLoop {
         hasConcurrentLimit,
         whileConditionNode,
         loopVarNames,
-        poisonChains
+        whilePoisonTargetChains
       );
 
-      const bodyChains = this.compiler.analysis.getChainsUsedFromParent(node.body);
+      const bodyPoisonChains = this.compiler.analysis.getChainsMutatedFromParent(node.body);
+      const bodyObservationChains = sequentialLoopBody && !whileConditionNode
+        ? this.compiler.analysis.getChainsUsedFromParent(node.body)
+        : [];
       const returnCheckChainName = this.compiler.return.getSequentialLoopAdvanceCheckChain({
         sequentialLoopBody,
         whileConditionNode,
-        bodyChains
+        bodyObservationChains
       });
       let elseFuncId = 'null';
-      let elseChains = null;
+      let elsePoisonChains = [];
 
       if (node.else_) {
         elseFuncId = this.compiler._tmpid();
@@ -90,13 +93,13 @@ class CompileLoop {
           this.compiler.compile(node.else_, null);
         });
         this.compiler.emit.line('}).bind(context);');
-        elseChains = this.compiler.analysis.getChainsUsedFromParent(node.else_);
+        elsePoisonChains = this.compiler.analysis.getChainsMutatedFromParent(node.else_);
       }
 
       const asyncOptionsCode = `{
         sequential: ${sequentialLoopBody},
-        bodyChains: ${JSON.stringify(bodyChains)},
-        elseChains: ${JSON.stringify(elseChains || [])},
+        bodyPoisonChains: ${JSON.stringify(bodyPoisonChains)},
+        elsePoisonChains: ${JSON.stringify(elsePoisonChains)},
         concurrentLimit: ${node.concurrentLimit ? limitVar : 'null'},
         returnCheckChainName: ${returnCheckChainName ? `"${returnCheckChainName}"` : 'null'},
         scriptMode: ${this.compiler.scriptMode ? 'true' : 'false'},
@@ -204,7 +207,7 @@ class CompileLoop {
     frame = forResult.frame;
   }
 
-  _compileAsyncLoopBody(node, loopVars, sequentialLoopBody, hasConcurrencyLimit = false, whileConditionNode = null, loopVarNames = null, poisonChains = []) {
+  _compileAsyncLoopBody(node, loopVars, sequentialLoopBody, hasConcurrencyLimit = false, whileConditionNode = null, loopVarNames = null, whilePoisonTargetChains = []) {
     this.compiler.emit('(async function(');
     loopVars.forEach((varName, index) => {
       if (index > 0) {
@@ -274,7 +277,7 @@ class CompileLoop {
             whileErrorContext = this.compiler.emitErrorContext(whileConditionNode);
             this.compiler.boundaries.emitBranchPoisonCatch(
               this.compiler.buffer,
-              poisonChains,
+              whilePoisonTargetChains,
               whileErrorContext,
               () => this.compiler.emit(`  ${whileCondId} = false;`)
             );

@@ -129,7 +129,7 @@ reference.
   `mutatedChains`) matches `src/compiler/analysis.js` lines 100-102 ✓
 - All files in Key Files section exist ✓
 - `__waited__` chain description ✓
-- Control-flow poisoning via `poisonChains` ✓ (compiler-async.js:416, 460, 783, 812)
+- Control-flow poisoning via mutation-only poison targets ✓
 - Linked chains mechanism ✓ (command-buffer.js)
 - Guard scopes and sequential-path declarations ✓
 - All 7 invariants are sound and grounded in the implementation ✓

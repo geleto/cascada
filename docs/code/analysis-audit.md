@@ -27,12 +27,20 @@ the same refactor substrate or invariant should be handled together.
 
 ## 1. Fix Poison Target Sets: Use Mutations, Not Reads
 
+**Status: implemented.** Branch/loop poison targets now derive from
+`getChainsMutatedFromParent` (`If`/`Switch`/`While` via
+`_getSkippedRegionPoisonChains`; loops split `bodyObservationChains` (used,
+return-advance) from `bodyPoisonChains`/`elsePoisonChains` (mutated, poison)).
+Runtime poison loops consolidated into `addPoisonCommands`. Focused poison,
+conditional, and loop suites are green.
+
 **Why first:** correctness risk, isolated surface, and the same ambiguity class
 as the guard bug.
 
 ### Problem
 
-Branch and loop poison target sets are currently derived from read+write facts:
+Before this item was implemented, branch and loop poison target sets were
+derived from read+write facts:
 
 - `postAnalyzeIf` uses `getChainsUsedFromParent(node.body)` plus else branch
   ([compiler-async.js](../../src/compiler/compiler-async.js#L385)).
@@ -40,7 +48,7 @@ Branch and loop poison target sets are currently derived from read+write facts:
   ([compiler-async.js](../../src/compiler/compiler-async.js#L278)).
 - `postAnalyzeWhile` uses `getChainsUsedFromParent(node.body)`
   ([compiler-async.js](../../src/compiler/compiler-async.js#L215)).
-- `loop.js` passes `bodyChains` / `elseChains`, also from
+- `loop.js` passed `bodyChains` / `elseChains`, also from
   `getChainsUsedFromParent(...)`, into `runtime.iterate(...)`
   ([loop.js](../../src/compiler/loop.js#L76)). Runtime helpers then poison those
   chains on iterator/destructuring/body-scheduling failures
@@ -92,13 +100,24 @@ Add regressions for:
 - an `if` whose branch only reads an outer chain, with a failing condition;
   assert that read-only chain is not poisoned downstream while a written chain
   is;
-- a loop whose body only reads an outer chain, with a failing iterator or
-  destructuring value; assert that the read-only chain is not poisoned.
+- `switch` and `while` skipped regions that only read an outer chain;
+- loop body and loop-else regions that only read an outer chain, with a failing
+  iterator or destructuring value; assert that the read-only chain is not
+  poisoned.
 
 **Risk:** low-medium. Pure narrowing of an over-broad set; if a needed chain is
 not poisoned, the likely failure is a loud hang or rejection. Treat this as a
 likely correctness fix until the regressions above prove the behavior end to
 end.
+
+### Follow-ups (optional, non-blocking)
+
+- **Per-construct "written -> still poisoned" regressions.** Existing suite
+  coverage already exercises preserved write poisoning for branch/loop effects,
+  so this is optional unless future churn touches this surface again.
+- **(noted, no action)** For `while`, body mutated-from-parent is computed twice
+  (`postAnalyzeWhile` and `loop.js`) and the runtime `bodyPoisonChains` likely
+  rarely fires for `while`. Compile-time, once-per-node, harmless - left as-is.
 
 ---
 

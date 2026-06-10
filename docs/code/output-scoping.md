@@ -131,8 +131,9 @@ that the skipped body could have affected.
 
 Current implementation uses analysis-derived chain sets:
 
-- `if` / `switch` gather branch `usedChains` into `poisonChains`
-- loops pass body/else chain metadata into runtime loop options
+- `if` / `switch` gather mutation-only skipped-region targets into branch poison handling
+- loops pass mutation-only body/else poison targets into runtime loop options
+- sequential loop return checks use a separate body observation set
 - guards resolve selected chains and sequence paths from guard targets plus
   body analysis
 

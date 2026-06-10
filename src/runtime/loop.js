@@ -142,13 +142,20 @@ function setLoopValueBindings(chainName, index, len, last, errorContext) {
   });
 }
 
-function poisonIterationEffects(buffer, asyncOptions, poisonError) {
-  if (!buffer || !asyncOptions || !asyncOptions.bodyChains) {
+function addPoisonCommands(buffer, chainNames, poisonError, errorContext) {
+  if (!buffer || !chainNames || chainNames.length === 0) {
     return;
   }
-  for (const chainName of asyncOptions.bodyChains) {
-    buffer.addCommand(new ErrorCommand(poisonError, asyncOptions.errorContext), chainName);
+  for (const chainName of chainNames) {
+    buffer.addCommand(new ErrorCommand(poisonError, errorContext), chainName);
   }
+}
+
+function poisonIterationEffects(buffer, asyncOptions, poisonError) {
+  if (!asyncOptions) {
+    return;
+  }
+  addPoisonCommands(buffer, asyncOptions.bodyPoisonChains, poisonError, asyncOptions.errorContext);
 }
 
 function normalizeLoopValue(value, errorContext) {
@@ -698,28 +705,20 @@ async function iterateObject(arr, loopBody, loopVars, errorContext, effectiveSeq
  * Poison body/else chain effects when loop input fails before/during iteration.
  *
  * @param {Object} buffer - The CommandBuffer instance
- * @param {Object} asyncOptions - Options containing write counts and chains
+ * @param {Object} asyncOptions - Options containing mutation-only poison targets
  * @param {PoisonError} poisonError - Poison error to propagate
  * @param {boolean} didIterate - Whether any iterations occurred
  */
 function poisonLoopEffects(buffer, asyncOptions, poisonError, didIterate) {
   // Poison body chain effects.
-  if (asyncOptions.bodyChains && asyncOptions.bodyChains.length > 0) {
-    for (const chainName of asyncOptions.bodyChains) {
-      buffer.addCommand(new ErrorCommand(poisonError, asyncOptions.errorContext), chainName);
-    }
-  }
+  addPoisonCommands(buffer, asyncOptions.bodyPoisonChains, poisonError, asyncOptions.errorContext);
 
   if (didIterate) {
     return;// we don't poison the else side-effects if we had at least one iteration
   }
 
   // Poison else chain effects.
-  if (asyncOptions.elseChains && asyncOptions.elseChains.length > 0) {
-    for (const chainName of asyncOptions.elseChains) {
-      buffer.addCommand(new ErrorCommand(poisonError, asyncOptions.errorContext), chainName);
-    }
-  }
+  addPoisonCommands(buffer, asyncOptions.elsePoisonChains, poisonError, asyncOptions.errorContext);
 }
 
 async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOptions = null) {

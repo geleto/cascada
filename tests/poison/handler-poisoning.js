@@ -1,7 +1,10 @@
 
 import expect from 'expect.js';
 import {AsyncEnvironment} from '../../src/environment/environment.js';
-import {isPoisonError} from '../../src/runtime/runtime.js';
+import {createPoison, isPoisonError, PoisonError} from '../../src/runtime/runtime.js';
+
+const TEST_EC = [1, 1, 'HandlerPoisoning.TestInput', 'handler-poisoning.js', null, null];
+const createTestPoison = (message) => createPoison(PoisonError.create(message, TEST_EC, 'UserCallThrew'));
 
 (function () {
 
@@ -139,6 +142,137 @@ import {isPoisonError} from '../../src/runtime/runtime.js';
 
       const result = await env.renderTemplateString(template, context);
       expect(result).to.equal('done');
+    });
+
+    it('should not poison a parent chain only read by a skipped if branch', async () => {
+      const script = `
+        var source = "alive"
+        if poisonedCondition()
+          var local = source
+        endif
+
+        return source`;
+
+      const result = await env.renderScriptString(script, {
+        poisonedCondition() {
+          return createTestPoison('Condition failed');
+        }
+      });
+
+      expect(result).to.equal('alive');
+    });
+
+    it('should still poison a parent chain written by a skipped if branch', async () => {
+      const script = `
+        var source = "alive"
+        if poisonedCondition()
+          source = "changed"
+        endif
+
+        return source`;
+
+      try {
+        await env.renderScriptString(script, {
+          poisonedCondition() {
+            return createTestPoison('Condition failed');
+          }
+        });
+        expect().fail('Should have thrown PoisonError');
+      } catch (err) {
+        expect(isPoisonError(err)).to.be(true);
+        expect(err.message).to.contain('Condition failed');
+      }
+    });
+
+    it('should not poison a parent chain only read by skipped switch cases', async () => {
+      const script = `
+        var source = "alive"
+        switch poisonedValue()
+          case "a"
+            var caseLocal = source
+          default
+            var defaultLocal = source
+        endswitch
+
+        return source`;
+
+      const result = await env.renderScriptString(script, {
+        poisonedValue() {
+          return createTestPoison('Switch failed');
+        }
+      });
+
+      expect(result).to.equal('alive');
+    });
+
+    it('should not poison a parent chain only read by a skipped while body when the condition fails', async () => {
+      const script = `
+        var source = "alive"
+        while poisonedCondition()
+          var local = source
+        endwhile
+
+        return source`;
+
+      const result = await env.renderScriptString(script, {
+        poisonedCondition() {
+          return createTestPoison('While failed');
+        }
+      });
+
+      expect(result).to.equal('alive');
+    });
+
+    it('should not poison a parent chain only read by a skipped loop body when the iterator fails', async () => {
+      const script = `
+        var source = "alive"
+        for item in poisonedItems()
+          var local = source
+        endfor
+
+        return source`;
+
+      const result = await env.renderScriptString(script, {
+        poisonedItems() {
+          return createTestPoison('Items failed');
+        }
+      });
+
+      expect(result).to.equal('alive');
+    });
+
+    it('should not poison a parent chain only read by a skipped loop else when the iterator fails', async () => {
+      const script = `
+        var source = "alive"
+        for item in poisonedItems()
+          var local = item
+        else
+          var fallback = source
+        endfor
+
+        return source`;
+
+      const result = await env.renderScriptString(script, {
+        poisonedItems() {
+          return createTestPoison('Items failed');
+        }
+      });
+
+      expect(result).to.equal('alive');
+    });
+
+    it('should not poison a parent chain only read by a skipped malformed destructuring body', async () => {
+      const script = `
+        var source = "alive"
+        for name, id in [1]
+          var local = source
+        endfor
+
+        return source`;
+
+      const result = await env.renderScriptString(script);
+
+      expect(result).to.equal('alive');
     });
 
     it('should handle multiple outputs in single branch', async () => {

@@ -165,15 +165,15 @@ class CompileBoundaries {
 
   // Branch/control-flow selector failures poison the chains
   //  that the skipped region could have written.
-  emitBranchPoisonCatch(bufferCompiler, poisonChains, errorContextExpr, emitCatchTail = null) {
+  emitBranchPoisonCatch(bufferCompiler, poisonTargetChains, errorContextExpr, emitCatchTail = null) {
     this.compiler.emit('} catch (e) {');
     this.compiler.emit.line('  if (!runtime.isPoisonError(e)) {');
     this.compiler.emit.line(`    runtime.RuntimeError.reportAndThrow(e, ${errorContextExpr});`);
     this.compiler.emit.line('  }');
-    if (poisonChains.length > 0) {
+    if (poisonTargetChains.length > 0) {
       const contextualErrorVar = this.compiler._tmpid();
       this.compiler.emit(`  const ${contextualErrorVar} = e;`);
-      for (const chainName of poisonChains) {
+      for (const chainName of poisonTargetChains) {
         this.compiler.emit.line(
           `    ${bufferCompiler.currentBuffer}.addCommand(new runtime.ErrorCommand(${contextualErrorVar}, ${errorContextExpr}), "${chainName}");`
         );

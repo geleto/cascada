@@ -214,7 +214,7 @@ class CompilerAsync extends CompilerBaseAsync {
 
   postAnalyzeWhile(node) {
     return {
-      poisonChains: this.analysis.getChainsUsedFromParent(node.body)
+      poisonTargetChains: this._getSkippedRegionPoisonChains([node.body])
     };
   }
 
@@ -276,21 +276,16 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   postAnalyzeSwitch(node) {
-    const allChains = new Set();
-    node.cases.forEach((c) => {
-      this.analysis.getChainsUsedFromParent(c.body).forEach(ch => allChains.add(ch));
-    });
-    if (node.default) {
-      this.analysis.getChainsUsedFromParent(node.default).forEach(ch => allChains.add(ch));
-    }
     return {
-      poisonChains: Array.from(allChains)
+      poisonTargetChains: this._getSkippedRegionPoisonChains(
+        [...node.cases.map(c => c.body), node.default]
+      )
     };
   }
 
   compileSwitch(node) {
     this.buffer._compileAsyncControlFlowBoundary(node, () => {
-      const poisonChains = node._analysis.poisonChains;
+      const poisonTargetChains = node._analysis.poisonTargetChains;
 
       this.emit('try {');
       this.emit('const switchResult = ');
@@ -322,7 +317,7 @@ class CompilerAsync extends CompilerBaseAsync {
       this.emit('}');
 
       const errorContext = this.emitErrorContext(node.expr);
-      this.boundaries.emitBranchPoisonCatch(this.buffer, poisonChains, errorContext);
+      this.boundaries.emitBranchPoisonCatch(this.buffer, poisonTargetChains, errorContext);
     }, node.expr);
   }
 
@@ -383,18 +378,14 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   postAnalyzeIf(node) {
-    const trueBranchChains = this.analysis.getChainsUsedFromParent(node.body);
-    const falseBranchChains = node.else_
-      ? this.analysis.getChainsUsedFromParent(node.else_)
-      : [];
     return {
-      poisonChains: Array.from(new Set([...trueBranchChains, ...falseBranchChains]))
+      poisonTargetChains: this._getSkippedRegionPoisonChains([node.body, node.else_])
     };
   }
 
   compileIf(node) {
     this.buffer._compileAsyncControlFlowBoundary(node, () => {
-      const poisonChains = node._analysis.poisonChains;
+      const poisonTargetChains = node._analysis.poisonTargetChains;
       const condResultId = this._tmpid();
 
       this.emit('try {');
@@ -415,8 +406,18 @@ class CompilerAsync extends CompilerBaseAsync {
       this.emit('}');
 
       const errorContext = this.emitErrorContext(node.cond);
-      this.boundaries.emitBranchPoisonCatch(this.buffer, poisonChains, errorContext);
+      this.boundaries.emitBranchPoisonCatch(this.buffer, poisonTargetChains, errorContext);
     }, node.cond);
+  }
+
+  _getSkippedRegionPoisonChains(regions) {
+    const chains = new Set();
+    regions.forEach((region) => {
+      if (region) {
+        this.analysis.getChainsMutatedFromParent(region).forEach(ch => chains.add(ch));
+      }
+    });
+    return Array.from(chains);
   }
 
   analyzeCapture(node) {
