@@ -104,18 +104,24 @@ class CompileReturn {
     compiler.emit.line(`let ${resultVar} = runtime.thenValue(${resultVar}_snapshot, (value) => value === runtime.RETURN_UNSET ? null : value);`);
   }
 
+  shouldCaptureInGuardState(chainName) {
+    // __return__ remains visible in generic facts for branch poison and
+    // loop-advance checks, but guard recovery must not undo a return.
+    return chainName !== RETURN_CHAIN_NAME;
+  }
+
   excludeGuardCaptureChains(chainNames) {
-    const filtered = new Set(chainNames);
-    // __return__ is internal return-state infrastructure, not a user variable;
-    // guard state capture/restore must not include it because recovery must not undo a return.
-    filtered.delete(RETURN_CHAIN_NAME);
-    return Array.from(filtered);
+    return Array.from(new Set(chainNames)).filter((chainName) => this.shouldCaptureInGuardState(chainName));
+  }
+
+  hasReturnStateObservation(chainNames) {
+    return chainNames.includes(RETURN_CHAIN_NAME);
   }
 
   getSequentialLoopAdvanceCheckChain({ sequentialLoopBody, whileConditionNode, bodyObservationChains }) {
     return sequentialLoopBody &&
       !whileConditionNode &&
-      bodyObservationChains.includes(RETURN_CHAIN_NAME)
+      this.hasReturnStateObservation(bodyObservationChains)
       ? RETURN_CHAIN_NAME
       : null;
   }

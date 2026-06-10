@@ -382,6 +382,12 @@ surfaces.
 
 ## 6. Audit Internal/Special Chain Visibility
 
+**Status: implemented.** Internal lanes are not blanket-filtered from generic
+facts. Instead, the load-bearing special cases are named at their owning
+compiler feature: return-state guard capture/loop observation lives in
+`return.js`, and caller scheduling detection lives in `macro.js`. `__waited__*`
+remains timing-only codegen state.
+
 **Why sixth:** it is cross-cutting and should happen after the major boundary
 and callable shapes are clearer.
 
@@ -393,9 +399,10 @@ that sometimes travel through generic `usedChains` / `mutatedChains`.
 Some of this is load-bearing:
 
 - `hasCallerSupport` detection relies on `__caller__` surfacing in the body's
-  used-from-parent set ([macro.js](../../src/compiler/macro.js#L151)).
+  used-from-parent set; `CompileMacro.bodyUsesCallerScheduling(...)` owns that
+  internal-lane check.
 - Sequential loop return checks rely on `__return__` being present in body chain
-  facts.
+  facts; `CompileReturn.hasReturnStateObservation(...)` owns that check.
 - `__waited__*` is a timing lane; the dedicated `currentWaitedChainName` /
   `withOwnWaitedChain` binding in `buffer.js`
   ([buffer.js](../../src/compiler/buffer.js#L88)) treats it as a flat timing lane
@@ -413,6 +420,15 @@ For each internal lane, decide:
 - should participate in timing but not mutation.
 
 Document the result. Do not make a blanket "hide internal chains" change.
+
+### Result
+
+| Lane | Generic analysis visibility | Policy |
+| --- | --- | --- |
+| `__text__*` | Yes. It is template output state and participates in generic use/mutation facts. | Treat as ordinary output-chain state for linking and poisoning. Nested captures use their own current text chain so capture-local output does not leak into outer boundary links. |
+| `__return__` | Yes. `return` mutates it and `__return_is_unset__()` reads it. | Keep visible for branch/loop poison and sequential-loop return advance. Hide the guard-capture exception behind `CompileReturn.shouldCaptureInGuardState(...)`; guard recovery must not restore old return state. |
+| `__caller__` | Yes. Direct `caller()` both uses and mutates it. | Keep visible so nested caller boundaries link the scheduling lane, macro return can wait for caller invocations, and skipped/failing macro-body regions can poison pending caller scheduling work. Hide macro support detection behind `CompileMacro.bodyUsesCallerScheduling(...)`. |
+| `__waited__*` | No generic analysis visibility. | Timing-only lane owned by `currentWaitedChainName` / `withOwnWaitedChain` and emitted `WaitResolveCommand`s. It must not be linked as child-buffer state, treated as mutation, or added to poison targets. |
 
 **Risk:** medium. Semantics are subtle and per-chain.
 

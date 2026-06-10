@@ -301,8 +301,10 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
         '{% call wrap("span") %}X{{ x }}Y{% endcall %}',
         'caller-linked-analysis.njk'
       );
+      const macroNode = collectNodesByType(ast, 'Macro')[0];
       const callerNode = collectNodesByType(ast, 'Caller')[0];
 
+      expect(macroNode._analysis.hasCallerSupport).to.be(true);
       expect(callerNode._analysis.wantsLinkedChildBuffer).to.be(true);
       expect(callerNode._analysis.createsLinkedChildBuffer).to.be(true);
       expect(Array.from(callerNode._analysis.linkedChains || [])).to.eql(['x']);
@@ -359,6 +361,7 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       expect(ast._analysis.wantsLinkedChildBuffer).to.be(false);
       expect(ast._analysis.createsLinkedChildBuffer).to.be(false);
       expect(ast._analysis.linkedChains).to.be(null);
+      expect(macroNode._analysis.hasCallerSupport).to.be(false);
       expect(macroNode._analysis.wantsLinkedChildBuffer).to.be(false);
       expect(macroNode._analysis.createsLinkedChildBuffer).to.be(false);
       expect(macroNode._analysis.linkedChains).to.be(null);
