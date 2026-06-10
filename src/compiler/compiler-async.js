@@ -196,9 +196,9 @@ class CompilerAsync extends CompilerBaseAsync {
       if (node.else_) {
         node.else_.addAnalysis({ createScope: true });
       }
-      return { createsLinkedChildBuffer: true };
+      return { wantsLinkedChildBuffer: true };
     }
-    return { createScope: true, declares, createsLinkedChildBuffer: true };
+    return { createScope: true, declares, wantsLinkedChildBuffer: true };
   }
 
   analyzeWhile(node, analysisPass) {
@@ -272,7 +272,7 @@ class CompilerAsync extends CompilerBaseAsync {
     if (node.default) {
       node.default.addAnalysis({ createScope: true });
     }
-    return { createsLinkedChildBuffer: true };
+    return { wantsLinkedChildBuffer: true };
   }
 
   postAnalyzeSwitch(node) {
@@ -370,7 +370,7 @@ class CompilerAsync extends CompilerBaseAsync {
     if (node.else_) {
       node.else_.addAnalysis({ createScope: true });
     }
-    return { createsLinkedChildBuffer: true };
+    return { wantsLinkedChildBuffer: true };
   }
 
   analyzeIfAsync(node) {
@@ -430,7 +430,7 @@ class CompilerAsync extends CompilerBaseAsync {
       scopeBoundary: false,
       declares: [{ name: textOutput, type: 'text', initializer: null, internal: true }],
       textOutput,
-      createsLinkedChildBuffer: true
+      wantsLinkedChildBuffer: true
     };
   }
 
@@ -466,7 +466,7 @@ class CompilerAsync extends CompilerBaseAsync {
         // compileOutput emits per-child text boundaries. The aggregate link set
         // keeps every child expression attached to the chains needed by the
         // full output slot.
-        createsLinkedChildBuffer: true
+        wantsLinkedChildBuffer: true
       };
   }
 
@@ -652,7 +652,7 @@ class CompilerAsync extends CompilerBaseAsync {
     return {
       uses: textChain ? [textChain] : [],
       mutates: textChain ? [textChain] : [],
-      createsLinkedChildBuffer: true
+      wantsLinkedChildBuffer: true
     };
   }
 

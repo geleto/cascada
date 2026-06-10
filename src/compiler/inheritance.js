@@ -106,7 +106,11 @@ class CompileInheritance {
 
   postAnalyzeCallableDefinition(node) {
     // Blocks contribute template text output; script methods contribute return output.
-    return this._getCallableChainFootprint(node);
+    const footprint = this._getCallableSharedFootprint(node);
+    return {
+      linkedChains: footprint.sharedDependencies,
+      linkedMutatedChains: footprint.mutationDependencies
+    };
   }
 
   analyzeRoot(node) {
@@ -155,7 +159,7 @@ class CompileInheritance {
     if (node._analysis.parent?.node instanceof nodes.Root) {
       rootAnalysis.inheritanceLocalExtendsNode = rootAnalysis.inheritanceLocalExtendsNode || node;
     }
-    return { createsLinkedChildBuffer: true };
+    return { wantsLinkedChildBuffer: true };
   }
 
   _isInsideCompilerInternalCallable(node) {
@@ -480,7 +484,7 @@ class CompileInheritance {
       parentReadOnly: true,
       uses: textChain ? [textChain] : [],
       mutates: textChain ? [textChain] : [],
-      createsLinkedChildBuffer: true
+      wantsLinkedChildBuffer: true
     };
   }
 
@@ -861,11 +865,11 @@ class CompileInheritance {
   }
 
   _compileMethodEntryObject(entry) {
-    const callableFootprint = this._getCallableChainFootprint(entry.ownerNode);
-    const ownLinkedChainNames = callableFootprint.linkedChains;
-    // Keep mutations separate from links so inherited/component calls can
-    // later distinguish read-only participation from write barriers.
-    const ownMutatedChainNames = callableFootprint.linkedMutatedChains;
+    const callableFootprint = this._getCallableSharedFootprint(entry.ownerNode);
+    // The emitted ABI calls these "own" chains because they are the callable
+    // entry's own parent-visible shared dependencies.
+    const ownLinkedChainNames = callableFootprint.sharedDependencies;
+    const ownMutatedChainNames = callableFootprint.mutationDependencies;
     const ownLinkedChains = JSON.stringify(ownLinkedChainNames);
     const ownMutatedChains = JSON.stringify(ownMutatedChainNames);
     const errorContextIndex = this.compiler.getErrorContextIndex(entry.errorContextNode);
@@ -903,17 +907,18 @@ class CompileInheritance {
     return `{ ${entries.join(', ')} }`;
   }
 
-  _getCallableChainFootprint(ownerNode) {
+  _getCallableSharedFootprint(ownerNode) {
+    // Naming path: shared/mutation dependencies become generic
+    // linkedChains/linkedMutatedChains in analysis, then ownLinkedChains/
+    // ownMutatedChains in the emitted inheritance ABI.
     const bodyNode = ownerNode.body || ownerNode;
     const usedChains = this.compiler.analysis.getChainsUsedFromParent(bodyNode);
     const mutatedChains = this.compiler.analysis.getChainsMutatedFromParent(bodyNode);
     const rootNode = this.compiler.analysis.getRootNode(ownerNode._analysis);
     const sharedStorageNames = new Set(this._getSharedDeclarations(rootNode).map((declaration) => declaration.name));
-    const linkedChainNames = usedChains.filter((name) => sharedStorageNames.has(name));
-    const linkedMutatedChainNames = mutatedChains.filter((name) => sharedStorageNames.has(name));
     return {
-      linkedChains: linkedChainNames,
-      linkedMutatedChains: linkedMutatedChainNames
+      sharedDependencies: usedChains.filter((name) => sharedStorageNames.has(name)),
+      mutationDependencies: mutatedChains.filter((name) => sharedStorageNames.has(name))
     };
   }
 

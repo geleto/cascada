@@ -320,55 +320,60 @@ current error positions/messages.
 
 ## 5. Unify Buffer-Creation Policy And Callable Footprints
 
+**Status: implemented.** Analyzer-owned boundary intent now uses
+`wantsLinkedChildBuffer`, while `_finalizeBufferCreation` computes the finalized
+`createsLinkedChildBuffer` outcome. Callable footprint calculation now names
+shared reads/writes as `sharedDependencies` and `mutationDependencies` before
+adapting them to analysis link facts or emitted method-entry ABI fields.
+
 **Why fifth:** these are adjacent concepts: boundary intent, linked-chain
 metadata, callable metadata, and runtime inheritance patching.
 
 ### Problem
 
-Three flags drive child-buffer creation:
+Before this item, three flags drove child-buffer creation:
 
 - `createsLinkedChildBuffer` (set to literal `true` by many node analyzers);
 - `createsScopeBuffer` (guard recovery only);
 - `expressionControlFlowBoundary` (inline-if / `and` / `or`).
 
-`_createsLinkableChildBuffer` is `createsLinkedChildBuffer || createsScopeBuffer`
-([analysis.js](../../src/compiler/analysis.js#L749)).
-
-`createsLinkedChildBuffer` carries two meanings:
+`createsLinkedChildBuffer` carried two meanings:
 
 - analyzer intent;
 - actual derived outcome.
 
-The `expressionControlFlowBoundary` tail block re-derives it to `false` when
-there are no linked mutations ([analysis.js](../../src/compiler/analysis.js#L655)).
+The `expressionControlFlowBoundary` tail block re-derived it to `false` when
+there were no linked mutations.
 
-Callable footprints are part of the same surface. Blocks, methods, macros,
+Callable footprints were part of the same surface. Blocks, methods, macros,
 callers, imports, inherited methods, and components each compute a
-boundary/callable footprint. The parent-visible work fixed one naming bug:
-`_getCallableChainFootprint` now returns `linkedMutatedChains`, not
-`mutatedChains`, and uses the from-parent helpers
-([inheritance.js](../../src/compiler/inheritance.js#L906)).
+boundary/callable footprint.
 
-There is also transitional runtime scaffolding:
-`CommandBuffer._markLinkedMutatedChain(...)` patches inheritance callable
-footprints at runtime and carries an explicit TODO.
+There was also transitional-looking runtime scaffolding:
+`CommandBuffer._markLinkedMutatedChain(...)` patched inheritance callable
+footprints at runtime and carried an explicit TODO.
 
 ### Action
 
-Separate intent from outcome:
+Intent and outcome are now separate:
 
-- analyzer-set `wantsLinkedChildBuffer`;
-- analysis-computed `createsLinkedChildBuffer`.
+- analyzers set `wantsLinkedChildBuffer`;
+- analysis computes `createsLinkedChildBuffer`.
 
-Describe buffer-creation policy as one decision function rather than scattered
-flags. In the same pass, standardize callable footprint shape/names around:
+Buffer creation policy is centralized in `_finalizeBufferCreation` /
+`_shouldCreateLinkedChildBuffer`. Callable footprint shape is named around:
 
 - own linked chains;
 - shared dependencies;
 - mutation dependencies.
 
-Audit whether `_markLinkedMutatedChain(...)` can be removed once callable/link
-metadata has one clear compile-time path.
+`createsLinkedChildBuffer` now means the node creates a child `CommandBuffer`.
+It can be true even when `linkedChains` and `linkedMutatedChains` are empty.
+
+`_markLinkedMutatedChain(...)` was audited and kept. Inherited callable
+invocation buffers are already constructed when finalized callable footprint
+links are attached, so the runtime still needs a narrow late-link mutation
+marker.
 
 **Risk:** medium. Touches every boundary node's analyzer and inheritance/callable
 surfaces.

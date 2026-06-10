@@ -315,7 +315,9 @@ class CommandBuffer {
     return this._linkedMutatedChains.has(this._resolveAliasedChainName(chainName));
   }
 
-  // @todo - get rid of this after sorting out inheritance
+  // Inherited callable invocations attach finalized callable footprint links
+  // after the invocation buffer already exists, so keep late-linked mutation
+  // metadata in sync with those installed parent lanes.
   _markLinkedMutatedChain(chainName) {
     const resolvedChainName = this._resolveAliasedChainName(chainName);
     if (resolvedChainName) {
@@ -363,7 +365,9 @@ class CommandBuffer {
     return mapped || name;
   }
 
-  // @todo - get rid of this when done cleaning-up inheritance and have a clear chain linking strategy for child buffers.
+  // Late inheritance callable linking may need to attach an already-finished
+  // parent lane to an existing invocation buffer. Constructor-time child
+  // buffers should prefer the normal `linkedChains` constructor path.
   _installLinkedChain(chainName, chain = null) {
     if (!chainName) {
       return;

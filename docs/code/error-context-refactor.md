@@ -285,7 +285,7 @@ Example target pattern:
 ```js
 analyzeSwitch(node) {
   node.expr._analysis.errorContextLabel = 'Switch.Expression';
-  return { createsLinkedChildBuffer: true };
+  return { wantsLinkedChildBuffer: true };
 }
 ```
 

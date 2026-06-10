@@ -179,7 +179,7 @@ class CompilerBaseAsync extends CompilerCommon {
 
   analyzeInlineIf() {
     return {
-      createsLinkedChildBuffer: true,
+      wantsLinkedChildBuffer: true,
       expressionControlFlowBoundary: true
     };
   }
@@ -271,7 +271,7 @@ class CompilerBaseAsync extends CompilerCommon {
 
   analyzeOr() {
     return {
-      createsLinkedChildBuffer: true,
+      wantsLinkedChildBuffer: true,
       expressionControlFlowBoundary: true
     };
   }
@@ -282,7 +282,7 @@ class CompilerBaseAsync extends CompilerCommon {
 
   analyzeAnd() {
     return {
-      createsLinkedChildBuffer: true,
+      wantsLinkedChildBuffer: true,
       expressionControlFlowBoundary: true
     };
   }

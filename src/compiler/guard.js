@@ -25,7 +25,7 @@ class CompileGuard {
     }
     const guardTargets = this._getGuardTargets(node);
     validateGuardVariablesDeclared(guardTargets.variableValidationTargets, compiler, node);
-    return { guardTargets, createsLinkedChildBuffer: true };
+    return { guardTargets, wantsLinkedChildBuffer: true };
   }
 
   postAnalyzeGuard(node) {

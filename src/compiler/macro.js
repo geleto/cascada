@@ -77,7 +77,7 @@ class CompileMacro {
       parentReadOnly: true,
       declares,
       compiledMacroFuncId,
-      createsLinkedChildBuffer: true
+      wantsLinkedChildBuffer: true
     };
   }
 

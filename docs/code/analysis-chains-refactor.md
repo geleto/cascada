@@ -68,9 +68,10 @@ Add a derived boundary-link fact, computed by analysis:
 - no nested child-boundary-owned chains
 - stored only on boundary nodes that need runtime parent linking
 
-Analysis should mark those nodes explicitly with a child-buffer/linking fact
-such as `createsLinkedChildBuffer`. Do not infer this from node type names, and
-do not reuse `createScope` or `scopeBoundary`:
+Analysis should mark those nodes explicitly with an intent fact such as
+`wantsLinkedChildBuffer`; finalization computes the outcome fact
+`createsLinkedChildBuffer`. Do not infer this from node type names, and do not
+reuse `createScope` or `scopeBoundary`:
 
 - `createScope` is lexical compiler scope, not command-buffer creation.
 - `scopeBoundary` controls analysis propagation/visibility, not linking.
@@ -219,8 +220,8 @@ Work:
 
 - add boundary-only `linkedChains` metadata for nodes that create runtime
   child buffers
-- add an explicit analysis flag, such as `createsLinkedChildBuffer`, for nodes
-  that create a child command buffer whose chains may need parent links
+- add an explicit analysis flag, such as `wantsLinkedChildBuffer`, for nodes
+  that may create a child command buffer whose chains need parent links
 - do not maintain a central node-type allowlist for link derivation; the node
   analyzer that knows it emits a linked child buffer should set the flag
 - cover every child-buffer surface explicitly:
@@ -309,7 +310,8 @@ Work:
   - keep runtime checks only for hard invariant validation, such as "requested
     linked chain is missing from the immediate parent"
 - audit every compile-time child-buffer creation site and ensure it is either:
-  - represented by analysis metadata via `createsLinkedChildBuffer` and
+  - represented by analysis metadata via `wantsLinkedChildBuffer` /
+    `createsLinkedChildBuffer` and
     `linkedChains`
   - documented as a root/scope-root/runtime-only buffer that does not belong to
     boundary-link analysis
@@ -595,8 +597,9 @@ The primary refactor targets are `usedChains`, `mutatedChains`, and the new
 boundary-only `linkedChains`. While changing those, audit nearby analysis
 facts that can affect chain ownership or linking:
 
-- `createsLinkedChildBuffer`: should be the explicit marker that a node creates
-  a child command buffer whose linked chains are analysis-owned. Keep it
+- `wantsLinkedChildBuffer`: should be the explicit analyzer-owned intent marker
+  for nodes that may create a child command buffer whose linked chains are
+  analysis-owned. `createsLinkedChildBuffer` is the finalized outcome. Keep both
   distinct from lexical scope facts.
 - `declaredChains`: should remain owner-scoped. Check ambiguity between
   declared here, declared in parent, and declared in nested child boundaries.

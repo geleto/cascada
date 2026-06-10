@@ -268,8 +268,11 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       const extendsNode = collectNodesByType(ast, 'Extends')[0];
       const blockNode = collectNodesByType(ast, 'Block')[0];
 
+      expect(includeNode._analysis.wantsLinkedChildBuffer).to.be(true);
       expect(includeNode._analysis.createsLinkedChildBuffer).to.be(true);
+      expect(extendsNode._analysis.wantsLinkedChildBuffer).to.be(true);
       expect(extendsNode._analysis.createsLinkedChildBuffer).to.be(true);
+      expect(blockNode._analysis.wantsLinkedChildBuffer).to.be(true);
       expect(blockNode._analysis.createsLinkedChildBuffer).to.be(true);
       expect(Array.from(includeNode._analysis.linkedChains || [])).to.eql(['__text__']);
       expect(Array.from(extendsNode._analysis.linkedChains || [])).to.eql(['__text__']);
@@ -285,6 +288,7 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       ].join('\n'), 'inline-if-linked-analysis.casc');
       const inlineIfNode = collectNodesByType(ast, 'InlineIf')[0];
 
+      expect(inlineIfNode._analysis.wantsLinkedChildBuffer).to.be(true);
       expect(inlineIfNode._analysis.createsLinkedChildBuffer).to.be(true);
       expect(Array.from(inlineIfNode._analysis.linkedChains || [])).to.eql(['result']);
       expect(Array.from(inlineIfNode._analysis.linkedMutatedChains || [])).to.eql(['result']);
@@ -299,6 +303,7 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       );
       const callerNode = collectNodesByType(ast, 'Caller')[0];
 
+      expect(callerNode._analysis.wantsLinkedChildBuffer).to.be(true);
       expect(callerNode._analysis.createsLinkedChildBuffer).to.be(true);
       expect(Array.from(callerNode._analysis.linkedChains || [])).to.eql(['x']);
       expect(Array.from(callerNode._analysis.declaredChains.keys())).to.eql(['caller', '__return__', '__text__']);
@@ -320,7 +325,9 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       expect(guardNode.body._analysis.createScope).to.be(true);
       expect(guardNode.body._analysis.createsScopeBuffer).to.be(false);
       expect(recoveryNode._analysis.createScope).to.be(true);
+      expect(recoveryNode._analysis.wantsLinkedChildBuffer).to.be(false);
       expect(recoveryNode._analysis.createsScopeBuffer).to.be(true);
+      expect(recoveryNode._analysis.createsLinkedChildBuffer).to.be(false);
       expect(Array.from(recoveryNode._analysis.linkedChains || [])).to.eql(['result']);
       expect(Array.from(recoveryNode._analysis.linkedMutatedChains || [])).to.eql(['result']);
     });
@@ -349,8 +356,10 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       );
       const macroNode = collectNodesByType(ast, 'Macro')[0];
 
+      expect(ast._analysis.wantsLinkedChildBuffer).to.be(false);
       expect(ast._analysis.createsLinkedChildBuffer).to.be(false);
       expect(ast._analysis.linkedChains).to.be(null);
+      expect(macroNode._analysis.wantsLinkedChildBuffer).to.be(false);
       expect(macroNode._analysis.createsLinkedChildBuffer).to.be(false);
       expect(macroNode._analysis.linkedChains).to.be(null);
     });
@@ -364,12 +373,15 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       const valueOrNode = collectNodesByType(valueOnlyAst, 'Or')[0];
       const valueInlineIfNode = collectNodesByType(valueOnlyAst, 'InlineIf')[0];
 
+      expect(valueAndNode._analysis.wantsLinkedChildBuffer).to.be(true);
       expect(valueAndNode._analysis.createsLinkedChildBuffer).to.be(false);
       expect(valueAndNode._analysis.linkedChains).to.be(null);
       expect(valueAndNode._analysis.linkedMutatedChains).to.be(null);
+      expect(valueOrNode._analysis.wantsLinkedChildBuffer).to.be(true);
       expect(valueOrNode._analysis.createsLinkedChildBuffer).to.be(false);
       expect(valueOrNode._analysis.linkedChains).to.be(null);
       expect(valueOrNode._analysis.linkedMutatedChains).to.be(null);
+      expect(valueInlineIfNode._analysis.wantsLinkedChildBuffer).to.be(true);
       expect(valueInlineIfNode._analysis.createsLinkedChildBuffer).to.be(false);
       expect(valueInlineIfNode._analysis.linkedChains).to.be(null);
       expect(valueInlineIfNode._analysis.linkedMutatedChains).to.be(null);
@@ -383,9 +395,11 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       const commandAndNode = collectNodesByType(commandEffectAst, 'And')[0];
       const commandOrNode = collectNodesByType(commandEffectAst, 'Or')[0];
 
+      expect(commandAndNode._analysis.wantsLinkedChildBuffer).to.be(true);
       expect(commandAndNode._analysis.createsLinkedChildBuffer).to.be(true);
       expect(Array.from(commandAndNode._analysis.linkedChains || [])).to.eql(['result']);
       expect(Array.from(commandAndNode._analysis.linkedMutatedChains || [])).to.eql(['result']);
+      expect(commandOrNode._analysis.wantsLinkedChildBuffer).to.be(true);
       expect(commandOrNode._analysis.createsLinkedChildBuffer).to.be(true);
       expect(Array.from(commandOrNode._analysis.linkedChains || [])).to.eql(['result']);
       expect(Array.from(commandOrNode._analysis.linkedMutatedChains || [])).to.eql(['result']);
@@ -674,6 +688,15 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
     });
 
     it('should keep imported member calls working through imported namespaces', async function () {
+      const ast = analyzeTemplateSource(
+        '{% import "macros.njk" as m %}{{ m.hi("x") }}',
+        'imported-member-boundary.njk'
+      );
+      const importedCall = collectNodesByType(ast, 'FunCall')
+        .find((node) => node._analysis.importedCallable);
+
+      expect(importedCall._analysis.wantsLinkedChildBuffer).to.be(true);
+
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
       loader.addTemplate('macros.njk', '{% macro hi(name) %}Hi {{ name }}{% endmacro %}');

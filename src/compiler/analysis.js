@@ -110,6 +110,7 @@ class CompileAnalysis {
       // Parent-owned linked chains this boundary may mutate. Future command-buffer
       // scheduling can use this to distinguish read-only child buffers.
       linkedMutatedChains: null,
+      wantsLinkedChildBuffer: false,
       createsLinkedChildBuffer: false,
       createsScopeBuffer: false,
       expressionControlFlowBoundary: false,
@@ -691,14 +692,7 @@ class CompileAnalysis {
     }
     analysis.linkedChains = this._normalizeChainSet(analysis.linkedChains, 'linkedChains', analysis);
     analysis.linkedMutatedChains = this._normalizeChainSet(analysis.linkedMutatedChains, 'linkedMutatedChains', analysis);
-    if (analysis.expressionControlFlowBoundary) {
-      analysis.createsLinkedChildBuffer = analysis.linkedMutatedChains !== null &&
-        analysis.linkedMutatedChains.size > 0;
-      if (!analysis.createsLinkedChildBuffer) {
-        analysis.linkedChains = null;
-        analysis.linkedMutatedChains = null;
-      }
-    }
+    this._finalizeBufferCreation(analysis);
     this._assertFinalizedChainSetFields(analysis);
     return this._getPropagatedChainUsage(
       analysis,
@@ -761,7 +755,7 @@ class CompileAnalysis {
   }
 
   _deriveBoundaryLinkedChains(analysis, chainsFromParent) {
-    if (!analysis.parent || !this._createsLinkableChildBuffer(analysis)) {
+    if (!this._wantsLinkableChildBuffer(analysis)) {
       return null;
     }
     const linkedChains = new Set();
@@ -847,7 +841,38 @@ class CompileAnalysis {
     return typeof value;
   }
 
+  _wantsLinkableChildBuffer(analysis) {
+    // Broader than `wantsLinkedChildBuffer`: guard recovery scope buffers also
+    // need derived parent links even though they are not ordinary child-buffer
+    // intent sites.
+    return !!(
+      analysis &&
+      analysis.parent &&
+      (analysis.wantsLinkedChildBuffer || analysis.createsScopeBuffer)
+    );
+  }
+
+  _finalizeBufferCreation(analysis) {
+    analysis.createsLinkedChildBuffer = this._shouldCreateLinkedChildBuffer(analysis);
+    if (!this._createsLinkableChildBuffer(analysis)) {
+      analysis.linkedChains = null;
+      analysis.linkedMutatedChains = null;
+    }
+  }
+
+  _shouldCreateLinkedChildBuffer(analysis) {
+    if (!analysis.parent || !analysis.wantsLinkedChildBuffer) {
+      return false;
+    }
+    if (!analysis.expressionControlFlowBoundary) {
+      return true;
+    }
+    return analysis.linkedMutatedChains !== null && analysis.linkedMutatedChains.size > 0;
+  }
+
   _createsLinkableChildBuffer(analysis) {
+    // Broader than `createsLinkedChildBuffer`: guard recovery scope buffers are
+    // linkable even though the ordinary linked-child-buffer outcome is false.
     return !!(analysis && (analysis.createsLinkedChildBuffer || analysis.createsScopeBuffer));
   }
 

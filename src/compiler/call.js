@@ -46,7 +46,7 @@ class CompileCall {
       // Direct same-scope macro calls reuse the current buffer through
       // runtime.invokeMacro(..., currentBuffer). Imported callable calls need a
       // value boundary, so only those are marked as linked child buffers here.
-      createsLinkedChildBuffer: importedCallable
+      wantsLinkedChildBuffer: !!importedCallable
     };
   }
 

@@ -49,12 +49,16 @@ function linkInheritanceCallableFootprintChains(parentBuffer, currentBuffer, cha
   }
 
   const linkedMutatedChainSet = new Set(linkedMutatedChainNames || []);
+  const markLinkedMutation = (chainName) => {
+    if (linkedMutatedChainSet.has(chainName)) {
+      currentBuffer._markLinkedMutatedChain(chainName);
+    }
+  };
+
   for (const chainName of chainNames) {
     const chain = parentBuffer.getChain(chainName);
     if (currentBuffer.getChainIfExists(chainName) === chain) {
-      if (linkedMutatedChainSet.has(chainName)) {
-        currentBuffer._markLinkedMutatedChain(chainName);
-      }
+      markLinkedMutation(chainName);
       continue;
     }
     if (currentBuffer.hasChain(chainName)) {
@@ -65,15 +69,11 @@ function linkInheritanceCallableFootprintChains(parentBuffer, currentBuffer, cha
     }
     if (parentBuffer.isChainFinished(chainName) || parentBuffer.isFinished()) {
       currentBuffer._installLinkedChain(chainName, chain);
-      if (linkedMutatedChainSet.has(chainName)) {
-        currentBuffer._markLinkedMutatedChain(chainName);
-      }
+      markLinkedMutation(chainName);
       continue;
     }
     parentBuffer.addBuffer(currentBuffer, chainName);
-    if (linkedMutatedChainSet.has(chainName)) {
-      currentBuffer._markLinkedMutatedChain(chainName);
-    }
+    markLinkedMutation(chainName);
   }
 
   return currentBuffer;
