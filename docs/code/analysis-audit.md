@@ -436,6 +436,12 @@ Document the result. Do not make a blanket "hide internal chains" change.
 
 ## 7. Audit Declaration Flag Model
 
+**Status: implemented.** No declaration-model rewrite is recommended in this
+phase. The current declaration object does carry several axes, but the existing
+flags are load-bearing and mostly feature tags rather than dead transitional
+scaffolding. The useful cleanup was to name the placement/conflict policies in
+`analysis.js`, not to replace the shape wholesale.
+
 **Why seventh:** high ceiling, high risk. Do after source-order/finalized maps are
 split and after boundary/callable shape is clearer.
 
@@ -458,6 +464,69 @@ The Macro/Set special-casing in `_registerDeclarations` and
 Audit, do not rewrite immediately. Map each flag to an axis and see whether an
 explicit model such as `{ declaredAt, visibleAt, writeOwner }` removes special
 cases.
+
+### Result
+
+The current model has four separate axes sharing one declaration object:
+
+| Axis | Current representation | Meaning |
+| --- | --- | --- |
+| Placement and lifecycle | `declares`, `declaresInParent`, `sourceVisibleDeclarations`, `declaredChains` | Where a declaration is first registered during the source-order walk, and where it is finally owned after declaration finalization. |
+| Conflict policy | `explicit`, `parentOwned`, producer node type (`Macro`, `Set`, `ChainDeclaration`) | Whether the declaration should conflict with same-scope or ancestor declarations during first-pass validation. |
+| Storage/access behavior | `type`, `shared`, `imported`, `componentBinding`, `isMacro`, `macroParam`, `internal`, `implicitTemplateShared` | How later compiler features interpret a visible declaration: chain type, shared-state access, imported callable boundary, component binding, direct macro call, macro argument, reserved-name bypass, or inferred template shared state. |
+| Origin and codegen context | `declarationOrigin`, `initializer` | Which analysis node introduced the declaration and which source node/context should be used by later codegen or diagnostics. |
+
+This means `{ declaredAt, visibleAt, writeOwner }` would not be expressive
+enough by itself. It would clarify placement, but it would still need separate
+feature tags for shared/imported/component/macro/internal behavior and a
+conflict-policy axis.
+
+### Flag Map
+
+| Fact | Current role | Keep? |
+| --- | --- | --- |
+| `declares` | Local declaration requests produced by the node analyzer. During the walk they populate `sourceVisibleDeclarations`; during finalization they rebuild `declaredChains`. | Keep. This is the producer list, not a finalized ownership table. |
+| `declaresInParent` | Declaration requests installed into the parent scope owner, currently used for macro-name hoisting. | Keep. It names a real placement difference. |
+| `parentOwned` | Marks a `declaresInParent` entry as parent-owned for macro conflict checks and root-export detection. | Keep for now, but this is the best future simplification target. A placement record could replace the separate flag. |
+| `declarationOrigin` | Points to the analysis node that introduced the declaration. Direct macro calls, set target facts, shared initializer diagnostics, and shared method metadata rely on it. | Keep. Not redundant with ownership. |
+| `shared` | Marks hierarchy-owned shared storage. It affects declaration installation, root shared-schema registration, bare shared assignment validation, lookup/use validation, and shared-chain codegen. | Keep. It is broad but intentionally central; split only as part of a shared-schema/access-surface refactor. |
+| `implicitTemplateShared` | Distinguishes inferred template `this.<name>` shared vars from explicit script shared declarations for extends-target validation. | Keep. Narrow feature tag. |
+| `imported` | Marks import/from-import bindings so member calls can create imported callable boundaries and link the imported namespace/text output correctly. | Keep. Narrow feature tag. |
+| `componentBinding` | Marks script component bindings so `component.x` accesses route through component shared-state/method dispatch. | Keep. Narrow feature tag. |
+| `isMacro` | Marks macro declarations so direct macro calls can bind to the compiled macro function. | Keep. Narrow feature tag. |
+| `macroParam` | Marks macro parameters so sequence-marker misuse inside macros can produce the macro-specific error. | Keep. Narrow feature tag. |
+| `internal` | Allows compiler-owned declarations such as `__return__`, `__caller__`, and private text lanes to bypass reserved-name validation. | Keep. Narrow feature tag. |
+| `explicit` | Distinguishes explicit declarations from implicit template `set` declarations for conflict validation. | Keep. It belongs to conflict policy; future cleanup should name that policy directly. |
+
+### Architectural Conclusion
+
+The current pain was not that all flags were wrong; it was that placement,
+conflict policy, and feature behavior were encoded in the same flat object and
+interpreted inline in `_registerDeclarations`.
+
+The cleanup keeps the declaration shape but names the source-order registration
+steps in `CompileAnalysis`:
+
+- `_registerSourceDeclarations(...)`: source-order declaration list install;
+- `_validateSourceDeclarationConflict(...)`: policy dispatch;
+- `_validateMacroDeclarationConflict(...)`: macro local/parent-owned conflicts;
+- `_validateExplicitDeclarationConflict(...)`: explicit set/chain conflicts;
+- `_validateAncestorDeclarationConflicts(...)`: ancestor visible-declaration scan.
+
+Future refactors should stay incremental:
+
+- extract placement helpers only when another parent-owned declaration form
+  appears;
+- keep source-order table installation and finalized-table installation
+  separate;
+- add feature predicates such as `isSharedDeclaration`,
+  `isImportedDeclaration`, and `isComponentBindingDeclaration` only if a second
+  consumer appears.
+
+Do not attempt a broad `{ declaredAt, visibleAt, writeOwner }` rewrite without
+also modeling conflict policy and feature tags. The current `parentOwned` flag
+looks redundant with `declaresInParent`, but removing it is only safe after
+placement and conflict policy are represented together.
 
 **Risk:** high. Load-bearing for scoping correctness, macro hoisting via
 `declaresInParent`, and shared inheritance defaults.

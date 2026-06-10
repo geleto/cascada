@@ -358,65 +358,75 @@ class CompileAnalysis {
   }
 
   _registerDeclarations(analysis) {
-    const registerDeclares = (declares, owner, declarationOrigin) => {
-      if (declares.length === 0 || !owner) {
-        return;
-      }
-      const declarations = this._ensureDeclarationMap(owner, 'sourceVisibleDeclarations');
-      for (let i = 0; i < declares.length; i++) {
-        const decl = declares[i];
-        if (!decl || !decl.name) {
-          continue;
-        }
-        this._validateReservedDeclarationName(analysis, decl);
-        const currentScopeDecl = declarations.get(decl.name) || null;
-        if (analysis.node.typename === 'Macro') {
-          if (decl.parentOwned) {
-            if (currentScopeDecl) {
-              this._validateDeclarationConflict(analysis, decl, currentScopeDecl);
-            }
-            let current = owner.parent;
-            while (current) {
-              const visibleDeclarations = current.sourceVisibleDeclarations;
-              if (visibleDeclarations && visibleDeclarations.has(decl.name)) {
-                this._validateDeclarationConflict(analysis, decl, visibleDeclarations.get(decl.name));
-              }
-              if (current.scopeBoundary) {
-                break;
-              }
-              current = current.parent;
-            }
-          } else if (currentScopeDecl && currentScopeDecl.declarationOrigin === declarationOrigin) {
-            this._validateDeclarationConflict(analysis, decl, currentScopeDecl);
-          }
-        } else if (decl.explicit !== false &&
-          (analysis.node.typename === 'Set' || analysis.node.typename === 'ChainDeclaration')) {
-          if (currentScopeDecl && currentScopeDecl.declarationOrigin !== declarationOrigin) {
-            this._validateDeclarationConflict(analysis, decl, currentScopeDecl);
-          }
-          let current = owner.parent;
-          while (current) {
-            const visibleDeclarations = current.sourceVisibleDeclarations;
-            if (visibleDeclarations && visibleDeclarations.has(decl.name)) {
-              this._validateDeclarationConflict(analysis, decl, visibleDeclarations.get(decl.name));
-            }
-            if (current.scopeBoundary) {
-              break;
-            }
-            current = current.parent;
-          }
-        }
-        if (!declarations.has(decl.name)) {
-          this._installDeclaration(owner, decl, declarationOrigin, 'sourceVisibleDeclarations');
-        }
-      }
-    };
-
-    registerDeclares(analysis.declares, this._getScopeOwner(analysis), analysis);
+    this._registerSourceDeclarations(analysis, analysis.declares, this._getScopeOwner(analysis), analysis);
 
     if (analysis.declaresInParent.length > 0) {
       const parentOwner = analysis.parent ? this._getScopeOwner(analysis.parent) : null;
-      registerDeclares(analysis.declaresInParent, parentOwner, analysis);
+      this._registerSourceDeclarations(analysis, analysis.declaresInParent, parentOwner, analysis);
+    }
+  }
+
+  _registerSourceDeclarations(analysis, declares, owner, declarationOrigin) {
+    if (declares.length === 0 || !owner) {
+      return;
+    }
+    const declarations = this._ensureDeclarationMap(owner, 'sourceVisibleDeclarations');
+    for (let i = 0; i < declares.length; i++) {
+      const decl = declares[i];
+      if (!decl || !decl.name) {
+        continue;
+      }
+      this._validateReservedDeclarationName(analysis, decl);
+      const currentScopeDecl = declarations.get(decl.name) || null;
+      this._validateSourceDeclarationConflict(analysis, owner, decl, declarationOrigin, currentScopeDecl);
+      if (!declarations.has(decl.name)) {
+        this._installDeclaration(owner, decl, declarationOrigin, 'sourceVisibleDeclarations');
+      }
+    }
+  }
+
+  _validateSourceDeclarationConflict(analysis, owner, decl, declarationOrigin, currentScopeDecl) {
+    const nodeType = analysis.node.typename;
+    if (nodeType === 'Macro') {
+      this._validateMacroDeclarationConflict(analysis, owner, decl, declarationOrigin, currentScopeDecl);
+      return;
+    }
+    if (decl.explicit !== false && (nodeType === 'Set' || nodeType === 'ChainDeclaration')) {
+      this._validateExplicitDeclarationConflict(analysis, owner, decl, declarationOrigin, currentScopeDecl);
+    }
+  }
+
+  _validateMacroDeclarationConflict(analysis, owner, decl, declarationOrigin, currentScopeDecl) {
+    if (decl.parentOwned) {
+      if (currentScopeDecl) {
+        this._validateDeclarationConflict(analysis, decl, currentScopeDecl);
+      }
+      this._validateAncestorDeclarationConflicts(analysis, owner, decl);
+      return;
+    }
+    if (currentScopeDecl && currentScopeDecl.declarationOrigin === declarationOrigin) {
+      this._validateDeclarationConflict(analysis, decl, currentScopeDecl);
+    }
+  }
+
+  _validateExplicitDeclarationConflict(analysis, owner, decl, declarationOrigin, currentScopeDecl) {
+    if (currentScopeDecl && currentScopeDecl.declarationOrigin !== declarationOrigin) {
+      this._validateDeclarationConflict(analysis, decl, currentScopeDecl);
+    }
+    this._validateAncestorDeclarationConflicts(analysis, owner, decl);
+  }
+
+  _validateAncestorDeclarationConflicts(analysis, owner, decl) {
+    let current = owner.parent;
+    while (current) {
+      const visibleDeclarations = current.sourceVisibleDeclarations;
+      if (visibleDeclarations && visibleDeclarations.has(decl.name)) {
+        this._validateDeclarationConflict(analysis, decl, visibleDeclarations.get(decl.name));
+      }
+      if (current.scopeBoundary) {
+        break;
+      }
+      current = current.parent;
     }
   }
 
