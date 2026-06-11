@@ -533,7 +533,12 @@ placement and conflict policy are represented together.
 
 ---
 
-## 8. Defer Data-Path vs Ordinary-Lookup Analysis
+## 8. Clarify Data-Path vs Ordinary-Lookup Ownership
+
+**Status: implemented.** No deeper data-path rewrite was needed. The cleanup
+keeps the existing marker-based model but moves data-command path marker
+propagation and lookup-segment composition into `CompileChain`, so `lookup.js`
+no longer owns data-path construction details.
 
 **Why last:** recently churned twice and currently lower value than the items
 above.
@@ -541,4 +546,26 @@ above.
 `isDataCommandPath` / `dataPathSegments` and lookup post-analysis were just
 reworked (postAnalyze migration plus the `isDataCommandPath` gating). The
 remaining blend of ordinary expression lookup vs compile-time path-literal
-extraction is minor. Re-touch only when a concrete consumer confusion appears.
+extraction was minor, so the implementation stayed limited to the concrete
+ownership confusion below.
+
+### Result
+
+The remaining concrete confusion was small: `LookupVal` analysis had to know how
+to propagate `isDataCommandPath` to its target and how to append lookup segments
+to `dataPathSegments`. Those are data-command path construction details, not
+ordinary lookup semantics.
+
+The cleanup keeps ordinary lookup and data-path extraction separate by ownership:
+
+- `CompileLookup` still owns ordinary lookup facts: sequence locks, `this`
+  shared access, component bindings, inherited method lookup, and sequence-chain
+  lookups.
+- `CompileChain` owns data-command path extraction:
+  `markDataCommandPath(...)`, `analyzeDataPathLookup(...)`,
+  `postAnalyzeDataPathSegment(...)`, `postAnalyzeDataPathArray(...)`, and
+  `postAnalyzeDataPathLookup(...)`.
+
+Do not add a broader data-path analysis model unless another concrete consumer
+needs the distinction. The current marker is narrow and local to data-command
+argument normalization.

@@ -356,7 +356,7 @@ class CompileChain {
        (path[1] === 'isError' || path[1] === 'getError' ||
         (path[1] === 'snapshot' && (!chainDecl || chainDecl.type !== 'sequence'))));
     if (chainType === 'data' && callNode && !isObservation && callNode.args.children.length > 0) {
-      callNode.args.children[0].addAnalysis({ isDataCommandPath: true });
+      this.markDataCommandPath(callNode.args.children[0]);
     }
     const result = isObservation ? { uses: [chainName] } : { uses: [chainName], mutates: [chainName] };
     result.chainCommandFacts = {
@@ -402,6 +402,16 @@ class CompileChain {
     };
   }
 
+  markDataCommandPath(node) {
+    node.addAnalysis({ isDataCommandPath: true });
+  }
+
+  analyzeDataPathLookup(node) {
+    if (node._analysis.isDataCommandPath) {
+      this.markDataCommandPath(node.target);
+    }
+  }
+
   postAnalyzeDataPathSegment(node) {
     if (!node._analysis.isDataCommandPath) {
       return {};
@@ -421,6 +431,22 @@ class CompileChain {
     }
     return {
       dataPathSegments: node.children
+    };
+  }
+
+  postAnalyzeDataPathLookup(node) {
+    if (!node._analysis.isDataCommandPath || node.target instanceof nodes.Array) {
+      return {};
+    }
+    const targetSegments = node.target._analysis.dataPathSegments;
+    if (!targetSegments) {
+      return {};
+    }
+    const segmentNode = node.val === null
+      ? new nodes.Literal(node.lineno, node.colno, '[]')
+      : node.val;
+    return {
+      dataPathSegments: targetSegments.concat(segmentNode)
     };
   }
 

@@ -9,9 +9,7 @@ class CompileLookup {
 
   analyzeLookupVal(node, analysisPass) {
     const facts = this._createAnalysisFacts();
-    if (node._analysis.isDataCommandPath) {
-      node.target.addAnalysis({ isDataCommandPath: true });
-    }
+    this.compiler.chain.analyzeDataPathLookup(node);
 
     this._collectSequenceLockLookup(node, analysisPass, facts);
     if (this._collectThisSharedLookup(node, analysisPass, facts)) {
@@ -33,20 +31,7 @@ class CompileLookup {
     if (sequenceLockLookup) {
       facts.sequenceLockLookup = sequenceLockLookup;
     }
-    if (!node._analysis.isDataCommandPath) {
-      return facts;
-    }
-    if (node.target instanceof nodes.Array) {
-      return facts;
-    }
-    const targetSegments = node.target._analysis.dataPathSegments;
-    if (!targetSegments) {
-      return facts;
-    }
-    const segmentNode = node.val === null
-      ? new nodes.Literal(node.lineno, node.colno, '[]')
-      : node.val;
-    facts.dataPathSegments = targetSegments.concat(segmentNode);
+    Object.assign(facts, this.compiler.chain.postAnalyzeDataPathLookup(node));
     return facts;
   }
 
