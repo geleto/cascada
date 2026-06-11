@@ -12,11 +12,11 @@ Ordered by severity, then by shared substrate.
 
 ---
 
-## 1. Bug: declaration-conflict dispatch skips `CallAssign`
+## 1. Bug: declaration-conflict dispatch skips some declaring forms
 
 **Class:** the same one the parent audit warned about — a call site keys off a
 proxy (node typename) instead of the fact that carries the meaning
-(`decl.explicit`).
+(`decl.explicit` / declaration placement).
 
 ### Problem
 
@@ -30,21 +30,94 @@ if (decl.explicit !== false && (nodeType === 'Set' || nodeType === 'ChainDeclara
 }
 ```
 
-But `CallAssign` is a declaring form too: `analyzeCallAssign` delegates to the
-same `assignment.analyzeSet`
+`Import`, `FromImport`, and script `Component` all create declaration facts
+that are explicit by default (`decl.explicit !== false`)
+([compiler-async.js:544-576](../../src/compiler/compiler-async.js#L544),
+[component.js:10-21](../../src/compiler/component.js#L10)), but none of those
+producer typenames is routed through `_validateExplicitDeclarationConflict`.
+Duplicate bindings escape compile-time validation entirely: generated code
+tries to declare the same runtime lane twice and fails later with a
+root/constructor `RuntimeError` such as
+`Chain 'lib' was registered more than once on the same CommandBuffer`.
+
+The same typename-dispatch weakness also affects `CallAssign`, a declaring
+form whose `analyzeCallAssign` delegates to the same `assignment.analyzeSet`
 ([compiler-async.js:152-153](../../src/compiler/compiler-async.js#L152)),
-which produces `declares` entries with `explicit: true` for
+producing `declares` entries with `explicit: true` for
 `varType === 'declaration'`
 ([assignment.js:62](../../src/compiler/assignment.js#L62)). The rest of the
 pass already treats Set and CallAssign as twins —
 `_validateMissingDeclaration` matches both typenames
 ([analysis.js:580](../../src/compiler/analysis.js#L580)) — but the conflict
-dispatch does not. A duplicate explicit declaration introduced through
-`CallAssign` is silently skipped: the second install is dropped (first-wins)
-and codegen treats the second statement as a reassignment.
+dispatch does not. Unlike Import/FromImport/Component, a duplicate explicit
+declaration introduced through `CallAssign` is silently skipped instead of
+crashing: the second install is dropped (first-wins) and codegen treats the
+second statement as a reassignment.
 
-### Why it is mostly masked
+### `Import`/`FromImport`/`Component` are reachable from ordinary code
 
+This gap needs no internal tag and no template-only workaround — it is
+reachable from plain script (and template) source exactly as users would
+write it. The transpiler's lexical duplicate check
+(`ScriptTranspiler.declareChain`,
+[script-transpiler.js:251](../../src/language/script-transpiler.js#L251)) only
+fires for `var`/chain-declaration tags
+([script-transpiler.js:950-996](../../src/language/script-transpiler.js#L950)).
+`import`, `from`, and `component` are plain line tags
+([script-transpiler.js:98](../../src/language/script-transpiler.js#L98)) that
+the transpiler hands straight to the parser with no name registration at all.
+Verified repros — both compile cleanly and fail only at render time:
+
+```
+import "lib.casc" as lib
+import "lib.casc" as lib
+return lib.greet()
+```
+
+and
+
+```
+var lib = 1
+import "lib.casc" as lib
+return lib.greet()
+```
+
+both throw `RuntimeError: Chain 'lib' was registered more than once on the
+same CommandBuffer` at `[Line 1, Column 0] Root` — no compile error, and the
+runtime error carries no line/column for either declaration. `Component`
+behaves the same way:
+
+```
+var ns = 1
+component "Component.script" as ns
+return ns.build("Ada")
+```
+
+and a duplicate `component "Component.script" as ns` / `component ... as ns`
+both throw the same `RuntimeError`, this time at `[Line 1, Column 4]
+MethodDefinition` — the constructor entry point, not the duplicate
+declaration.
+
+The codegen side is unconditional on both paths: `compileAsyncImport` /
+`compileAsyncFromImport` (via `_emitValueImportBinding`,
+[composition.js:9-17](../../src/compiler/composition.js#L9)) and
+`compileComponent`
+([component.js:38](../../src/compiler/component.js#L38)) each emit
+`runtime.declareBufferChain(...)` with no duplicate check; the collision is
+only caught at runtime by `CommandBuffer._createLane`
+([command-buffer.js:52-65](../../src/runtime/command-buffer.js#L52)), which is
+the source of the quoted `RuntimeError`.
+
+This makes the `Import`/`FromImport`/`Component` half of the gap more severe
+than `CallAssign`'s (below): it degrades a compile-time-diagnosable "already
+declared" error (with line/column pointing at both declarations, as
+`Set`/`var` produce today) into a positionless or misattributed runtime
+failure that ordinary script/template authors can trigger without using any
+internal syntax.
+
+### Why `CallAssign` is mostly masked
+
+By contrast, `CallAssign`'s silent first-wins is mostly unreachable.
 `call_assign` is a script-only internal tag emitted by the transpiler
 ([parser.js:322](../../src/language/parser.js#L322)), and the transpiler runs
 its own lexical duplicate check first
@@ -66,20 +139,55 @@ with `Identifier 'user' has already been declared.`
 
 ### Action
 
-Dispatch on the declaration fact, not the producer typename: explicit
-declarations (`decl.explicit !== false` on a `var`/chain declare) should go
-through `_validateExplicitDeclarationConflict` regardless of whether the
-producer is `Set`, `ChainDeclaration`, or `CallAssign`. The minimal fix is to
-add `'CallAssign'` to the typename check; the better fix removes the typename
-proxy so the next declaring form cannot reintroduce the gap (Macro keeps its
-own dedicated policy).
+Expand the producer-typename allowlist in `_validateSourceDeclarationConflict`
+([analysis.js:394](../../src/compiler/analysis.js#L394)) from `('Set',
+'ChainDeclaration')` to also include `'CallAssign'`, `'Import'`,
+`'FromImport'`, and `'Component'`, so each routes through
+`_validateExplicitDeclarationConflict` the same way `Set`/`ChainDeclaration`
+already do. `Macro` keeps its dedicated policy (macro-local parameters and
+parent-owned macro names have special conflict rules).
+
+Do not replace the typename check with a bare `decl.explicit !== false`
+dispatch. `for`/`each` loop variables
+([compiler-async.js:184-188](../../src/compiler/compiler-async.js#L184)) and
+guard `catch` bindings ([guard.js:19-22](../../src/compiler/guard.js#L19)) also
+push declares with `explicit` unset (`undefined !== false` is `true`), and they
+rely on *not* being routed through `_validateExplicitDeclarationConflict` to
+legally shadow an outer declaration of the same name — e.g.
+`var x = 1; for x in [...] ... endfor` compiles today and must keep compiling.
+A fact-only dispatch would start rejecting that as "already declared". The
+typename allowlist is what currently (if accidentally) keeps loop/catch
+bindings out of this check, so widen it rather than remove it.
+
+Routing `Import`/`FromImport`/`Component` through
+`_validateExplicitDeclarationConflict` also activates
+`_validateAncestorDeclarationConflicts`
+([analysis.js:419-431](../../src/compiler/analysis.js#L419)), which rejects a
+declaration that shares a name with any same-named declaration in a
+non-scope-boundary ancestor. So an `import`/`from import`/`component` nested
+inside a block (`if`, `for`, etc.) that reuses an outer-scope name would become
+a compile-time conflict, where today it either silently shadows or fails at
+runtime with the `RuntimeError` above. This matches the rule `var`/`set`
+already enforce, and the runtime would reject the colliding lane regardless —
+treat the stricter ancestor check as an intended consequence of the fix, not
+an incidental side effect, and say so in the regression notes.
 
 Add a regression: template-mode duplicate `call_assign var` must fail with the
 same message as the `Set` path, and a script-mode case stays as a guard in
-case the transpiler check is ever relaxed.
+case the transpiler check is ever relaxed. Add at least one duplicate import or
+from-import regression to prove the fix catches the issue during analysis,
+before runtime chain registration. Add a regression confirming a `for`/`each`
+loop variable may still shadow an outer declaration of the same name, and a
+regression confirming that an `import`/`from import`/`component` nested inside
+a block now correctly rejects shadowing an outer-scope name at compile time
+(matching `var`'s existing behavior) instead of failing at runtime.
 
-**Severity:** low (internal tag, masked in script mode) — but it is a real
-hole in the only validator that owns this policy.
+**Severity:** medium. `CallAssign`'s gap is internal and masked in script mode
+(template-mode-only reachability via the unguarded `call_assign` tag), but
+`Import`/`FromImport`/`Component` are reachable from completely ordinary
+script and template code — see above — and turn a compile-time-diagnosable
+"already declared" error into a positionless or misattributed runtime
+`RuntimeError`.
 
 ---
 
