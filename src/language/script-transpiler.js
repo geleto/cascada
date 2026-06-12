@@ -72,7 +72,7 @@
 // Import the script parser
 import {lex, parseTemplateLine, TOKEN_TYPES} from './script-lexer.js';
 
-import {RESERVED_DECLARATION_NAMES, RESERVED_ASYNC_DECLARATION_NAMES} from '../compiler/validation.js';
+import {isReservedDeclarationName} from '../compiler/reserved.js';
 import {CHAIN_TYPES, CHAIN_TYPE_FACTS} from '../chain-types.js';
 import {renameSharedName} from '../inheritance/shared-names.js';
 
@@ -167,11 +167,8 @@ class ScriptTranspiler {
       ...Object.values(this.SYNTAX.blockPairs)
     ]);
 
-    // Reserved declaration names are not allowed for script vars or chains.
-    this.RESERVED_DECLARATION_NAMES = new Set([
-      ...RESERVED_DECLARATION_NAMES,
-      ...RESERVED_ASYNC_DECLARATION_NAMES
-    ]);
+    // Script mode reserves async-only compiler names as well.
+    this.isReservedDeclarationName = (name) => isReservedDeclarationName(name, { asyncMode: true });
 
     // Track call vs call_assign nesting so endcall closes the correct block kind.
     this.callBlockStack = [];
@@ -843,7 +840,7 @@ class ScriptTranspiler {
 
   _assertNonReservedDeclarationNames(names, lineIndex) {
     for (const name of names) {
-      if (this.RESERVED_DECLARATION_NAMES.has(name)) {
+      if (this.isReservedDeclarationName(name)) {
         throw new Error(`Identifier '${name}' is reserved and cannot be used as a variable or chain name at line ${lineIndex + 1}`);
       }
     }
@@ -1405,7 +1402,7 @@ class ScriptTranspiler {
 
       if (firstWord === 'method') {
         const methodName = this._getLeadingIdentifier(parseResult.codeContent);
-        if (methodName && this.RESERVED_DECLARATION_NAMES.has(methodName)) {
+        if (methodName && this.isReservedDeclarationName(methodName)) {
           throw new Error(`Identifier '${methodName}' is reserved and cannot be used as a variable or chain name at line ${lineIndex + 1}`);
         }
       }

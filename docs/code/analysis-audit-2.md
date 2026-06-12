@@ -12,16 +12,25 @@ Ordered by severity, then by shared substrate.
 
 ---
 
-## 1. Bug: declaration-conflict dispatch skips some declaring forms
+## 1. Fixed: declaration conflicts follow scope visibility
 
-**Class:** the same one the parent audit warned about — a call site keys off a
-proxy (node typename) instead of the fact that carries the meaning
-(`decl.explicit` / declaration placement).
+**Class:** mixed. The `Import`/`FromImport`/`Component`/`CallAssign` gap is a
+proxy-dispatch bug: conflict validation keys off node typename / ad-hoc
+explicitness instead of the scope visibility model that carries the meaning.
+Extending the same visibility rule to loop/each/catch binders is a deliberate
+language-design tightening and a user-visible Nunjucks/Jinja compatibility
+break.
 
-### Problem
+**Status:** implemented. `src/compiler/analysis.js` now validates declaration
+conflicts through scope visibility, `src/compiler/macro.js` validates
+macro/caller parameter producer lists, `src/compiler/inheritance.js` no longer
+pairs clean block scopes with `parentReadOnly`, and the language docs document
+strict visible-scope shadowing.
 
-`_validateSourceDeclarationConflict` routes explicit-declaration conflict
-validation by typename
+### Original Problem
+
+Before this fix, `_validateSourceDeclarationConflict` routed
+explicit-declaration conflict validation by typename
 ([analysis.js:388-397](../../src/compiler/analysis.js#L388)):
 
 ```js
@@ -40,21 +49,19 @@ tries to declare the same runtime lane twice and fails later with a
 root/constructor `RuntimeError` such as
 `Chain 'lib' was registered more than once on the same CommandBuffer`.
 
-The same typename-dispatch weakness also affects `CallAssign`, a declaring
-form whose `analyzeCallAssign` delegates to the same `assignment.analyzeSet`
-([compiler-async.js:152-153](../../src/compiler/compiler-async.js#L152)),
-producing `declares` entries with `explicit: true` for
-`varType === 'declaration'`
-([assignment.js:62](../../src/compiler/assignment.js#L62)). The rest of the
-pass already treats Set and CallAssign as twins —
+The same typename-dispatch weakness affects `CallAssign`, whose
+`analyzeCallAssign` delegates to `assignment.analyzeSet`
+([compiler-async.js:152-153](../../src/compiler/compiler-async.js#L152)).
+For `varType === 'declaration'`, that analyzer produces `declares` entries
+with `explicit: true` ([assignment.js:62](../../src/compiler/assignment.js#L62)).
+Set and CallAssign are treated as twins elsewhere:
 `_validateMissingDeclaration` matches both typenames
-([analysis.js:580](../../src/compiler/analysis.js#L580)) — but the conflict
-dispatch does not. Unlike Import/FromImport/Component, a duplicate explicit
-declaration introduced through `CallAssign` is silently skipped instead of
-crashing: the second install is dropped (first-wins) and codegen treats the
-second statement as a reassignment.
+([analysis.js:580](../../src/compiler/analysis.js#L580)). The conflict
+dispatch is the outlier. A duplicate explicit declaration introduced through
+`CallAssign` is silently skipped: the second install is dropped (first-wins)
+and codegen treats the second statement as a reassignment.
 
-### `Import`/`FromImport`/`Component` are reachable from ordinary code
+### Runtime Duplicate Failures
 
 This gap needs no internal tag and no template-only workaround — it is
 reachable from plain script (and template) source exactly as users would
@@ -66,7 +73,7 @@ fires for `var`/chain-declaration tags
 `import`, `from`, and `component` are plain line tags
 ([script-transpiler.js:98](../../src/language/script-transpiler.js#L98)) that
 the transpiler hands straight to the parser with no name registration at all.
-Verified repros — both compile cleanly and fail only at render time:
+These repros compile cleanly and fail only at render time:
 
 ```
 import "lib.casc" as lib
@@ -108,16 +115,14 @@ only caught at runtime by `CommandBuffer._createLane`
 ([command-buffer.js:52-65](../../src/runtime/command-buffer.js#L52)), which is
 the source of the quoted `RuntimeError`.
 
-This makes the `Import`/`FromImport`/`Component` half of the gap more severe
-than `CallAssign`'s (below): it degrades a compile-time-diagnosable "already
-declared" error (with line/column pointing at both declarations, as
-`Set`/`var` produce today) into a positionless or misattributed runtime
-failure that ordinary script/template authors can trigger without using any
-internal syntax.
+For `Import`/`FromImport`/`Component`, the missed analysis degrades a
+compile-time-diagnosable "already declared" error with source positions into a
+positionless or misattributed runtime failure that ordinary script/template
+authors can trigger without using any internal syntax.
 
-### Why `CallAssign` is mostly masked
+### CallAssign Duplicate Repro
 
-By contrast, `CallAssign`'s silent first-wins is mostly unreachable.
+`CallAssign`'s silent first-wins path is normally masked in script mode.
 `call_assign` is a script-only internal tag emitted by the transpiler
 ([parser.js:322](../../src/language/parser.js#L322)), and the transpiler runs
 its own lexical duplicate check first
@@ -125,7 +130,7 @@ its own lexical duplicate check first
 [script-transpiler.js:262](../../src/language/script-transpiler.js#L262)), so
 `var user = call f() endcall` after `var user = ...` fails in script mode with
 the right error. The parser, however, accepts the tag in template mode, where
-no transpiler runs. Verified repro:
+no transpiler runs:
 
 ```
 {%- macro greet() -%}hi{%- endmacro -%}
@@ -137,57 +142,104 @@ no transpiler runs. Verified repro:
 renders `"hi"` with no error; the equivalent duplicate via `set`/`var` fails
 with `Identifier 'user' has already been declared.`
 
-### Action
+### Implemented Behavior
 
-Expand the producer-typename allowlist in `_validateSourceDeclarationConflict`
-([analysis.js:394](../../src/compiler/analysis.js#L394)) from `('Set',
-'ChainDeclaration')` to also include `'CallAssign'`, `'Import'`,
-`'FromImport'`, and `'Component'`, so each routes through
-`_validateExplicitDeclarationConflict` the same way `Set`/`ChainDeclaration`
-already do. `Macro` keeps its dedicated policy (macro-local parameters and
-parent-owned macro names have special conflict rules).
+Source declaration conflict validation now follows scope visibility. The
+compiler scope model is:
 
-Do not replace the typename check with a bare `decl.explicit !== false`
-dispatch. `for`/`each` loop variables
-([compiler-async.js:184-188](../../src/compiler/compiler-async.js#L184)) and
-guard `catch` bindings ([guard.js:19-22](../../src/compiler/guard.js#L19)) also
-push declares with `explicit` unset (`undefined !== false` is `true`), and they
-rely on *not* being routed through `_validateExplicitDeclarationConflict` to
-legally shadow an outer declaration of the same name — e.g.
-`var x = 1; for x in [...] ... endfor` compiles today and must keep compiling.
-A fact-only dispatch would start rejecting that as "already declared". The
-typename allowlist is what currently (if accidentally) keeps loop/catch
-bindings out of this check, so widen it rather than remove it.
+- `createScope` means the node owns declarations.
+- `scopeBoundary` means a clean lexical scope: parent source declarations are
+  not visible through ordinary lookup or declaration-conflict checks. This is
+  a lexical-source rule, not a promise that root/context exports can never be
+  read through the runtime context surface.
+- `parentReadOnly` is only meaningful for non-clean closure-like scopes
+  (`scopeBoundary: false`) that may read parent declarations but must not
+  mutate them. The valid main case is caller/call-block bodies.
 
-Routing `Import`/`FromImport`/`Component` through
-`_validateExplicitDeclarationConflict` also activates
-`_validateAncestorDeclarationConflicts`
-([analysis.js:419-431](../../src/compiler/analysis.js#L419)), which rejects a
-declaration that shares a name with any same-named declaration in a
-non-scope-boundary ancestor. So an `import`/`from import`/`component` nested
-inside a block (`if`, `for`, etc.) that reuses an outer-scope name would become
-a compile-time conflict, where today it either silently shadows or fails at
-runtime with the `RuntimeError` above. This matches the rule `var`/`set`
-already enforce, and the runtime would reject the colliding lane regardless —
-treat the stricter ancestor check as an intended consequence of the fix, not
-an incidental side effect, and say so in the regression notes.
+The rules are:
 
-Add a regression: template-mode duplicate `call_assign var` must fail with the
-same message as the `Set` path, and a script-mode case stays as a guard in
-case the transpiler check is ever relaxed. Add at least one duplicate import or
-from-import regression to prove the fix catches the issue during analysis,
-before runtime chain registration. Add a regression confirming a `for`/`each`
-loop variable may still shadow an outer declaration of the same name, and a
-regression confirming that an `import`/`from import`/`component` nested inside
-a block now correctly rejects shadowing an outer-scope name at compile time
-(matching `var`'s existing behavior) instead of failing at runtime.
+1. In a non-clean scope, user-written declarations and binders reject reuse of
+   any declaration visible in the current owner or any non-boundary ancestor.
+2. In a clean scope (`scopeBoundary: true`), parent declarations are ignored.
+   Mechanically, if the declaring owner is a `scopeBoundary`, ancestor
+   conflict scanning short-circuits entirely. This is why macro parameters may
+   reuse outer names: not because macros get a special exception, but because
+   the parent scope is not visible.
+3. When scanning ancestors from a non-clean owner, check a boundary ancestor's
+   own declarations before stopping. For example, declarations inside a loop
+   nested in a macro should still conflict with that macro's parameters, but
+   not with declarations outside the macro.
+4. No shadowing is allowed inside the visible lexical chain. Explicit
+   declarations and binders such as `var`, `call_assign var`, `import`,
+   `from import`, `component ... as`, `for`/`each` targets, and `catch`
+   bindings reject reuse of visible names. Template `{% set %}` does not need
+   a new conflict path: its analyzer already resolves visible names as
+   mutations and only creates an implicit declaration when no declaration is
+   visible through the same scope-boundary rules. Those implicit declarations
+   should still be installed normally so later nested non-clean binders can
+   conflict with them. A visible `{% set %}` should only fail through the
+   existing mutation validation when it crosses a `parentReadOnly` boundary.
+5. Duplicate names introduced by one producer list, such as macro/caller
+   parameters or block arguments, are validated by that producer's analyzer.
+   Block arguments already did this in `inheritance.js`; macro/caller
+   parameters now do the same in `macro.js`.
+6. Compiler-internal lanes are not source declarations and are excluded
+   from user shadowing checks in both directions: they should not be checked as
+   user declarations, and they should not become conflict sources that block a
+   later user binder. This covers fixed engine names such as `__return__`,
+   `CALLER_SCHED_CHAIN_NAME`, and `__waited__`; the compiler-owned
+   `caller` binding is internal so call bodies do not falsely collide with
+   their enclosing callable scope. This is only a conflict-check
+   exemption: internal declarations must still be installed into
+   `sourceVisibleDeclarations` and `declaredChains`, because lookup and
+   parent-link derivation rely on those local declarations. In particular, a
+   non-clean `Caller` scope declares its own local `__return__`; finalization
+   must subtract that local name from parent usage so the caller return lane is
+   not linked to the enclosing callable's `__return__`.
+7. Redundant `parentReadOnly: true` is removed from analyzers that also set
+   `scopeBoundary: true`; keep `parentReadOnly` only on non-clean closure-like
+   scopes such as caller/call-block bodies.
+8. The language docs are updated with the final scoping rule:
+   `docs/cascada/script.md`, `docs/cascada/template.md`, and
+   `docs/cascada/cascada-agent.md` document strict visible-scope shadowing and
+   clean-scope boundaries.
+
+Under this rule, loop/each targets are not special-cased as allowed shadowing.
+Loop bodies are new scopes, but they are not clean scopes, so reusing an outer
+visible name should be rejected:
+
+```
+var item = "outer"
+for item in items
+  ...
+endfor
+```
+
+Macro parameters can reuse an outer name because macros are clean scopes:
+
+```
+var item = "outer"
+macro render(item)
+  ...
+endmacro
+```
+
+Regressions added in `tests/pasync/declaration-conflicts.js` cover duplicate
+template/script call assignments, duplicate import/from-import/component
+bindings, non-clean nested reuse, loop-target shadowing rejection,
+macro-parameter clean-scope reuse, duplicate caller parameters, caller return
+isolation, and the no `scopeBoundary: true` plus `parentReadOnly: true`
+invariant. Existing loop tests were updated where they relied on now-invalid
+same-name loop shadowing.
 
 **Severity:** medium. `CallAssign`'s gap is internal and masked in script mode
 (template-mode-only reachability via the unguarded `call_assign` tag), but
 `Import`/`FromImport`/`Component` are reachable from completely ordinary
 script and template code — see above — and turn a compile-time-diagnosable
 "already declared" error into a positionless or misattributed runtime
-`RuntimeError`.
+`RuntimeError`. The loop/each/catch part is also a breaking scoping change
+from idiomatic Nunjucks/Jinja behavior, so it must ship with docs and
+regressions that make the divergence explicit.
 
 ---
 

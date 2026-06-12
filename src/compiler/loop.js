@@ -1,5 +1,6 @@
 
 import * as nodes from '../language/nodes.js';
+import {WAITED_CHAIN_NAME} from './reserved.js';
 
 class CompileLoop {
   constructor(compiler) {
@@ -246,11 +247,9 @@ class CompileLoop {
       currentTextChainVar: null
     }, () => {
       this.compiler.withInheritedAddedContext(loopAddedContextVar, () => {
-        const limitedWaitedChainName = (hasConcurrencyLimit || sequentialLoopBody)
-          ? (node.body && node.body._analysis && node.body._analysis.waitedChainName)
-          : null;
-        if (limitedWaitedChainName) {
-          this.compiler.emit.line(`runtime.declareBufferChain(${this.compiler.buffer.currentBuffer}, "${limitedWaitedChainName}", "var", context, null);`);
+        const usesWaitedChain = hasConcurrencyLimit || sequentialLoopBody;
+        if (usesWaitedChain) {
+          this.compiler.emit.line(`runtime.declareBufferChain(${this.compiler.buffer.currentBuffer}, "${WAITED_CHAIN_NAME}", "var", context, null);`);
         }
 
         const compileIterationBody = () => {
@@ -293,7 +292,7 @@ class CompileLoop {
           if (shouldAwaitLoopBody) {
             const waitedSnapshotId = this.compiler._tmpid();
             this.compiler.emit.line(`${this.compiler.buffer.currentBuffer}.finish();`);
-            this.compiler.emit.line(`const ${waitedSnapshotId} = ${this.compiler.buffer.currentBuffer}.getChain("${limitedWaitedChainName}").finalSnapshot();`);
+            this.compiler.emit.line(`const ${waitedSnapshotId} = ${this.compiler.buffer.currentBuffer}.getChain("${WAITED_CHAIN_NAME}").finalSnapshot();`);
             if (whileConditionNode) {
               this.compiler.emit.line(`await ${waitedSnapshotId};`);
               this.compiler.emit.line('return true;');
@@ -303,17 +302,12 @@ class CompileLoop {
           }
         };
 
-        if ((sequentialLoopBody || hasConcurrencyLimit) && !limitedWaitedChainName) {
-          this.compiler.fail('compileFor: limited/sequential loop body has no waited chain вЂ” compiler analysis bug', node.lineno, node.colno, node);
-        }
-
-        if (!limitedWaitedChainName) {
+        if (!usesWaitedChain) {
           this.compiler.withCurrentLoopVar(loopMetaVar, compileIterationBody);
         } else {
           const waitedOwnerBufferId = this.compiler._tmpid();
           this.compiler.emit.line(`const ${waitedOwnerBufferId} = ${this.compiler.buffer.currentBuffer};`);
           this.compiler.buffer.withOwnWaitedChain(
-            limitedWaitedChainName,
             () => this.compiler.withCurrentLoopVar(loopMetaVar, compileIterationBody),
             waitedOwnerBufferId
           );

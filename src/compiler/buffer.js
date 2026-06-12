@@ -8,6 +8,7 @@
 import * as nodes from '../language/nodes.js';
 
 import {CHAIN_TYPE_FACTS} from '../chain-types.js';
+import {WAITED_CHAIN_NAME} from './reserved.js';
 import {validateChainObservationCall} from './validation.js';
 const DEFAULT_TEMPLATE_TEXT_CHAIN = '__text__';
 const BUFFER_STATE_KEYS = [
@@ -85,18 +86,20 @@ class CompileBuffer {
     }
   }
 
-  // Scope current waited chain binding for the emitted code region.
-  // Pass null to explicitly compile without an own waited chain.
-  withOwnWaitedChain(waitedChainName, emitFunc, ownerBufferExpr = null) {
+  // Scope the fixed waited chain binding for the emitted code region.
+  withOwnWaitedChain(emitFunc, ownerBufferExpr = null) {
     return this.withBufferState({
-      currentWaitedChainName: waitedChainName,
-      currentWaitedOwnerBuffer: waitedChainName ? (ownerBufferExpr || this.currentBuffer) : null
+      currentWaitedChainName: WAITED_CHAIN_NAME,
+      currentWaitedOwnerBuffer: ownerBufferExpr || this.currentBuffer
     }, emitFunc);
   }
 
   // Compile a region with no own waited chain binding.
   skipOwnWaitedChain(emitFunc) {
-    return this.withOwnWaitedChain(null, emitFunc);
+    return this.withBufferState({
+      currentWaitedChainName: null,
+      currentWaitedOwnerBuffer: null
+    }, emitFunc);
   }
 
   _getBufferAccess() {

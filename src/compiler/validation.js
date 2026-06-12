@@ -1,25 +1,6 @@
 
 import * as nodes from '../language/nodes.js';
-import {CHAIN_TYPES, CHAIN_TYPE_FACTS} from '../chain-types.js';
-
-import {
-  RETURN_CHAIN_NAME,
-  RETURN_IS_UNSET_FUNCTION_NAME,
-  RESERVED_RETURN_SENTINEL_SYMBOL_NAME,
-} from './return.js';
-
-const RESERVED_DECLARATION_NAMES = new Set([
-  ...CHAIN_TYPES,
-  'value',
-  'component',
-  'this',
-  RETURN_CHAIN_NAME,
-  RETURN_IS_UNSET_FUNCTION_NAME,
-  RESERVED_RETURN_SENTINEL_SYMBOL_NAME,
-  '__constructor__',
-  '__proto__'
-]);
-const RESERVED_ASYNC_DECLARATION_NAMES = new Set(['context']);
+import {CHAIN_TYPE_FACTS} from '../chain-types.js';
 
 /**
  * Validate that guard variables are declared in the scope.
@@ -281,4 +262,4 @@ function validateTemplateInheritanceSurface(compiler, rootNode) {
 
 
 
-export { RESERVED_DECLARATION_NAMES, RESERVED_ASYNC_DECLARATION_NAMES, validateGuardVariablesDeclared, validateChainDeclarationNode, validateChainObservationCall, getScriptExtendsSourceOrderViolation, validateScriptExtendsSourceOrder, validateScriptExtendsExpression, validateTemplateInheritanceSurface };
+export { validateGuardVariablesDeclared, validateChainDeclarationNode, validateChainObservationCall, getScriptExtendsSourceOrderViolation, validateScriptExtendsSourceOrder, validateScriptExtendsExpression, validateTemplateInheritanceSurface };

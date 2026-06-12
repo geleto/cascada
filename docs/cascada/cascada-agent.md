@@ -82,6 +82,7 @@ return title                // ❌ script fails
 ```javascript
 // [VAR-01] RULE: `var name = value` declares; `name = value` reassigns. Both work for tuples.
 // CONSTRAINT: Re-declaring a name visible in any enclosing scope is a compile-time error.
+// This also covers binders such as loop targets, call-block params, imports, components, and recover names.
 var name = "Alice"
 name = "Bob"            // ✅ reassign declared var
 var a, b = 100          // ✅ multiple decls, single value
@@ -111,6 +112,8 @@ endif
 var item = "p"
 for i in range(2)
   var item = "c"     // ERROR: shadowing forbidden
+endfor
+for item in items     // ERROR: loop target shadowing also forbidden
 endfor
 
 // [VAR-05] RULE: Assignment performs a logical deep copy — variables are independent.
@@ -477,7 +480,7 @@ var r = call wrapper(args)
 endcall
 
 // [CALL-03] RULE: Call block reads from CALLER scope (where it was written), not function's scope.
-// Writes inside the call block stay LOCAL — they do NOT propagate to the parent.
+// Assignments to visible parent vars are rejected. Fresh var declarations stay LOCAL.
 // The function only sees what `caller()` returns.
 ```
 

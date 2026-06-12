@@ -3,7 +3,10 @@ import * as nodes from '../language/nodes.js';
 import {CompileError} from '../errors.js';
 import {Obj} from '../object.js';
 
-import {RESERVED_DECLARATION_NAMES, RESERVED_ASYNC_DECLARATION_NAMES} from './validation.js';
+import {
+  isReservedDeclaration,
+  isReservedDeclarationName,
+} from './reserved.js';
 import {CompileSequential} from './sequential.js';
 import {CompileEmit} from './emit.js';
 import {CompileInheritance} from './inheritance.js';
@@ -746,7 +749,14 @@ class CompilerCommon extends Obj {
   }
 
   isReservedDeclarationName(name) {
-    return RESERVED_DECLARATION_NAMES.has(name) || (this.asyncMode && RESERVED_ASYNC_DECLARATION_NAMES.has(name));
+    return isReservedDeclarationName(name, { asyncMode: this.asyncMode });
+  }
+
+  isReservedDeclaration(decl) {
+    return isReservedDeclaration(decl, {
+      asyncMode: this.asyncMode,
+      scriptMode: this.scriptMode
+    });
   }
 
   _compileChildren(node, frame) {

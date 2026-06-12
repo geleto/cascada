@@ -4,7 +4,7 @@ import * as nodes from './nodes.js';
 import {Obj} from '../object.js';
 import {indexOf} from '../lib.js';
 import {CompileError} from '../errors.js';
-import {RESERVED_DECLARATION_NAMES} from '../compiler/validation.js';
+import {isReservedDeclarationName} from '../compiler/reserved.js';
 import {CHAIN_TYPE_FACTS} from '../chain-types.js';
 
 class Parser extends Obj {
@@ -679,7 +679,7 @@ class Parser extends Obj {
         tag.lineno,
         tag.colno);
     }
-    if (RESERVED_DECLARATION_NAMES.has(node.name.value)) {
+    if (isReservedDeclarationName(node.name.value)) {
       this.fail(`Identifier '${node.name.value}' is reserved and cannot be used as a block name`,
         node.name.lineno,
         node.name.colno,
@@ -1170,7 +1170,7 @@ class Parser extends Obj {
         } else if (this.scriptMode && rawSelector === 'var') {
           // `guard var` protects all variables written inside the guard block.
           hasVarSelector = true;
-        } else if (RESERVED_DECLARATION_NAMES.has(rawSelector)) {
+        } else if (isReservedDeclarationName(rawSelector)) {
           typeTargets.push(rawSelector);
         } else {
           variableTargets.push(rawSelector);

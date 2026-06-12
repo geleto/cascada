@@ -1,7 +1,8 @@
 
-const RETURN_CHAIN_NAME = '__return__';
-const RETURN_IS_UNSET_FUNCTION_NAME = '__return_is_unset__';
-const RESERVED_RETURN_SENTINEL_SYMBOL_NAME = '__RETURN_UNSET__';
+import {
+  RETURN_CHAIN_NAME,
+  RETURN_IS_UNSET_FUNCTION_NAME,
+} from './reserved.js';
 
 class CompileReturn {
   constructor(compiler) {
@@ -128,6 +129,3 @@ class CompileReturn {
 }
 
 export {CompileReturn};
-export {RETURN_CHAIN_NAME};
-export {RESERVED_RETURN_SENTINEL_SYMBOL_NAME};
-export {RETURN_IS_UNSET_FUNCTION_NAME};

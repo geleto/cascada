@@ -1,8 +1,9 @@
 
 import * as nodes from '../language/nodes.js';
-import {RETURN_CHAIN_NAME} from './return.js';
-
-const CALLER_SCHED_CHAIN_NAME = '__caller__';
+import {
+  CALLER_SCHED_CHAIN_NAME,
+  RETURN_CHAIN_NAME,
+} from './reserved.js';
 
 class CompileMacro {
   constructor(compiler) {
@@ -56,7 +57,7 @@ class CompileMacro {
     const compiledMacroFuncId = `macro_${this.compiler._tmpid()}`;
     node.name.addAnalysis({ declarationTarget: true });
     const declares = [
-      { name: 'caller', type: 'var', initializer: null },
+      { name: 'caller', type: 'var', initializer: null, internal: true },
       this.compiler.return.createChainDeclaration()
     ];
     const textChainName = !this.compiler.scriptMode
@@ -65,9 +66,11 @@ class CompileMacro {
     if (textChainName) {
       declares.push({ name: textChainName, type: 'text', initializer: null, internal: true });
     }
+    const seenParamNames = new Set();
     node.args.children.forEach((arg) => {
       if (arg instanceof nodes.Symbol) {
         arg.addAnalysis({ declarationTarget: true });
+        this._validateParameterDeclaration(arg.value, arg, seenParamNames, node);
         declares.push({ name: arg.value, type: 'var', initializer: null, macroParam: true });
       }
     });
@@ -122,13 +125,16 @@ class CompileMacro {
     const compiledMacroFuncId = `macro_${this.compiler._tmpid()}`;
     node.name.addAnalysis({ declarationTarget: true });
     declares.push(this.compiler.return.createChainDeclaration());
-    declares.push({ name: 'caller', type: 'var', initializer: null });
+    declares.push({ name: 'caller', type: 'var', initializer: null, internal: true });
+    const seenParamNames = new Set();
     node.args.children.forEach((arg) => {
       if (arg instanceof nodes.Symbol) {
         arg.addAnalysis({ declarationTarget: true });
+        this._validateParameterDeclaration(arg.value, arg, seenParamNames, node);
         declares.push({ name: arg.value, type: 'var', initializer: null, macroParam: true });
       } else if (arg instanceof nodes.Dict) {
         arg.children.forEach((pair) => {
+          this._validateParameterDeclaration(pair.key.value, pair.key, seenParamNames, node);
           declares.push({ name: pair.key.value, type: 'var', initializer: null, macroParam: true });
         });
       }
@@ -146,6 +152,19 @@ class CompileMacro {
       hasCallerSupport: false,
       compiledMacroFuncId
     };
+  }
+
+  _validateParameterDeclaration(name, nameNode, seenParamNames, ownerNode) {
+    if (seenParamNames.has(name)) {
+      this.compiler.fail(
+        `Identifier '${name}' has already been declared.`,
+        nameNode.lineno,
+        nameNode.colno,
+        ownerNode,
+        nameNode
+      );
+    }
+    seenParamNames.add(name);
   }
 
   bodyUsesCallerScheduling(bodyNode) {
@@ -588,4 +607,4 @@ class CompileMacro {
   }
 }
 
-export {CompileMacro, CALLER_SCHED_CHAIN_NAME};
+export {CompileMacro};

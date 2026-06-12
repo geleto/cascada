@@ -378,41 +378,27 @@ class CompileAnalysis {
       }
       this._validateReservedDeclarationName(analysis, decl);
       const currentScopeDecl = declarations.get(decl.name) || null;
-      this._validateSourceDeclarationConflict(analysis, owner, decl, declarationOrigin, currentScopeDecl);
+      this._validateSourceDeclarationConflict(analysis, owner, decl, currentScopeDecl);
       if (!declarations.has(decl.name)) {
         this._installDeclaration(owner, decl, declarationOrigin, 'sourceVisibleDeclarations');
       }
     }
   }
 
-  _validateSourceDeclarationConflict(analysis, owner, decl, declarationOrigin, currentScopeDecl) {
-    const nodeType = analysis.node.typename;
-    if (nodeType === 'Macro') {
-      this._validateMacroDeclarationConflict(analysis, owner, decl, declarationOrigin, currentScopeDecl);
+  _validateSourceDeclarationConflict(analysis, owner, decl, currentScopeDecl) {
+    if (decl.internal || decl.explicit === false) {
       return;
     }
-    if (decl.explicit !== false && (nodeType === 'Set' || nodeType === 'ChainDeclaration')) {
-      this._validateExplicitDeclarationConflict(analysis, owner, decl, declarationOrigin, currentScopeDecl);
-    }
-  }
 
-  _validateMacroDeclarationConflict(analysis, owner, decl, declarationOrigin, currentScopeDecl) {
-    if (decl.parentOwned) {
-      if (currentScopeDecl) {
-        this._validateDeclarationConflict(analysis, decl, currentScopeDecl);
-      }
-      this._validateAncestorDeclarationConflicts(analysis, owner, decl);
+    if (currentScopeDecl) {
+      this._validateDeclarationConflict(analysis, decl, currentScopeDecl);
       return;
     }
-    if (currentScopeDecl && currentScopeDecl.declarationOrigin === declarationOrigin) {
-      this._validateDeclarationConflict(analysis, decl, currentScopeDecl);
-    }
-  }
 
-  _validateExplicitDeclarationConflict(analysis, owner, decl, declarationOrigin, currentScopeDecl) {
-    if (currentScopeDecl && currentScopeDecl.declarationOrigin !== declarationOrigin) {
-      this._validateDeclarationConflict(analysis, decl, currentScopeDecl);
+    if (owner.scopeBoundary) {
+      return;
     }
+
     this._validateAncestorDeclarationConflicts(analysis, owner, decl);
   }
 
@@ -420,8 +406,9 @@ class CompileAnalysis {
     let current = owner.parent;
     while (current) {
       const visibleDeclarations = current.sourceVisibleDeclarations;
-      if (visibleDeclarations && visibleDeclarations.has(decl.name)) {
-        this._validateDeclarationConflict(analysis, decl, visibleDeclarations.get(decl.name));
+      const conflictingDecl = visibleDeclarations ? visibleDeclarations.get(decl.name) : null;
+      if (conflictingDecl && !conflictingDecl.internal) {
+        this._validateDeclarationConflict(analysis, decl, conflictingDecl);
       }
       if (current.scopeBoundary) {
         break;
@@ -461,13 +448,7 @@ class CompileAnalysis {
   }
 
   _validateReservedDeclarationName(analysis, decl) {
-    if (decl && decl.internal) {
-      return;
-    }
-    if (!this.compiler || !this.compiler.isReservedDeclarationName || !this.compiler.isReservedDeclarationName(decl.name)) {
-      return;
-    }
-    if (decl.name !== 'context' && decl.type === 'var' && !this.compiler.scriptMode) {
+    if (!this.compiler || !this.compiler.isReservedDeclaration || !this.compiler.isReservedDeclaration(decl)) {
       return;
     }
     const originNode = analysis.node || null;

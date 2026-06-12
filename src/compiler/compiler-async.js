@@ -186,11 +186,6 @@ class CompilerAsync extends CompilerBaseAsync {
     declaredNames.forEach((name) => {
       declares.push({ name, type: 'var', initializer: null });
     });
-    if (node.concurrentLimit) {
-      node.body.addAnalysis({
-        waitedChainName: node.body._analysis?.waitedChainName ?? `__waited__${this._tmpid()}`
-      });
-    }
     if (declarationsInBody) {
       node.body.addAnalysis({ createScope: true, loopOwner: node, declares });
       if (node.else_) {
@@ -204,11 +199,6 @@ class CompilerAsync extends CompilerBaseAsync {
   analyzeWhile(node, analysisPass) {
     const result = this._analyzeLoopNodeDeclarations(node, analysisPass);
     node.cond.addAnalysis({ errorContextLabel: 'While.Condition' });
-    if (node.body) {
-      node.body.addAnalysis({
-        waitedChainName: node.body._analysis?.waitedChainName ?? `__waited__${this._tmpid()}`
-      });
-    }
     return result;
   }
 
@@ -240,11 +230,6 @@ class CompilerAsync extends CompilerBaseAsync {
       node.concurrentLimit.addAnalysis({ errorContextLabel: 'For.Limit' });
     }
     const result = this._analyzeLoopNodeDeclarations(node, analysisPass, true);
-    if (node.body) {
-      node.body.addAnalysis({
-        waitedChainName: node.body._analysis?.waitedChainName ?? `__waited__${this._tmpid()}`
-      });
-    }
     return result;
   }
 

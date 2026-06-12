@@ -220,6 +220,8 @@ CascadaScript uses a strict and explicit variable handling model that separates 
 #### Declaring Local Variables with `var`
 Use `var` to declare a new, script-local variable. Re-declaring a variable that already exists in a visible scope will cause a compile-time error. If no initial value is provided, the variable defaults to `none`.
 
+This rule applies to all declaration-producing binders, not just `var` - including loop targets, call-block parameters, `import`/`from import` names, component aliases, and `recover` bindings.
+
 Identifier names may contain letters, digits, and `_`, and must not contain `$`. The `$` character is reserved for compiler-generated internal names.
 
 ```javascript
@@ -362,7 +364,7 @@ for id in ids
 endfor
 ```
 
-**Scoping: No Reuse of Visible Names**
+**Scoping: No Shadowing of Visible Names**
 
 You cannot declare a variable in an inner scope (e.g., inside a `for` loop or `if` block) if a variable with the same name is already declared in an outer scope. This prevents accidental overwrites in concurrent execution.
 
@@ -372,6 +374,15 @@ for i in range(2)
   // ERROR: 'item' is already declared in the outer scope.
   var item = "child " + i
 endfor
+```
+
+Functions create clean scopes: their parameters and body cannot see outer local declarations, so they may freely reuse outer names.
+
+```javascript
+var item = "parent"
+function render(item)
+  return item  // OK: function scope is clean
+endfunction
 ```
 
 Variables declared inside control-flow blocks (`if`, `for`, `switch`, etc.) are local to that block and are not visible outside it.
@@ -1553,7 +1564,8 @@ return processed
 The call block's access to the parent scope is read-only:
 
 - **Reads** can see variables from the parent scope (where the call block was written).
-- **Writes** (e.g. `x = ...`, `var x = ...`) do not propagate to the parent scope. They create/modify variables in the call block's own scope.
+- **Assignments** to visible parent variables are rejected.
+- **Fresh `var` declarations** inside the call block stay local to the call block and must not reuse a visible parent name.
 
 This ensures the call block remains decoupled from the function's implementation details.
 

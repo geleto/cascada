@@ -481,7 +481,6 @@ class CompileInheritance {
     return {
       createScope: true,
       scopeBoundary: true,
-      parentReadOnly: true,
       uses: textChain ? [textChain] : [],
       mutates: textChain ? [textChain] : [],
       wantsLinkedChildBuffer: true

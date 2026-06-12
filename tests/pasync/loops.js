@@ -212,14 +212,18 @@ const {isPoisonError} = runtime;
           expect(result).to.equal('IN10|IN20|OUT1|IN10|IN20|OUT2|');
         });
 
-        it('include should read nearest scoped value variable across nested loop boundaries', async () => {
+        it('rejects same-name value variables across nested loop boundaries', async () => {
           const loader = new StringLoader();
           const localEnv = new AsyncEnvironment(loader);
           loader.addTemplate('value-child.njk', 'S{{ someVar }}|');
           loader.addTemplate('value-parent.njk',
             '{% for someVar in ["A","B"] %}{% for someVar in [1,2] %}{% include "value-child.njk" with someVar %}{% endfor %}{% include "value-child.njk" with someVar %}{% endfor %}');
-          const result = await localEnv.renderTemplate('value-parent.njk', {});
-          expect(result).to.equal('S1|S2|SA|S1|S2|SB|');
+          try {
+            await localEnv.renderTemplate('value-parent.njk', {});
+            expect().fail('Should have thrown');
+          } catch (err) {
+            expect(err.message).to.contain('Identifier \'someVar\' has already been declared.');
+          }
         });
 
         it('include inside non-empty loop should not read loop metadata implicitly', async () => {
@@ -2019,11 +2023,11 @@ const {isPoisonError} = runtime;
 
       const template = `
         {% set outerIter = 1 %}
-        {%- for _ in range(1, 3) -%}
+        {%- for outerIndex in range(1, 3) -%}
           {%- set outerVal = getOuterValue(outerIter) -%}
           {{ outerVal }},
           {%- set innerIter = 1 -%}
-          {%- for _ in range(1, 4) -%}
+          {%- for innerIndex in range(1, 4) -%}
             {%- set innerVal = getInnerValue(outerIter, innerIter) -%}
             {{ innerVal }},
             {%- set innerIter = innerIter + 1 -%}

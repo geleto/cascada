@@ -1,5 +1,5 @@
 import * as nodes from '../language/nodes.js';
-import {CALLER_SCHED_CHAIN_NAME} from './macro.js';
+import {CALLER_SCHED_CHAIN_NAME} from './reserved.js';
 
 class CompileCall {
   constructor(compiler) {

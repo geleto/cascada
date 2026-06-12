@@ -1,4 +1,6 @@
 
+import {WAITED_CHAIN_NAME} from './reserved.js';
+
 class CompileBoundaries {
   constructor(compiler) {
     this.compiler = compiler;
@@ -124,7 +126,7 @@ class CompileBoundaries {
       linkedChainsArg,
       linkedMutatedChainsArg
     } = this.compiler.emit.getBoundaryLinkedChainArgs(node);
-    const controlFlowWaitedChainName = `__waited__${this.compiler._tmpid()}`;
+    const controlFlowWaitedChainName = WAITED_CHAIN_NAME;
     const controlFlowWaitedOwnerBufferId = this.compiler._tmpid();
     const controlFlowPromiseId = this.compiler._tmpid();
     const bufferStackErrorContextArg = this.compiler.emit.getBufferStackErrorContextArg({

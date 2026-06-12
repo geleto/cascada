@@ -320,6 +320,15 @@ inference only provides the shared `var` channel.
 
 Identifier names may contain letters, digits, and `_`, and must not contain `$`. The `$` character is reserved for compiler-generated internal names.
 
+Cascada templates do not allow shadowing of visible local names. This applies to `{% for %}` / `{% each %}` targets, call-block parameters, `import` namespaces, `from ... import` names, and block arguments - these always introduce a fresh binding. `{% set %}` is exempt: reusing a visible name reassigns it instead of declaring a new one, so it never shadows. Macros have their own local scope, so their parameters may reuse names from outside the macro:
+
+```nunjucks
+{% set item = "outer" %}
+{% macro render(item) %}
+  {{ item }} {# OK: macro parameters are local to the macro #}
+{% endmacro %}
+```
+
 ### Concurrency Isolation
 
 In async mode, every construct that can run concurrently gets its own isolated scope, preventing race conditions between concurrent branches or iterations:
