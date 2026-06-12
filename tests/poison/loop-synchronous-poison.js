@@ -4,17 +4,17 @@ import {AsyncEnvironment} from '../../src/environment/environment.js';
 import {createPoison, isPoisonError, PoisonError} from '../../src/runtime/runtime.js';
 
 (function () {
-  const TEST_EC = [1, 1, 'LoopPoison.TestInput', 'phase2-loop-poison-sync.js', null, null];
+  const TEST_EC = [1, 1, 'LoopPoison.TestInput', 'loop-synchronous-poison.js', null, null];
   const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC, 'UserCallThrew'));
 
-  describe('Phase 2: Loop Synchronous Poison Detection', () => {
+  describe('Loop synchronous poison detection', () => {
     let env;
 
     beforeEach(() => {
       env = new AsyncEnvironment();
     });
 
-    describe('Test 2.1: Synchronous poison in array expression [DEFERRED: Phase 6]', () => {
+    describe('Synchronous poison in array expression with else block', () => {
       it('should not execute loop body and execute else block', async () => {
         env.addGlobal('getPoisonedArray', () => {
           return createTestPoison(new Error('Array fetch failed'));
@@ -43,7 +43,7 @@ import {createPoison, isPoisonError, PoisonError} from '../../src/runtime/runtim
       });
     });
 
-    describe('Test 2.2: Synchronous poison with body writes', () => {
+    describe('Synchronous poison with body writes', () => {
       it('should poison outer variable instead of leaving unchanged', async () => {
         env.addGlobal('getPoisonedArray', () => {
           return createTestPoison(new Error('Cannot fetch items'));
@@ -70,7 +70,7 @@ import {createPoison, isPoisonError, PoisonError} from '../../src/runtime/runtim
       });
     });
 
-    describe('Test 2.3: Synchronous poison with handlers', () => {
+    describe('Synchronous poison with handlers', () => {
       it('should add poison markers to buffer', async () => {
         env.addGlobal('getPoisonedArray', () => {
           return createTestPoison(new Error('Data unavailable'));
@@ -96,7 +96,7 @@ import {createPoison, isPoisonError, PoisonError} from '../../src/runtime/runtim
       });
     });
 
-    describe('Test 2.4: Synchronous poison with both writes and handlers [DEFERRED: Phase 6]', () => {
+    describe('Synchronous poison with both writes and handlers', () => {
       it('should handle both poisoning mechanisms', async () => {
         env.addGlobal('getPoisonedArray', () => {
           return createTestPoison(new Error('Complete failure'));
@@ -124,7 +124,7 @@ import {createPoison, isPoisonError, PoisonError} from '../../src/runtime/runtim
       });
     });
 
-    describe('Test 2.5: Thrown error in array expression [DEFERRED: Phase 6]', () => {
+    describe('Thrown error in array expression', () => {
       it('should catch and handle like poison', async () => {
         env.addGlobal('throwingFunc', () => {
           throw new Error('Sync throw in evaluation');
@@ -151,7 +151,7 @@ import {createPoison, isPoisonError, PoisonError} from '../../src/runtime/runtim
       });
     });
 
-    describe('Test 2.6: Normal array after poison handling added', () => {
+    describe('Normal array after poison handling', () => {
       it('should still execute normally with valid data', async () => {
         env.addGlobal('getArray', () => [1, 2, 3]);
 

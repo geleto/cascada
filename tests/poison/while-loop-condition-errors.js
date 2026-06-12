@@ -1,20 +1,20 @@
 
 import expect from 'expect.js';
-import {AsyncEnvironment} from '../src/environment/environment.js';
-import * as runtime from '../src/runtime/runtime.js';
+import {AsyncEnvironment} from '../../src/environment/environment.js';
+import * as runtime from '../../src/runtime/runtime.js';
 
 const {createPoison, isPoisonError, PoisonError} = runtime;
-const TEST_EC = [1, 1, 'WhilePoison.TestInput', 'phase5-while-generator.js', null, null];
+const TEST_EC = [1, 1, 'WhilePoison.TestInput', 'while-loop-condition-errors.js', null, null];
 const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC, 'UserCallThrew'));
 
-describe('Phase 5: While Loop Generator Error Handling', () => {
+describe('While loop condition error handling', () => {
   let env;
 
   beforeEach(() => {
     env = new AsyncEnvironment();
   });
 
-  describe('Test 5.1: Condition evaluates to poison', () => {
+  describe('Condition evaluates to poison', () => {
     it('should handle poison condition by yielding PoisonError to runtime', async () => {
       const context = {
         getPoisonedCondition: () => createTestPoison(new Error('Condition failed'))
@@ -68,7 +68,7 @@ describe('Phase 5: While Loop Generator Error Handling', () => {
     });
   });
 
-  describe('Test 5.2: Condition throws error', () => {
+  describe('Condition throws error', () => {
     it('should stop immediately when condition evaluation throws', async () => {
       let callCount = 0;
       const context = {
@@ -121,7 +121,7 @@ describe('Phase 5: While Loop Generator Error Handling', () => {
     });
   });
 
-  describe('Test 5.3: Sequential operations in condition', () => {
+  describe('Sequential operations in condition', () => {
     it('should handle sequential operations in condition', async () => {
       const context = {
         counter: {
@@ -164,7 +164,7 @@ describe('Phase 5: While Loop Generator Error Handling', () => {
     });
   });
 
-  describe('Test 5.4: Normal boolean condition', () => {
+  describe('Normal boolean condition', () => {
     it('should work with normal boolean condition', async () => {
       const context = {
         shouldContinue: true,
@@ -213,7 +213,7 @@ describe('Phase 5: While Loop Generator Error Handling', () => {
     });
   });
 
-  describe('Test 5.5: Multiple iterations then condition error', () => {
+  describe('Multiple iterations before condition error', () => {
     it('should iterate several times then handle condition error as soft error', async () => {
       let callCount = 0;
       const context = {

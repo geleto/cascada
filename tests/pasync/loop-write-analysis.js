@@ -3,14 +3,14 @@ import {AsyncEnvironment} from '../../src/environment/environment.js';
 
 (function () {
 
-  describe('Phase 1: Loop Two-Pass Compilation', () => {
+  describe('Loop write analysis', () => {
     let env;
 
     beforeEach(() => {
       env = new AsyncEnvironment();
     });
 
-    describe('Test 1.1: Body writes tracked', () => {
+    describe('Body writes tracked', () => {
       it('should track writes in loop body', async () => {
         const script = `
           var result = {}
@@ -28,8 +28,8 @@ import {AsyncEnvironment} from '../../src/environment/environment.js';
       });
     });
 
-    describe('Test 1.2: Else writes tracked', () => {
-      it('should track writes in else block (Phase 3)', async () => {
+    describe('Else writes tracked', () => {
+      it('should track writes in else block', async () => {
         const script = `
           var result = {}
           var total = 0
@@ -48,7 +48,7 @@ import {AsyncEnvironment} from '../../src/environment/environment.js';
       });
     });
 
-    describe('Test 1.X: Loop write tracking in Both blocks', () => {
+    describe('Loop write tracking in body and else blocks', () => {
 
       it('should track writes in both blocks', async () => {
         // @todo - soft and hard iterator error
@@ -99,7 +99,7 @@ import {AsyncEnvironment} from '../../src/environment/environment.js';
       });
     });
 
-    describe('Test 1.3: Chain collection from body', () => {
+    describe('Chain collection from body', () => {
       it('should collect chains from loop body', async () => {
         const script = `
           data result
@@ -115,7 +115,7 @@ import {AsyncEnvironment} from '../../src/environment/environment.js';
       });
     });
 
-    describe('Test 1.4: Chain collection from else', () => {
+    describe('Chain collection from else', () => {
       it('should collect chains from else block', async () => {
         const script = `
           data result
@@ -133,7 +133,7 @@ import {AsyncEnvironment} from '../../src/environment/environment.js';
       });
     });
 
-    describe('Test 1.5: No regressions', () => {
+    describe('Loop write analysis regressions', () => {
       it('should handle nested loops', async () => {
         const script = `
           data result
@@ -383,7 +383,7 @@ import {AsyncEnvironment} from '../../src/environment/environment.js';
       });
     });
 
-    describe('Test 1.6: Legacy asyncEach loops', () => {
+    describe('Legacy asyncEach loops', () => {
       it('should handle basic asyncEach loop', async () => {
         const context = {
           items: [1, 2, 3],
@@ -446,7 +446,7 @@ import {AsyncEnvironment} from '../../src/environment/environment.js';
       });
     });
 
-    describe('Test 1.7: Complex nested scenarios', () => {
+    describe('Complex nested scenarios', () => {
       it('should handle deeply nested loops with writes', async () => {
         const script = `
           var result = {}
@@ -468,7 +468,7 @@ import {AsyncEnvironment} from '../../src/environment/environment.js';
         expect(output.result).to.be(27000);
       });
 
-      it('should handle for loop with nested while loop (Phase 3/5)', async () => {
+      it('should handle for loop with nested while loop', async () => {
         const context = {
           outerItems: [1, 2],
           state: {
@@ -525,7 +525,7 @@ import {AsyncEnvironment} from '../../src/environment/environment.js';
       });
     });
 
-    describe('Test 1.8: Chain collection edge cases', () => {
+    describe('Chain collection edge cases', () => {
       it('should collect multiple different chains from loop body', async () => {
         const script = `
           data result

@@ -1,20 +1,20 @@
 
 import expect from 'expect.js';
-import {AsyncEnvironment} from '../src/environment/environment.js';
-import * as runtime from '../src/runtime/runtime.js';
+import {AsyncEnvironment} from '../../src/environment/environment.js';
+import * as runtime from '../../src/runtime/runtime.js';
 
 const {createPoison, isPoisonError, PoisonError} = runtime;
-const TEST_EC = [1, 1, 'LoopPoisonIntegration.TestInput', 'phase6-integration.js', null, null];
+const TEST_EC = [1, 1, 'LoopPoisonIntegration.TestInput', 'loop-poison-integration.js', null, null];
 const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC, 'UserCallThrew'));
 
-describe('Phase 6: Loop Poison Integration', () => {
+describe('Loop poison integration', () => {
   let env;
 
   beforeEach(() => {
     env = new AsyncEnvironment();
   });
 
-  describe('Test 6.1: Else execution with synchronous poison', () => {
+  describe('Else execution with synchronous poison', () => {
     it('should execute else block when iterable is poisoned', async () => {
       const script = `
         var result = {}
@@ -38,7 +38,7 @@ describe('Phase 6: Loop Poison Integration', () => {
     });
   });
 
-  describe('Test 6.2: Else execution with runtime error', () => {
+  describe('Else execution with runtime error', () => {
     it('should execute else when generator throws', async () => {
       const script = `
         var result = {}
@@ -66,7 +66,7 @@ describe('Phase 6: Loop Poison Integration', () => {
     });
   });
 
-  describe('Test 6.3: Else coordination - normal empty', () => {
+  describe('Else coordination for normal empty loops', () => {
     it('should execute else when loop is normally empty', async () => {
       const script = `
         var result = {}
@@ -102,7 +102,7 @@ describe('Phase 6: Loop Poison Integration', () => {
     });
   });
 
-  describe('Test 6.4: Complex loop with writes and handlers - poison case', () => {
+  describe('Complex loop with writes and handlers when poisoned', () => {
     it('should handle all features when iterable is poisoned', async () => {
       const script = `
         data result
@@ -131,7 +131,7 @@ describe('Phase 6: Loop Poison Integration', () => {
     });
   });
 
-  describe('Test 6.5: Complex loop with writes and handlers - normal case', () => {
+  describe('Complex loop with writes and handlers for valid data', () => {
     it('should work normally with valid data', async () => {
       const script = `
         data result
@@ -153,7 +153,7 @@ describe('Phase 6: Loop Poison Integration', () => {
     });
   });
 
-  describe('Test 6.6: Nested loops with errors', () => {
+  describe('Nested loops with errors', () => {
     it('should handle poison in outer loop', async () => {
       const script = `
         var result = {}
@@ -207,7 +207,7 @@ describe('Phase 6: Loop Poison Integration', () => {
     });
   });
 
-  describe('Test 6.7: Soft errors from generator', () => {
+  describe('Soft errors from generator', () => {
     it('should handle generator yielding poison', async () => {
       const script = `
         data result
@@ -236,7 +236,7 @@ describe('Phase 6: Loop Poison Integration', () => {
     });
   });
 
-  describe('Test 6.8: Hard errors from generator', () => {
+  describe('Hard errors from generator', () => {
     it('should handle generator throwing error', async () => {
       const script = `
         data result
@@ -262,7 +262,7 @@ describe('Phase 6: Loop Poison Integration', () => {
     });
   });
 
-  describe('Test 6.9: Error position tracking', () => {
+  describe('Error position tracking', () => {
     it('should include error from iterable evaluation', async () => {
       const script = `
         var result = {}
@@ -309,7 +309,7 @@ describe('Phase 6: Loop Poison Integration', () => {
     });
   });
 
-  describe('Test 6.10: Variable writes with poison', () => {
+  describe('Variable writes with poison', () => {
     it('should handle variable writes when loop errors', async () => {
       const template = `
         {% set total = 0 %}
@@ -333,7 +333,7 @@ describe('Phase 6: Loop Poison Integration', () => {
     });
   });
 
-  describe('Test 6.11: Chain commands with poison', () => {
+  describe('Chain commands with poison', () => {
     it('should handle @data and @text in else block when poisoned', async () => {
       const script = `
         data result

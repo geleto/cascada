@@ -1,15 +1,15 @@
 
 import expect from 'expect.js';
-import {AsyncEnvironment} from '../src/environment/environment.js';
+import {AsyncEnvironment} from '../../src/environment/environment.js';
 
-describe('Phase 3: Empty Loop Handling', () => {
+describe('Empty loop handling', () => {
   let env;
 
   beforeEach(() => {
     env = new AsyncEnvironment();
   });
 
-  describe('Test 3.1: Empty array with body writes', () => {
+  describe('Empty array with body writes', () => {
     it('should skip writes and execute else for empty array', async () => {
       const script = `
         var result = {}
@@ -31,7 +31,7 @@ describe('Phase 3: Empty Loop Handling', () => {
     });
   });
 
-  describe('Test 3.2: Empty array without writes', () => {
+  describe('Empty array without writes', () => {
     it('should execute else for simple empty loop', async () => {
       const script = `
         data result
@@ -50,7 +50,7 @@ describe('Phase 3: Empty Loop Handling', () => {
     });
   });
 
-  describe('Test 3.3: Empty object iteration', () => {
+  describe('Empty object iteration', () => {
     it('should handle empty object with key/value iteration', async () => {
       const script = `
         var result = {}
@@ -71,7 +71,7 @@ describe('Phase 3: Empty Loop Handling', () => {
     });
   });
 
-  describe('Test 3.4: Non-empty array regression', () => {
+  describe('Non-empty array regression', () => {
     it('should not trigger skip path for non-empty loops', async () => {
       const script = `
         var result = {}
@@ -108,4 +108,3 @@ describe('Phase 3: Empty Loop Handling', () => {
     });
   });
 });
-

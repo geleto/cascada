@@ -33,7 +33,7 @@ function testError(message) {
 }
 
 describe('chain errors', function () {
-  describe('chain commands step2 poison encoding', function () {
+  describe('chain command poison encoding', function () {
     it('propagates RuntimeError instead of degrading it into poison during argument resolution', async () => {
       const output = new TextChain(null, 'text', { path: 'fatal-output.script' }, 'text');
       const fatal = new RuntimeError('fatal command failure', [1, 1, null, 'fatal-output.script', null, null]);
@@ -580,7 +580,7 @@ describe('chain errors', function () {
     });
   });
 
-  describe('output observation commands step3', function () {
+  describe('output observation commands', function () {
     it('does not expose observation methods on output facades', async () => {
       const buffer = new CommandBuffer(null, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       const out = createChain(buffer, 'out', null, 'data');

@@ -1783,7 +1783,7 @@ describe('error context tracing runtime foundation', () => {
         'db!.save(name)',
         'result.name.set(name)',
         'return result.snapshot()'
-      ].join('\n'), env, 'phase4-generated.casc').compileSource();
+      ].join('\n'), env, 'generated-error-context.casc').compileSource();
 
       expect(source).to.match(/runtime\.callWrapAsync\([^;]+__ec\[\d+\], output\)/);
       expect(source).to.match(/runtime\.resolveScriptCallTarget\(context, "fetchUser", __ec\[\d+\]\)/);
@@ -1801,7 +1801,7 @@ describe('error context tracing runtime foundation', () => {
         'data result',
         'db!.save(userId)',
         'return result.snapshot()'
-      ].join('\n'), env, 'phase4-sequential-root.casc').compileSource();
+      ].join('\n'), env, 'sequential-root-error-context.casc').compileSource();
 
       expect(source).to.match(/runtime\.sequentialCallWrapValue\([^;]+context\.lookupScript\("db", __ec\[\d+\]\)[^;]+__ec\[\d+\], false, output\)/);
     });

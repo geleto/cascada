@@ -4,20 +4,20 @@ import {AsyncEnvironment} from '../../src/environment/environment.js';
 import * as runtime from '../../src/runtime/runtime.js';
 
 const {createPoison, isPoisonError, PoisonError} = runtime;
-const TEST_EC = [1, 1, 'AsyncIterator.TestInput', 'phase4-async-iterator-errors.js', null, null];
+const TEST_EC = [1, 1, 'AsyncIterator.TestInput', 'async-iterator-errors.js', null, null];
 
 function createTestPoison(error) {
   return createPoison(PoisonError.wrap(error, TEST_EC, 'UserCallThrew'));
 }
 
-describe('Phase 4: Async Iterator Error Handling', () => {
+describe('Async iterator error handling', () => {
   let env;
 
   beforeEach(() => {
     env = new AsyncEnvironment();
   });
 
-  // Test 4.1: User generator yields values that cause loop body errors (soft errors)
+  // User generator yields values that cause loop body errors.
   it('should collect errors when loop body throws for yielded values and continue iteration', async () => {
     const context = {
       async *testGen() {
@@ -57,7 +57,7 @@ describe('Phase 4: Async Iterator Error Handling', () => {
     }
   });
 
-  // Test 4.3: User generator yields mixed values, some cause errors
+  // User generator yields mixed values, some cause errors.
   it('should collect all errors while processing mixed values', async () => {
     const context = {
       async *testGen() {
@@ -100,7 +100,7 @@ describe('Phase 4: Async Iterator Error Handling', () => {
     }
   });
 
-  // Test 4.4: Loop body throws during iteration
+  // Loop body throws during iteration.
   it('should collect errors from loop body as soft errors', async () => {
     const context = {
       async *testGen() {
@@ -140,7 +140,7 @@ describe('Phase 4: Async Iterator Error Handling', () => {
     }
   });
 
-  // Test 4.5: Empty async iterator
+  // Empty async iterator.
   it('should handle empty async iterator without errors', async () => {
     const context = {
       async *emptyGen() {
@@ -163,7 +163,7 @@ describe('Phase 4: Async Iterator Error Handling', () => {
     expect(result.items).to.be(undefined);
   });
 
-  // Additional test: Verify runtime no longer poisons writes (Phase 2 does it)
+  // Verify runtime no longer poisons writes; compiler-level handling owns it.
   it('should not poison writes in runtime - compiler handles it', async () => {
     const context = {
       getPoisonedArray: () => createTestPoison(new Error('Array evaluation failed'))
@@ -187,12 +187,12 @@ describe('Phase 4: Async Iterator Error Handling', () => {
     } catch (err) {
       expect(isPoisonError(err)).to.be(true);
       // The key assertion: runtime.iterate should just return false
-      // The compiler's catch block (Phase 2) should handle poisoning
+      // The compiler's catch block should handle poisoning
       // This test verifies runtime doesn't double-poison
     }
   });
 
-  // Test 4.7: Generator yields Error objects directly (soft errors)
+  // Generator yields Error objects directly.
   it('should collect errors when generator yields Error objects and continue iteration', async () => {
     const context = {
       async *testGen() {
@@ -225,7 +225,7 @@ describe('Phase 4: Async Iterator Error Handling', () => {
     }
   });
 
-  // Test 4.8: Generator yields PoisonError object directly (multiple soft errors)
+  // Generator yields PoisonError objects directly.
   it('should collect errors when generator yields PoisonError and continue iteration', async () => {
     const context = {
       async *testGen() {
@@ -258,7 +258,7 @@ describe('Phase 4: Async Iterator Error Handling', () => {
     }
   });
 
-  // Test 4.9: Realistic example - API errors yielded from generator
+  // Realistic example: API errors yielded from generator.
   it('should handle realistic async API pattern with yielded errors', async () => {
     const context = {
       async *fetchPages() {
@@ -297,7 +297,7 @@ describe('Phase 4: Async Iterator Error Handling', () => {
   });
 
   describe('Hard and Soft Error Handling in Async Iterators', () => {
-    // Test 4.2: User generator throws (hard error)
+    // User generator throws.
     let context;
     beforeEach(() => {
       context = {

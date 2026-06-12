@@ -52,7 +52,7 @@ function componentParticipant(path, options = {}) {
   };
 }
 
-describe('Phase 8 - Component Method Calls', function () {
+describe('Component method calls', function () {
   it('should resolve component method return values correctly', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
@@ -371,7 +371,7 @@ describe('Phase 8 - Component Method Calls', function () {
     }
   });
 
-  describe('Phase 8 - Late Component Shared Linking', function () {
+  describe('Late component shared linking', function () {
     it('should link newly discovered component shared lanes before later shared-visible observation continues', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
@@ -450,7 +450,7 @@ describe('Phase 8 - Component Method Calls', function () {
     });
   });
 });
-describe('Phase 8 - Component Observations', function () {
+describe('Component observations', function () {
   it('should combine render context and object payload inputs with payload values', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
@@ -995,7 +995,7 @@ describe('Phase 8 - Component Observations', function () {
     }
   });
 });
-describe('Phase 8 - Component Lifecycle', function () {
+describe('Component lifecycle', function () {
   it('should keep constructor work and later method work on the same long-lived component root', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
@@ -1446,4 +1446,3 @@ describe('Phase 8 - Component Lifecycle', function () {
     expect(seenErrors).to.eql([failure]);
   });
 });
-
