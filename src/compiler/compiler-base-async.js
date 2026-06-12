@@ -185,8 +185,7 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   compileInlineIf(node) {
-    const hasLinkedMutations = node._analysis.linkedMutatedChains &&
-      node._analysis.linkedMutatedChains.size > 0;
+    const hasLinkedMutations = node._analysis.linkedMutatedChains !== null;
     if (hasLinkedMutations) {
       this.boundaries.compileExpressionControlFlowBoundary(this.buffer, node, function() {
         this.emit('const cond = await runtime.resolveSingle(');
@@ -547,8 +546,7 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   _compileAsyncBinOpShortCircuit(node, isOr) {
-    const hasLinkedMutations = node._analysis.linkedMutatedChains &&
-      node._analysis.linkedMutatedChains.size > 0;
+    const hasLinkedMutations = node._analysis.linkedMutatedChains !== null;
     if (hasLinkedMutations) {
       this.boundaries.compileExpressionControlFlowBoundary(this.buffer, node, function() {
         this.emit('const left = await runtime.resolveSingle(');

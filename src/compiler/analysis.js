@@ -123,7 +123,7 @@ class CompileAnalysis {
 
   _analyzeNode(node) {
     const analyzerName = `analyze${node.typename}`;
-    const analyzer = this.compiler && this.compiler[analyzerName];
+    const analyzer = this.compiler[analyzerName];
     if (typeof analyzer === 'function') {
       const returned = analyzer.call(this.compiler, node, this);
       if (returned && typeof returned === 'object' && returned !== node._analysis) {
@@ -134,7 +134,7 @@ class CompileAnalysis {
 
   _postAnalyzeNode(node) {
     const analyzerName = `postAnalyze${node.typename}`;
-    const analyzer = this.compiler && this.compiler[analyzerName];
+    const analyzer = this.compiler[analyzerName];
     if (typeof analyzer === 'function') {
       // Post-analyzers run after immediate children are finalized. They may
       // return node-owned custom facts and, narrowly, custom linked-chain
@@ -190,7 +190,7 @@ class CompileAnalysis {
 
   markLookupDeclaration(node, name, analysis = node._analysis) {
     const declaration = this.findDeclaration(analysis, name);
-    node.addAnalysis({ lookupDeclaration: declaration || null });
+    node.addAnalysis({ lookupDeclaration: declaration });
     return declaration;
   }
 
@@ -240,7 +240,7 @@ class CompileAnalysis {
     while (current && current.parent) {
       current = current.parent;
     }
-    return this._getScopeOwner(current || analysis);
+    return this._getScopeOwner(current);
   }
 
   getTopmostChildAnalysis(analysis) {
@@ -272,7 +272,7 @@ class CompileAnalysis {
     while (current && !current.createScope) {
       current = current.parent;
     }
-    return current || analysis;
+    return current;
   }
 
   isRootScopeOwner(analysis) {
@@ -448,7 +448,7 @@ class CompileAnalysis {
   }
 
   _validateReservedDeclarationName(analysis, decl) {
-    if (!this.compiler || !this.compiler.isReservedDeclaration || !this.compiler.isReservedDeclaration(decl)) {
+    if (!this.compiler.isReservedDeclaration(decl)) {
       return;
     }
     const originNode = analysis.node || null;
@@ -700,10 +700,8 @@ class CompileAnalysis {
     };
     if (declaredChains) {
       declaredChains.forEach((_decl, name) => {
-        if (name) {
-          parentUsage.usedChains.delete(name);
-          parentUsage.mutatedChains.delete(name);
-        }
+        parentUsage.usedChains.delete(name);
+        parentUsage.mutatedChains.delete(name);
       });
     }
     return parentUsage;
@@ -751,9 +749,7 @@ class CompileAnalysis {
     }
     const linkedChains = new Set();
     chainsFromParent.forEach((name) => {
-      if (name) {
-        linkedChains.add(name);
-      }
+      linkedChains.add(name);
     });
     return linkedChains.size > 0 ? linkedChains : null;
   }
@@ -858,7 +854,7 @@ class CompileAnalysis {
     if (!analysis.expressionControlFlowBoundary) {
       return true;
     }
-    return analysis.linkedMutatedChains !== null && analysis.linkedMutatedChains.size > 0;
+    return analysis.linkedMutatedChains !== null;
   }
 
   _createsLinkableChildBuffer(analysis) {
