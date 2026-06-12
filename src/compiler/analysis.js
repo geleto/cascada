@@ -27,6 +27,8 @@ class CompileAnalysis {
   }
 
   run(rootNode) {
+    // Analysis is single-shot per AST. Rerunning would merge stale per-node
+    // `_analysis` maps from the prior pass into the fresh traversal.
     this._declarationsFinalized = false;
     if (!rootNode) {
       return;
@@ -87,6 +89,8 @@ class CompileAnalysis {
       node,
       createScope: false,
       scopeBoundary: false,
+      // Meaningful only on scope owners: read-only mutation checks hop from
+      // scope owner to scope owner and do not inspect intermediate nodes.
       parentReadOnly: false,
       textOutput: null,
       declares: [],
@@ -109,9 +113,9 @@ class CompileAnalysis {
       createsLinkedChildBuffer: false,
       createsScopeBuffer: false,
       expressionControlFlowBoundary: false,
-      ...node._analysis ?? {},
+      ...(node._analysis ?? {}),
       parent: parentAnalysis,
-      inheritedSequenceFunCallLockKey: 
+      inheritedSequenceFunCallLockKey:
         node._analysis?.inheritedSequenceFunCallLockKey ??
         parentAnalysis?.inheritedSequenceFunCallLockKey ??
         null
@@ -136,8 +140,11 @@ class CompileAnalysis {
     if (typeof analyzer === 'function') {
       // Post-analyzers run after immediate children are finalized. They may
       // return node-owned custom facts and, narrowly, custom linked-chain
-      // iterables. Finalization below normalizes linked-chain facts before
-      // codegen observes them; ordinary uses/mutates belong to the first pass.
+      // iterables. Custom linked-chain facts are return-only: finalization
+      // checks the returned object for own linked fields before deriving
+      // defaults. Writing them through node.addAnalysis() will be overwritten.
+      // Finalization below normalizes linked-chain facts before codegen
+      // observes them; ordinary uses/mutates belong to the first pass.
       const returned = analyzer.call(this.compiler, node, this);
       if (returned && typeof returned === 'object' && returned !== node._analysis) {
         return returned;
@@ -722,6 +729,9 @@ class CompileAnalysis {
     if (typeof value === 'string') {
       this._throwInvalidChainSet(value, field, analysis);
     }
+    if (value instanceof Map) {
+      this._throwInvalidChainSet(value, field, analysis);
+    }
     if (typeof value.forEach === 'function') {
       value.forEach(addChainName);
     } else if (typeof value[Symbol.iterator] === 'function') {
@@ -783,6 +793,9 @@ class CompileAnalysis {
     }
     if (Array.isArray(value)) {
       return 'array';
+    }
+    if (value instanceof Map) {
+      return 'Map';
     }
     return typeof value;
   }

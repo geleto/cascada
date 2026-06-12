@@ -150,6 +150,23 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       });
     });
 
+    it('should reject Map custom linked chain facts as invalid shapes', function () {
+      const opts = {
+        asyncMode: true,
+        scriptMode: false,
+        idPool: createIdPool()
+      };
+      const compiler = new CompilerAsync('invalid-linked-chain-map-facts.njk', opts);
+      const ast = transform(parse('{% if flag %}{{ x }}{% endif %}', [], opts), [], 'invalid-linked-chain-map-facts.njk', opts);
+      compiler.postAnalyzeIf = () => ({ linkedChains: new Map([['x', { name: 'x' }]]) });
+
+      expect(() => compiler.analysis.run(ast)).to.throwException((err) => {
+        expect(err.message).to.contain('Analysis fact \'linkedChains\'');
+        expect(err.message).to.contain('must be a Set, array, or iterable collection of chain names');
+        expect(err.message).to.contain('got Map');
+      });
+    });
+
     it('should reject invalid custom linked chain names during finalization', function () {
       const opts = {
         asyncMode: true,
