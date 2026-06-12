@@ -191,7 +191,7 @@ function _validateTemplateExtendsExpression(compiler, rootNode, extendsNode) {
     return;
   }
   const inferredSharedNames = new Set();
-  const sharedDeclarations = rootNode._analysis.inheritanceSharedDeclarations ?? [];
+  const sharedDeclarations = rootNode._analysis.inheritanceSharedDeclarations;
   sharedDeclarations.forEach((declaration) => {
     if (declaration.implicitTemplateShared) {
       inferredSharedNames.add(declaration.name);
@@ -215,7 +215,7 @@ function validateTemplateInheritanceSurface(compiler, rootNode) {
     return;
   }
 
-  const allExtendsNodes = rootNode._analysis.inheritanceExtendsNodes ?? [];
+  const allExtendsNodes = rootNode._analysis.inheritanceExtendsNodes;
   const directExtendsNodes = allExtendsNodes.filter((extendsNode) =>
     _isRootLevelNode(rootNode, extendsNode)
   );

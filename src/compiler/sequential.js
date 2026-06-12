@@ -202,7 +202,7 @@ class CompileSequential {
 
   _getSequenceLockSet(analysis) {
     const current = this._getRootAnalysis(analysis);
-    return new Set(current && Array.isArray(current.sequenceLocks) ? current.sequenceLocks : []);
+    return new Set(current.sequenceLocks);
   }
 
   _getRootAnalysis(analysis) {
@@ -218,7 +218,6 @@ class CompileSequential {
     if (!rootAnalysis || !lockKey) {
       return;
     }
-    rootAnalysis.sequenceLocks = rootAnalysis.sequenceLocks || [];
     if (!rootAnalysis.sequenceLocks.includes(lockKey)) {
       rootAnalysis.sequenceLocks.push(lockKey);
     }
@@ -229,16 +228,15 @@ class CompileSequential {
     if (!rootAnalysis || !lockKey) {
       return;
     }
-    rootAnalysis.sequenceLockUsages = rootAnalysis.sequenceLockUsages || [];
     rootAnalysis.sequenceLockUsages.push({ lockKey, node });
   }
 
   validateSequenceLockUsages(rootNode) {
     const rootAnalysis = rootNode && rootNode._analysis;
-    if (!rootAnalysis || !rootAnalysis.sequenceLockUsages) {
+    if (!rootAnalysis || rootAnalysis.sequenceLockUsages.length === 0) {
       return;
     }
-    const definedLocks = new Set(rootAnalysis.sequenceLocks ?? []);
+    const definedLocks = new Set(rootAnalysis.sequenceLocks);
     for (const usage of rootAnalysis.sequenceLockUsages) {
       if (definedLocks.has(usage.lockKey)) {
         continue;

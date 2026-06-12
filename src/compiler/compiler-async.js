@@ -497,6 +497,8 @@ class CompilerAsync extends CompilerBaseAsync {
       scopeBoundary: true,
       declares,
       textOutput: this._getRootTextOutput(),
+      sequenceLocks: [],
+      sequenceLockUsages: [],
       ...inheritanceAnalysis
     };
   }
@@ -542,7 +544,7 @@ class CompilerAsync extends CompilerBaseAsync {
     if (this.scriptMode) {
       this.return.emitDeclareChain(this.buffer.currentBuffer);
     }
-    const sequenceLocks = node._analysis.sequenceLocks ?? [];
+    const sequenceLocks = node._analysis.sequenceLocks;
     for (const name of sequenceLocks) {
       this.emit.line(`runtime.declareBufferChain(${this.buffer.currentBuffer}, "${name}", "sequential_path", context, null);`);
     }

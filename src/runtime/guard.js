@@ -37,9 +37,11 @@ function initChainSnapshots(chainNames = null, buffer = null, renderState = null
     errorContext
   };
 
-  const targets = chainNames ?? [];
+  if (!chainNames) {
+    return state;
+  }
 
-  for (const chainName of targets) {
+  for (const chainName of chainNames) {
     const chain = buffer.getChainIfExists(chainName);
     if (!chain) {
       continue;

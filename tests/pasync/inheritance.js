@@ -45,7 +45,7 @@ function analyzeSource(src, options = {}) {
 
 function analyzeCallableEntries(src, options = {}) {
   const { ast } = analyzeProgram(src, options);
-  return (ast._analysis.inheritanceCallableDefinitions ?? []).map((callableNode) => ({
+  return ast._analysis.inheritanceCallableDefinitions.map((callableNode) => ({
     name: callableNode.name.value,
     signature: { argNames: callableNode._analysis.callableSignatureFacts.argNames }
   }));
@@ -53,7 +53,7 @@ function analyzeCallableEntries(src, options = {}) {
 
 function analyzeSharedSchemaInputs(src, options = {}) {
   const { ast } = analyzeProgram(src, options);
-  return (ast._analysis.inheritanceSharedDeclarations ?? []).map((declaration) => ({
+  return ast._analysis.inheritanceSharedDeclarations.map((declaration) => ({
     name: declaration.name,
     type: declaration.type,
     hasDefault: !!declaration.initializer

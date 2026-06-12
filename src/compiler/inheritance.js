@@ -93,12 +93,10 @@ class CompileInheritance {
   }
 
   findRootSharedDeclaration(rootAnalysis, name) {
-    const sharedDeclarations = rootAnalysis.inheritanceSharedDeclarations ?? [];
-    return sharedDeclarations.find((declaration) => declaration.name === name) || null;
+    return rootAnalysis.inheritanceSharedDeclarations.find((declaration) => declaration.name === name) || null;
   }
 
   registerRootSharedDeclaration(rootAnalysis, declaration) {
-    rootAnalysis.inheritanceSharedDeclarations = rootAnalysis.inheritanceSharedDeclarations || [];
     if (!rootAnalysis.inheritanceSharedDeclarations.includes(declaration)) {
       rootAnalysis.inheritanceSharedDeclarations.push(declaration);
     }
@@ -122,17 +120,19 @@ class CompileInheritance {
   }
 
   collectRootAnalysis(node) {
-    node.addAnalysis({
-      inheritanceCallableDefinitions: node._analysis.inheritanceCallableDefinitions ?? [],
-      inheritanceComponentOperations: node._analysis.inheritanceComponentOperations ?? [],
-      inheritanceExtendsNodes: node._analysis.inheritanceExtendsNodes ?? [],
-    });
+    const rootAnalysis = {
+      inheritanceCallableDefinitions: [],
+      inheritanceComponentOperations: [],
+      inheritanceExtendsNodes: [],
+      inheritanceSharedDeclarations: []
+    };
+    node.addAnalysis(rootAnalysis);
     if (this.compiler.scriptMode) {
       node.inheritanceMetadata.methods.children.forEach((methodNode) => {
         this._recordCallableDefinition(methodNode, node._analysis);
       });
     }
-    return {};
+    return rootAnalysis;
   }
 
   _recordCallableDefinition(node, rootAnalysis = null) {
@@ -140,30 +140,27 @@ class CompileInheritance {
       return;
     }
     rootAnalysis = rootAnalysis || this._getRootAnalysis(node._analysis);
-    rootAnalysis.inheritanceCallableDefinitions = rootAnalysis.inheritanceCallableDefinitions || [];
     if (!rootAnalysis.inheritanceCallableDefinitions.includes(node)) {
       rootAnalysis.inheritanceCallableDefinitions.push(node);
     }
   }
 
   _getCallableDefinitions(node) {
-    return node._analysis.inheritanceCallableDefinitions ?? [];
+    return node._analysis.inheritanceCallableDefinitions;
   }
 
   recordComponentOperation(node) {
     const rootAnalysis = this._getRootAnalysis(node._analysis);
-    rootAnalysis.inheritanceComponentOperations = rootAnalysis.inheritanceComponentOperations || [];
     rootAnalysis.inheritanceComponentOperations.push(node);
   }
 
   _getComponentOperations(node) {
-    return node._analysis.inheritanceComponentOperations ?? [];
+    return node._analysis.inheritanceComponentOperations;
   }
 
   analyzeExtends(node) {
     node.template.addAnalysis({ errorContextLabel: this.compiler.scriptMode ? 'Extends.Script' : 'Extends.Template' });
     const rootAnalysis = this._getRootAnalysis(node._analysis);
-    rootAnalysis.inheritanceExtendsNodes = rootAnalysis.inheritanceExtendsNodes || [];
     rootAnalysis.inheritanceExtendsNodes.push(node);
     if (node._analysis.parent?.node instanceof nodes.Root) {
       rootAnalysis.inheritanceLocalExtendsNode = rootAnalysis.inheritanceLocalExtendsNode || node;
@@ -206,7 +203,7 @@ class CompileInheritance {
   }
 
   _getSharedDeclarations(node) {
-    return node._analysis.inheritanceSharedDeclarations ?? [];
+    return node._analysis.inheritanceSharedDeclarations;
   }
 
   _getParticipantRootDeclarations(node) {
@@ -259,7 +256,7 @@ class CompileInheritance {
   }
 
   computeRootInheritanceFacts(node) {
-    const allExtendsNodes = node._analysis.inheritanceExtendsNodes ?? [];
+    const allExtendsNodes = node._analysis.inheritanceExtendsNodes;
     const extendsNodes = allExtendsNodes.filter((child) => !child.noParentLiteral);
     // The local syntax may be `extends none`; hasExtends only means a real parent is selected.
     const localExtendsNode = node._analysis.inheritanceLocalExtendsNode || null;

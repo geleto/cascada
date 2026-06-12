@@ -229,12 +229,18 @@ class CompileAnalysis {
   // First-pass analyzers must not call them — the facts are still null there.
   getChainsUsedFromParent(node) {
     const analysis = node?._analysis;
-    return Array.from(analysis?.usedChainsFromParent ?? []);
+    if (!analysis || !analysis.usedChainsFromParent) {
+      return [];
+    }
+    return Array.from(analysis.usedChainsFromParent);
   }
 
   getChainsMutatedFromParent(node) {
     const analysis = node?._analysis;
-    return Array.from(analysis?.mutatedChainsFromParent ?? []);
+    if (!analysis || !analysis.mutatedChainsFromParent) {
+      return [];
+    }
+    return Array.from(analysis.mutatedChainsFromParent);
   }
 
   extractSymbols(targetNode) {

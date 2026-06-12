@@ -134,7 +134,7 @@ async function createComponentInstance(spec) {
     RuntimeError.reportAndThrow('Component target did not resolve to a script or template', errorContext);
   }
 
-  const payloadContext = { ...(payload ?? {}) };
+  const payloadContext = payload == null ? {} : { ...payload };
   const componentContext = ownerContext.forkForComposition(
     templateOrScript.path,
     payloadContext,

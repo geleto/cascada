@@ -85,11 +85,19 @@ class CompileMacro {
   }
 
   _getCallerLinkedChains(node) {
-    return Array.from(node._analysis.linkedChains ?? []);
+    const linkedChains = node._analysis.linkedChains;
+    if (!linkedChains) {
+      return [];
+    }
+    return Array.from(linkedChains);
   }
 
   _getCallerLinkedMutatedChains(node) {
-    return Array.from(node._analysis.linkedMutatedChains ?? []);
+    const linkedMutatedChains = node._analysis.linkedMutatedChains;
+    if (!linkedMutatedChains) {
+      return [];
+    }
+    return Array.from(linkedMutatedChains);
   }
 
   compileCaller(node) {

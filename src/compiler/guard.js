@@ -88,8 +88,8 @@ class CompileGuard {
 
         compiler.compile(node.body, null);
 
-        const resolvedSequenceTargets = guardFacts.resolvedSequenceTargets ?? [];
-        const guardChains = guardFacts.guardChains ?? [];
+        const resolvedSequenceTargets = guardFacts.resolvedSequenceTargets;
+        const guardChains = guardFacts.guardChains;
         if (resolvedSequenceTargets.length > 0) {
           this.emit.insertLine(
             guardRepairLinePos,
@@ -206,9 +206,11 @@ class CompileGuard {
     for (const lockName of resolvedSequenceTargets) {
       merged.add(lockName);
     }
-    const bodyDeclaredChains = Array.from((node.body._analysis.declaredChains ?? new Map()).keys());
-    for (const name of bodyDeclaredChains) {
-      merged.add(name);
+    const bodyDeclaredChains = node.body._analysis.declaredChains;
+    if (bodyDeclaredChains) {
+      for (const name of bodyDeclaredChains.keys()) {
+        merged.add(name);
+      }
     }
     return compiler.return.excludeGuardCaptureChains(merged);
   }
