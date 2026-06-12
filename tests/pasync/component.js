@@ -766,6 +766,36 @@ describe('Component observations', function () {
     expect(result).to.eql(['default', 'default', 'dark', 'light']);
   });
 
+  it('should create independent component instances inside a for loop', async function () {
+    const loader = new StringLoader();
+    const env = new AsyncEnvironment(loader);
+
+    env.addGlobal('waitAndGet', (value, ms) => new Promise((resolve) => setTimeout(() => resolve(value), ms)));
+
+    loader.addTemplate('Component.script', [
+      'method build()',
+      '  return waitAndGet(incomingName, delay)',
+      'endmethod'
+    ].join('\n'));
+    loader.addTemplate('Main.script', [
+      'data result',
+      'for item in items',
+      '  component "Component.script" as card with { incomingName: item.name, delay: item.delay }',
+      '  result.items.push(card.build())',
+      'endfor',
+      'return result.snapshot()'
+    ].join('\n'));
+
+    const result = await env.renderScript('Main.script', {
+      items: [
+        { name: 'A', delay: 15 },
+        { name: 'B', delay: 1 },
+        { name: 'C', delay: 5 }
+      ]
+    });
+    expect(result).to.eql({ items: ['A', 'B', 'C'] });
+  });
+
   it('should pass object-style payload keys through component composition inputs', async function () {
     const loader = new StringLoader();
     const env = new AsyncEnvironment(loader);
@@ -888,6 +918,29 @@ describe('Component observations', function () {
       expect(err.kind).to.be('UserCallThrew');
       expect(err.kind).not.to.be('LoadFailed');
       expect(err.message).to.contain('component target poisoned');
+    }
+  });
+
+  it('should publish non-fatal missing component loads inside a for loop as LoadFailed poison', async function () {
+    const loader = new StringLoader();
+    const env = new AsyncEnvironment(loader, { loadFailFatal: false });
+
+    loader.addTemplate('Main.script', [
+      'data result',
+      'for item in [1]',
+      '  component "Missing.script" as card',
+      '  result.items.push(card.theme)',
+      'endfor',
+      'return result.snapshot()'
+    ].join('\n'));
+
+    try {
+      await env.renderScript('Main.script', {});
+      expect().fail('Expected renderScript to reject');
+    } catch (err) {
+      expect(runtimeModule.isPoisonError(err)).to.be(true);
+      expect(err.kind).to.be('LoadFailed');
+      expect(err.message).to.match(/Missing\.script|missing/i);
     }
   });
 
