@@ -49,7 +49,7 @@ class CompileChain {
     return segments;
   }
 
-  getThisSharedSetPathFacts(node, analysisPass = this.compiler.analysis) {
+  collectThisSharedSetPathFacts(node, analysisPass = this.compiler.analysis) {
     const compiler = this.compiler;
     if (!node || !node.targets || node.targets.length !== 1) {
       return null;
@@ -61,7 +61,7 @@ class CompileChain {
       return null;
     }
     const name = segments[0];
-    const declaration = this._getThisSharedDeclaration(node._analysis, renameSharedName(name), analysisPass, node, 'strict');
+    const declaration = this._findOrRecordThisSharedDeclaration(node._analysis, renameSharedName(name), analysisPass, node, 'strict');
     if (!declaration) {
       return null;
     }
@@ -150,15 +150,15 @@ class CompileChain {
     );
   }
 
-  getThisSharedAccessFacts(node, analysisPass = this.compiler.analysis, analysisNode = null) {
-    return this._getThisSharedAccessFacts(node, analysisPass, analysisNode, 'strict');
+  collectThisSharedAccessFacts(node, analysisPass = this.compiler.analysis, analysisNode = null) {
+    return this._collectThisSharedAccessFacts(node, analysisPass, analysisNode, 'strict');
   }
 
   probeThisSharedAccessFacts(node, analysisPass = this.compiler.analysis, analysisNode = null) {
-    return this._getThisSharedAccessFacts(node, analysisPass, analysisNode, 'probe');
+    return this._collectThisSharedAccessFacts(node, analysisPass, analysisNode, 'probe');
   }
 
-  _getThisSharedAccessFacts(node, analysisPass, analysisNode, mode) {
+  _collectThisSharedAccessFacts(node, analysisPass, analysisNode, mode) {
     const compiler = this.compiler;
     if (!node) {
       return null;
@@ -192,7 +192,7 @@ class CompileChain {
     ) {
       return null;
     }
-    const declaration = this._getThisSharedDeclaration(
+    const declaration = this._findOrRecordThisSharedDeclaration(
       activeAnalysis,
       sharedName,
       analysisPass,
@@ -212,7 +212,7 @@ class CompileChain {
     };
   }
 
-  _getThisSharedDeclaration(analysis, name, analysisPass, originNode, mode) {
+  _findOrRecordThisSharedDeclaration(analysis, name, analysisPass, originNode, mode) {
     const compiler = this.compiler;
     const rootAnalysis = compiler.analysis.getRootScopeOwner(analysis);
     let declaration = compiler.inheritance.findRootSharedDeclaration(rootAnalysis, name);
@@ -347,7 +347,7 @@ class CompileChain {
       return {};
     }
     const chainName = path[0];
-    const chainDecl = chainName ? compiler.analysis.markLookupDeclaration(node, chainName) : null;
+    const chainDecl = chainName ? compiler.analysis.recordLookupDeclaration(node, chainName) : null;
     const chainType = node.chainType || (chainDecl ? chainDecl.type : null);
     const command = path.length >= 2 ? path[path.length - 1] : null;
     const isSequenceGet = !callNode && chainDecl && chainDecl.type === 'sequence';
@@ -356,7 +356,7 @@ class CompileChain {
        (path[1] === 'isError' || path[1] === 'getError' ||
         (path[1] === 'snapshot' && (!chainDecl || chainDecl.type !== 'sequence'))));
     if (chainType === 'data' && callNode && !isObservation && callNode.args.children.length > 0) {
-      this.markDataCommandPath(callNode.args.children[0]);
+      this._recordDataCommandPath(callNode.args.children[0]);
     }
     const result = isObservation ? { uses: [chainName] } : { uses: [chainName], mutates: [chainName] };
     result.chainCommandFacts = {
@@ -402,25 +402,25 @@ class CompileChain {
     };
   }
 
-  markDataCommandPath(node) {
+  _recordDataCommandPath(node) {
     node.addAnalysis({ isDataCommandPath: true });
   }
 
-  analyzeDataPathLookup(node) {
+  recordDataPathLookup(node) {
     if (node._analysis.isDataCommandPath) {
-      this.markDataCommandPath(node.target);
+      this._recordDataCommandPath(node.target);
     }
   }
 
   postAnalyzeLiteral(node) {
-    return this.postAnalyzeDataPathSegment(node);
+    return this.collectDataPathSegmentFacts(node);
   }
 
   postAnalyzeArray(node) {
-    return this.postAnalyzeDataPathArray(node);
+    return this._collectDataPathArrayFacts(node);
   }
 
-  postAnalyzeDataPathSegment(node) {
+  collectDataPathSegmentFacts(node) {
     if (!node._analysis.isDataCommandPath) {
       return {};
     }
@@ -433,7 +433,7 @@ class CompileChain {
     };
   }
 
-  postAnalyzeDataPathArray(node) {
+  _collectDataPathArrayFacts(node) {
     if (!node._analysis.isDataCommandPath) {
       return {};
     }
@@ -442,7 +442,7 @@ class CompileChain {
     };
   }
 
-  postAnalyzeDataPathLookup(node) {
+  collectDataPathLookupFacts(node) {
     if (!node._analysis.isDataCommandPath || node.target instanceof nodes.Array) {
       return {};
     }

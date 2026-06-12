@@ -109,7 +109,7 @@ class CompileAnalysis {
       const analysis = this._initializeAnalysis(currentNode, currentParentNode, currentParentField);
       this._analyzeNode(currentNode);
       this.compiler._generateErrorContext(currentNode);
-      this._registerDeclarations(analysis);
+      this._recordDeclarations(analysis);
       this._validateUses(analysis);
       this._validateMutations(analysis);
     }, parentNode, parentField);
@@ -269,7 +269,7 @@ class CompileAnalysis {
     return declarations.get(name) || null;
   }
 
-  markLookupDeclaration(node, name, analysis = node._analysis) {
+  recordLookupDeclaration(node, name, analysis = node._analysis) {
     const declaration = this.findDeclaration(analysis, name);
     node.addAnalysis({ lookupDeclaration: declaration });
     return declaration;
@@ -299,7 +299,7 @@ class CompileAnalysis {
         decl.declarationOrigin = this.getTopmostChildAnalysis(declarationOrigin);
       }
       declarations.set(decl.name, decl);
-      this.compiler.inheritance.registerRootSharedDeclaration(owner, decl);
+      this.compiler.inheritance.recordRootSharedDeclaration(owner, decl);
       return;
     }
     declarations.set(decl.name, { ...decl, declarationOrigin });
@@ -434,16 +434,16 @@ class CompileAnalysis {
     });
   }
 
-  _registerDeclarations(analysis) {
-    this._registerSourceDeclarations(analysis, analysis.declares, this._getScopeOwner(analysis), analysis);
+  _recordDeclarations(analysis) {
+    this._recordSourceDeclarations(analysis, analysis.declares, this._getScopeOwner(analysis), analysis);
 
     if (analysis.declaresInParent.length > 0) {
       const parentOwner = analysis.parent ? this._getScopeOwner(analysis.parent) : null;
-      this._registerSourceDeclarations(analysis, analysis.declaresInParent, parentOwner, analysis);
+      this._recordSourceDeclarations(analysis, analysis.declaresInParent, parentOwner, analysis);
     }
   }
 
-  _registerSourceDeclarations(analysis, declares, owner, declarationOrigin) {
+  _recordSourceDeclarations(analysis, declares, owner, declarationOrigin) {
     if (declares.length === 0 || !owner) {
       return;
     }

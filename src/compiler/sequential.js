@@ -6,7 +6,7 @@ class CompileSequential {
     this.compiler = compiler;
   }
 
-  seedFunCallNameLockKey(node) {
+  recordFunCallNameLockKey(node) {
     const lockKey = node._analysis.sequenceFunCallLockKey;
     if (!lockKey || !node.name) {
       return;
@@ -14,7 +14,7 @@ class CompileSequential {
     node.name.addAnalysis({ inheritedSequenceFunCallLockKey: lockKey });
   }
 
-  getSequenceLockLookup(node) {
+  recordSequenceLockLookup(node) {
     const analysis = node._analysis;
     const funCallLockKey = analysis.inheritedSequenceFunCallLockKey || null;
     let nodeLockKey = null;
@@ -59,7 +59,7 @@ class CompileSequential {
     return { key: nodeLockKey, repair: !!node.sequentialRepair };
   }
 
-  postAnalyzeSequenceLockLookup(node, analysisPass) {
+  recordBareSequenceLockLookup(node, analysisPass) {
     const analysis = node._analysis;
     if (analysis.sequenceLockLookup || node.sequential) {
       return null;
@@ -67,7 +67,7 @@ class CompileSequential {
     if (!(node instanceof nodes.Symbol || node instanceof nodes.LookupVal)) {
       return null;
     }
-    const sequenceLockLookup = this._getBareSequenceLockLookup(node);
+    const sequenceLockLookup = this._findBareSequenceLockLookup(node);
     if (!sequenceLockLookup) {
       return null;
     }
@@ -79,7 +79,7 @@ class CompileSequential {
     return sequenceLockLookup;
   }
 
-  _getBareSequenceLockLookup(node) {
+  _findBareSequenceLockLookup(node) {
     const analysis = node._analysis;
     const sequenceLocks = this._getSequenceLockSet(analysis);
     const funCallLockKey = analysis.inheritedSequenceFunCallLockKey || null;

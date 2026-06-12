@@ -65,10 +65,10 @@ class CompilerBaseAsync extends CompilerCommon {
 
     const uses = [];
     const mutates = [];
-    const sequenceLockLookup = this.sequential.getSequenceLockLookup(node);
+    const sequenceLockLookup = this.sequential.recordSequenceLockLookup(node);
     node.addAnalysis({ sequenceLockLookup });
     if (sequenceLockLookup) {
-      const thisSharedFacts = this.chain.getThisSharedAccessFacts(node, analysisPass);
+      const thisSharedFacts = this.chain.collectThisSharedAccessFacts(node, analysisPass);
       if (thisSharedFacts) {
         this.fail(
           'Sequence marker (!) is only supported on context paths, not this.<shared> chains.',
@@ -84,7 +84,7 @@ class CompilerBaseAsync extends CompilerCommon {
       }
     }
 
-    const declaration = analysisPass.markLookupDeclaration(node, name);
+    const declaration = analysisPass.recordLookupDeclaration(node, name);
     if (declaration && !(this.scriptMode && declaration.shared)) {
       uses.push(name);
     }
@@ -93,9 +93,9 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   postAnalyzeSymbol(node, analysisPass) {
-    const facts = this.chain.postAnalyzeDataPathSegment(node);
+    const facts = this.chain.collectDataPathSegmentFacts(node);
     if (!node._analysis?.declarationTarget && !node.isCompilerInternal) {
-      const sequenceLockLookup = this.sequential.postAnalyzeSequenceLockLookup(node, analysisPass);
+      const sequenceLockLookup = this.sequential.recordBareSequenceLockLookup(node, analysisPass);
       if (sequenceLockLookup) {
         facts.sequenceLockLookup = sequenceLockLookup;
       }
@@ -660,7 +660,7 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   _getErrorObservationFacts(targetNode) {
-    const componentBindingRoot = this.component.getBindingRoot(targetNode);
+    const componentBindingRoot = this.component.findBindingRoot(targetNode);
     if (componentBindingRoot && componentBindingRoot.staticPath.length === 2) {
       return {
         kind: 'component',
@@ -688,7 +688,7 @@ class CompilerBaseAsync extends CompilerCommon {
       return null;
     }
 
-    const thisSharedFacts = this.chain.getThisSharedAccessFacts(targetNode);
+    const thisSharedFacts = this.chain.collectThisSharedAccessFacts(targetNode);
     if (thisSharedFacts && thisSharedFacts.chainPath.length === 1) {
       return thisSharedFacts.chainName;
     }

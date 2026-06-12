@@ -42,7 +42,7 @@ class CompileAssignment {
     if (node.path && targets.length !== 1) {
       compiler.fail('set_path only supports a single target.', node.lineno, node.colno, node);
     }
-    const thisSharedPath = compiler.chain.getThisSharedSetPathFacts(node, analysisPass);
+    const thisSharedPath = compiler.chain.collectThisSharedSetPathFacts(node, analysisPass);
     if (thisSharedPath) {
       uses.push(thisSharedPath.name);
       mutates.push(thisSharedPath.name);

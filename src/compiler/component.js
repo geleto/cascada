@@ -58,8 +58,8 @@ class CompileComponent {
     }
   }
 
-  getBindingFacts(node, { forCall = false } = {}) {
-    const bindingRoot = this.getBindingRoot(node);
+  findBindingFacts(node, { forCall = false } = {}) {
+    const bindingRoot = this.findBindingRoot(node);
     if (!bindingRoot) {
       return null;
     }
@@ -100,7 +100,7 @@ class CompileComponent {
     return null;
   }
 
-  getBindingRoot(node) {
+  findBindingRoot(node) {
     if (!this.compiler.scriptMode || !node) {
       return null;
     }

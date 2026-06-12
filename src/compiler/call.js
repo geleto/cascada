@@ -12,28 +12,28 @@ class CompileCall {
     const uses = [];
     const mutates = [];
 
-    const sequenceLockLookup = compiler.sequential.getSequenceLockLookup(node);
+    const sequenceLockLookup = compiler.sequential.recordSequenceLockLookup(node);
     node.addAnalysis({ sequenceLockLookup });
-    compiler.sequential.seedFunCallNameLockKey(node);
+    compiler.sequential.recordFunCallNameLockKey(node);
 
     if (compiler.return.isUnsetCall(node)) {
-      return compiler.return.analyzeIsUnsetCall(node);
+      return compiler.return.collectIsUnsetCallFacts(node);
     }
 
-    const sequenceCall = this._analyzeSequenceCall(node, analysisPass, sequenceLockLookup);
+    const sequenceCall = this._collectSequenceCallFacts(node, analysisPass, sequenceLockLookup);
     if (sequenceCall) {
       return sequenceCall;
     }
 
-    const callerCall = this._analyzeCallerCall(node, analysisPass);
+    const callerCall = this._collectCallerCallFacts(node, analysisPass);
     if (callerCall) {
       return callerCall;
     }
 
-    const directMacroCall = this._analyzeDirectMacroCall(node, analysisPass);
+    const directMacroCall = this._collectDirectMacroCallFacts(node, analysisPass);
     const importedCallable = this._collectImportedCallableUsage(node, analysisPass, uses);
     const inheritedMethodCallName =
-      compiler.inheritance.analyzeInheritedMethodCall(node, analysisPass);
+      compiler.inheritance.findInheritedMethodCallNameForAnalysis(node, analysisPass);
     const specialChainCall = this._collectSpecialChainCallUsage(node, analysisPass, uses, mutates);
 
     return {
@@ -57,12 +57,12 @@ class CompileCall {
       ? compiler.chain.probeThisSharedAccessFacts(node.name, compiler.analysis, node._analysis)
       : null;
     const inheritedMethodCallName =
-      compiler.inheritance.postAnalyzeInheritedMethodCall(node, thisSharedFacts);
+      compiler.inheritance.recordInheritedMethodCallUsage(node, thisSharedFacts);
 
     return {
       funCallThisSharedAccessFacts: thisSharedFacts,
-      componentBindingRoot: node.name ? compiler.component.getBindingRoot(node.name) : null,
-      componentBindingFacts: node.name ? compiler.component.getBindingFacts(node.name, { forCall: true }) : null,
+      componentBindingRoot: node.name ? compiler.component.findBindingRoot(node.name) : null,
+      componentBindingFacts: node.name ? compiler.component.findBindingFacts(node.name, { forCall: true }) : null,
       inheritedMethodCallName: inheritedMethodCallName ??
         node._analysis.inheritedMethodCallName ??
         null
@@ -100,7 +100,7 @@ class CompileCall {
     compiler._emitAsyncDynamicCall(node, compiler.buffer.currentBuffer);
   }
 
-  _analyzeSequenceCall(node, analysisPass, sequenceLockLookup) {
+  _collectSequenceCallFacts(node, analysisPass, sequenceLockLookup) {
     if (!sequenceLockLookup) {
       return null;
     }
@@ -145,7 +145,7 @@ class CompileCall {
     return true;
   }
 
-  _analyzeCallerCall(node, analysisPass) {
+  _collectCallerCallFacts(node, analysisPass) {
     const compiler = this.compiler;
     const isCallerCall = node.name &&
       (
@@ -183,11 +183,11 @@ class CompileCall {
     return true;
   }
 
-  _analyzeDirectMacroCall(node, analysisPass) {
+  _collectDirectMacroCallFacts(node, analysisPass) {
     if (!(node.name instanceof nodes.Symbol) || !analysisPass.findDeclaration) {
       return null;
     }
-    const macroDecl = analysisPass.markLookupDeclaration(node.name, node.name.value, node._analysis);
+    const macroDecl = analysisPass.recordLookupDeclaration(node.name, node.name.value, node._analysis);
     return macroDecl && macroDecl.isMacro
       ? { binding: macroDecl.declarationOrigin?.compiledMacroFuncId ?? null }
       : null;
@@ -220,7 +220,7 @@ class CompileCall {
     }
 
     const importedRoot = compiler.sequential.extractStaticPathRoot(node.name);
-    const importedDecl = importedRoot ? analysisPass.markLookupDeclaration(node.name, importedRoot, node._analysis) : null;
+    const importedDecl = importedRoot ? analysisPass.recordLookupDeclaration(node.name, importedRoot, node._analysis) : null;
     const isImportedCallable =
       (importedDecl && importedDecl.imported) ||
       (!importedDecl && importedRoot && compiler.importedBindings && compiler.importedBindings.has(importedRoot));
@@ -309,7 +309,7 @@ class CompileCall {
     }
 
     const chainName = sequencePath[0];
-    const chainDecl = analysisPass.markLookupDeclaration(node.name, chainName, node._analysis);
+    const chainDecl = analysisPass.recordLookupDeclaration(node.name, chainName, node._analysis);
     if (!chainDecl || chainDecl.shared) {
       return null;
     }
@@ -332,10 +332,10 @@ class CompileCall {
     const compiler = this.compiler;
     const componentBindingRoot =
       node._analysis.componentBindingRoot ??
-      compiler.component.getBindingRoot(node.name);
+      compiler.component.findBindingRoot(node.name);
     const componentBindingFacts =
       node._analysis.componentBindingFacts ??
-      compiler.component.getBindingFacts(node.name, { forCall: true });
+      compiler.component.findBindingFacts(node.name, { forCall: true });
 
     if (componentBindingFacts) {
       if (componentBindingFacts.kind === 'method-call') {

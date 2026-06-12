@@ -9,7 +9,7 @@ class CompileLookup {
 
   analyzeLookupVal(node, analysisPass) {
     const facts = this._createAnalysisFacts();
-    this.compiler.chain.analyzeDataPathLookup(node);
+    this.compiler.chain.recordDataPathLookup(node);
 
     this._collectSequenceLockLookup(node, analysisPass, facts);
     if (this._collectThisSharedLookup(node, analysisPass, facts)) {
@@ -18,7 +18,7 @@ class CompileLookup {
 
     const compiler = this.compiler;
     facts.inheritedMethodCallName =
-      compiler.inheritance.analyzeInheritedMethodCallTarget(node);
+      compiler.inheritance.findInheritedMethodCallName(node);
     this._collectComponentBindingLookup(node, facts);
     this._collectScriptSequenceChainLookup(node, analysisPass, facts);
 
@@ -27,11 +27,11 @@ class CompileLookup {
 
   postAnalyzeLookupVal(node, analysisPass) {
     const facts = {};
-    const sequenceLockLookup = this.compiler.sequential.postAnalyzeSequenceLockLookup(node, analysisPass);
+    const sequenceLockLookup = this.compiler.sequential.recordBareSequenceLockLookup(node, analysisPass);
     if (sequenceLockLookup) {
       facts.sequenceLockLookup = sequenceLockLookup;
     }
-    Object.assign(facts, this.compiler.chain.postAnalyzeDataPathLookup(node));
+    Object.assign(facts, this.compiler.chain.collectDataPathLookupFacts(node));
     return facts;
   }
 
@@ -70,7 +70,7 @@ class CompileLookup {
 
   _collectSequenceLockLookup(node, analysisPass, facts) {
     const compiler = this.compiler;
-    const sequenceLockLookup = compiler.sequential.getSequenceLockLookup(node);
+    const sequenceLockLookup = compiler.sequential.recordSequenceLockLookup(node);
     node.addAnalysis({ sequenceLockLookup });
     if (sequenceLockLookup) {
       compiler._failIfSequenceRootIsDeclared(node, sequenceLockLookup.key, analysisPass);
@@ -83,7 +83,7 @@ class CompileLookup {
 
   _collectThisSharedLookup(node, analysisPass, facts) {
     const compiler = this.compiler;
-    const thisSharedFacts = compiler.chain.getThisSharedAccessFacts(node, analysisPass);
+    const thisSharedFacts = compiler.chain.collectThisSharedAccessFacts(node, analysisPass);
     if (!thisSharedFacts) {
       return false;
     }
@@ -106,8 +106,8 @@ class CompileLookup {
 
   _collectComponentBindingLookup(node, facts) {
     const compiler = this.compiler;
-    facts.componentBindingRoot = compiler.component.getBindingRoot(node);
-    facts.componentBindingFacts = compiler.component.getBindingFacts(node);
+    facts.componentBindingRoot = compiler.component.findBindingRoot(node);
+    facts.componentBindingFacts = compiler.component.findBindingFacts(node);
   }
 
   _collectScriptSequenceChainLookup(node, analysisPass, facts) {
@@ -116,14 +116,14 @@ class CompileLookup {
       return;
     }
 
-    const lookupFacts = this._analyzeSequenceChainLookup(node, analysisPass);
+    const lookupFacts = this._collectSequenceChainLookupFacts(node, analysisPass);
     if (lookupFacts) {
       facts.uses.push(lookupFacts.chainName);
       facts.sequenceChainLookup = lookupFacts;
     }
   }
 
-  _analyzeSequenceChainLookup(node, analysisPass) {
+  _collectSequenceChainLookupFacts(node, analysisPass) {
     const compiler = this.compiler;
     const sequencePath = compiler.sequential.extractStaticPathSegments(node);
     if (!sequencePath || sequencePath.length < 2) {
@@ -131,7 +131,7 @@ class CompileLookup {
     }
 
     const chainName = sequencePath[0];
-    const chainDecl = analysisPass.markLookupDeclaration(node, chainName);
+    const chainDecl = analysisPass.recordLookupDeclaration(node, chainName);
     const path = sequencePath.slice(1);
     if (!chainDecl || chainDecl.shared || chainDecl.type !== 'sequence' || path[path.length - 1] === 'snapshot') {
       return null;
@@ -194,10 +194,10 @@ class CompileLookup {
     const compiler = this.compiler;
     const componentBindingRoot =
       node._analysis.componentBindingRoot ||
-      compiler.component.getBindingRoot(node);
+      compiler.component.findBindingRoot(node);
     const componentBindingFacts =
       node._analysis.componentBindingFacts ||
-      compiler.component.getBindingFacts(node);
+      compiler.component.findBindingFacts(node);
     if (componentBindingFacts && componentBindingFacts.kind === 'shared-read') {
       compiler.component.emitChainObservation(componentBindingFacts, node);
       return true;

@@ -145,7 +145,7 @@ class CompilerAsync extends CompilerBaseAsync {
     this.buffer.emitLimitedLoopCompletion(returnId, positionNode);
   }
 
-  _analyzeLoopNodeDeclarations(node, analysisPass, declarationsInBody = false) {
+  _collectLoopDeclarationFacts(node, analysisPass, declarationsInBody = false) {
     if (node.name instanceof nodes.Symbol) {
       node.name.addAnalysis({ declarationTarget: true });
     } else if (node.name instanceof nodes.Array || node.name instanceof nodes.NodeList) {
@@ -169,7 +169,7 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeWhile(node, analysisPass) {
-    const result = this._analyzeLoopNodeDeclarations(node, analysisPass);
+    const result = this._collectLoopDeclarationFacts(node, analysisPass);
     node.cond.addAnalysis({ errorContextLabel: 'While.Condition' });
     return result;
   }
@@ -185,7 +185,7 @@ class CompilerAsync extends CompilerBaseAsync {
     if (node.concurrentLimit) {
       node.concurrentLimit.addAnalysis({ errorContextLabel: 'For.Limit' });
     }
-    return this._analyzeLoopNodeDeclarations(node, analysisPass, true);
+    return this._collectLoopDeclarationFacts(node, analysisPass, true);
   }
 
   analyzeAsyncEach(node, analysisPass) {
@@ -193,7 +193,7 @@ class CompilerAsync extends CompilerBaseAsync {
     if (node.concurrentLimit) {
       node.concurrentLimit.addAnalysis({ errorContextLabel: 'For.Limit' });
     }
-    const result = this._analyzeLoopNodeDeclarations(node, analysisPass, true);
+    const result = this._collectLoopDeclarationFacts(node, analysisPass, true);
     return result;
   }
 
@@ -202,7 +202,7 @@ class CompilerAsync extends CompilerBaseAsync {
     if (node.concurrentLimit) {
       node.concurrentLimit.addAnalysis({ errorContextLabel: 'For.Limit' });
     }
-    return this._analyzeLoopNodeDeclarations(node, analysisPass, true);
+    return this._collectLoopDeclarationFacts(node, analysisPass, true);
   }
 
   analyzeSwitch(node) {

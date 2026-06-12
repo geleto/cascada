@@ -88,7 +88,7 @@ class CompileInheritance {
     // The declaration table is rebuilt during finalization, so keep implicit
     // shared declarations in the root declaration list as their source of truth.
     rootOwner.declares.push(declaration);
-    this.registerRootSharedDeclaration(rootOwner, declaration);
+    this.recordRootSharedDeclaration(rootOwner, declaration);
     return declaration;
   }
 
@@ -96,13 +96,13 @@ class CompileInheritance {
     return rootAnalysis.inheritanceSharedDeclarations.find((declaration) => declaration.name === name) || null;
   }
 
-  registerRootSharedDeclaration(rootAnalysis, declaration) {
+  recordRootSharedDeclaration(rootAnalysis, declaration) {
     if (!rootAnalysis.inheritanceSharedDeclarations.includes(declaration)) {
       rootAnalysis.inheritanceSharedDeclarations.push(declaration);
     }
   }
 
-  postAnalyzeCallableDefinition(node) {
+  _collectCallableLinkedChainFacts(node) {
     // Blocks contribute template text output; script methods contribute return output.
     const footprint = this._getCallableSharedFootprint(node);
     return {
@@ -112,11 +112,11 @@ class CompileInheritance {
   }
 
   postAnalyzeBlock(node) {
-    return this.postAnalyzeCallableDefinition(node);
+    return this._collectCallableLinkedChainFacts(node);
   }
 
   postAnalyzeMethodDefinition(node) {
-    return this.postAnalyzeCallableDefinition(node);
+    return this._collectCallableLinkedChainFacts(node);
   }
 
   collectRootAnalysis(node) {
@@ -314,13 +314,13 @@ class CompileInheritance {
       : null;
   }
 
-  analyzeInheritedMethodCallTarget(nameNode) {
+  findInheritedMethodCallName(nameNode) {
     return this._getInheritedMethodCallName(nameNode);
   }
 
-  analyzeInheritedMethodCall(node, analysisPass) {
+  findInheritedMethodCallNameForAnalysis(node, analysisPass) {
     const methodName = node && node.name
-      ? this.analyzeInheritedMethodCallTarget(node.name)
+      ? this.findInheritedMethodCallName(node.name)
       : null;
     if (!methodName) {
       return null;
@@ -333,12 +333,12 @@ class CompileInheritance {
     return thisSharedAccess ? null : methodName;
   }
 
-  postAnalyzeInheritedMethodCall(node, thisSharedFacts = null) {
+  recordInheritedMethodCallUsage(node, thisSharedFacts = null) {
     if (thisSharedFacts) {
       return null;
     }
     const methodName = node && node.name
-      ? this.analyzeInheritedMethodCallTarget(node.name)
+      ? this.findInheritedMethodCallName(node.name)
       : null;
     if (methodName) {
       node.name.addAnalysis({ allowInheritedMethodCall: true });
@@ -410,7 +410,7 @@ class CompileInheritance {
   validateBareInheritedMethodLookup(node) {
     const methodName =
       node._analysis.inheritedMethodCallName ||
-      this.analyzeInheritedMethodCallTarget(node);
+      this.findInheritedMethodCallName(node);
     if (methodName && !node._analysis.allowInheritedMethodCall) {
       this.compiler.fail(
         `bare inherited-method references are not supported; bare this.${methodName} references are not allowed; use this.${methodName}(...)`,
