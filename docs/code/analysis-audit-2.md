@@ -261,8 +261,8 @@ invariant violations" rules and survive only as noise.
   [compiler-base-async.js:188-189](../../src/compiler/compiler-base-async.js#L188)
   and [compiler-base-async.js:550-551](../../src/compiler/compiler-base-async.js#L550)
   (`linkedMutatedChains && linkedMutatedChains.size > 0`). The non-empty-or-null
-  invariant is already enforced by `_assertFinalizedChainSetFields`; checking
-  size again at each consumer re-blurs it.
+  invariant is enforced where linked-chain facts are derived or normalized;
+  checking size again at each consumer re-blurs it.
 
 - **Defensive existence checks on the compiler.** `this.compiler` is set in
   the constructor and `isReservedDeclarationName` lives on the

@@ -178,13 +178,10 @@ a comment on `getChainsUsedFromParent` / `getChainsMutatedFromParent` noting the
 read finalized facts (valid from post-analyzers and codegen, null in first-pass
 analyzers).
 
-For the invariant, keep one **always-on lightweight shape check**
-(`_assertFinalizedChainSetFields`: each finalized fact is `Set | null` with
-string chain names) rather
-than a dev-only gate; there is no debug-flag convention in the compiler to gate
-on, and the shape check is cheap. Chain-name validity is enforced when untrusted
-custom post-analysis linked facts enter through `_normalizeChainSet`, and the
-final assertion keeps compiler-owned facts honest before codegen observes them.
+For the invariant, keep `_normalizeChainSet` as the boundary for untrusted
+custom post-analysis linked facts. Compiler-owned usage aggregates are built as
+sets directly, so a second finalized-field shape assertion would only repeat the
+same invariant before codegen observes it.
 
 **Risk:** low. The suite already pins `linkedChains instanceof Set`.
 

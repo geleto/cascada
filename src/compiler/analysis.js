@@ -2,15 +2,6 @@
 import * as nodes from '../language/nodes.js';
 import {CHAIN_TYPES} from '../chain-types.js';
 
-const FINALIZED_CHAIN_SET_FIELDS = [
-  'usedChains',
-  'mutatedChains',
-  'usedChainsFromParent',
-  'mutatedChainsFromParent',
-  'linkedChains',
-  'linkedMutatedChains'
-];
-
 /**
  * Chain analysis pass.
  *
@@ -711,7 +702,6 @@ class CompileAnalysis {
     analysis.linkedChains = this._normalizeChainSet(analysis.linkedChains, 'linkedChains', analysis);
     analysis.linkedMutatedChains = this._normalizeChainSet(analysis.linkedMutatedChains, 'linkedMutatedChains', analysis);
     this._finalizeBufferCreation(analysis);
-    this._assertFinalizedChainSetFields(analysis);
     return this._getPropagatedChainUsage(
       analysis,
       localUses,
@@ -824,22 +814,6 @@ class CompileAnalysis {
       this._throwInvalidChainName(name, field, analysis);
     }
     chains.add(name);
-  }
-
-  // Lightweight always-on shape guard: every finalized chain-set fact must be
-  // `Set | null` so codegen never observes a stray array/iterable. This is a
-  // cheap per-field check; chain-name validity is enforced once at the
-  // `_normalizeChainSet` boundary where untrusted custom facts enter, and the
-  // internally built `used`/`mutated` sets are strings by construction.
-  _assertFinalizedChainSetFields(analysis) {
-    FINALIZED_CHAIN_SET_FIELDS.forEach((field) => {
-      const value = analysis[field];
-      if (value !== null && !(value instanceof Set)) {
-        throw new TypeError(
-          `Finalized analysis fact '${field}' on ${this._describeAnalysisNode(analysis)} must be Set or null`
-        );
-      }
-    });
   }
 
   _throwInvalidChainSet(value, field, analysis) {
