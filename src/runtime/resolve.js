@@ -34,15 +34,30 @@
 import {createPoison, isPoison, isPoisonError, collectErrors, PoisonError, poisonOrRethrow, markPromiseHandled} from './errors.js';
 import {RESOLVE_MARKER, RESOLVED_VALUE_MARKER} from './markers.js';
 
-function makeResolvedValue(value, mapper = null) {
-  return {
-    [RESOLVED_VALUE_MARKER]: true,
-    value,
-    then(onFulfilled) {
-      const resolvedValue = mapper ? mapper(value) : value;
-      return onFulfilled ? onFulfilled(resolvedValue) : resolvedValue;
-    }
-  };
+/**
+ * ResolvedValue: an internal sync-success thenable for resolve fast paths.
+ *
+ * This is the success counterpart to PoisonedValue's sync-first shape, but it
+ * deliberately stays tiny: it only marks "already resolved" values so internal
+ * consumers can unwrap them without Promise assimilation.
+ *
+ * NOT FULLY PROMISE A+ COMPLIANT
+ * - Fulfillment handlers execute synchronously.
+ * - No handler returns the wrapped value directly.
+ */
+class ResolvedValue {
+  constructor(value) {
+    this.value = value;
+    this[RESOLVED_VALUE_MARKER] = true;
+  }
+
+  then(onFulfilled) {
+    return onFulfilled ? onFulfilled(this.value) : this.value;
+  }
+}
+
+function makeResolvedValue(value) {
+  return new ResolvedValue(value);
 }
 
 function isWrappedResolvedValue(value) {
