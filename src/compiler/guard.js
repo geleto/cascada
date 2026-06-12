@@ -74,52 +74,49 @@ class CompileGuard {
       const previousGuardDepth = compiler.guardDepth;
       compiler.guardDepth = previousGuardDepth + 1;
 
-      try {
-        this.emit.line(`runtime.markChainBufferScope(${compiler.buffer.currentBuffer});`);
-        let guardRepairLinePos = null;
-        const chainGuardInitLinePos = compiler.codebuf.length;
-        let chainGuardStateVar = null;
-        this.emit.line('');
-        if (guardStateVar) {
-          this.emit.line(`const ${guardStateVar} = runtime.guard.init(renderState, ${guardErrorContext});`);
-        }
-        guardRepairLinePos = compiler.codebuf.length;
-        this.emit.line('');
-
-        compiler.compile(node.body, null);
-
-        const resolvedSequenceTargets = guardFacts.resolvedSequenceTargets;
-        const guardChains = guardFacts.guardChains;
-        if (resolvedSequenceTargets.length > 0) {
-          this.emit.insertLine(
-            guardRepairLinePos,
-            `runtime.guard.repairSequenceChains(${compiler.buffer.currentBuffer}, ${guardStateVar}, ${JSON.stringify(resolvedSequenceTargets)}, ${guardErrorContext});`
-          );
-        }
-
-        if (guardChains.length > 0) {
-          chainGuardStateVar = compiler._tmpid();
-          this.emit.insertLine(
-            chainGuardInitLinePos,
-            `const ${chainGuardStateVar} = runtime.guard.initChainSnapshots(${JSON.stringify(guardChains)}, ${compiler.buffer.currentBuffer}, renderState, ${guardErrorContext});`
-          );
-        }
-
-        const guardErrorsVar = compiler._tmpid();
-        this.emit.line(
-          `const ${guardErrorsVar} = await runtime.guard.finalizeGuard(${guardStateVar || 'null'}, ${compiler.buffer.currentBuffer}, ${JSON.stringify(guardChains)}, ${chainGuardStateVar || 'null'}, ${guardErrorContext});`
-        );
-        this.emit.line(`if (${guardErrorsVar}.length > 0) {`);
-
-        if (node.recoveryBody) {
-          this._compileRecoveryScope(node, guardErrorsVar);
-        }
-
-        this.emit.line('} else {');
-        this.emit.line('}');
-      } finally {
-        compiler.guardDepth = previousGuardDepth;
+      this.emit.line(`runtime.markChainBufferScope(${compiler.buffer.currentBuffer});`);
+      let guardRepairLinePos = null;
+      const chainGuardInitLinePos = compiler.codebuf.length;
+      let chainGuardStateVar = null;
+      this.emit.line('');
+      if (guardStateVar) {
+        this.emit.line(`const ${guardStateVar} = runtime.guard.init(renderState, ${guardErrorContext});`);
       }
+      guardRepairLinePos = compiler.codebuf.length;
+      this.emit.line('');
+
+      compiler.compile(node.body, null);
+
+      const resolvedSequenceTargets = guardFacts.resolvedSequenceTargets;
+      const guardChains = guardFacts.guardChains;
+      if (resolvedSequenceTargets.length > 0) {
+        this.emit.insertLine(
+          guardRepairLinePos,
+          `runtime.guard.repairSequenceChains(${compiler.buffer.currentBuffer}, ${guardStateVar}, ${JSON.stringify(resolvedSequenceTargets)}, ${guardErrorContext});`
+        );
+      }
+
+      if (guardChains.length > 0) {
+        chainGuardStateVar = compiler._tmpid();
+        this.emit.insertLine(
+          chainGuardInitLinePos,
+          `const ${chainGuardStateVar} = runtime.guard.initChainSnapshots(${JSON.stringify(guardChains)}, ${compiler.buffer.currentBuffer}, renderState, ${guardErrorContext});`
+        );
+      }
+
+      const guardErrorsVar = compiler._tmpid();
+      this.emit.line(
+        `const ${guardErrorsVar} = await runtime.guard.finalizeGuard(${guardStateVar || 'null'}, ${compiler.buffer.currentBuffer}, ${JSON.stringify(guardChains)}, ${chainGuardStateVar || 'null'}, ${guardErrorContext});`
+      );
+      this.emit.line(`if (${guardErrorsVar}.length > 0) {`);
+
+      if (node.recoveryBody) {
+        this._compileRecoveryScope(node, guardErrorsVar);
+      }
+
+      this.emit.line('} else {');
+      this.emit.line('}');
+      compiler.guardDepth = previousGuardDepth;
     });
   }
 

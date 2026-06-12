@@ -199,11 +199,9 @@ class CompilerCommon extends Obj {
   withInheritedAddedContext(addedContextVar, emitFunc) {
     const previousAddedContext = this.currentInheritedAddedContext;
     this.currentInheritedAddedContext = addedContextVar;
-    try {
-      return emitFunc();
-    } finally {
-      this.currentInheritedAddedContext = previousAddedContext;
-    }
+    const result = emitFunc();
+    this.currentInheritedAddedContext = previousAddedContext;
+    return result;
   }
 
   withInheritedAddedContextExpr(addedContextExpr, emitFunc) {
@@ -214,11 +212,9 @@ class CompilerCommon extends Obj {
   withInheritedLabelOverride(labelExpr, emitFunc) {
     const previousLabel = this.currentInheritedLabelOverride;
     this.currentInheritedLabelOverride = labelExpr;
-    try {
-      return emitFunc();
-    } finally {
-      this.currentInheritedLabelOverride = previousLabel;
-    }
+    const result = emitFunc();
+    this.currentInheritedLabelOverride = previousLabel;
+    return result;
   }
 
   withCurrentLoopVar(loopVar, emitFunc) {

@@ -79,11 +79,9 @@ class CompileBuffer {
     const previousState = this._snapshotBufferState();
     Object.assign(this, stateOverrides);
 
-    try {
-      return emitFunc();
-    } finally {
-      Object.assign(this, previousState);
-    }
+    const result = emitFunc();
+    Object.assign(this, previousState);
+    return result;
   }
 
   // Scope the fixed waited chain binding for the emitted code region.

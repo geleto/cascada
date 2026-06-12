@@ -36,13 +36,11 @@ class CompileEmit {
     const previousScopeClosers = this.scopeClosers;
     this.compiler.codebuf = [];
     this.scopeClosers = '';
-    try {
-      emitFunc.call(this.compiler);
-      return this.compiler.codebuf.join('');
-    } finally {
-      this.compiler.codebuf = previousCodebuf;
-      this.scopeClosers = previousScopeClosers;
-    }
+    emitFunc.call(this.compiler);
+    const captured = this.compiler.codebuf.join('');
+    this.compiler.codebuf = previousCodebuf;
+    this.scopeClosers = previousScopeClosers;
+    return captured;
   }
 
   addScopeLevel() {
