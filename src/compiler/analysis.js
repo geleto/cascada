@@ -678,29 +678,20 @@ class CompileAnalysis {
 
     const localUses = analysis.uses;
     const localMutates = analysis.mutates;
-    const usedChains = new Set();
-    const mutatedChains = new Set();
+    const usage = this._createChainUsageAggregate();
 
     localUses.forEach((name) => {
-      if (!name) {
-        return;
-      }
-      usedChains.add(name);
+      this._addChainUse(usage, name);
     });
     localMutates.forEach((name) => {
-      if (!name) {
-        return;
-      }
-      usedChains.add(name);
-      mutatedChains.add(name);
+      this._addChainMutation(usage, name);
     });
-    childUsage.usedChains.forEach((name) => usedChains.add(name));
-    childUsage.mutatedChains.forEach((name) => mutatedChains.add(name));
+    this._mergeChainUsage(usage, childUsage);
 
-    analysis.usedChains = usedChains.size > 0 ? usedChains : null;
-    analysis.mutatedChains = mutatedChains.size > 0 ? mutatedChains : null;
+    analysis.usedChains = usage.usedChains.size > 0 ? usage.usedChains : null;
+    analysis.mutatedChains = usage.mutatedChains.size > 0 ? usage.mutatedChains : null;
     const declaredHere = analysis.declaredChains;
-    const chainsFromParent = this._deriveChainsFromParent(usedChains, mutatedChains, declaredHere);
+    const chainsFromParent = this._deriveChainsFromParent(usage.usedChains, usage.mutatedChains, declaredHere);
     const hasCustomLinkedChains = !!(
       postAnalysisFacts &&
       Object.prototype.hasOwnProperty.call(postAnalysisFacts, 'linkedChains')
@@ -737,15 +728,28 @@ class CompileAnalysis {
   }
 
   _mergeChainUsage(target, source) {
-    source.usedChains.forEach((name) => target.usedChains.add(name));
-    source.mutatedChains.forEach((name) => target.mutatedChains.add(name));
+    source.usedChains.forEach((name) => this._addChainUse(target, name));
+    source.mutatedChains.forEach((name) => this._addChainMutation(target, name));
+  }
+
+  _addChainUse(usage, name) {
+    if (name) {
+      usage.usedChains.add(name);
+    }
+  }
+
+  _addChainMutation(usage, name) {
+    if (!name) {
+      return;
+    }
+    usage.usedChains.add(name);
+    usage.mutatedChains.add(name);
   }
 
   _deriveChainsFromParent(usedChains, mutatedChains, declaredChains) {
-    const parentUsage = {
-      usedChains: new Set(usedChains),
-      mutatedChains: new Set(mutatedChains)
-    };
+    const parentUsage = this._createChainUsageAggregate();
+    usedChains.forEach((name) => this._addChainUse(parentUsage, name));
+    mutatedChains.forEach((name) => this._addChainMutation(parentUsage, name));
     if (declaredChains) {
       declaredChains.forEach((_decl, name) => {
         parentUsage.usedChains.delete(name);
@@ -766,15 +770,10 @@ class CompileAnalysis {
       }
       const parentUsage = this._createChainUsageAggregate();
       localUses.forEach((name) => {
-        if (name) {
-          parentUsage.usedChains.add(name);
-        }
+        this._addChainUse(parentUsage, name);
       });
       localMutates.forEach((name) => {
-        if (name) {
-          parentUsage.usedChains.add(name);
-          parentUsage.mutatedChains.add(name);
-        }
+        this._addChainMutation(parentUsage, name);
       });
       return this._deriveChainsFromParent(
         parentUsage.usedChains,

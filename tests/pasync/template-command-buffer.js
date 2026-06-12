@@ -90,6 +90,11 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       'linkedChains',
       'linkedMutatedChains'
     ];
+    const supersetPairs = [
+      ['mutatedChains', 'usedChains'],
+      ['mutatedChainsFromParent', 'usedChainsFromParent'],
+      ['linkedMutatedChains', 'linkedChains']
+    ];
     collectAllNodes(ast).forEach((node) => {
       fields.forEach((field) => {
         const value = node._analysis[field];
@@ -98,6 +103,16 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
           Array.from(value).forEach((name) => {
             expect(typeof name).to.be('string');
             expect(name).to.not.be('');
+          });
+        }
+      });
+      supersetPairs.forEach(([subsetField, supersetField]) => {
+        const subset = node._analysis[subsetField];
+        const superset = node._analysis[supersetField];
+        if (subset) {
+          expect(superset instanceof Set).to.be(true);
+          subset.forEach((name) => {
+            expect(superset.has(name)).to.be(true);
           });
         }
       });
