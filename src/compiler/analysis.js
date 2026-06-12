@@ -491,18 +491,14 @@ class CompileAnalysis {
     const localMutates = analysis.mutates;
     for (let i = 0; i < localMutates.length; i++) {
       const name = localMutates[i];
-      if (!name) {
-        continue;
-      }
-      if (name.charAt(0) === '!') {
-        continue;
-      }
-      if (name === currentTextChain) {
+      if (this._shouldSkipChainAccessValidation(name, currentTextChain)) {
         continue;
       }
       const declarationOwner = this.findDeclarationOwner(analysis, name);
-      const declaration = this.findDeclaration(analysis, name);
-      if (!declarationOwner || !declaration) {
+      const declaration = declarationOwner
+        ? this._getDeclarationMap(declarationOwner).get(name)
+        : null;
+      if (!declaration) {
         const rootDeclaration = this.findRootDeclaration(analysis, name);
         if (rootDeclaration && rootDeclaration.shared) {
           continue;
@@ -525,13 +521,7 @@ class CompileAnalysis {
     const localUses = analysis.uses;
     for (let i = 0; i < localUses.length; i++) {
       const name = localUses[i];
-      if (!name) {
-        continue;
-      }
-      if (name.charAt(0) === '!') {
-        continue;
-      }
-      if (name === currentTextChain) {
+      if (this._shouldSkipChainAccessValidation(name, currentTextChain)) {
         continue;
       }
       if (!this.findDeclaration(analysis, name)) {
@@ -542,6 +532,10 @@ class CompileAnalysis {
         this._validateMissingDeclaration(analysis, name, 'use');
       }
     }
+  }
+
+  _shouldSkipChainAccessValidation(name, currentTextChain) {
+    return !name || name.charAt(0) === '!' || name === currentTextChain;
   }
 
   _validateMissingDeclaration(analysis, name, accessType) {
