@@ -29,19 +29,18 @@ class CompileAnalysis {
   run(rootNode) {
     this._declarationsFinalized = false;
     if (!rootNode) {
-      return null;
+      return;
     }
 
     this._walk(rootNode, null, null);
     this._finalizeDeclarations(rootNode);
     this._declarationsFinalized = true;
     this._finalizeChainUsage(rootNode);
-    return null;
   }
 
   _walk(node, parentNode, parentField) {
     this._forEachNode(node, (currentNode, currentParentNode, currentParentField) => {
-      const analysis = this._ensureAnalysis(currentNode, currentParentNode, currentParentField);
+      const analysis = this._initializeAnalysis(currentNode, currentParentNode, currentParentField);
       this._analyzeNode(currentNode);
       this.compiler._generateErrorContext(currentNode);
       this._registerDeclarations(analysis);
@@ -70,18 +69,9 @@ class CompileAnalysis {
     });
   }
 
-  _ensureAnalysis(node, parentNode, parentField) {
+  _initializeAnalysis(node, parentNode, parentField) {
     const parentAnalysis = parentNode?._analysis ?? null;
-    const existingAnalysis = node._analysis ?? {};
-    const inheritedSequenceFunCallLockKey = parentAnalysis
-      ? (
-        parentNode instanceof nodes.FunCall &&
-        parentField === 'name' &&
-        parentAnalysis.sequenceFunCallLockKey
-          ? parentAnalysis.sequenceFunCallLockKey
-          : parentAnalysis.inheritedSequenceFunCallLockKey ?? null
-      )
-      : null;
+
     // Keep this base shape limited to cross-cutting analysis facts that this
     // pass owns or derives for many node types: scope/declaration ownership,
     // chain use/mutation/link metadata, and shared boundary state. Node-
@@ -119,9 +109,12 @@ class CompileAnalysis {
       createsLinkedChildBuffer: false,
       createsScopeBuffer: false,
       expressionControlFlowBoundary: false,
-      ...existingAnalysis,
+      ...node._analysis ?? {},
       parent: parentAnalysis,
-      inheritedSequenceFunCallLockKey
+      inheritedSequenceFunCallLockKey: 
+        node._analysis?.inheritedSequenceFunCallLockKey ??
+        parentAnalysis?.inheritedSequenceFunCallLockKey ??
+        null
     };
     return node._analysis;
   }
@@ -226,7 +219,7 @@ class CompileAnalysis {
       this.compiler.inheritance.registerRootSharedDeclaration(owner, decl);
       return;
     }
-    declarations.set(decl.name, this._cloneDeclaration({ ...decl, declarationOrigin }));
+    declarations.set(decl.name, { ...decl, declarationOrigin });
   }
 
   _ensureDeclarationMap(analysis, field) {
@@ -461,10 +454,6 @@ class CompileAnalysis {
       colno,
       originNode || undefined
     );
-  }
-
-  _cloneDeclaration(decl) {
-    return { ...decl };
   }
 
   _validateMutations(analysis) {
@@ -724,7 +713,7 @@ class CompileAnalysis {
     return linkedChains.size > 0 ? linkedChains : null;
   }
 
-  _normalizeChainSet(value, field = 'chain set', analysis = null) {
+  _normalizeChainSet(value, field, analysis) {
     if (value == null) {
       return null;
     }
@@ -768,13 +757,13 @@ class CompileAnalysis {
     });
   }
 
-  _throwInvalidChainSet(value, field = 'chain set', analysis = null) {
+  _throwInvalidChainSet(value, field, analysis) {
     throw new TypeError(
       `Analysis fact '${field}' on ${this._describeAnalysisNode(analysis)} must be a Set, array, or iterable collection of chain names; got ${this._describeValue(value)}`
     );
   }
 
-  _throwInvalidChainName(name, field = 'chain set', analysis = null) {
+  _throwInvalidChainName(name, field, analysis) {
     throw new TypeError(
       `Analysis fact '${field}' on ${this._describeAnalysisNode(analysis)} contains an invalid chain name (${this._describeValue(name)})`
     );

@@ -6,6 +6,14 @@ class CompileSequential {
     this.compiler = compiler;
   }
 
+  seedFunCallNameLockKey(node) {
+    const lockKey = node._analysis.sequenceFunCallLockKey;
+    if (!lockKey || !node.name) {
+      return;
+    }
+    node.name.addAnalysis({ inheritedSequenceFunCallLockKey: lockKey });
+  }
+
   getSequenceLockLookup(node) {
     const analysis = node._analysis;
     const funCallLockKey = analysis.inheritedSequenceFunCallLockKey || null;

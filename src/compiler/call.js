@@ -14,6 +14,7 @@ class CompileCall {
 
     const sequenceLockLookup = compiler.sequential.getSequenceLockLookup(node);
     node.addAnalysis({ sequenceLockLookup });
+    compiler.sequential.seedFunCallNameLockKey(node);
 
     if (compiler.return.isUnsetCall(node)) {
       return compiler.return.analyzeIsUnsetCall(node);
