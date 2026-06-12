@@ -40,12 +40,23 @@ class CompileAnalysis {
   }
 
   _walk(node, parentNode, parentField) {
+    this._forEachNode(node, (currentNode, currentParentNode, currentParentField) => {
+      const analysis = this._ensureAnalysis(currentNode, currentParentNode, currentParentField);
+      this._analyzeNode(currentNode);
+      this.compiler._generateErrorContext(currentNode);
+      this._registerDeclarations(analysis);
+      this._validateUses(analysis);
+      this._validateMutations(analysis);
+    }, parentNode, parentField);
+  }
+
+  _forEachNode(node, visit, parentNode = null, parentField = null) {
     if (!node) {
       return;
     }
     if (Array.isArray(node)) {
       for (let i = 0; i < node.length; i++) {
-        this._walk(node[i], parentNode, parentField);
+        this._forEachNode(node[i], visit, parentNode, parentField);
       }
       return;
     }
@@ -53,15 +64,9 @@ class CompileAnalysis {
       return;
     }
 
-    const analysis = this._ensureAnalysis(node, parentNode, parentField);
-    this._analyzeNode(node);
-    this.compiler._generateErrorContext(node);
-    this._registerDeclarations(analysis);
-    this._validateUses(analysis);
-    this._validateMutations(analysis);
-
+    visit(node, parentNode, parentField);
     node.fields.forEach((field) => {
-      this._walk(node[field], node, field);
+      this._forEachNode(node[field], visit, node, field);
     });
   }
 
@@ -311,11 +316,8 @@ class CompileAnalysis {
     // `declaredChains` is built only here; the walk populates the separate
     // `sourceVisibleDeclarations` table, so there is no stale finalized table
     // to reset before this pass.
-    const nodesList = [];
-    this._collectNodes(rootNode, nodesList);
-
-    for (let i = 0; i < nodesList.length; i++) {
-      const analysis = nodesList[i]._analysis;
+    this._forEachNode(rootNode, (node) => {
+      const analysis = node._analysis;
       const owner = this._getScopeOwner(analysis);
 
       // Most declarations are owned by the current scope owner. For example,
@@ -353,8 +355,7 @@ class CompileAnalysis {
           }
         }
       }
-    }
-
+    });
   }
 
   _registerDeclarations(analysis) {
@@ -460,25 +461,6 @@ class CompileAnalysis {
       colno,
       originNode || undefined
     );
-  }
-
-  _collectNodes(node, out) {
-    if (!node) {
-      return;
-    }
-    if (Array.isArray(node)) {
-      for (let i = 0; i < node.length; i++) {
-        this._collectNodes(node[i], out);
-      }
-      return;
-    }
-    if (!(node instanceof nodes.Node)) {
-      return;
-    }
-    out.push(node);
-    node.fields.forEach((field) => {
-      this._collectNodes(node[field], out);
-    });
   }
 
   _cloneDeclaration(decl) {
@@ -594,39 +576,27 @@ class CompileAnalysis {
 
   _finalizeChainUsage(node) {
     if (!node) {
-      return {
-        usedChains: new Set(),
-        mutatedChains: new Set()
-      };
+      return this._createChainUsageAggregate();
     }
     if (Array.isArray(node)) {
-      const aggregate = {
-        usedChains: new Set(),
-        mutatedChains: new Set()
-      };
+      const aggregate = this._createChainUsageAggregate();
       node.forEach((child) => {
         const childAggregate = this._finalizeChainUsage(child);
-        childAggregate.usedChains.forEach((name) => aggregate.usedChains.add(name));
-        childAggregate.mutatedChains.forEach((name) => aggregate.mutatedChains.add(name));
+        this._mergeChainUsage(aggregate, childAggregate);
       });
       return aggregate;
     }
     if (!(node instanceof nodes.Node)) {
-      return {
-        usedChains: new Set(),
-        mutatedChains: new Set()
-      };
+      return this._createChainUsageAggregate();
     }
 
     const analysis = node._analysis;
-    const childUsedChains = new Set();
-    const childMutatedChains = new Set();
+    const childUsage = this._createChainUsageAggregate();
 
     // Children finalize first, so post-analyzers can inspect immediate child facts.
     node.fields.forEach((field) => {
       const childAggregate = this._finalizeChainUsage(node[field]);
-      childAggregate.usedChains.forEach((name) => childUsedChains.add(name));
-      childAggregate.mutatedChains.forEach((name) => childMutatedChains.add(name));
+      this._mergeChainUsage(childUsage, childAggregate);
     });
 
     const postAnalysisFacts = this._postAnalyzeNode(node);
@@ -652,8 +622,8 @@ class CompileAnalysis {
       usedChains.add(name);
       mutatedChains.add(name);
     });
-    childUsedChains.forEach((name) => usedChains.add(name));
-    childMutatedChains.forEach((name) => mutatedChains.add(name));
+    childUsage.usedChains.forEach((name) => usedChains.add(name));
+    childUsage.mutatedChains.forEach((name) => mutatedChains.add(name));
 
     analysis.usedChains = usedChains.size > 0 ? usedChains : null;
     analysis.mutatedChains = mutatedChains.size > 0 ? mutatedChains : null;
@@ -687,6 +657,18 @@ class CompileAnalysis {
     );
   }
 
+  _createChainUsageAggregate() {
+    return {
+      usedChains: new Set(),
+      mutatedChains: new Set()
+    };
+  }
+
+  _mergeChainUsage(target, source) {
+    source.usedChains.forEach((name) => target.usedChains.add(name));
+    source.mutatedChains.forEach((name) => target.mutatedChains.add(name));
+  }
+
   _deriveChainsFromParent(usedChains, mutatedChains, declaredChains) {
     const parentUsage = {
       usedChains: new Set(usedChains),
@@ -708,15 +690,9 @@ class CompileAnalysis {
       const nodeType = analysis.node && analysis.node.typename;
       const isMethodOrBlockBoundary = nodeType === 'Block' || nodeType === 'MethodDefinition';
       if (!isMethodOrBlockBoundary) {
-        return {
-          usedChains: new Set(),
-          mutatedChains: new Set()
-        };
+        return this._createChainUsageAggregate();
       }
-      const parentUsage = {
-        usedChains: new Set(),
-        mutatedChains: new Set()
-      };
+      const parentUsage = this._createChainUsageAggregate();
       localUses.forEach((name) => {
         if (name) {
           parentUsage.usedChains.add(name);
