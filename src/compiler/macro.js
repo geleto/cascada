@@ -92,7 +92,7 @@ class CompileMacro {
     return Array.from(node._analysis.linkedMutatedChains ?? []);
   }
 
-  compileAsyncCaller(node) {
+  compileCaller(node) {
     const compiler = this.compiler;
     compiler.emit('(function (){');
     const funcId = this._compileAsyncCaller(node);
@@ -180,7 +180,7 @@ class CompileMacro {
     };
   }
 
-  compileAsyncMacro(node) {
+  compileMacro(node) {
     const compiler = this.compiler;
     const funcId = this._compileAsyncMacro(node);
     const name = node.name.value;

@@ -7,7 +7,7 @@ class CompileLoop {
     this.compiler = compiler;
   }
 
-  compileAsyncWhile(node) {
+  compileWhile(node) {
     const iteratorCompiler = (_arrNode, _loopFrame, arrVarName) => {
       this.compiler.emit.line(`let ${arrVarName} = runtime.whileIterator();`);
     };
@@ -125,7 +125,7 @@ class CompileLoop {
     }, node, { loopVariables: loopVars });
   }
 
-  compileAsyncFor(node) {
+  compileFor(node) {
     this._compileAsyncForCore(node);
   }
 

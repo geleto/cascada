@@ -23,13 +23,13 @@ class CompileReturn {
       !!(declaration && declaration.runtimeName === RETURN_CHAIN_NAME);
   }
 
-  analyzeStatement() {
+  analyzeReturn() {
     return {
       mutates: [RETURN_CHAIN_NAME]
     };
   }
 
-  compileStatement(node) {
+  compileReturn(node) {
     const compiler = this.compiler;
     const resultVar = compiler._tmpid();
     compiler.emit(`let ${resultVar} = `);

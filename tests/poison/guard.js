@@ -106,6 +106,26 @@ const TEST_EC = [1, 1, 'Guard.Test', 'guard-test.njk', null, null];
       expect(res.replace(/\s+/g, ' ').trim()).to.equal('BEFORE keep AFTER');
     });
 
+    it('should report unimplemented revert statements with source context', async () => {
+      const tpl = `
+        BEFORE
+        {% guard %}
+          discard
+          {% revert %}
+          keep
+        {% endguard %}
+        AFTER
+      `;
+      try {
+        await env.renderTemplateString(tpl);
+        throw new Error('Expected revert compile failure');
+      } catch (err) {
+        expect(err.message).to.contain('compile: Cannot compile node: Revert');
+        expect(err.message).to.contain('Line 5');
+        expect(err.message).to.not.contain('Cannot read properties of undefined');
+      }
+    });
+
     it('should revert only specified chains in script mode', async () => {
       const script = `
         text output

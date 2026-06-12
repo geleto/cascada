@@ -75,18 +75,37 @@ class CompilerCommon extends Obj {
   }
 
   compile(node, frame) {
-    var _compile = this['compile' + node.typename];
-    if (_compile) {
-      if (this.currentLoopVar && node._analysis?.scopeBoundary) {
-        this.withCurrentLoopVar(null, () => _compile.call(this, node, frame));
-        return;
+    const compileNode = () => {
+      const handler = this.analysis?.getCompilerMethod?.('compile', node.typename) ?? null;
+      if (handler) {
+        this.analysis.callCompilerMethod(handler, node, frame);
+        return true;
       }
-      _compile.call(this, node, frame);
-    } else if (node instanceof nodes.NodeList) {
-      this.compileNodeList(node, frame);
-    } else {
-      this.fail(`compile: Cannot compile node: ${node.typename}`, node.lineno, node.colno, node);
+
+      const _compile = this['compile' + node.typename];
+      if (_compile) {
+        _compile.call(this, node, frame);
+        return true;
+      }
+      return false;
+    };
+
+    if (this.currentLoopVar && node._analysis?.scopeBoundary) {
+      this.withCurrentLoopVar(null, () => {
+        if (!compileNode()) {
+          this.compileNodeList(node, frame);
+        }
+      });
+      return;
     }
+    if (compileNode()) {
+      return;
+    }
+    if (node instanceof nodes.NodeList) {
+      this.compileNodeList(node, frame);
+      return;
+    }
+    this.fail(`compile: Cannot compile node: ${node.typename}`, node.lineno, node.colno, node);
   }
 
   // --- Core Utilities (Needed by Expressions) ---

@@ -412,6 +412,14 @@ class CompileChain {
     }
   }
 
+  postAnalyzeLiteral(node) {
+    return this.postAnalyzeDataPathSegment(node);
+  }
+
+  postAnalyzeArray(node) {
+    return this.postAnalyzeDataPathArray(node);
+  }
+
   postAnalyzeDataPathSegment(node) {
     if (!node._analysis.isDataCommandPath) {
       return {};

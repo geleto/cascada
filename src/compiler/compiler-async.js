@@ -9,14 +9,10 @@ import {
 
 import {CompilerBaseAsync} from './compiler-base-async.js';
 import {CompileBuffer} from './buffer.js';
-import {CompileGuard} from './guard.js';
-import {CompileAssignment} from './assignment.js';
 
 class CompilerAsync extends CompilerBaseAsync {
   init(sourcePath, options) {
     super.init({ ...options, asyncMode: true, sourcePath });
-    this.guard = new CompileGuard(this);
-    this.assignment = new CompileAssignment(this);
   }
 
   analyzeCallExtension(node) {
@@ -149,30 +145,6 @@ class CompilerAsync extends CompilerBaseAsync {
     this.buffer.emitLimitedLoopCompletion(returnId, positionNode);
   }
 
-  analyzeCallAssign(node, analysisPass) {
-    return this.assignment.analyzeSet(node, analysisPass);
-  }
-
-  postAnalyzeCallAssign(node) {
-    return this.assignment.postAnalyzeSet(node);
-  }
-
-  compileCallAssign(node) {
-    this.assignment.compileSet(node);
-  }
-
-  analyzeSet(node, analysisPass) {
-    return this.assignment.analyzeSet(node, analysisPass);
-  }
-
-  postAnalyzeSet(node) {
-    return this.assignment.postAnalyzeSet(node);
-  }
-
-  compileSet(node) {
-    this.assignment.compileSet(node);
-  }
-
   _analyzeLoopNodeDeclarations(node, analysisPass, declarationsInBody = false) {
     if (node.name instanceof nodes.Symbol) {
       node.name.addAnalysis({ declarationTarget: true });
@@ -208,20 +180,12 @@ class CompilerAsync extends CompilerBaseAsync {
     };
   }
 
-  compileWhile(node) {
-    this.loop.compileAsyncWhile(node);
-  }
-
   analyzeFor(node, analysisPass) {
     node.arr.addAnalysis({ errorContextLabel: 'For.Iterator' });
     if (node.concurrentLimit) {
       node.concurrentLimit.addAnalysis({ errorContextLabel: 'For.Limit' });
     }
     return this._analyzeLoopNodeDeclarations(node, analysisPass, true);
-  }
-
-  compileFor(node) {
-    this.loop.compileAsyncFor(node);
   }
 
   analyzeAsyncEach(node, analysisPass) {
@@ -233,20 +197,12 @@ class CompilerAsync extends CompilerBaseAsync {
     return result;
   }
 
-  compileAsyncEach(node) {
-    this.loop.compileAsyncEach(node);
-  }
-
   analyzeAsyncAll(node, analysisPass) {
     node.arr.addAnalysis({ errorContextLabel: 'For.Iterator' });
     if (node.concurrentLimit) {
       node.concurrentLimit.addAnalysis({ errorContextLabel: 'For.Limit' });
     }
     return this._analyzeLoopNodeDeclarations(node, analysisPass, true);
-  }
-
-  compileAsyncAll(node) {
-    this.loop.compileAsyncAll(node);
   }
 
   analyzeSwitch(node) {
@@ -335,18 +291,6 @@ class CompilerAsync extends CompilerBaseAsync {
 
   analyzeCase(node) {
     return { createScope: true };
-  }
-
-  analyzeGuard(node) {
-    return this.guard.analyzeGuard(node);
-  }
-
-  postAnalyzeGuard(node) {
-    return this.guard.postAnalyzeGuard(node);
-  }
-
-  compileGuard(node) {
-    this.guard.compileGuard(node);
   }
 
   analyzeIf(node) {
@@ -506,26 +450,6 @@ class CompilerAsync extends CompilerBaseAsync {
     });
   }
 
-  analyzeReturn() {
-    return this.return.analyzeStatement();
-  }
-
-  compileReturn(node) {
-    this.return.compileStatement(node);
-  }
-
-  analyzeMacro(node) {
-    return this.macro.analyzeMacro(node);
-  }
-
-  postAnalyzeMacro(node) {
-    return this.macro.postAnalyzeMacro(node);
-  }
-
-  compileMacro(node) {
-    this.macro.compileAsyncMacro(node);
-  }
-
   analyzeImport(node) {
     node.template.addAnalysis({ errorContextLabel: this.scriptMode ? 'Import.Script' : 'Import.Template' });
     node.target.addAnalysis({ declarationTarget: true });
@@ -533,20 +457,6 @@ class CompilerAsync extends CompilerBaseAsync {
     return {
       declares: [{ name: node.target.value, type: 'var', initializer: null, imported: true }]
     };
-  }
-
-  compileImport(node) {
-    this.composition.compileAsyncImport(node);
-  }
-
-  analyzeComponent(node) {
-    node.template.addAnalysis({ errorContextLabel: 'Component.Script' });
-    this.inheritance.recordComponentOperation(node);
-    return this.component.analyzeComponent(node);
-  }
-
-  compileComponent(node) {
-    this.component.compileComponent(node);
   }
 
   analyzeFromImport(node) {
@@ -566,68 +476,6 @@ class CompilerAsync extends CompilerBaseAsync {
     return { declares };
   }
 
-  compileFromImport(node) {
-    this.composition.compileAsyncFromImport(node);
-  }
-
-  analyzeBlock(node) {
-    return this.inheritance.analyzeBlock(node);
-  }
-
-  postAnalyzeBlock(node) {
-    return this.inheritance.postAnalyzeCallableDefinition(node);
-  }
-
-  compileBlock(node) {
-    this.inheritance.compileBlock(node);
-  }
-
-  compileSuper(node) {
-    this.inheritance.compileSuper(node);
-  }
-
-  analyzeSuper(node) {
-    this.inheritance.analyzeSuper(node);
-  }
-
-  analyzeChainDeclaration(node) {
-    return this.chain.analyzeChainDeclaration(node);
-  }
-
-  compileChainDeclaration(node) {
-    this.chain.compileChainDeclaration(node);
-  }
-
-  analyzeChainCommand(node) {
-    return this.chain.analyzeChainCommand(node);
-  }
-
-  postAnalyzeChainCommand(node) {
-    return this.chain.postAnalyzeChainCommand(node);
-  }
-
-  compileChainCommand(node) {
-    this.chain.compileChainCommand(node);
-  }
-
-  analyzeExtends(node) {
-    node.template.addAnalysis({ errorContextLabel: this.scriptMode ? 'Extends.Script' : 'Extends.Template' });
-    const inheritanceAnalysis = this.inheritance.analyzeExtends(node);
-    if (this.scriptMode) {
-      return inheritanceAnalysis;
-    }
-    const textChain = this.analysis.getCurrentTextChain(node._analysis);
-    return {
-      ...inheritanceAnalysis,
-      uses: textChain ? [textChain] : [],
-      mutates: textChain ? [textChain] : []
-    };
-  }
-
-  compileExtends(node) {
-    this.inheritance.compileExtends(node);
-  }
-
   analyzeInclude(node) {
     node.template.addAnalysis({ errorContextLabel: this.scriptMode ? 'Include.Script' : 'Include.Template' });
     if (this.scriptMode) {
@@ -641,12 +489,8 @@ class CompilerAsync extends CompilerBaseAsync {
     };
   }
 
-  compileInclude(node) {
-    this.composition.compileAsyncInclude(node);
-  }
-
   analyzeRoot(node) {
-    const inheritanceAnalysis = this.inheritance.analyzeRoot(node);
+    const inheritanceAnalysis = this.inheritance.collectRootAnalysis(node);
     const declares = this._getRootDeclarations(node);
     return {
       createScope: true,
@@ -750,18 +594,6 @@ class CompilerAsync extends CompilerBaseAsync {
     });
   }
 
-  analyzeMethodDefinition(node) {
-    return this.inheritance.analyzeMethodDefinition(node);
-  }
-
-  postAnalyzeMethodDefinition(node) {
-    return this.inheritance.postAnalyzeCallableDefinition(node);
-  }
-
-  compileMethodDefinition() {
-    // Method definitions are compiled through metadata and dedicated callable
-    // entries, not by inline root-body emission.
-  }
 }
 
 function isSharedChainCommandExpression(node) {

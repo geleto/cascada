@@ -24,6 +24,70 @@ class CompileAnalysis {
   constructor(compiler) {
     this.compiler = compiler;
     this._declarationsFinalized = false;
+    this._compilerHandlers = {
+      analyze: new Map(),
+      postAnalyze: new Map(),
+      compile: new Map()
+    };
+  }
+
+  registerCompiler(owner) {
+    const handlersToRegister = [];
+    this._getCompilerMethodNames(owner).forEach((methodName) => {
+      const match = /^(postAnalyze|analyze|compile)([A-Z].*)$/.exec(methodName);
+      if (!match) {
+        return;
+      }
+      const phase = match[1];
+      const nodeType = match[2];
+      if (!(nodeType in nodes)) {
+        return;
+      }
+      handlersToRegister.push({ phase, nodeType, methodName });
+    });
+
+    handlersToRegister.forEach(({ phase, nodeType, methodName }) => {
+      const handlers = this._compilerHandlers[phase];
+      const existing = handlers.get(nodeType);
+      if (existing) {
+        throw new TypeError(
+          `Duplicate ${phase} handler for ${nodeType}: ` +
+          `${this._describeCompilerHandler(existing)} and ${this._describeCompilerOwner(owner)}.${methodName}`
+        );
+      }
+      handlers.set(nodeType, { owner, methodName });
+    });
+    return owner;
+  }
+
+  getCompilerMethod(phase, nodeType) {
+    return this._compilerHandlers[phase]?.get(nodeType) ?? null;
+  }
+
+  callCompilerMethod(handler, ...args) {
+    return handler.owner[handler.methodName].call(handler.owner, ...args);
+  }
+
+  _getCompilerMethodNames(owner) {
+    const names = new Set();
+    let current = owner;
+    while (current && current !== Object.prototype) {
+      Object.getOwnPropertyNames(current).forEach((name) => {
+        if (name !== 'constructor') {
+          names.add(name);
+        }
+      });
+      current = Object.getPrototypeOf(current);
+    }
+    return Array.from(names);
+  }
+
+  _describeCompilerHandler(handler) {
+    return `${this._describeCompilerOwner(handler.owner)}.${handler.methodName}`;
+  }
+
+  _describeCompilerOwner(owner) {
+    return owner?.constructor?.name || 'unknown compiler';
   }
 
   run(rootNode) {
@@ -125,9 +189,12 @@ class CompileAnalysis {
 
   _analyzeNode(node) {
     const analyzerName = `analyze${node.typename}`;
-    const analyzer = this.compiler[analyzerName];
-    if (typeof analyzer === 'function') {
-      const returned = analyzer.call(this.compiler, node, this);
+    const handler = this.getCompilerMethod('analyze', node.typename);
+    const analyzer = handler ? null : this.compiler[analyzerName];
+    if (handler || typeof analyzer === 'function') {
+      const returned = handler
+        ? this.callCompilerMethod(handler, node, this)
+        : analyzer.call(this.compiler, node, this);
       if (returned && typeof returned === 'object' && returned !== node._analysis) {
         node.addAnalysis(returned);
       }
@@ -136,8 +203,9 @@ class CompileAnalysis {
 
   _postAnalyzeNode(node) {
     const analyzerName = `postAnalyze${node.typename}`;
-    const analyzer = this.compiler[analyzerName];
-    if (typeof analyzer === 'function') {
+    const handler = this.getCompilerMethod('postAnalyze', node.typename);
+    const analyzer = handler ? null : this.compiler[analyzerName];
+    if (handler || typeof analyzer === 'function') {
       // Post-analyzers run after immediate children are finalized. They may
       // return node-owned custom facts and, narrowly, custom linked-chain
       // iterables. Custom linked-chain facts are return-only: finalization
@@ -145,7 +213,9 @@ class CompileAnalysis {
       // defaults. Writing them through node.addAnalysis() will be overwritten.
       // Finalization below normalizes linked-chain facts before codegen
       // observes them; ordinary uses/mutates belong to the first pass.
-      const returned = analyzer.call(this.compiler, node, this);
+      const returned = handler
+        ? this.callCompilerMethod(handler, node, this)
+        : analyzer.call(this.compiler, node, this);
       if (returned && typeof returned === 'object' && returned !== node._analysis) {
         return returned;
       }

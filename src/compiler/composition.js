@@ -73,7 +73,7 @@ class CompileComposition {
     return targetVar;
   }
 
-  compileAsyncImport(node) {
+  compileImport(node) {
     const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
     if (!node.withContext && withVars.length === 0 && !node.withValue) {
       const target = node.target.value;
@@ -132,7 +132,7 @@ class CompileComposition {
     }
   }
 
-  compileAsyncFromImport(node) {
+  compileFromImport(node) {
     const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
     if (!node.withContext && withVars.length === 0 && !node.withValue) {
       this._compileAsyncFromImportWithoutPayload(node);
@@ -255,7 +255,7 @@ class CompileComposition {
     });
   }
 
-  compileAsyncInclude(node) {
+  compileInclude(node) {
     this.compiler.buffer._compileAsyncControlFlowBoundary(node, () => {
       const templateVar = this.compiler._tmpid();
       const templateNameVar = this.compiler._tmpid();

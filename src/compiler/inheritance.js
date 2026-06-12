@@ -113,7 +113,15 @@ class CompileInheritance {
     };
   }
 
-  analyzeRoot(node) {
+  postAnalyzeBlock(node) {
+    return this.postAnalyzeCallableDefinition(node);
+  }
+
+  postAnalyzeMethodDefinition(node) {
+    return this.postAnalyzeCallableDefinition(node);
+  }
+
+  collectRootAnalysis(node) {
     node.addAnalysis({
       inheritanceCallableDefinitions: node._analysis.inheritanceCallableDefinitions ?? [],
       inheritanceComponentOperations: node._analysis.inheritanceComponentOperations ?? [],
@@ -153,13 +161,22 @@ class CompileInheritance {
   }
 
   analyzeExtends(node) {
+    node.template.addAnalysis({ errorContextLabel: this.compiler.scriptMode ? 'Extends.Script' : 'Extends.Template' });
     const rootAnalysis = this._getRootAnalysis(node._analysis);
     rootAnalysis.inheritanceExtendsNodes = rootAnalysis.inheritanceExtendsNodes || [];
     rootAnalysis.inheritanceExtendsNodes.push(node);
     if (node._analysis.parent?.node instanceof nodes.Root) {
       rootAnalysis.inheritanceLocalExtendsNode = rootAnalysis.inheritanceLocalExtendsNode || node;
     }
-    return { wantsLinkedChildBuffer: true };
+    if (this.compiler.scriptMode) {
+      return { wantsLinkedChildBuffer: true };
+    }
+    const textChain = this.compiler.analysis.getCurrentTextChain(node._analysis);
+    return {
+      wantsLinkedChildBuffer: true,
+      uses: textChain ? [textChain] : [],
+      mutates: textChain ? [textChain] : []
+    };
   }
 
   _isInsideCompilerInternalCallable(node) {
@@ -201,7 +218,7 @@ class CompileInheritance {
     // __constructor__, but participant roots bypass normal child compilation.
     // Runtime bindings such as imports/from-imports stay constructor work.
     this._getParticipantRootDeclarations(node).forEach((child) => {
-      this.compiler.compileMacro(child);
+      this.compiler.compile(child, null);
     });
   }
 
@@ -923,6 +940,11 @@ class CompileInheritance {
 
   compileExtends(node) {
     // Parent selection is emitted once in resolveInheritanceParent.
+  }
+
+  compileMethodDefinition() {
+    // Method definitions are compiled through metadata and dedicated callable
+    // entries, not by inline root-body emission.
   }
 
   compileSuper(node) {

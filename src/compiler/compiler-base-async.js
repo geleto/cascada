@@ -4,6 +4,8 @@ import {CompileAnalysis} from './analysis.js';
 import {CompilerCommon} from './compiler-common.js';
 import {CompileCall} from './call.js';
 import {CompileLookup} from './lookup.js';
+import {CompileGuard} from './guard.js';
+import {CompileAssignment} from './assignment.js';
 import {renameSharedName} from '../inheritance/shared-names.js';
 
 const compareOps = {
@@ -31,6 +33,28 @@ class CompilerBaseAsync extends CompilerCommon {
     this.analysis = new CompileAnalysis(this);
     this.call = new CompileCall(this);
     this.lookup = new CompileLookup(this);
+    this.guard = new CompileGuard(this);
+    this.assignment = new CompileAssignment(this);
+    this._registerCompilers();
+  }
+
+  _registerCompilers() {
+    [
+      this,
+      this.assignment,
+      this.guard,
+      this.call,
+      this.lookup,
+      this.macro,
+      this.return,
+      this.composition,
+      this.loop,
+      this.inheritance,
+      this.chain,
+      this.component
+    ].forEach((compilerPart) => {
+      this.analysis.registerCompiler(compilerPart);
+    });
   }
 
   analyzeSymbol(node, analysisPass) {
@@ -77,14 +101,6 @@ class CompilerBaseAsync extends CompilerCommon {
       }
     }
     return facts;
-  }
-
-  postAnalyzeLiteral(node) {
-    return this.chain.postAnalyzeDataPathSegment(node);
-  }
-
-  postAnalyzeArray(node) {
-    return this.chain.postAnalyzeDataPathArray(node);
   }
 
   compileSymbol(node) {
@@ -330,30 +346,6 @@ class CompilerBaseAsync extends CompilerCommon {
     this.emit('})');
   }
 
-  analyzeLookupVal(node, analysisPass) {
-    return this.lookup.analyzeLookupVal(node, analysisPass);
-  }
-
-  postAnalyzeLookupVal(node, analysisPass) {
-    return this.lookup.postAnalyzeLookupVal(node, analysisPass);
-  }
-
-  compileLookupVal(node) {
-    this.lookup.compileLookupVal(node);
-  }
-
-  analyzeFunCall(node, analysisPass) {
-    return this.call.analyzeFunCall(node, analysisPass);
-  }
-
-  postAnalyzeFunCall(node) {
-    return this.call.postAnalyzeFunCall(node);
-  }
-
-  compileFunCall(node) {
-    this.call.compileFunCall(node);
-  }
-
   compileFilter(node) {
     this.assertType(node.name, nodes.Symbol);
     this._compileAggregate(node.args, null, '[', ']', true, false, function (result) {
@@ -434,15 +426,6 @@ class CompilerBaseAsync extends CompilerCommon {
     this.emit(`return ${resultId}; `);
     this.emit('})()');
   }
-
-  analyzeCaller(node) {
-    return this.macro.analyzeCaller(node);
-  }
-
-  compileCaller(node) {
-    this.macro.compileAsyncCaller(node);
-  }
-
 
   _compileAsyncAggregate(node, startChar, endChar, resolveItems, expressionRoot, compileThen, asyncThen) {
     const doResolve = resolveItems;

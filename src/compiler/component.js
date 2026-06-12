@@ -8,6 +8,8 @@ class CompileComponent {
   }
 
   analyzeComponent(node) {
+    node.template.addAnalysis({ errorContextLabel: 'Component.Script' });
+    this.compiler.inheritance.recordComponentOperation(node);
     node.target.addAnalysis({ declarationTarget: true });
     return {
       declares: [{

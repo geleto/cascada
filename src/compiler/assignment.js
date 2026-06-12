@@ -6,6 +6,18 @@ class CompileAssignment {
     this.emit = this.compiler.emit;
   }
 
+  analyzeCallAssign(node, analysisPass) {
+    return this.analyzeSet(node, analysisPass);
+  }
+
+  postAnalyzeCallAssign(node) {
+    return this.postAnalyzeSet(node);
+  }
+
+  compileCallAssign(node) {
+    this.compileSet(node);
+  }
+
   analyzeSet(node, analysisPass) {
     const compiler = this.compiler;
     const declares = [];

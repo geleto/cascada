@@ -4,6 +4,7 @@ import * as lib from '../lib.js';
 import * as nodes from './nodes.js';
 import * as parser from './parser.js';
 import * as runtime from '../runtime/runtime.js';
+import {CompileLookup} from '../compiler/lookup.js';
 
 function installCompat() {
 
@@ -21,11 +22,14 @@ function installCompat() {
   var orig_Frame_lookupOrContext = runtime.Frame.prototype.lookupOrContext;
   var orig_Compiler_assertTypes = new Map();
   var orig_Compiler_compileLookupVal = new Map();
+  var orig_CompileLookup_compileLookupVal = CompileLookup.prototype.compileLookupVal;
   var orig_Parser_parseAggregate;
   if (compilerClasses.length) {
     compilerClasses.forEach((CompilerClass) => {
       orig_Compiler_assertTypes.set(CompilerClass, CompilerClass.prototype.assertType);
-      orig_Compiler_compileLookupVal.set(CompilerClass, CompilerClass.prototype.compileLookupVal);
+      if (CompilerClass !== CompilerAsync && CompilerClass !== CompilerCommon) {
+        orig_Compiler_compileLookupVal.set(CompilerClass, CompilerClass.prototype.compileLookupVal);
+      }
     });
   }
   if (Parser) {
@@ -41,6 +45,7 @@ function installCompat() {
     orig_Compiler_compileLookupVal.forEach((compileLookupVal, CompilerClass) => {
       CompilerClass.prototype.compileLookupVal = compileLookupVal;
     });
+    CompileLookup.prototype.compileLookupVal = orig_CompileLookup_compileLookupVal;
     if (Parser) {
       Parser.prototype.parseAggregate = orig_Parser_parseAggregate;
     }
@@ -101,14 +106,32 @@ function installCompat() {
         this._compileExpression(node.step, frame);
         this.emit(')');
       };
-      CompilerClass.prototype.compileLookupVal = function compileLookupVal(node, frame) {
-        this.emit('runtime.memberLookupJinjaCompat((');
-        this.compile(node.target, frame);
-        this.emit('),');
-        this.compile(node.val, frame);
-        this.emit(')');
-      };
+      if (CompilerClass !== CompilerAsync && CompilerClass !== CompilerCommon) {
+        CompilerClass.prototype.compileLookupVal = function compileLookupVal(node, frame) {
+          this.emit('runtime.memberLookupJinjaCompat((');
+          this.compile(node.target, frame);
+          this.emit('),');
+          this.compile(node.val, frame);
+          this.emit(')');
+        };
+      }
     });
+
+    CompileLookup.prototype.compileLookupVal = function compileLookupVal(node) {
+      const activeCompiler = this.compiler;
+      if (activeCompiler.scriptMode) {
+        this.emit('runtime.memberLookupScript((');
+      } else {
+        this.emit('runtime.memberLookupJinjaCompat((');
+      }
+      activeCompiler.compile(node.target, null);
+      this.emit('),');
+      activeCompiler.compile(node.val, null);
+      if (activeCompiler.scriptMode) {
+        this.emit(`, ${activeCompiler.emitErrorContext(node)}, ${activeCompiler.buffer.currentBuffer}`);
+      }
+      this.emit(')');
+    };
 
     Parser.prototype.parseAggregate = function parseAggregate() {
       var origState = getTokensState(this.tokens);
