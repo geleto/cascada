@@ -769,7 +769,7 @@ async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOpti
       poisonLoopEffects(
         buffer,
         asyncOptions,
-        PoisonError.create(`Cannot iterate over scalar value ${String(arr)}`, errorContext, 'NotIterable'),
+        PoisonError.create(`Cannot iterate over scalar value ${arr.toString()}`, errorContext, 'NotIterable'),
         false
       );
       return;

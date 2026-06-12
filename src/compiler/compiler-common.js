@@ -498,9 +498,7 @@ class CompilerCommon extends Obj {
           key + ']';
       }
       case 'Literal':
-        return node.value === null || node.value === undefined
-          ? String(node.value)
-          : node.value.toString();
+        return node.value === null ? 'null' : node.value.toString();
       default: {
         const label = node._analysis?.errorContextLabel || node.typename || 'unknown';
         return `${label} expression`;

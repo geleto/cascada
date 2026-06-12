@@ -280,7 +280,7 @@ function createCallableChainFacade(chain) {
       if (prop in chain) {
         const value = chain[prop];
         if (typeof value === 'function') {
-          const cacheName = `_bound_${String(prop)}`;
+          const cacheName = `_bound_${prop}`;
           if (!chain[cacheName]) {
             Object.defineProperty(chain, cacheName, {
               configurable: true,

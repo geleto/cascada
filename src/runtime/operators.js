@@ -175,7 +175,7 @@ function formatOperand(value) {
     return `"${value}"`;
   }
   if (type === 'symbol') {
-    return String(value);
+    return value.toString();
   }
   return `${type} ${String(value)}`;
 }

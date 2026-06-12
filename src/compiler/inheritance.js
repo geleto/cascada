@@ -903,7 +903,7 @@ class CompileInheritance {
 
   _compileCallableSuperErrorContextIndexLiteral(callableNode) {
     return callableNode._analysis.callableSuperErrorContextIndex !== undefined
-      ? String(callableNode._analysis.callableSuperErrorContextIndex)
+      ? callableNode._analysis.callableSuperErrorContextIndex.toString()
       : 'null';
   }
 

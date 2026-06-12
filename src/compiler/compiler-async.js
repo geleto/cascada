@@ -268,7 +268,7 @@ class CompilerAsync extends CompilerBaseAsync {
     }
     const literalValue = typeof caseNode.cond.value === 'string'
       ? JSON.stringify(caseNode.cond.value)
-      : String(caseNode.cond.value);
+      : caseNode.cond.value === null ? 'null' : caseNode.cond.value.toString();
     return `{ caseValue: ${JSON.stringify(literalValue)} }`;
   }
 

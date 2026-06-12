@@ -29,7 +29,7 @@ function formatDiagnosticHeader(name, message, headerLines = null) {
 }
 
 function formatNumberedDiagnostic(index, message) {
-  const lines = String(message || '').split('\n');
+  const lines = (message || '').toString().split('\n');
   const prefix = `  ${index + 1}. `;
   const indent = ' '.repeat(prefix.length);
   return [
@@ -157,7 +157,13 @@ function formatDiagnosticValue(value, seen) {
     seen.delete(value);
     return result;
   }
-  return String(value);
+  if (value === null) {
+    return 'null';
+  }
+  if (value === undefined) {
+    return 'undefined';
+  }
+  return value.toString();
 }
 
 export {
