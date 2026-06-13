@@ -5,7 +5,7 @@ function noInheritanceParent() {
   return { parentTemplateOrScript: null, errorContext: null };
 }
 
-async function resolveInheritanceParent(env, isScript, target, inheritedErrorContext, context, errorContext) {
+async function resolveInheritanceParent(ownerState, target, inheritedErrorContext, context, errorContext) {
   try {
     target = await resolveSingle(target);
   } catch (error) {
@@ -15,15 +15,15 @@ async function resolveInheritanceParent(env, isScript, target, inheritedErrorCon
   if (target === null || target === undefined) {
     // Scripts use null as an explicit parentless selection; templates must
     // select a concrete parent when dynamic extends is present.
-    if (!isScript) {
+    if (!ownerState.scriptMode) {
       RuntimeError.reportAndThrow('template extends must select a parent template', errorContext);
     }
     return noInheritanceParent();
   }
 
-  const loadMethod = isScript ? 'getScript' : 'getTemplate';
+  const loadMethod = ownerState.scriptMode ? 'getScript' : 'getTemplate';
   try {
-    const parentTemplateOrScript = await env[loadMethod](target, true, context.path, false);
+    const parentTemplateOrScript = await ownerState.env[loadMethod](target, true, context.path, false);
     return { parentTemplateOrScript, errorContext: inheritedErrorContext };
   } catch (error) {
     RuntimeError.reportAndThrow(error, inheritedErrorContext);

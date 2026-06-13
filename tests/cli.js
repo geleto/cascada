@@ -113,7 +113,7 @@ import {fileURLToPath} from 'url';
           done(err);
           return;
         }
-        expect(stdout).to.contain('function root(env, context, runtime, renderState');
+        expect(stdout).to.contain('function root(ownerState, context');
         expect(stdout).to.not.contain('function root(env, context, frame, runtime, cb');
         expect(filterDebuggerMessages(stderr)).to.equal('');
         done();

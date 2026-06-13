@@ -12,7 +12,7 @@ function reportInheritanceLoadError(error, errorContext) {
   return RuntimeError.report(error, requireInheritanceLoadErrorContext(errorContext));
 }
 
-function loadEntry(templateOrScript, errorContext, runtime) {
+function loadEntry(templateOrScript, errorContext, ownerState) {
   templateOrScript.compile();
   const path = templateOrScript.path ?? null;
   if (!templateOrScript.inheritanceSpec || !templateOrScript.resolveInheritanceParent) {
@@ -21,25 +21,35 @@ function loadEntry(templateOrScript, errorContext, runtime) {
       requireInheritanceLoadErrorContext(errorContext)
     );
   }
-  const errorContextTable = templateOrScript.getErrorContexts(runtime, path, null);
+  const errorContextTable = templateOrScript.getErrorContexts(ownerState.runtime, path, null);
+  const entryOwnerState = Object.freeze({
+    env: ownerState.env,
+    runtime: ownerState.runtime,
+    renderState: ownerState.renderState,
+    templateOrScript,
+    path,
+    scriptMode: !!templateOrScript.scriptMode,
+    errorContextTable: templateOrScript.getErrorContexts(ownerState.runtime, path, ownerState.renderState)
+  });
   return Object.freeze({
     templateOrScript,
     spec: templateOrScript.inheritanceSpec,
     path,
     errorContextTable,
+    ownerState: entryOwnerState,
     errorContext
   });
 }
 
-async function resolveLoadedParent(entry, env, context, runtime, renderState) {
+async function resolveLoadedParent(entry, context) {
   try {
-    return await entry.templateOrScript.resolveInheritanceParent(env, context, runtime, entry.errorContext, renderState);
+    return await entry.templateOrScript.resolveInheritanceParent(entry.ownerState, context, entry.errorContext);
   } catch (error) {
     throw reportInheritanceLoadError(error, entry.errorContext);
   }
 }
 
-async function loadInheritanceChain({ templateOrScript, env, context, runtime, errorContext, renderState }) {
+async function loadInheritanceChain({ templateOrScript, ownerState, context, errorContext }) {
   const entries = [];
   const seen = new Set();
   let currentTemplateOrScript = templateOrScript;
@@ -59,14 +69,14 @@ async function loadInheritanceChain({ templateOrScript, env, context, runtime, e
 
     let entry;
     try {
-      entry = loadEntry(currentTemplateOrScript, selectedByErrorContext, runtime);
+      entry = loadEntry(currentTemplateOrScript, selectedByErrorContext, ownerState);
     } catch (error) {
       throw reportInheritanceLoadError(error, selectedByErrorContext);
     }
     entries.push(entry);
 
-    renderState.throwIfFatalErrorReported();
-    const parentSelection = await resolveLoadedParent(entry, env, context, runtime, renderState);
+    ownerState.renderState.throwIfFatalErrorReported();
+    const parentSelection = await resolveLoadedParent(entry, context);
     currentTemplateOrScript = parentSelection.parentTemplateOrScript;
     selectedByErrorContext = parentSelection.errorContext;
   }

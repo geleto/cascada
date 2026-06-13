@@ -41,11 +41,8 @@ class CompileInheritanceEmit {
 
   participantRootRender(node) {
     this.emit.line('return runtime.renderInheritanceParticipantRoot({');
-    this.emit.line('    entryTemplateOrScript: this,');
-    this.emit.line('    env,');
     this.emit.line('    context,');
-    this.emit.line('    runtime,');
-    this.emit.line('    renderState,');
+    this.emit.line('    ownerState,');
     this.emit.line('    rootBuffer: output,');
     this.emit.line(`    errorContext: ${this.compiler.emitErrorContext(node)}`);
     this.emit.line('}).catch((e) => {');
@@ -140,11 +137,11 @@ class CompileInheritanceEmit {
   }
 
   extendsParentResolver(node) {
-    this.emit.line('async function resolveInheritanceParent(env, context, runtime, errorContext, renderState) {');
-    this.emit.line('  const __ec = getErrorContexts(runtime, this.path, renderState);');
+    this.emit.line('async function resolveInheritanceParent(ownerState, context, errorContext) {');
+    this.emit.line('  const __ec = ownerState.errorContextTable;');
     const inheritanceFacts = node._analysis.inheritance;
     if (!inheritanceFacts.localExtendsNode || inheritanceFacts.localExtendsNode.noParentLiteral) {
-      this.emit.line('  return runtime.noInheritanceParent();');
+      this.emit.line('  return ownerState.runtime.noInheritanceParent();');
       this.emit.line('}');
       return;
     }
@@ -155,12 +152,15 @@ class CompileInheritanceEmit {
     if (this.isStaticExtendsNode(extendsNode)) {
       // Static targets are known non-null here, so null-target error context is
       // only needed by the dynamic branch.
-      this.emit.line(`  return runtime.resolveInheritanceParent(env, ${this.compiler.scriptMode ? 'true' : 'false'}, ${JSON.stringify(extendsNode.template.value)}, parentErrorContext, context);`);
+      this.emit.line(`  return ownerState.runtime.resolveInheritanceParent(ownerState, ${JSON.stringify(extendsNode.template.value)}, parentErrorContext, context);`);
     } else {
+      this.emit.line('  const env = ownerState.env;');
+      this.emit.line('  const runtime = ownerState.runtime;');
+      this.emit.line('  const renderState = ownerState.renderState;');
       this.emit('  const parentSelection = ');
       this.compiler.compileExpression(extendsNode.template, null, extendsNode.template, true);
       this.emit.line(';');
-      this.emit.line(`  return runtime.resolveInheritanceParent(env, ${this.compiler.scriptMode ? 'true' : 'false'}, parentSelection, parentErrorContext, context, __ec[${errorContextIndex}]);`);
+      this.emit.line(`  return ownerState.runtime.resolveInheritanceParent(ownerState, parentSelection, parentErrorContext, context, __ec[${errorContextIndex}]);`);
     }
     this.emit.line('}');
   }

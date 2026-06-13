@@ -7,13 +7,13 @@ function failFinalization(message, errorContext) {
 
 function createRuntimeOwnerEntry(entry) {
   return Object.freeze({
-    templateOrScript: entry.templateOrScript,
     path: entry.path,
     // Finalization-only table. It is prepared with reportError = null by the
     // loader so validation errors can point at source locations without making
     // finalization render-specific.
     errorContextTable: entry.errorContextTable,
     errorContext: entry.errorContext,
+    ownerState: entry.ownerState,
     isStructuralTemplate: !entry.templateOrScript.scriptMode && !entry.spec.hasExtends
   });
 }

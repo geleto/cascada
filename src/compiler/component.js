@@ -47,9 +47,7 @@ class CompileComponent {
     this.emit.line(`  componentScriptOrTemplate: ${componentScriptOrTemplateVar},`);
     this.emit.line(`  payload: ${rootContextVar},`);
     this.emit.line('  ownerContext: context,');
-    this.emit.line('  env,');
-    this.emit.line('  runtime,');
-    this.emit.line('  renderState,');
+    this.emit.line('  ownerState,');
     this.emit.line(`  errorContext: ${this.compiler.emitErrorContext(node)}`);
     this.emit.line('});');
 
@@ -137,7 +135,7 @@ class CompileComponent {
     this.emit(`currentBuffer: ${this.compiler.buffer.currentBuffer}, `);
     this.emit(`methodName: ${JSON.stringify(componentBindingFacts.methodName)}, args: `);
     this.compiler._compileAggregate(node.args, null, '[', ']', false, false);
-    this.emit(`, runtime, errorContext: ${this.compiler.emitErrorContext(node)} })`);
+    this.emit(`, errorContext: ${this.compiler.emitErrorContext(node)} })`);
   }
 
   emitObservationCommand(chainName, node, mode = 'snapshot') {

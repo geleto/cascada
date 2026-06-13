@@ -279,17 +279,14 @@ the lifecycle to `runtime.renderInheritanceParticipantRoot(...)` instead of
 inlining load/finalize/constructor/finish logic:
 
 ```js
-function root(env, context, runtime, renderState) {
-  const reportError = renderState.reportError;
+function root(ownerState, context) {
+  const runtime = ownerState.runtime;
   runtime.renderInheritanceParticipantRoot({
-    entryTemplateOrScript: this,
-    env,
     context,
-    runtime,
-    renderState,
+    ownerState,
     rootBuffer: output,
     errorContext: rootErrorContext
-  }).catch((err) => reportError(err));
+  }).catch((err) => ownerState.renderState.reportError(err));
 }
 ```
 
@@ -479,7 +476,7 @@ helper exports define lifecycle phase boundaries.
 Each inheritance participant has one local resolver:
 
 ```js
-async function resolveInheritanceParent(env, context, runtime, errorContext, reportError)
+async function resolveInheritanceParent(ownerState, context, errorContext)
 ```
 
 It evaluates only the current template/script's immediate `extends` selection
@@ -954,8 +951,9 @@ already-finalized dispatch table: `instance.runtimeState.methods[methodName]`.
 That entry is already the most-derived implementation. Invocation then builds
 the argument frame from positional arguments, creates an invocation buffer
 linked to the instance shared/root buffer, links the target's exact merged
-footprints, and calls the target `fn` with the instance environment, instance
-context, runtime/callback, invocation buffer, argument frame, and method data.
+footprints, and calls the target `fn` with the owning artifact state, instance
+context, invocation buffer, argument frame, render context, method data, and
+current instance.
 
 Compiled `this.name(...)` calls always invoke through the same finalized table
 entry as `instance.invoke(...)`, but their invocation buffer is linked to the
@@ -1546,7 +1544,7 @@ Tests:
 - `resolveInheritanceParent` for a no-extends inheritance participant returns
   data only
 - `resolveInheritanceParent` has the final ABI
-  `(env, context, runtime, origin)` and does not receive inheritance state
+  `(ownerState, context, errorContext)` and does not receive inheritance state
 - `inheritanceSpec.methodEntries.__constructor__` exists only when the
   template/script has concrete constructor body code and has the ordinary
   callable entry shape

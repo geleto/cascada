@@ -518,7 +518,7 @@ class CompilerAsync extends CompilerBaseAsync {
     const rootCompileResult = this._compileAsyncRoot(node);
     if (!node._analysis.inheritance.participates) {
       this.emitErrorContextHelper();
-      this.emit.line('return { root };');
+      this.emit.line('return { root, getErrorContexts };');
       return;
     }
 

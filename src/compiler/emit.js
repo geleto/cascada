@@ -87,13 +87,18 @@ class CompileEmit {
     this.scopeClosers = '';
     if (this.compiler.asyncMode) {
       if (name === 'root') {
-        this.line(`function ${name}(env, context, runtime, renderState) {`);
-        this.line('const __ec = getErrorContexts(runtime, context.path, renderState);');
+        this.line(`function ${name}(ownerState, context) {`);
       } else {
         const extraParamSource = Array.isArray(extraParams) && extraParams.length > 0
           ? `, ${extraParams.join(', ')}`
           : '';
-        this.line(`function ${name}(env, context, runtime, renderState, parentBuffer = null${extraParamSource}) {`);
+        this.line(`function ${name}(ownerState, context, parentBuffer = null${extraParamSource}) {`);
+      }
+      this.line('const env = ownerState.env;');
+      this.line('const runtime = ownerState.runtime;');
+      this.line('const renderState = ownerState.renderState;');
+      if (name === 'root') {
+        this.line('const __ec = ownerState.errorContextTable;');
       }
     } else {
       this.line(`function ${name}(env, context, frame, runtime, cb) {`);

@@ -15,6 +15,26 @@ function createTestRenderState(reportError = TEST_REPORT_ERROR) {
   return runtime.createRenderState(reportError);
 }
 
+function createTestOwnerState(templateOrScript, {
+  env = null,
+  runtime: runtimeModule = runtime,
+  renderState = createTestRenderState(),
+  path = templateOrScript?.path ?? null,
+  scriptMode = !!templateOrScript?.scriptMode
+} = {}) {
+  return {
+    env,
+    runtime: runtimeModule,
+    renderState,
+    templateOrScript,
+    path,
+    scriptMode,
+    errorContextTable: templateOrScript && typeof templateOrScript.getErrorContexts === 'function'
+      ? templateOrScript.getErrorContexts(runtimeModule, path, renderState)
+      : []
+  };
+}
+
 function createIdPool() {
   return {
     value: 0,
@@ -71,6 +91,14 @@ function compileProps(src, options = {}) {
   return new Function('runtime', source)(runtime);
 }
 
+function createPropsOwnerState(props, { path = 'compiled.casc', scriptMode = false, env = null, renderState = null } = {}) {
+  return createTestOwnerState({
+    path,
+    scriptMode,
+    getErrorContexts: props.getErrorContexts
+  }, { env, renderState, path, scriptMode });
+}
+
 function compactTestErrorContext(errorContext) {
   if (!errorContext) {
     return null;
@@ -115,7 +143,11 @@ describe('Inheritance rebuild', function () {
         scriptMode: true,
         name: 'script-none.script'
       });
-      const parent = await props.resolveInheritanceParent.call({ path: 'script-none.script' }, null, null, runtime, null, null);
+      const ownerState = createPropsOwnerState(props, {
+        path: 'script-none.script',
+        scriptMode: true
+      });
+      const parent = await props.resolveInheritanceParent(ownerState, null, null);
 
       expect(Object.keys(props).sort()).to.eql(['getErrorContexts', 'inheritanceSpec', 'resolveInheritanceParent', 'root']);
       expect(parent).to.eql({ parentTemplateOrScript: null, errorContext: null });
@@ -157,7 +189,7 @@ describe('Inheritance rebuild', function () {
       ].forEach((source) => {
         const props = new Function('runtime', source)({});
 
-        expect(Object.keys(props).sort()).to.eql(['root']);
+        expect(Object.keys(props).sort()).to.eql(['getErrorContexts', 'root']);
         expect(source).not.to.contain('inheritanceSpec');
         expect(source).not.to.contain('resolveInheritanceParent');
         expect(source).not.to.contain('__constructor__');
@@ -178,7 +210,7 @@ describe('Inheritance rebuild', function () {
       expect(Object.keys(props.inheritanceSpec).sort()).to.eql(['hasExtends', 'methodEntries', 'sharedSchema']);
       expect(props.inheritanceSpec.setup).to.be(undefined);
       expect(props.inheritanceSpec.inheritedMethodDependencies).to.be(undefined);
-      expect(props.resolveInheritanceParent.length).to.be(5);
+      expect(props.resolveInheritanceParent.length).to.be(3);
       expect(props.inheritanceSpec.methodEntries.build.errorContextIndex).to.be.a('number');
     });
 
@@ -226,8 +258,8 @@ describe('Inheritance rebuild', function () {
       removedStartupFragments.forEach((fragment) => {
         expect(source).not.to.contain(fragment);
       });
-      expect(source).to.contain('async function resolveInheritanceParent(env, context, runtime, errorContext, renderState)');
-      expect(source).to.contain('function root(env, context, runtime, renderState)');
+      expect(source).to.contain('async function resolveInheritanceParent(ownerState, context, errorContext)');
+      expect(source).to.contain('function root(ownerState, context)');
     });
 
     it('emits clean finalized invocation calls for this and super', function () {
@@ -266,8 +298,12 @@ describe('Inheritance rebuild', function () {
       const props = compileProps('method build()\n  return 1\nendmethod\nreturn this.build()', {
         scriptMode: true
       });
+      const ownerState = createPropsOwnerState(props, {
+        path: 'compiled.casc',
+        scriptMode: true
+      });
 
-      expect(await props.resolveInheritanceParent.call({ path: 'compiled.casc' }, null, null, runtime, null, null)).to.eql({
+      expect(await props.resolveInheritanceParent(ownerState, null, null)).to.eql({
         parentTemplateOrScript: null,
         errorContext: null
       });
@@ -309,7 +345,7 @@ describe('Inheritance rebuild', function () {
       });
 
       expect(source).to.contain('runtime.renderInheritanceParticipantRoot');
-      expect(source).to.contain('entryTemplateOrScript: this');
+      expect(source).to.contain('ownerState,');
       expect(source).to.contain('errorContext: __ec[0]');
       expect(source).not.to.contain('runtime.loadInheritanceChain');
       expect(source).not.to.contain('runtime.finalizeInheritanceChain');
@@ -806,13 +842,12 @@ describe('Inheritance rebuild', function () {
       Object.entries(templates).forEach(([name, source]) => loader.addTemplate(name, source));
       const localEnv = new AsyncEnvironment(loader);
       const entry = await localEnv.getTemplate(entryName, true, null, false);
+      const renderState = createTestRenderState();
       return runtime.loadInheritanceChain({
         templateOrScript: entry,
-        env: localEnv,
+        ownerState: createTestOwnerState(entry, { env: localEnv, renderState }),
         context,
-        runtime,
         errorContext: [1, 0, 'Extends', entryName, null, null],
-        renderState: createTestRenderState()
       });
     }
 
@@ -821,13 +856,12 @@ describe('Inheritance rebuild', function () {
       Object.entries(scripts).forEach(([name, source]) => loader.addTemplate(name, source));
       const localEnv = new AsyncEnvironment(loader);
       const entry = await localEnv.getScript(entryName, true, null, false);
+      const renderState = createTestRenderState();
       return runtime.loadInheritanceChain({
         templateOrScript: entry,
-        env: localEnv,
+        ownerState: createTestOwnerState(entry, { env: localEnv, renderState }),
         context,
-        runtime,
         errorContext: [1, 0, 'Extends', entryName, null, null],
-        renderState: createTestRenderState()
       });
     }
 
@@ -885,11 +919,9 @@ describe('Inheritance rebuild', function () {
 
       const chain = await runtime.loadInheritanceChain({
         templateOrScript: child,
-        env: null,
+        ownerState: createTestOwnerState(child),
         context: createContext(),
-        runtime,
         errorContext: [1, 0, 'Extends', 'child.njk', null, null],
-        renderState: createTestRenderState()
       });
 
       expect(chain.entries.map((entry) => entry.path)).to.eql(['child.njk', 'parent.njk']);
@@ -920,11 +952,9 @@ describe('Inheritance rebuild', function () {
       try {
         await runtime.loadInheritanceChain({
           templateOrScript: child,
-          env: null,
+          ownerState: createTestOwnerState(child),
           context: createContext({}, 'entry.njk'),
-          runtime,
           errorContext: [1, 0, 'Extends', 'child.njk', null, null],
-          renderState: createTestRenderState()
         });
         expect().fail('Expected selected parent compile failure');
       } catch (error) {
@@ -945,11 +975,9 @@ describe('Inheritance rebuild', function () {
       try {
         await runtime.loadInheritanceChain({
           templateOrScript: entry,
-          env: null,
+          ownerState: createTestOwnerState(entry),
           context: createContext({}, 'entry-context.njk'),
-          runtime,
           errorContext: [4, 2, 'Extends', 'entry-context.njk', null, null],
-          renderState: createTestRenderState()
         });
         expect().fail('Expected entry compile failure');
       } catch (error) {
@@ -975,11 +1003,12 @@ describe('Inheritance rebuild', function () {
       expect(chain.entries.length).to.be(2);
       await runtime.loadInheritanceChain({
         templateOrScript: chain.entries[0].templateOrScript,
-        env: chain.entries[0].templateOrScript.env,
+        ownerState: createTestOwnerState(chain.entries[0].templateOrScript, {
+          env: chain.entries[0].templateOrScript.env,
+          runtime: strictRuntime
+        }),
         context: createContext({}, 'child.njk'),
-        runtime: strictRuntime,
         errorContext: [1, 0, 'Extends', 'child.njk', null, null],
-        renderState: createTestRenderState()
       });
     });
 
@@ -1266,9 +1295,10 @@ describe('Inheritance rebuild', function () {
       Object.entries(templates).forEach(([name, source]) => loader.addTemplate(name, source));
       const localEnv = new AsyncEnvironment(loader);
       const entry = await localEnv.getTemplate(entryName, true, null, false);
+      const renderState = createTestRenderState();
       return runtime.loadInheritanceChain({
         templateOrScript: entry,
-        env: localEnv,
+        ownerState: createTestOwnerState(entry, { env: localEnv, renderState }),
         context: {
           path: entryName,
           lookup() {
@@ -1278,9 +1308,7 @@ describe('Inheritance rebuild', function () {
             return {};
           }
         },
-        runtime,
         errorContext: [1, 0, 'Extends', entryName, null, null],
-        renderState: createTestRenderState()
       });
     }
 
@@ -1289,12 +1317,11 @@ describe('Inheritance rebuild', function () {
       Object.entries(scripts).forEach(([name, source]) => loader.addTemplate(name, source));
       const localEnv = new AsyncEnvironment(loader);
       const entry = await localEnv.getScript(entryName, true, null, false);
+      const renderState = createTestRenderState();
       return runtime.InheritanceInstance.create({
         entryTemplateOrScript: entry,
-        env: localEnv,
+        ownerState: createTestOwnerState(entry, { env: localEnv, renderState }),
         context: entry._createContext(ctx),
-        runtime,
-        renderState: createTestRenderState(),
         errorContext: TEST_EC
       });
     }
@@ -1304,12 +1331,11 @@ describe('Inheritance rebuild', function () {
       Object.entries(templates).forEach(([name, source]) => loader.addTemplate(name, source));
       const localEnv = new AsyncEnvironment(loader);
       const entry = await localEnv.getTemplate(entryName, true, null, false);
+      const renderState = createTestRenderState();
       return runtime.InheritanceInstance.create({
         entryTemplateOrScript: entry,
-        env: localEnv,
+        ownerState: createTestOwnerState(entry, { env: localEnv, renderState }),
         context: entry._createContext(ctx),
-        runtime,
-        renderState: createTestRenderState(),
         errorContext: TEST_EC
       });
     }
@@ -1622,12 +1648,11 @@ describe('Inheritance rebuild', function () {
         }
       });
       const context = createRuntimeContext();
+      const renderState = createTestRenderState();
       const instance = await runtime.InheritanceInstance.create({
         entryTemplateOrScript: participant,
-        env: {},
+        ownerState: createTestOwnerState(participant, { env: {}, renderState }),
         context,
-        runtime,
-        renderState: createTestRenderState(),
         errorContext: TEST_EC
       });
 
@@ -1651,10 +1676,8 @@ describe('Inheritance rebuild', function () {
       try {
         await runtime.InheritanceInstance.create({
           entryTemplateOrScript: participant,
-          env: {},
+          ownerState: createTestOwnerState(participant, { env: {}, renderState }),
           context,
-          runtime,
-          renderState,
           rootBuffer,
           sharedRootBuffer,
           errorContext: TEST_EC
@@ -1686,10 +1709,8 @@ describe('Inheritance rebuild', function () {
       try {
         await runtime.InheritanceInstance.create({
           entryTemplateOrScript: participant,
-          env: {},
+          ownerState: createTestOwnerState(participant, { env: {}, renderState }),
           context,
-          runtime,
-          renderState,
           rootBuffer,
           sharedRootBuffer,
           errorContext: TEST_EC
@@ -1710,7 +1731,10 @@ describe('Inheritance rebuild', function () {
         methodEntries: {
           greet: compiledMethod('greet', {
             argNames: ['user'],
-            fn(envArg, contextArg, runtimeArg, renderState, invocationBuffer, payload, renderContext, methodData, currentInstance) {
+            fn(ownerStateArg, contextArg, invocationBuffer, payload, renderContext, methodData, currentInstance) {
+              void ownerStateArg;
+              void contextArg;
+              void renderContext;
               expect(currentInstance.runtimeState.methods.greet).to.be(methodData);
               expect(invocationBuffer.parent).to.be(currentInstance.sharedRootBuffer);
               return `hello ${payload.originalArgs.user}`;
@@ -1720,10 +1744,8 @@ describe('Inheritance rebuild', function () {
       });
       const instance = await runtime.InheritanceInstance.create({
         entryTemplateOrScript: participant,
-        env: {},
+        ownerState: createTestOwnerState(participant, { env: {} }),
         context: createRuntimeContext(),
-        runtime,
-        renderState: createTestRenderState(),
         errorContext: TEST_EC
       });
 
@@ -1736,7 +1758,10 @@ describe('Inheritance rebuild', function () {
         methodEntries: {
           greet: compiledMethod('greet', {
             argNames: ['user', 'fallback'],
-            fn(envArg, contextArg, runtimeArg, renderState, invocationBuffer, payload) {
+            fn(ownerStateArg, contextArg, invocationBuffer, payload) {
+              void ownerStateArg;
+              void contextArg;
+              void invocationBuffer;
               return `${payload.originalArgs.user}:${payload.originalArgs.fallback}`;
             }
           })
@@ -1744,10 +1769,8 @@ describe('Inheritance rebuild', function () {
       });
       const instance = await runtime.InheritanceInstance.create({
         entryTemplateOrScript: participant,
-        env: {},
+        ownerState: createTestOwnerState(participant, { env: {} }),
         context: createRuntimeContext(),
-        runtime,
-        renderState: createTestRenderState(),
         errorContext: TEST_EC
       });
 
@@ -1771,10 +1794,8 @@ describe('Inheritance rebuild', function () {
       });
       const instance = await runtime.InheritanceInstance.create({
         entryTemplateOrScript: participant,
-        env: {},
+        ownerState: createTestOwnerState(participant, { env: {} }),
         context: createRuntimeContext(),
-        runtime,
-        renderState: createTestRenderState(),
         errorContext: TEST_EC
       });
 
@@ -1826,7 +1847,11 @@ describe('Inheritance rebuild', function () {
         scriptMode: true,
         methodEntries: {
           outer: compiledMethod('outer', {
-            fn(envArg, contextArg, runtimeArg, renderState, invocationBuffer, payload, renderContext, methodData, currentInstance) {
+            fn(ownerStateArg, contextArg, invocationBuffer, payload, renderContext, methodData, currentInstance) {
+              void ownerStateArg;
+              void payload;
+              void renderContext;
+              void methodData;
               outerBuffer = invocationBuffer;
               return currentInstance.invokeFromCurrentBuffer(
                 'inner',
@@ -1838,7 +1863,9 @@ describe('Inheritance rebuild', function () {
             }
           }),
           inner: compiledMethod('inner', {
-            fn(envArg, contextArg, runtimeArg, renderState, invocationBuffer) {
+            fn(ownerStateArg, contextArg, invocationBuffer) {
+              void ownerStateArg;
+              void contextArg;
               expect(invocationBuffer.parent).to.be(outerBuffer);
               return 'inner';
             }
@@ -1847,10 +1874,8 @@ describe('Inheritance rebuild', function () {
       });
       const instance = await runtime.InheritanceInstance.create({
         entryTemplateOrScript: participant,
-        env: {},
+        ownerState: createTestOwnerState(participant, { env: {} }),
         context: createRuntimeContext(),
-        runtime,
-        renderState: createTestRenderState(),
         errorContext: TEST_EC
       });
 
@@ -1861,7 +1886,9 @@ describe('Inheritance rebuild', function () {
       const child = compiledMethod('build', {
         argNames: ['user'],
         super: true,
-        fn(envArg, contextArg, runtimeArg, renderState, invocationBuffer, payload, renderContext, methodData, currentInstance) {
+        fn(ownerStateArg, contextArg, invocationBuffer, payload, renderContext, methodData, currentInstance) {
+          void ownerStateArg;
+          void renderContext;
           return currentInstance.invokeSuper(
             methodData,
             [payload.originalArgs.user],
@@ -1873,7 +1900,10 @@ describe('Inheritance rebuild', function () {
       });
       const parent = compiledMethod('build', {
         argNames: ['user'],
-        fn(envArg, contextArg, runtimeArg, renderState, invocationBuffer, payload) {
+        fn(ownerStateArg, contextArg, invocationBuffer, payload) {
+          void ownerStateArg;
+          void contextArg;
+          void invocationBuffer;
           return payload.originalArgs.user;
         }
       });
@@ -1894,10 +1924,8 @@ describe('Inheritance rebuild', function () {
       };
       const instance = await runtime.InheritanceInstance.create({
         entryTemplateOrScript: participant,
-        env: {},
+        ownerState: createTestOwnerState(participant, { env: {} }),
         context: createRuntimeContext({ user: 'Ada' }),
-        runtime,
-        renderState: createTestRenderState(),
         errorContext: TEST_EC
       });
 
@@ -1945,10 +1973,8 @@ describe('Inheritance rebuild', function () {
       const participant = inheritanceParticipant('component.script', { scriptMode: true });
       const instance = await runtime.InheritanceInstance.create({
         entryTemplateOrScript: participant,
-        env: {},
+        ownerState: createTestOwnerState(participant, { env: {} }),
         context: createRuntimeContext(),
-        runtime,
-        renderState: createTestRenderState(),
         errorContext: TEST_EC
       });
 
@@ -2185,6 +2211,7 @@ describe('Inheritance rebuild', function () {
         }
       });
       const ownerContext = createRuntimeContext({}, 'main.script');
+      const renderState = createTestRenderState();
       const ownerBuffer = new runtime.CommandBuffer(
         ownerContext,
         null,
@@ -2193,18 +2220,16 @@ describe('Inheritance rebuild', function () {
         null,
         runtime.cloneWithAddedContext(TEST_EC, { branch: 'test' }),
         null,
-        createTestRenderState()
+        renderState
       );
       runtime.declareBufferChain(ownerBuffer, 'card', 'var', ownerContext, null);
       const instance = await runtime.createComponentInstance({
         componentScriptOrTemplate: participant,
         payload: {},
         ownerContext,
-        env: {},
-        runtime,
+        ownerState: createTestOwnerState(participant, { env: {}, renderState }),
         ownerBuffer,
         bindingName: 'card',
-        renderState: createTestRenderState(),
         errorContext: [1, 1, null, 'main.script', null, null]
       });
       ownerBuffer.addCommand(new runtime.VarCommand({
@@ -2251,9 +2276,7 @@ describe('Inheritance rebuild', function () {
           componentScriptOrTemplate: participant,
           payload: {},
           ownerContext: createRuntimeContext({}, 'main.script'),
-          env: {},
-          runtime,
-          renderState: createTestRenderState(),
+          ownerState: createTestOwnerState(participant, { env: {} }),
           errorContext: [1, 1, null, 'main.script', null, null]
         });
         expect().fail('Expected component creation failure');
@@ -2628,13 +2651,14 @@ describe('Inheritance rebuild', function () {
 
     it('rejects dynamic template extends resolving to no parent through the resolver', async function () {
       const props = compileProps('{% extends parentTemplate %}{% block body %}x{% endblock %}');
+      const ownerState = createPropsOwnerState(props, {
+        path: 'dynamic-null.njk',
+        scriptMode: false
+      });
       try {
-        await props.resolveInheritanceParent.call(
-          { path: 'dynamic-null.njk' },
-          null,
+        await props.resolveInheritanceParent(
+          ownerState,
           { lookup: () => null, path: 'dynamic-null.njk' },
-          runtime,
-          null,
           null
         );
         expect().fail('Expected null dynamic template extends to fail');
@@ -2727,18 +2751,19 @@ describe('Inheritance rebuild', function () {
 
     it('fails dynamic template extends naturally when context does not provide the target', async function () {
       const props = compileProps('{% extends parentTemplate %}{% block body %}child{% endblock %}');
+      const ownerState = createPropsOwnerState(props, {
+        path: 'missing-dynamic.njk',
+        scriptMode: false
+      });
       try {
-        await props.resolveInheritanceParent.call(
-          { path: 'missing-dynamic.njk' },
-          null,
+        await props.resolveInheritanceParent(
+          ownerState,
           {
             lookup() {
               return undefined;
             },
             path: 'missing-dynamic.njk'
           },
-          runtime,
-          null,
           null
         );
         expect().fail('Expected missing dynamic template extends target to fail');

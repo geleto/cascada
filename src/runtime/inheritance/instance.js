@@ -5,11 +5,8 @@ import {declareInheritanceSharedChain} from './shared.js';
 
 class InheritanceInstance {
   constructor(options) {
-    this.entryTemplateOrScript = options.entryTemplateOrScript;
     this.runtimeState = options.runtimeState;
-    this.env = options.env;
-    this.runtime = options.runtime;
-    this.renderState = options.renderState;
+    this.ownerState = options.ownerState;
     this.rootBuffer = options.rootBuffer;
     this.sharedRootBuffer = options.sharedRootBuffer;
     this.traceParent = options.traceParent || null;
@@ -19,10 +16,10 @@ class InheritanceInstance {
   }
 
   static async create(options) {
-    const runtime = options.runtime;
+    const ownerState = options.ownerState;
     const context = options.context;
     const traceParent = options.traceParent || null;
-    const rootBuffer = options.rootBuffer || new runtime.CommandBuffer(
+    const rootBuffer = options.rootBuffer || new ownerState.runtime.CommandBuffer(
       context,
       null,
       null,
@@ -30,31 +27,26 @@ class InheritanceInstance {
       null,
       cloneWithAddedContext(options.errorContext, { entryName: 'inheritance' }),
       traceParent,
-      options.renderState
+      ownerState.renderState
     );
     const sharedRootBuffer = options.sharedRootBuffer || rootBuffer;
     try {
-      const chain = await runtime.loadInheritanceChain({
+      const chain = await ownerState.runtime.loadInheritanceChain({
         templateOrScript: options.entryTemplateOrScript,
-        env: options.env,
+        ownerState,
         context,
-        runtime,
         errorContext: options.errorContext,
-        renderState: options.renderState
       });
-      const runtimeState = runtime.finalizeInheritanceChain(chain, context);
-      const boundRuntimeState = runtime.bindInheritanceRuntimeState(runtimeState, runtime, options.renderState);
+      const runtimeState = ownerState.runtime.finalizeInheritanceChain(chain, context);
+      const boundRuntimeState = ownerState.runtime.bindInheritanceRuntimeState(runtimeState);
 
       Object.entries(boundRuntimeState.sharedSchema).forEach(([name, schemaEntry]) => {
         declareInheritanceSharedChain(sharedRootBuffer, name, schemaEntry.type, context, undefined, schemaEntry.errorContext);
       });
 
       return new InheritanceInstance({
-        entryTemplateOrScript: chain.entries[0].templateOrScript,
         runtimeState: boundRuntimeState,
-        env: options.env,
-        runtime,
-        renderState: options.renderState,
+        ownerState,
         rootBuffer,
         sharedRootBuffer,
         traceParent,
@@ -100,7 +92,7 @@ class InheritanceInstance {
   }
 
   assertCanInvoke(errorContext) {
-    this.renderState.throwIfFatalErrorReported();
+    this.ownerState.renderState.throwIfFatalErrorReported();
     if (this.failure) {
       throw this.failure;
     }
@@ -128,18 +120,18 @@ class InheritanceInstance {
       ...methodData.mergedLinkedChains,
       ...methodData.mergedMutatedChains
     ]));
-    const invocationBuffer = new this.runtime.CommandBuffer(
+    const invocationBuffer = new this.ownerState.runtime.CommandBuffer(
       context,
       parentBuffer,
       visibleChains,
       parentBuffer,
       methodData.mergedMutatedChains,
-      this.runtime.cloneWithAddedContext(errorContext, {
+      this.ownerState.runtime.cloneWithAddedContext(errorContext, {
         methodName: methodData.name,
         methodSignature: `${methodData.name}(${methodData.signature.argNames.join(', ')})`
       }),
       traceParent,
-      this.renderState
+      this.ownerState.renderState
     );
     const callablePayload = methodData.isConstructor
       ? null
@@ -155,10 +147,8 @@ class InheritanceInstance {
     let result;
     try {
       result = methodData.fn(
-        this.env,
+        methodData.ownerEntry.ownerState,
         context,
-        this.runtime,
-        this.renderState,
         invocationBuffer,
         callablePayload,
         renderContext,
@@ -206,14 +196,12 @@ class InheritanceInstance {
   }
 }
 
-async function renderInheritanceParticipantRoot({ entryTemplateOrScript, env, context, runtime, renderState, rootBuffer, errorContext }) {
-  renderState.throwIfFatalErrorReported();
+async function renderInheritanceParticipantRoot({ ownerState, context, rootBuffer, errorContext }) {
+  ownerState.renderState.throwIfFatalErrorReported();
   const instance = await InheritanceInstance.create({
-    entryTemplateOrScript,
-    env,
+    entryTemplateOrScript: ownerState.templateOrScript,
+    ownerState,
     context,
-    runtime,
-    renderState,
     rootBuffer,
     errorContext
   });

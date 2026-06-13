@@ -113,9 +113,7 @@ async function createComponentInstance(spec) {
     componentScriptOrTemplate,
     payload,
     ownerContext,
-    env,
-    runtime,
-    renderState,
+    ownerState,
     ownerBuffer,
     sideChainName = null,
     bindingName = null,
@@ -127,7 +125,7 @@ async function createComponentInstance(spec) {
     try {
       templateOrScript = await templateOrScript;
     } catch (error) {
-      handleLoadFailure(error, errorContext, 'component', env);
+      handleLoadFailure(error, errorContext, 'component', ownerState.env);
     }
   }
   if (!templateOrScript) {
@@ -142,31 +140,29 @@ async function createComponentInstance(spec) {
     payloadContext
   );
   const componentErrorContext = cloneWithAddedContext(errorContext, { componentName: bindingName || 'component' });
-  renderState.throwIfFatalErrorReported();
-  const rootBuffer = new CommandBuffer(componentContext, null, null, null, null, componentErrorContext, ownerBuffer || null, renderState);
-  const sharedRootBuffer = new CommandBuffer(componentContext, null, null, null, null, cloneContext(componentErrorContext), ownerBuffer || null, renderState);
+  ownerState.renderState.throwIfFatalErrorReported();
+  const rootBuffer = new CommandBuffer(componentContext, null, null, null, null, componentErrorContext, ownerBuffer || null, ownerState.renderState);
+  const sharedRootBuffer = new CommandBuffer(componentContext, null, null, null, null, cloneContext(componentErrorContext), ownerBuffer || null, ownerState.renderState);
   let instance;
   try {
     instance = await InheritanceInstance.create({
       entryTemplateOrScript: templateOrScript,
-      env,
+      ownerState,
       context: componentContext,
-      runtime,
-      renderState,
       rootBuffer,
       sharedRootBuffer,
       traceParent: ownerBuffer || null,
       errorContext: errorContext
     });
   } catch (error) {
-    handleLoadFailure(error, errorContext, 'component', env);
+    handleLoadFailure(error, errorContext, 'component', ownerState.env);
   }
 
   try {
     await instance.invokeConstructor(errorContext);
   } catch (error) {
     instance.close(error);
-    renderState.reportAndThrowFatalError(error, errorContext);
+    ownerState.renderState.reportAndThrowFatalError(error, errorContext);
   }
 
   if (ownerBuffer && resolvedSideChainName) {
@@ -185,9 +181,7 @@ function startComponentInstance(spec) {
     componentScriptOrTemplate,
     payload,
     ownerContext,
-    env,
-    runtime,
-    renderState,
+    ownerState,
     errorContext
   } = spec;
   // The user binding is also the internal side-chain lane that orders later
@@ -198,9 +192,7 @@ function startComponentInstance(spec) {
     componentScriptOrTemplate,
     payload,
     ownerContext,
-    env,
-    runtime,
-    renderState,
+    ownerState,
     ownerBuffer: currentBuffer,
     sideChainName,
     errorContext
@@ -209,7 +201,7 @@ function startComponentInstance(spec) {
     if (isPoisonError(error)) {
       return;
     }
-    renderState.reportFatalError(error, errorContext);
+    ownerState.renderState.reportFatalError(error, errorContext);
   });
   markPromiseHandled(componentInstancePromise);
   chain.setInitialValue(componentInstancePromise);

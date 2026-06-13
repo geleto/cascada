@@ -1451,8 +1451,9 @@ describe('error context tracing runtime foundation', () => {
         'return result.snapshot()'
       ].join('\n'), env, 'context-table.casc').compileSource();
 
-      expect(source).to.contain('const __ec = getErrorContexts(runtime, context.path, renderState);');
+      expect(source).to.contain('const __ec = ownerState.errorContextTable;');
       expect(source).to.contain('function getErrorContexts(runtime, path, renderState) {');
+      expect(source).to.contain('return { root, getErrorContexts };');
       expect(source).to.contain('return runtime.prepareErrorContexts(path, renderState,');
       expect(source).to.contain('"If.Condition(Symbol)"');
       expect(source).to.match(/\[3,7,\d+\]/);
@@ -1498,8 +1499,8 @@ describe('error context tracing runtime foundation', () => {
       ].join('\n'), env, 'block-context.njk').compileSource();
 
       expect(source.match(/runtime\.prepareErrorContexts/g)).to.have.length(1);
-      expect(source).to.contain('const __ec = getErrorContexts(runtime, context.path, renderState);');
-      expect(source).to.match(/function b_body\(env, context, runtime, renderState, parentBuffer = null.*currentInstance\)/);
+      expect(source).to.contain('const __ec = ownerState.errorContextTable;');
+      expect(source).to.match(/function b_body\(ownerState, context, parentBuffer = null.*currentInstance\)/);
       expect(source).not.to.contain('__ec = null');
       expect(source).to.contain('methodData.errorContextTable[');
     });
@@ -1564,13 +1565,20 @@ describe('error context tracing runtime foundation', () => {
       };
 
       const child = await env.getScript('child.script', true, null, false);
+      const renderState = runtime.createRenderState();
       const instance = await runtime.InheritanceInstance.create({
         entryTemplateOrScript: child,
-        env,
+        ownerState: {
+          env,
+          runtime,
+          renderState,
+          templateOrScript: child,
+          path: child.path,
+          scriptMode: child.scriptMode,
+          errorContextTable: child.getErrorContexts(runtime, child.path, renderState)
+        },
         context: child._createContext({ name: 'Ada' }),
-        runtime,
         errorContext: [1, 0, 'Inheritance', 'child.script', null, null],
-        renderState: runtime.createRenderState()
       });
       const result = await instance.invoke('build', ['Ada'], [1, 0, 'Call', 'test.script', null, null]);
 
@@ -1591,15 +1599,15 @@ describe('error context tracing runtime foundation', () => {
       child.compile();
 
       const parentRoot = parent.rootRenderFunc;
-      parent.rootRenderFunc = function observedParentRoot(envArg, contextArg, runtimeArg, renderState, ...rest) {
-        reporters.push({ path: 'parent.njk', reportError: renderState.reportError });
-        return parentRoot.call(this, envArg, contextArg, runtimeArg, renderState, ...rest);
+      parent.rootRenderFunc = function observedParentRoot(ownerState, contextArg, ...rest) {
+        reporters.push({ path: 'parent.njk', reportError: ownerState.renderState.reportError });
+        return parentRoot.call(this, ownerState, contextArg, ...rest);
       };
 
       const childRoot = child.rootRenderFunc;
-      child.rootRenderFunc = function observedChildRoot(envArg, contextArg, runtimeArg, renderState, ...rest) {
-        reporters.push({ path: 'child.njk', reportError: renderState.reportError });
-        return childRoot.call(this, envArg, contextArg, runtimeArg, renderState, ...rest);
+      child.rootRenderFunc = function observedChildRoot(ownerState, contextArg, ...rest) {
+        reporters.push({ path: 'child.njk', reportError: ownerState.renderState.reportError });
+        return childRoot.call(this, ownerState, contextArg, ...rest);
       };
 
       const result = await parent.render({});
@@ -1622,15 +1630,15 @@ describe('error context tracing runtime foundation', () => {
       child.compile();
 
       const parentRoot = parent.rootRenderFunc;
-      parent.rootRenderFunc = function observedParentRoot(envArg, contextArg, runtimeArg, renderState, ...rest) {
-        reporters.push({ path: 'parent.njk', reportError: renderState.reportError });
-        return parentRoot.call(this, envArg, contextArg, runtimeArg, renderState, ...rest);
+      parent.rootRenderFunc = function observedParentRoot(ownerState, contextArg, ...rest) {
+        reporters.push({ path: 'parent.njk', reportError: ownerState.renderState.reportError });
+        return parentRoot.call(this, ownerState, contextArg, ...rest);
       };
 
       const childRoot = child.rootRenderFunc;
-      child.rootRenderFunc = function observedChildRoot(envArg, contextArg, runtimeArg, renderState, ...rest) {
-        reporters.push({ path: 'child.njk', reportError: renderState.reportError });
-        return childRoot.call(this, envArg, contextArg, runtimeArg, renderState, ...rest);
+      child.rootRenderFunc = function observedChildRoot(ownerState, contextArg, ...rest) {
+        reporters.push({ path: 'child.njk', reportError: ownerState.renderState.reportError });
+        return childRoot.call(this, ownerState, contextArg, ...rest);
       };
 
       const result = await parent.render({});
@@ -1651,9 +1659,9 @@ describe('error context tracing runtime foundation', () => {
       template.compile();
 
       const root = template.rootRenderFunc;
-      template.rootRenderFunc = function observedRoot(envArg, contextArg, runtimeArg, rootRenderState, ...rest) {
-        observedRenderState = rootRenderState;
-        return root.call(this, envArg, contextArg, runtimeArg, rootRenderState, ...rest);
+      template.rootRenderFunc = function observedRoot(ownerState, contextArg, ...rest) {
+        observedRenderState = ownerState.renderState;
+        return root.call(this, ownerState, contextArg, ...rest);
       };
 
       template.getExported({}, null, renderState);
@@ -1675,15 +1683,15 @@ describe('error context tracing runtime foundation', () => {
       child.compile();
 
       const parentRoot = parent.rootRenderFunc;
-      parent.rootRenderFunc = function observedParentRoot(envArg, contextArg, runtimeArg, renderState, ...rest) {
-        reporters.push({ path: 'parent.njk', reportError: renderState.reportError });
-        return parentRoot.call(this, envArg, contextArg, runtimeArg, renderState, ...rest);
+      parent.rootRenderFunc = function observedParentRoot(ownerState, contextArg, ...rest) {
+        reporters.push({ path: 'parent.njk', reportError: ownerState.renderState.reportError });
+        return parentRoot.call(this, ownerState, contextArg, ...rest);
       };
 
       const childRoot = child.rootRenderFunc;
-      child.rootRenderFunc = function observedChildRoot(envArg, contextArg, runtimeArg, renderState, ...rest) {
-        reporters.push({ path: 'child.njk', reportError: renderState.reportError });
-        return childRoot.call(this, envArg, contextArg, runtimeArg, renderState, ...rest);
+      child.rootRenderFunc = function observedChildRoot(ownerState, contextArg, ...rest) {
+        reporters.push({ path: 'child.njk', reportError: ownerState.renderState.reportError });
+        return childRoot.call(this, ownerState, contextArg, ...rest);
       };
 
       const error = await new Promise((resolve) => {
@@ -1719,8 +1727,8 @@ describe('error context tracing runtime foundation', () => {
       bad.compile();
       late.compile();
 
-      bad.rootRenderFunc = function observedBadRoot(envArg, contextArg, runtimeArg, renderState) {
-        renderState.reportFatalError(new Error('first include failed'));
+      bad.rootRenderFunc = function observedBadRoot(ownerState) {
+        ownerState.renderState.reportFatalError(new Error('first include failed'));
         return new Promise(() => {});
       };
 
@@ -1754,8 +1762,8 @@ describe('error context tracing runtime foundation', () => {
       bad.compile();
       late.compile();
 
-      bad.rootRenderFunc = function observedBadRoot(envArg, contextArg, runtimeArg, renderState) {
-        renderState.reportFatalError(new Error('first import failed'));
+      bad.rootRenderFunc = function observedBadRoot(ownerState) {
+        ownerState.renderState.reportFatalError(new Error('first import failed'));
         return new Promise(() => {});
       };
 

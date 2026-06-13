@@ -84,7 +84,7 @@ class TemplateRuntime extends Obj {
     };
 
     const renderState = globalRuntime.createRenderState((err) => report(err));
-    const rootResult = this._invokeRootWithRenderState(context, renderState);
+    const rootResult = this._invokeRoot(this._createOwnerState(context, renderState), context);
 
     const normalized = globalRuntime.normalizeFinalPromise(rootResult);
     if (normalized && typeof normalized.then === 'function') {
@@ -197,6 +197,18 @@ class TemplateRuntime extends Obj {
     return new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode, renderCtx, compositionPayloadVars);
   }
 
+  _createOwnerState(context, renderState) {
+    return {
+      env: this.env,
+      runtime: globalRuntime,
+      renderState,
+      templateOrScript: this,
+      path: context.path,
+      scriptMode: this.scriptMode,
+      errorContextTable: this.getErrorContexts(globalRuntime, context.path, renderState)
+    };
+  }
+
   _bindExportedValues(exported) {
     const boundExported = {};
     const macroContext = this._createContext({});
@@ -210,18 +222,18 @@ class TemplateRuntime extends Obj {
     return boundExported;
   }
 
-  _invokeRootWithRenderState(context, renderState) {
-    renderState.throwIfFatalErrorReported();
+  _invokeRoot(ownerState, context) {
+    ownerState.renderState.throwIfFatalErrorReported();
     let rootResult;
     try {
-      rootResult = this.rootRenderFunc(this.env, context, globalRuntime, renderState, true);
+      rootResult = this.rootRenderFunc(ownerState, context);
     } catch (err) {
       const handled = globalRuntime.createSyncRuntimeError(err, 0, 0, 'Root(PosNode)', context.path);
-      renderState.reportFatalError(handled);
+      ownerState.renderState.reportFatalError(handled);
       return Promise.reject(handled);
     }
 
-    return renderState.raceRootResult(rootResult);
+    return ownerState.renderState.raceRootResult(rootResult);
   }
 
   compile() {
@@ -317,7 +329,7 @@ class AsyncTemplateRuntime extends TemplateRuntime {
 
     const context = this._createContext(ctx, renderCtx, ctx || null);
     const activeRenderState = renderState || globalRuntime.createRenderState();
-    const rootResult = this._invokeRootWithRenderState(context, activeRenderState);
+    const rootResult = this._invokeRoot(this._createOwnerState(context, activeRenderState), context);
     if (rootResult && typeof rootResult.then === 'function') {
       globalRuntime.markPromiseHandled(rootResult);
     }
@@ -329,7 +341,7 @@ class AsyncTemplateRuntime extends TemplateRuntime {
   _renderIncludeText(ctx, renderCtx, renderState) {
     this.compile();
     const context = this._createContext(ctx, renderCtx, ctx || null);
-    return this._invokeRootWithRenderState(context, renderState);
+    return this._invokeRoot(this._createOwnerState(context, renderState), context);
   }
 
   _getCompiledBlocks() {

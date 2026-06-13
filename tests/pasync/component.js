@@ -17,6 +17,25 @@ function createTestRenderState(reportError = null) {
   return runtimeModule.createRenderState(reportError);
 }
 
+function createTestOwnerState(templateOrScript, {
+  env = {},
+  renderState = createTestRenderState(),
+  path = templateOrScript?.path ?? null,
+  scriptMode = !!templateOrScript?.scriptMode
+} = {}) {
+  return {
+    env,
+    runtime: runtimeModule,
+    renderState,
+    templateOrScript,
+    path,
+    scriptMode,
+    errorContextTable: templateOrScript && typeof templateOrScript.getErrorContexts === 'function'
+      ? templateOrScript.getErrorContexts(runtimeModule, path, renderState)
+      : []
+  };
+}
+
 function compiledComponentMethod(name, options = {}) {
   return {
     name,
@@ -712,9 +731,7 @@ describe('Component observations', function () {
           },
           methods: {}
         },
-        env: {},
-        runtime: runtimeModule,
-        renderState: createTestRenderState(),
+        ownerState: createTestOwnerState({ path: 'Component.script', scriptMode: true }),
         context: componentContext,
         rootBuffer: sharedRootBuffer,
         sharedRootBuffer
@@ -1222,15 +1239,14 @@ describe('Component lifecycle', function () {
       errorContext: TEST_EC
     }), 'nsBinding');
 
+    const renderState = createTestRenderState();
     const startupPromise = runtimeModule.startComponentInstance({
       currentBuffer: ownerBuffer,
       bindingName: 'nsBinding',
       componentScriptOrTemplate: componentScript,
       payload: {},
       ownerContext,
-      env,
-      runtime: runtimeModule,
-      renderState: createTestRenderState(),
+      ownerState: createTestOwnerState(componentScript, { env, renderState }),
       errorContext: [2, 1, null, 'Main.script', null, null]
     });
 
@@ -1271,15 +1287,14 @@ describe('Component lifecycle', function () {
     const ownerBuffer = new runtimeModule.CommandBuffer(ownerContext, null, null, null, null, TEST_BUFFER_STACK_CONTEXT);
     runtimeModule.declareBufferChain(ownerBuffer, 'nsBinding', 'var', ownerContext, null);
 
+    const renderState = createTestRenderState();
     const startupPromise = runtimeModule.startComponentInstance({
       currentBuffer: ownerBuffer,
       bindingName: 'nsBinding',
       componentScriptOrTemplate: env.getScript('Component.script', false, null, false),
       payload: {},
       ownerContext,
-      env,
-      runtime: runtimeModule,
-      renderState: createTestRenderState(),
+      ownerState: createTestOwnerState({ path: 'Main.script', scriptMode: true }, { env, renderState }),
       errorContext: [2, 1, null, 'Main.script', null, null]
     });
 
@@ -1318,9 +1333,7 @@ describe('Component lifecycle', function () {
       }),
       payload: {},
       ownerContext,
-      env: {},
-      runtime: runtimeModule,
-      renderState: createTestRenderState(),
+      ownerState: createTestOwnerState({ path: 'Main.script', scriptMode: true }),
       ownerBuffer,
       bindingName: 'nsBinding',
       errorContext: [1, 1, null, 'Main.script', null, null]
@@ -1358,9 +1371,7 @@ describe('Component lifecycle', function () {
         },
         sharedSchema: {}
       },
-      env: {},
-      runtime: runtimeModule,
-      renderState: createTestRenderState(),
+      ownerState: createTestOwnerState({ path: 'Main.script', scriptMode: true }),
       context: { path: 'Component.script' },
       rootBuffer,
       sharedRootBuffer: rootBuffer
@@ -1404,9 +1415,7 @@ describe('Component lifecycle', function () {
       componentScriptOrTemplate: componentParticipant('Component.script'),
       payload: { theme: 'dark', rootContext: 'user-value' },
       ownerContext,
-      env: {},
-      runtime: runtimeModule,
-      renderState: createTestRenderState(),
+      ownerState: createTestOwnerState({ path: 'Main.script', scriptMode: true }),
       ownerBuffer,
       errorContext: [1, 1, null, 'Main.script', null, null]
     });
@@ -1437,9 +1446,7 @@ describe('Component lifecycle', function () {
         },
         payload: {},
         ownerContext,
-        env: {},
-        runtime: runtimeModule,
-        renderState: createTestRenderState(),
+        ownerState: createTestOwnerState({ path: 'Main.script', scriptMode: true }),
         ownerBuffer,
         errorContext: [1, 1, null, 'Main.script', null, null]
       });
@@ -1481,12 +1488,12 @@ describe('Component lifecycle', function () {
         }),
         payload: {},
         ownerContext,
-        env: {},
-        runtime: runtimeModule,
-        renderState: createTestRenderState((error) => {
-          if (error) {
-            seenErrors.push(error);
-          }
+        ownerState: createTestOwnerState({ path: 'Main.script', scriptMode: true }, {
+          renderState: createTestRenderState((error) => {
+            if (error) {
+              seenErrors.push(error);
+            }
+          })
         }),
         ownerBuffer,
         errorContext: [1, 1, null, 'Main.script', null, null]
