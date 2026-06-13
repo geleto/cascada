@@ -1,5 +1,6 @@
 
 import {assertChainLaneAvailable, checkFinishedBuffer} from './checks.js';
+import {isObservableCommand} from './commands/base.js';
 import {getRenderState, isCompactErrorContext} from './error-context.js';
 import {RuntimeError} from './errors.js';
 
@@ -209,7 +210,7 @@ class CommandBuffer {
       return cmd.promise;
     }
 
-    if (cmd && cmd.isObservable) {
+    if (isObservableCommand(cmd)) {
       const resolvedChainName = this._resolveAliasedChainName(chainName);
       const chain = this.getChainIfExists(resolvedChainName);
       if (!chain) {

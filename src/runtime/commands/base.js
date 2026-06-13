@@ -8,7 +8,6 @@ class Command {
     this.promise = null;
     this.resolve = null;
     this.reject = null;
-    this.isObservable = false;
   }
 
   _createResultPromise() {
@@ -90,8 +89,10 @@ class ObservableCommand extends Command {
   constructor() {
     super();
     this._createResultPromise();
-    this.isObservable = true;
   }
+}
+
+class UniversalObservationCommand extends ObservableCommand {
 }
 
 class ChainCommand extends MutatingCommand {
@@ -159,13 +160,24 @@ function requireCommandErrorContext(errorContext, commandName) {
   throw new TypeError(`${commandName} requires a compact errorContext (got ${received})`);
 }
 
+function isObservableCommand(command) {
+  return command instanceof ObservableCommand;
+}
+
+function isUniversalObservationCommand(command) {
+  return command instanceof UniversalObservationCommand;
+}
+
 export {
   Command,
   MutatingCommand,
   MutatingResultCommand,
   ObservableCommand,
+  UniversalObservationCommand,
   ChainCommand,
   ChainMutatingResultCommand,
   ChainObservableCommand,
+  isObservableCommand,
+  isUniversalObservationCommand,
   requireCommandErrorContext
 };

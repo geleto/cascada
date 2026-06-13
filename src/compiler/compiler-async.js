@@ -82,7 +82,6 @@ class CompilerAsync extends CompilerBaseAsync {
             if (!resolveArgs) {
               this.emit('runtime.normalizeFinalPromise(');
               this.emit._compileAsyncRenderBoundary(node, function () {
-                this.emit.line(`runtime.markChainBufferScope(${this.buffer.currentBuffer});`);
                 this.compile(arg, null);
               }, arg);
               this.emit(')');
@@ -93,7 +92,6 @@ class CompilerAsync extends CompilerBaseAsync {
 
               this.emit.withScopedSyntax(() => {
                 this.emit._compileAsyncCallbackRenderBoundary(node, function () {
-                  this.emit.line(`runtime.markChainBufferScope(${this.buffer.currentBuffer});`);
                   this.compile(arg, null);
                 }, 'cb', arg);
                 this.emit.line(';');
@@ -540,7 +538,6 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   _emitRootBufferSetup(node) {
-    this.emit.line(`runtime.markChainBufferScope(${this.buffer.currentBuffer});`);
     if (this.scriptMode) {
       this.return.emitDeclareChain(this.buffer.currentBuffer);
     }

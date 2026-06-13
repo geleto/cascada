@@ -1,16 +1,7 @@
 
 import {markPromiseHandled} from './errors.js';
-
-function isCommandBufferLike(value) {
-  return !!(
-    value &&
-    typeof value === 'object' &&
-    value.arrays &&
-    typeof value.isFinished === 'function' &&
-    typeof value.isChainFinished === 'function' &&
-    typeof value.onIteratorEnterBuffer === 'function'
-  );
-}
+import {isObservableCommand} from './commands/base.js';
+import {CommandBuffer} from './command-buffer.js';
 
 class BufferIterator {
   constructor(output) {
@@ -90,11 +81,11 @@ class BufferIterator {
       if (arr && nextIndex < arr.length && arr[nextIndex] != null) {
         cursor.index = nextIndex;
         const item = arr[nextIndex];
-        if (isCommandBufferLike(item)) {
+        if (item instanceof CommandBuffer) {
           this._enterChild(item);
         } else {
           const applyResult = this._applyCommand(item);
-          if (item && item.isObservable) {
+          if (isObservableCommand(item)) {
             this._releaseProcessedEntry(buffer, nextIndex);
             continue;
           }
@@ -141,7 +132,7 @@ class BufferIterator {
     if (!cmd || !this.output) {
       return;
     }
-    if (cmd.isObservable) {
+    if (isObservableCommand(cmd)) {
       this._applyObservable(cmd);
       return;
     }
@@ -236,7 +227,7 @@ class BufferIterator {
       if (!item) {
         continue;
       }
-      if (isCommandBufferLike(item)) {
+      if (item instanceof CommandBuffer) {
         this._rejectPendingCommandResultsAfterFatal(item, err);
       } else if (typeof item.rejectResult === 'function' && item.reject) {
         // reject is cleared once the command result is settled.

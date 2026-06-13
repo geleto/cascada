@@ -1,6 +1,7 @@
 
 import {RESOLVE_MARKER} from '../resolve.js';
 
+import {isObservableCommand} from '../commands/base.js';
 import {
   PoisonError,
   RuntimeError,
@@ -144,7 +145,7 @@ class Chain {
 
   _applyCommand(cmd) {
     if (!cmd) return;
-    if (cmd.isObservable) {
+    if (isObservableCommand(cmd)) {
       return this._applyObservableCommand(cmd);
     }
     return this._applyMutatingCommand(cmd);

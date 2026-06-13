@@ -1,4 +1,4 @@
-import {MutatingResultCommand, requireCommandErrorContext} from '../commands/base.js';
+import {MutatingResultCommand, isUniversalObservationCommand, requireCommandErrorContext} from '../commands/base.js';
 import {CommandBuffer} from '../command-buffer.js';
 import {cloneContext, cloneWithAddedContext} from '../error-context.js';
 import {RuntimeError, isPoisonError, handleLoadFailure, markPromiseHandled} from '../errors.js';
@@ -19,7 +19,7 @@ function requireComponentSharedSchemaEntry(instance, chainName, errorContext) {
 
 async function observeComponentSharedChain(instance, observationCommand, errorContext, implicitVarRead = false) {
   instance.assertCanInvoke(errorContext);
-  if (!observationCommand.isUniversalObservationCommand || !observationCommand.chainName) {
+  if (!isUniversalObservationCommand(observationCommand) || !observationCommand.chainName) {
     RuntimeError.reportAndThrow('Component shared observation requires a universal observational chain command', errorContext);
   }
 

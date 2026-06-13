@@ -114,24 +114,4 @@ class Frame {
 
 }
 
-function markChainBufferScope(buffer) {
-  if (buffer && buffer.arrays) {
-    const chainArrays = Object.keys(buffer.arrays);
-    chainArrays.forEach((name) => {
-      const target = buffer.arrays[name];
-      if (target && typeof target === 'object') {
-        target._chainScopeRoot = true;
-      }
-    });
-    return;
-  }
-
-  if (buffer && Array.isArray(buffer.output)) {
-    buffer = buffer.output;
-  }
-  if (buffer && typeof buffer === 'object') {
-    buffer._chainScopeRoot = true;
-  }
-}
-
-export { Frame, markChainBufferScope };
+export { Frame };

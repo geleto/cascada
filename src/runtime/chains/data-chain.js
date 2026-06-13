@@ -1,5 +1,6 @@
 import {RESOLVE_MARKER} from '../resolve.js';
 import {createPoison, isPoison, isPoisonError, PoisonError} from '../errors.js';
+import {isObservableCommand} from '../commands/base.js';
 import {DataCommand} from '../commands/data.js';
 import {DataChainTarget} from './data-target.js';
 import {Chain, cloneSnapshotValue} from './base.js';
@@ -83,7 +84,7 @@ class DataChain extends Chain {
   }
 
   _beforeApplyCommand(cmd) {
-    if (!cmd || cmd.isObservable || !this._snapshotShared || !this._base) {
+    if (!cmd || isObservableCommand(cmd) || !this._snapshotShared || !this._base) {
       return;
     }
 

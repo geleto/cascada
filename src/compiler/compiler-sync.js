@@ -54,7 +54,6 @@ class CompilerSync extends CompilerBaseSync {
 
             this.emit.withScopedSyntax(() => {
               this.emit._compileSyncCallbackRenderBoundary(node, callFrame, function () {
-                this.emit.line(`runtime.markChainBufferScope(${this.buffer.currentBuffer});`);
                 this.compile(arg, frame);
               }, 'cb', arg);
               this.emit.line(';');
@@ -304,7 +303,6 @@ class CompilerSync extends CompilerBaseSync {
   }
 
   _compileSyncRootBody(node, frame) {
-    this.emit.line(`runtime.markChainBufferScope(${this.buffer.currentBuffer});`);
     this.emit.line('let parentTemplate = null;');
     this._compileChildren(node, frame);
     this._emitSyncRootCompletion();

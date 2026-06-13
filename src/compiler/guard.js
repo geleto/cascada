@@ -74,7 +74,6 @@ class CompileGuard {
       const previousGuardDepth = compiler.guardDepth;
       compiler.guardDepth = previousGuardDepth + 1;
 
-      this.emit.line(`runtime.markChainBufferScope(${compiler.buffer.currentBuffer});`);
       let guardRepairLinePos = null;
       const chainGuardInitLinePos = compiler.codebuf.length;
       let chainGuardStateVar = null;

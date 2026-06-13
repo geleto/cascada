@@ -1,13 +1,12 @@
 import {RETURN_UNSET} from '../markers.js';
 import {poisonOrReportedFatal} from '../errors.js';
-import {ObservableCommand, MutatingResultCommand, requireCommandErrorContext} from './base.js';
+import {ObservableCommand, UniversalObservationCommand, MutatingResultCommand, requireCommandErrorContext} from './base.js';
 
-class SnapshotCommand extends ObservableCommand {
+class SnapshotCommand extends UniversalObservationCommand {
   constructor({ chainName, errorContext }) {
     super();
     this.chainName = chainName;
     this.errorContext = requireCommandErrorContext(errorContext, this.constructor.name);
-    this.isUniversalObservationCommand = true;
   }
 
   apply(chain) {
@@ -56,12 +55,11 @@ class ReturnIsUnsetCommand extends ObservableCommand {
   }
 }
 
-class IsErrorCommand extends ObservableCommand {
+class IsErrorCommand extends UniversalObservationCommand {
   constructor({ chainName, errorContext }) {
     super();
     this.chainName = chainName;
     this.errorContext = requireCommandErrorContext(errorContext, this.constructor.name);
-    this.isUniversalObservationCommand = true;
   }
 
   apply(chain) {
@@ -78,12 +76,11 @@ class IsErrorCommand extends ObservableCommand {
   }
 }
 
-class GetErrorCommand extends ObservableCommand {
+class GetErrorCommand extends UniversalObservationCommand {
   constructor({ chainName, errorContext }) {
     super();
     this.chainName = chainName;
     this.errorContext = requireCommandErrorContext(errorContext, this.constructor.name);
-    this.isUniversalObservationCommand = true;
   }
 
   apply(chain) {
