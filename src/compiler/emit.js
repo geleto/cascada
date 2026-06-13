@@ -4,7 +4,6 @@ class CompileEmit {
   constructor(compiler) {
     this.scopeClosers = '';
     this.compiler = compiler;
-    this.asyncClosureDepth = 0;
     const callable = (code) => this.emit(code);
     Object.setPrototypeOf(callable, CompileEmit.prototype);
     Object.assign(callable, this);

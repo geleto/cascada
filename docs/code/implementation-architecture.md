@@ -169,6 +169,13 @@ errors when possible. Structural failures outside value consumption are fatal
 runtime failures and should surface as `RuntimeError`. Compiler/analysis
 failures belong to `CompileError`.
 
+Generated control-flow handlers must keep this boundary precise: catch only
+the condition, switch expression, case expression, iterator, or other selector
+value being consumed. Do not wrap branch/body execution in a broad catch to
+turn arbitrary throws into poison. Branch/body errors are either produced as
+poison at their own value source, enqueued as command errors by their owner, or
+allowed to propagate as fatal runtime failures.
+
 ---
 
 ## Final Output Materialization

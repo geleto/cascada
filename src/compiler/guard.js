@@ -70,7 +70,7 @@ class CompileGuard {
     const guardStateVar = needsGuardState ? compiler._tmpid() : null;
     const guardErrorContext = compiler.emitErrorContext(node);
 
-    compiler.buffer._compileAsyncControlFlowBoundary(node, () => {
+    compiler.boundaries.compileAsyncControlFlowBoundary(compiler.buffer, node, () => {
       const previousGuardDepth = compiler.guardDepth;
       compiler.guardDepth = previousGuardDepth + 1;
 
@@ -116,7 +116,7 @@ class CompileGuard {
       this.emit.line('} else {');
       this.emit.line('}');
       compiler.guardDepth = previousGuardDepth;
-    });
+    }, node, {}, { asyncCallback: true });
   }
 
   _compileRecoveryScope(node, guardErrorsVar) {

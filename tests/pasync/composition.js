@@ -556,6 +556,18 @@ async function expectRejects(promise) {
         expect(result).to.be('ab');
       });
 
+      it('should not let ignore missing silence invalid included templates', async () => {
+        loader.addTemplate('bad.njk', '{% if %}broken{% endif %}');
+        loader.addTemplate('main.njk', 'a{% include "bad.njk" ignore missing %}b');
+
+        env = new AsyncEnvironment(loader);
+        const err = await expectRejects(env.renderTemplate('main.njk', {}));
+
+        expect(runtime.isRuntimeError(err)).to.be(true);
+        expect(err.message).to.contain('bad.njk');
+        expect(err.message).to.contain('unexpected token');
+      });
+
       it('should keep target-name expression failures out of LoadFailed', async () => {
         loader.addTemplate('main.njk', '{% include getName() %}');
         env = new AsyncEnvironment(loader, { loadFailFatal: false });

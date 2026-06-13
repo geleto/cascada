@@ -412,29 +412,6 @@ class CompileBuffer {
     this.emitAddCommand(chainName, valueExpr, positionNode, emitTextCommand);
   }
 
-  /**
-   * Compile a node inside an async buffer boundary.
-   * Uses local save/restore of current buffer aliases instead of begin/end caller pairing.
-   *
-   * emitFunc may return:
-   * - any value -> exposed as result
-   * - { result, sequential } -> custom result + dynamic sequential flag for asyncBlockEnd
-   */
-  /**
-   * Emit a `runtime.runControlFlowBoundary` call for control-flow nodes (if, switch).
-   * Compared to `asyncBufferNode`, this does NOT wrap the branch bodies in their own
-   * async blocks — the emitFunc is expected to compile branches synchronously.
-   *
-   * For non-async nodes falls through to a plain synchronous call (like asyncBufferNode).
-   */
-  _compileAsyncControlFlowBoundary(node, emitFunc = null, errorContextNode = node, stackFields = {}) {
-    return this.compiler.boundaries.compileAsyncControlFlowBoundary(this, node, emitFunc, errorContextNode, stackFields);
-  }
-
-  _compileSyncControlFlowBoundary(node, frame, emitFunc = null) {
-    return this.compiler.boundaries.compileSyncControlFlowBoundary(this, node, frame, emitFunc);
-  }
-
 }
 
 CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHAIN = DEFAULT_TEMPLATE_TEXT_CHAIN;

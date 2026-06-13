@@ -26,42 +26,97 @@ function _createChildBoundary(parentBuffer, linkedChainNames, linkedMutatedChain
 }
 
 /**
- * Run a control-flow boundary (if/switch body) as a single async child buffer.
+ * Run a control-flow boundary (if/switch body) as a single child buffer.
  *
- * The asyncFn receives (childBuffer) and runs the branch body inside that
- * single child boundary.
+ * The boundary function receives (childBuffer) and runs the branch body inside
+ * that single child boundary. Synchronous bodies complete without a microtask.
  */
-function runControlFlowBoundary(parentBuffer, linkedChainNames, linkedMutatedChainNames, context, renderState, asyncFn, bufferStackErrorContext) {
+function runControlFlowBoundary(parentBuffer, linkedChainNames, linkedMutatedChainNames, context, renderState, boundaryFn, bufferStackErrorContext) {
   renderState.throwIfFatalErrorReported();
   const childBuffer = _createChildBoundary(parentBuffer, linkedChainNames, linkedMutatedChainNames, null, bufferStackErrorContext, null, renderState);
-  return markPromiseHandled(_runWithChildBuffer(childBuffer, renderState, asyncFn));
+  return markPromiseHandled(_runWithChildBuffer(childBuffer, renderState, boundaryFn));
 }
 
-function handleStructuralBoundaryError(err, renderState, childStackErrorContext, childBuffer) {
+function normalizeStructuralBoundaryError(err, renderState, childBuffer) {
   if (isPoisonError(err)) {
-    throw err;
+    return err;
   }
-  renderState.reportAndThrowFatalError(err, childStackErrorContext, childBuffer);
+  let normalizedErr = err;
+  try {
+    renderState.reportAndThrowFatalError(err, childBuffer.bufferStackErrorContext, childBuffer);
+  } catch (reportedErr) {
+    normalizedErr = reportedErr;
+  }
+  return normalizedErr;
+}
+
+function finishChildBuffer(childBuffer, renderState, waitedChainName) {
+  childBuffer.finish();
+  // Fatal state abandons pending waited work; renderState owns shutdown and
+  // draining never-settling waited commands would deadlock cleanup.
+  if (waitedChainName && !renderState.isFatalErrorReported()) {
+    const waitedResult = childBuffer.getChain(waitedChainName).finalSnapshot();
+    if (waitedResult && typeof waitedResult.then === 'function') {
+      return waitedResult;
+    }
+  }
+  return null;
+}
+
+function finishChildBufferWithResult(childBuffer, renderState, waitedChainName, result) {
+  const waitedResult = finishChildBuffer(childBuffer, renderState, waitedChainName);
+  return waitedResult ? waitedResult.then(() => result) : result;
+}
+
+function finishChildBufferWithError(childBuffer, renderState, waitedChainName, err) {
+  const waitedResult = finishChildBuffer(childBuffer, renderState, waitedChainName);
+  if (waitedResult) {
+    return waitedResult.then(() => {
+      throw err;
+    });
+  }
+  throw err;
+}
+
+function handleRunWithChildBufferError(err, childBuffer, renderState, waitedChainName) {
+  const handledErr = normalizeStructuralBoundaryError(err, renderState, childBuffer);
+  return finishChildBufferWithError(childBuffer, renderState, waitedChainName, handledErr);
 }
 
 // Fatal structural errors are delivered through render state; wrappers mark
 // these promises handled to suppress duplicate boundary-promise rejection.
-async function _runWithChildBuffer(childBuffer, renderState, asyncFn, waitedChainName = null) {
-  const childStackErrorContext = childBuffer.bufferStackErrorContext;
+function _runWithChildBuffer(childBuffer, renderState, boundaryFn, waitedChainName = null) {
+  let result;
+  try {
+    result = boundaryFn(childBuffer);
+  } catch (err) {
+    return handleRunWithChildBufferError(err, childBuffer, renderState, waitedChainName);
+  }
+
+  if (result && typeof result.then === 'function') {
+    return _runWithChildBufferAsync(childBuffer, renderState, result, waitedChainName);
+  }
 
   try {
-    const result = await asyncFn(childBuffer);
+    renderState.throwIfFatalErrorReported();
+    return finishChildBufferWithResult(childBuffer, renderState, waitedChainName, result);
+  } catch (err) {
+    return handleRunWithChildBufferError(err, childBuffer, renderState, waitedChainName);
+  }
+}
+
+async function _runWithChildBufferAsync(childBuffer, renderState, resultPromise, waitedChainName = null) {
+  try {
+    const result = await resultPromise;
     // A sibling/root path may have reported fatal while this boundary awaited.
     renderState.throwIfFatalErrorReported();
     return result;
   } catch (err) {
-    handleStructuralBoundaryError(err, renderState, childStackErrorContext, childBuffer);
+    throw normalizeStructuralBoundaryError(err, renderState, childBuffer);
   } finally {
-    childBuffer.finish();
-    // Fatal state abandons pending waited work; renderState owns shutdown and
-    // draining never-settling waited commands would deadlock cleanup.
-    if (waitedChainName && !renderState.isFatalErrorReported()) {
-      await childBuffer.getChain(waitedChainName).finalSnapshot();
+    const waitedResult = finishChildBuffer(childBuffer, renderState, waitedChainName);
+    if (waitedResult) {
+      await waitedResult;
     }
   }
 }
@@ -71,21 +126,21 @@ async function _runWithChildBuffer(childBuffer, renderState, asyncFn, waitedChai
  * waited chain. This is loop-specific structural behavior and stays out of
  * the generic control-flow helper.
  */
-function runWaitedControlFlowBoundary(parentBuffer, linkedChainNames, linkedMutatedChainNames, context, renderState, asyncFn, waitedChainName, bufferStackErrorContext) {
+function runWaitedControlFlowBoundary(parentBuffer, linkedChainNames, linkedMutatedChainNames, context, renderState, boundaryFn, waitedChainName, bufferStackErrorContext) {
   renderState.throwIfFatalErrorReported();
   const childBuffer = _createChildBoundary(parentBuffer, linkedChainNames, linkedMutatedChainNames, null, bufferStackErrorContext, null, renderState);
-  return markPromiseHandled(_runWithChildBuffer(childBuffer, renderState, asyncFn, waitedChainName));
+  return markPromiseHandled(_runWithChildBuffer(childBuffer, renderState, boundaryFn, waitedChainName));
 }
 
 /**
- * Run an isolated render boundary as an async child buffer that is not linked
- * into the parent tree. The asyncFn receives (childBuffer)
- * and should synchronously emit the boundary body into that child buffer.
+ * Run an isolated render boundary as a child buffer that is not linked into
+ * the parent tree. The boundary function receives (childBuffer) and should
+ * synchronously emit the boundary body into that child buffer when possible.
  */
-function runRenderBoundary(context, renderState, asyncFn, bufferStackErrorContext, traceParent = null) {
+function runRenderBoundary(context, renderState, boundaryFn, bufferStackErrorContext, traceParent = null) {
   renderState.throwIfFatalErrorReported();
   const childBuffer = _createChildBoundary(null, null, null, context || null, bufferStackErrorContext, traceParent, renderState);
-  return markPromiseHandled(_runWithChildBuffer(childBuffer, renderState, asyncFn));
+  return markPromiseHandled(_runWithChildBuffer(childBuffer, renderState, boundaryFn));
 }
 
 /**

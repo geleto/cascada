@@ -161,76 +161,73 @@ class CompilerSync extends CompilerBaseSync {
   }
 
   compileSwitch(node, frame) {
-    this.buffer._compileSyncControlFlowBoundary(node, frame, (blockFrame) => {
-      this.emit('switch (');
-      this._compileAwaitedExpression(node.expr, blockFrame);
-      this.emit(') {');
+    const blockFrame = frame;
+    this.emit('switch (');
+    this._compileAwaitedExpression(node.expr, blockFrame);
+    this.emit(') {');
 
-      node.cases.forEach((c) => {
-        this.emit('case ');
-        this._compileAwaitedExpression(c.cond, blockFrame);
-        this.emit(': ');
+    node.cases.forEach((c) => {
+      this.emit('case ');
+      this._compileAwaitedExpression(c.cond, blockFrame);
+      this.emit(': ');
 
-        if (c.body.children.length) {
-          this.compile(c.body, blockFrame);
-          this.emit.line('break;');
-        }
-      });
-
-      if (node.default) {
-        this.emit('default: ');
-        this.compile(node.default, blockFrame);
+      if (c.body.children.length) {
+        this.compile(c.body, blockFrame);
+        this.emit.line('break;');
       }
-
-      this.emit('}');
     });
+
+    if (node.default) {
+      this.emit('default: ');
+      this.compile(node.default, blockFrame);
+    }
+
+    this.emit('}');
   }
 
   compileIf(node, frame) {
-    this.buffer._compileSyncControlFlowBoundary(node, frame, (blockFrame) => {
-      this.emit('if(');
-      this._compileAwaitedExpression(node.cond, blockFrame);
-      this.emit('){');
+    const blockFrame = frame;
+    this.emit('if(');
+    this._compileAwaitedExpression(node.cond, blockFrame);
+    this.emit('){');
 
-      this.emit.withScopedSyntax(() => {
-        this.compile(node.body, blockFrame);
-      });
-
-      this.emit('} else {');
-
-      if (node.else_) {
-        this.emit.withScopedSyntax(() => {
-          this.compile(node.else_, blockFrame);
-        });
-      }
-      this.emit('}');
+    this.emit.withScopedSyntax(() => {
+      this.compile(node.body, blockFrame);
     });
+
+    this.emit('} else {');
+
+    if (node.else_) {
+      this.emit.withScopedSyntax(() => {
+        this.compile(node.else_, blockFrame);
+      });
+    }
+    this.emit('}');
   }
 
   _compileLegacyCallbackIf(node, frame) {
     this.emit('(function(cb) {');
-    this.buffer._compileSyncControlFlowBoundary(node, frame, (blockFrame) => {
-      this.emit('if(');
-      this._compileAwaitedExpression(node.cond, blockFrame);
-      this.emit('){');
+    const blockFrame = frame;
+    this.emit('if(');
+    this._compileAwaitedExpression(node.cond, blockFrame);
+    this.emit('){');
 
+    this.emit.withScopedSyntax(() => {
+      this.compile(node.body, blockFrame);
+      this.emit('cb()');
+    });
+
+    this.emit('} else {');
+
+    if (node.else_) {
       this.emit.withScopedSyntax(() => {
-        this.compile(node.body, blockFrame);
+        this.compile(node.else_, blockFrame);
         this.emit('cb()');
       });
-
-      this.emit('} else {');
-
-      if (node.else_) {
-        this.emit.withScopedSyntax(() => {
-          this.compile(node.else_, blockFrame);
-          this.emit('cb()');
-        });
-      } else {
-        this.emit('cb()');
-      }
-      this.emit('}');
-    });
+    } else {
+      this.emit('cb()');
+    }
+    this.emit('}');
     this.emit('})(' + this._makeCallback());
     this.emit.addScopeLevel();
   }

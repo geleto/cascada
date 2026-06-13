@@ -87,6 +87,10 @@ const noopTmplSrc = {
 const noopTmplSrcAsync = {
   type: 'code',
   obj: {
+    getErrorContexts() {
+      return [];
+    },
+
     root(env, context, runtime, cb) {
       return '';
     }

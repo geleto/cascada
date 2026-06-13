@@ -223,41 +223,135 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   compileSwitch(node) {
-    this.buffer._compileAsyncControlFlowBoundary(node, () => {
+    this.boundaries.compileAsyncControlFlowBoundary(this.buffer, node, () => {
       const poisonTargetChains = node._analysis.poisonTargetChains;
+      const switchResultId = this._tmpid();
+      const poisonHandlerId = this.boundaries.emitBranchPoisonHandlerFunction(this.buffer, poisonTargetChains);
+      const hasDynamicCases = node.cases.some((c) => !(c.cond instanceof nodes.Literal));
 
-      this.emit('try {');
-      this.emit('const switchResult = ');
-      this._compileAwaitedExpression(node.expr, null);
-      this.emit(';');
-      this.emit('');
-      this.emit('switch (switchResult) {');
-
-      node.cases.forEach((c) => {
-        this.emit('case ');
-        this._compileAwaitedExpression(c.cond, null);
-        this.emit(': ');
-
-        if (c.body.children.length) {
-          this.withBranchAddedContext(this._switchCaseAddedContext(c), 'Switch.Case', () => {
-            this.compile(c.body, null);
-          });
-          this.emit.line('break;');
-        }
-      });
-
-      if (node.default) {
-        this.emit('default: ');
-        this.withBranchAddedContext(null, 'Switch.Default', () => {
-          this.compile(node.default, null);
-        });
+      this.emit('return runtime.resolveThen(');
+      this._compileExpression(node.expr, null, node.expr);
+      this.emit.line(`, (${switchResultId}) => {`);
+      if (hasDynamicCases) {
+        this._emitDynamicSwitch(node, switchResultId, poisonHandlerId);
+      } else {
+        this._emitLiteralSwitch(node, switchResultId);
       }
-
-      this.emit('}');
-
-      const errorContext = this.emitErrorContext(node.expr);
-      this.boundaries.emitBranchPoisonCatch(this.buffer, poisonTargetChains, errorContext);
+      this.emit.line(`}, (err) => ${poisonHandlerId}(err, ${this.emitErrorContext(node.expr)}));`);
     }, node.expr);
+  }
+
+  _emitLiteralSwitch(node, switchResultId) {
+    this.emit(`switch (${switchResultId}) {`);
+
+    node.cases.forEach((c) => {
+      this.emit('case ');
+      this._compileExpression(c.cond, null, c.cond);
+      this.emit(': ');
+
+      if (c.body.children.length) {
+        this.withBranchAddedContext(this._switchCaseAddedContext(c), 'Switch.Case', () => {
+          this.compile(c.body, null);
+        });
+        this.emit.line('break;');
+      }
+    });
+
+    if (node.default) {
+      this.emit('default: ');
+      this.withBranchAddedContext(null, 'Switch.Default', () => {
+        this.compile(node.default, null);
+      });
+    }
+
+    this.emit('}');
+  }
+
+  _emitDynamicSwitch(node, switchResultId, poisonHandlerId) {
+    const switchTargetId = this._tmpid();
+    const switchDispatchId = this._tmpid();
+    const defaultTarget = node.default ? node.cases.length : -1;
+    const targetByCase = node.cases.map((c, index) => this._switchBodyTarget(node, index, defaultTarget));
+
+    this.emit.line(`let ${switchTargetId} = ${defaultTarget};`);
+    this._emitSwitchDispatch(node, switchTargetId, switchDispatchId, defaultTarget);
+    this._emitSwitchMatcher(node, 0, switchResultId, switchTargetId, targetByCase, switchDispatchId, poisonHandlerId);
+  }
+
+  _switchBodyTarget(node, startIndex, defaultTarget) {
+    for (let i = startIndex; i < node.cases.length; i++) {
+      if (node.cases[i].body.children.length) {
+        return i;
+      }
+    }
+    return defaultTarget;
+  }
+
+  _emitSwitchDispatch(node, switchTargetId, switchDispatchId, defaultTarget) {
+    this.emit.line(`const ${switchDispatchId} = () => {`);
+    this.emit(`switch (${switchTargetId}) {`);
+
+    node.cases.forEach((c, index) => {
+      if (!c.body.children.length) {
+        return;
+      }
+      this.emit(`case ${index}: `);
+      this.withBranchAddedContext(this._switchCaseAddedContext(c), 'Switch.Case', () => {
+        this.compile(c.body, null);
+      });
+      this.emit.line('break;');
+    });
+
+    if (node.default) {
+      this.emit(`case ${defaultTarget}: `);
+      this.withBranchAddedContext(null, 'Switch.Default', () => {
+        this.compile(node.default, null);
+      });
+    }
+
+    this.emit('}');
+    this.emit.line('};');
+  }
+
+  _emitSwitchMatcher(node, caseIndex, switchResultId, switchTargetId, targetByCase, switchDispatchId, poisonHandlerId) {
+    if (caseIndex >= node.cases.length) {
+      this.emit.line(`return ${switchDispatchId}();`);
+      return;
+    }
+
+    const c = node.cases[caseIndex];
+    const emitMatch = () => {
+      this.emit.line(`${switchTargetId} = ${targetByCase[caseIndex]};`);
+      this.emit.line(`return ${switchDispatchId}();`);
+    };
+    const emitNoMatch = () => {
+      this._emitSwitchMatcher(node, caseIndex + 1, switchResultId, switchTargetId, targetByCase, switchDispatchId, poisonHandlerId);
+    };
+
+    if (c.cond instanceof nodes.Literal) {
+      this.emit(`if (${switchResultId} === `);
+      this._compileExpression(c.cond, null, c.cond);
+      this.emit(') {');
+      emitMatch();
+      this.emit('} else {');
+      emitNoMatch();
+      this.emit('}');
+      return;
+    }
+
+    const rawCaseValueId = this._tmpid();
+    const caseValueId = this._tmpid();
+
+    this.emit(`const ${rawCaseValueId} = `);
+    this._compileExpression(c.cond, null, c.cond);
+    this.emit.line(';');
+    this.emit.line(`return runtime.resolveThen(${rawCaseValueId}, (${caseValueId}) => {`);
+    this.emit(`if (${switchResultId} === ${caseValueId}) {`);
+    emitMatch();
+    this.emit('} else {');
+    emitNoMatch();
+    this.emit('}');
+    this.emit.line(`}, (err) => ${poisonHandlerId}(err, ${this.emitErrorContext(c.cond)}));`);
   }
 
   _switchCaseAddedContext(caseNode) {
@@ -311,15 +405,14 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   compileIf(node) {
-    this.buffer._compileAsyncControlFlowBoundary(node, () => {
+    this.boundaries.compileAsyncControlFlowBoundary(this.buffer, node, () => {
       const poisonTargetChains = node._analysis.poisonTargetChains;
       const condResultId = this._tmpid();
+      const poisonHandlerId = this.boundaries.emitBranchPoisonHandlerFunction(this.buffer, poisonTargetChains);
 
-      this.emit('try {');
-      this.emit(`const ${condResultId} = `);
-      this._compileAwaitedExpression(node.cond, null);
-      this.emit(';');
-      this.emit('');
+      this.emit('return runtime.resolveThen(');
+      this._compileExpression(node.cond, null, node.cond);
+      this.emit.line(`, (${condResultId}) => {`);
       this.emit(`if (${condResultId}) {`);
       this.withBranchAddedContext(null, 'If.Then', () => {
         this.compile(node.body, null);
@@ -331,9 +424,7 @@ class CompilerAsync extends CompilerBaseAsync {
         }
       });
       this.emit('}');
-
-      const errorContext = this.emitErrorContext(node.cond);
-      this.boundaries.emitBranchPoisonCatch(this.buffer, poisonTargetChains, errorContext);
+      this.emit.line(`}, (err) => ${poisonHandlerId}(err, ${this.emitErrorContext(node.cond)}));`);
     }, node.cond);
   }
 

@@ -256,7 +256,7 @@ class CompileComposition {
   }
 
   compileInclude(node) {
-    this.compiler.buffer._compileAsyncControlFlowBoundary(node, () => {
+    this.compiler.boundaries.compileAsyncControlFlowBoundary(this.compiler.buffer, node, () => {
       const templateVar = this.compiler._tmpid();
       const templateNameVar = this.compiler._tmpid();
       const includeVarsVar = this.compiler._tmpid();
@@ -264,6 +264,7 @@ class CompileComposition {
       const includeTextValue = this.compiler._tmpid();
       const includeCompletionValue = this.compiler._tmpid();
       const includeError = this.compiler._tmpid();
+      const shouldRenderInclude = this.compiler._tmpid();
 
       this.emit(`let ${templateNameVar} = `);
       this.compiler.compileExpression(node.template, null, node.template, true);
@@ -274,29 +275,43 @@ class CompileComposition {
       this.compiler.compositionPayload.emitContext(includeContextVar, includeVarsVar, node.withContext);
 
       this.emit.line(`let ${includeCompletionValue} = Promise.resolve();`);
+      this.emit.line(`let ${shouldRenderInclude} = true;`);
+      this.emit.line(`let ${templateNameVar}_resolved;`);
+      this.emit.line(`let ${templateVar}_resolved;`);
       this.emit.line('try {');
-      this.emit.line(`  const ${templateNameVar}_resolved = await runtime.resolveSingle(${templateNameVar});`);
+      this.emit.line(`  ${templateNameVar}_resolved = await runtime.resolveSingle(${templateNameVar});`);
       this.emit.line(`  let ${templateVar} = env.getTemplate.bind(env)(${templateNameVar}_resolved, false, ${JSON.stringify(this.compiler.sourcePath)}, ${node.ignoreMissing ? 'true' : 'false'});`);
-      this.emit.line(`  const ${templateVar}_resolved = await runtime.resolveSingle(${templateVar});`);
-      this.emit.line('  renderState.throwIfFatalErrorReported();');
-      this.emit.line(`  if (!${templateVar}_resolved) {`);
-      this.emit.line(`    throw new Error("Template not found: " + ${templateNameVar}_resolved);`);
-      this.emit.line('  }');
-      this.emit.line(`  ${templateVar}_resolved.compile();`);
-      this.emit.line(`  let ${includeTextValue} = ${templateVar}_resolved._renderIncludeText(${includeContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, renderState);`);
-      this.emit.line(`  ${includeCompletionValue} = ${includeTextValue};`);
-      this.emit.line(`  ${this.compiler.buffer.currentBuffer}.addCommand(new runtime.TextCommand({ chainName: "${this.compiler.buffer.currentTextChainName}", args: [${includeTextValue}], errorContext: ${this.compiler.emitErrorContext(node)} }), "${this.compiler.buffer.currentTextChainName}");`);
+      this.emit.line(`  ${templateVar}_resolved = await runtime.resolveSingle(${templateVar});`);
       this.emit.line(`} catch (${includeError}) {`);
       this.emit.line(`  if (runtime.isRuntimeError(${includeError})) {`);
       this.emit.line(`    throw ${includeError};`);
       this.emit.line(`  } else if (runtime.isPoisonError(${includeError})) {`);
       this.emit.line(`    ${this.compiler.buffer.currentBuffer}.addCommand(new runtime.TextCommand({ chainName: "${this.compiler.buffer.currentTextChainName}", args: [runtime.createPoison(${includeError})], errorContext: ${this.compiler.emitErrorContext(node)} }), "${this.compiler.buffer.currentTextChainName}");`);
+      this.emit.line(`    ${shouldRenderInclude} = false;`);
       this.emit.line(`  } else if (${node.ignoreMissing ? 'false' : 'runtime.isLoadFailureFatal(env, "include")'}) {`);
       this.emit.line(`    runtime.RuntimeError.reportAndThrow(${includeError}, ${this.compiler.emitErrorContext(node)});`);
+      this.emit.line('  } else {');
+      this.emit.line(`    ${shouldRenderInclude} = false;`);
       this.emit.line('  }');
       this.emit.line('}');
+      this.emit.line('renderState.throwIfFatalErrorReported();');
+      this.emit.line(`if (${shouldRenderInclude}) {`);
+      this.emit.line(`  if (!${templateVar}_resolved) {`);
+      this.emit.line(`    if (${node.ignoreMissing ? 'true' : '!runtime.isLoadFailureFatal(env, "include")'}) {`);
+      this.emit.line(`      ${shouldRenderInclude} = false;`);
+      this.emit.line('    } else {');
+      this.emit.line(`      runtime.RuntimeError.reportAndThrow(new Error("Template not found: " + ${templateNameVar}_resolved), ${this.compiler.emitErrorContext(node)});`);
+      this.emit.line('    }');
+      this.emit.line('  }');
+      this.emit.line('}');
+      this.emit.line(`if (${shouldRenderInclude}) {`);
+      this.emit.line(`  ${templateVar}_resolved.compile();`);
+      this.emit.line(`  let ${includeTextValue} = ${templateVar}_resolved._renderIncludeText(${includeContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, renderState);`);
+      this.emit.line(`  ${includeCompletionValue} = ${includeTextValue};`);
+      this.emit.line(`  ${this.compiler.buffer.currentBuffer}.addCommand(new runtime.TextCommand({ chainName: "${this.compiler.buffer.currentTextChainName}", args: [${includeTextValue}], errorContext: ${this.compiler.emitErrorContext(node)} }), "${this.compiler.buffer.currentTextChainName}");`);
+      this.emit.line('}');
       this.compiler.buffer.emitLimitedLoopCompletion(includeCompletionValue, node);
-    });
+    }, node, {}, { asyncCallback: true });
   }
 
   compileSyncInclude(node, frame) {

@@ -38,7 +38,7 @@ class CompileLoop {
     const parentWaitedChainName = this.compiler.buffer.currentWaitedChainName;
     const loopVars = this._collectLoopVars(node, loopVarNames);
 
-    this.compiler.buffer._compileAsyncControlFlowBoundary(node, () => {
+    this.compiler.boundaries.compileAsyncControlFlowBoundary(this.compiler.buffer, node, () => {
       const arr = this.compiler._tmpid();
 
       if (iteratorCompiler) {
@@ -122,7 +122,7 @@ class CompileLoop {
         this.compiler.buffer.emitLimitedLoopCompletion(iteratePromiseId, node);
       }
       this.compiler.emit.line(`await ${iteratePromiseId};`);
-    }, node, { loopVariables: loopVars });
+    }, node, { loopVariables: loopVars }, { asyncCallback: true });
   }
 
   compileFor(node) {
@@ -135,77 +135,74 @@ class CompileLoop {
     const loopVarNames = Array.isArray(options.loopVarNames) ? options.loopVarNames : null;
     const sourcePositionNode = options.sourcePositionNode || node.arr;
 
-    const forResult = this.compiler.buffer._compileSyncControlFlowBoundary(node, frame, (blockFrame) => {
-      const innerFrame = blockFrame.push();
-      this.compiler.emit.line('frame = frame.push();');
+    const blockFrame = frame;
+    const innerFrame = blockFrame.push();
+    this.compiler.emit.line('frame = frame.push();');
 
-      const arr = this.compiler._tmpid();
-      if (iteratorCompiler) {
-        iteratorCompiler(sourcePositionNode, innerFrame, arr);
-      } else {
-        this.compiler.buffer.skipOwnWaitedChain(() => {
-          this.compiler.emit(`let ${arr} = `);
-          this.compiler.compileExpression(node.arr, innerFrame, node.arr, true);
-          this.compiler.emit.line(';');
-        });
-      }
-
-      const limitVar = node.concurrentLimit ? this.compiler._tmpid() : null;
-      if (node.concurrentLimit) {
-        this.compiler.buffer.skipOwnWaitedChain(() => {
-          this.compiler.emit(`let ${limitVar} = `);
-          this.compiler.compileExpression(node.concurrentLimit, innerFrame, node.concurrentLimit, true);
-          this.compiler.emit.line(';');
-        });
-      }
-
-      const loopVars = this._collectLoopVars(node, loopVarNames);
-      loopVars.forEach((name) => {
-        innerFrame.set(name, name);
+    const arr = this.compiler._tmpid();
+    if (iteratorCompiler) {
+      iteratorCompiler(sourcePositionNode, innerFrame, arr);
+    } else {
+      this.compiler.buffer.skipOwnWaitedChain(() => {
+        this.compiler.emit(`let ${arr} = `);
+        this.compiler.compileExpression(node.arr, innerFrame, node.arr, true);
+        this.compiler.emit.line(';');
       });
+    }
 
-      const loopBodyFuncId = this.compiler._tmpid();
-      this.compiler.emit(`let ${loopBodyFuncId} = `);
-      this._compileSyncLoopBody(node, innerFrame, loopVars, whileConditionNode, loopVarNames);
-
-      let elseFuncId = 'null';
-      if (node.else_) {
-        const elseCreatesScope = !!(node.else_ && node.else_._analysis && node.else_._analysis.createScope);
-        elseFuncId = this.compiler._tmpid();
-        this.compiler.emit(`let ${elseFuncId} = `);
-        this.compiler.emit('function() {');
-        let elseFrame = innerFrame;
-        if (elseCreatesScope) {
-          elseFrame = innerFrame.push();
-          this.compiler.emit.line('frame = frame.push();');
-        }
-
-        this.compiler.compile(node.else_, elseFrame);
-
-        if (elseCreatesScope) {
-          this.compiler.emit.line('frame = frame.pop();');
-          elseFrame = elseFrame.pop();
-        }
-
-        this.compiler.emit.line('};');
-      }
-
-      const syncOptionsCode = node.concurrentLimit
-        ? `{ concurrentLimit: ${limitVar} }`
-        : 'null';
-      this.compiler.emit(`runtime.iterate(${arr}, ${loopBodyFuncId}, ${elseFuncId}, null, [`);
-      loopVars.forEach((varName, index) => {
-        if (index > 0) {
-          this.compiler.emit(', ');
-        }
-        this.compiler.emit(`"${varName}"`);
+    const limitVar = node.concurrentLimit ? this.compiler._tmpid() : null;
+    if (node.concurrentLimit) {
+      this.compiler.buffer.skipOwnWaitedChain(() => {
+        this.compiler.emit(`let ${limitVar} = `);
+        this.compiler.compileExpression(node.concurrentLimit, innerFrame, node.concurrentLimit, true);
+        this.compiler.emit.line(';');
       });
-      this.compiler.emit(`], ${syncOptionsCode});`);
-      this.compiler.emit.line('');
-      this.compiler.emit.line('frame = frame.pop();');
+    }
+
+    const loopVars = this._collectLoopVars(node, loopVarNames);
+    loopVars.forEach((name) => {
+      innerFrame.set(name, name);
     });
 
-    frame = forResult.frame;
+    const loopBodyFuncId = this.compiler._tmpid();
+    this.compiler.emit(`let ${loopBodyFuncId} = `);
+    this._compileSyncLoopBody(node, innerFrame, loopVars, whileConditionNode, loopVarNames);
+
+    let elseFuncId = 'null';
+    if (node.else_) {
+      const elseCreatesScope = !!(node.else_ && node.else_._analysis && node.else_._analysis.createScope);
+      elseFuncId = this.compiler._tmpid();
+      this.compiler.emit(`let ${elseFuncId} = `);
+      this.compiler.emit('function() {');
+      let elseFrame = innerFrame;
+      if (elseCreatesScope) {
+        elseFrame = innerFrame.push();
+        this.compiler.emit.line('frame = frame.push();');
+      }
+
+      this.compiler.compile(node.else_, elseFrame);
+
+      if (elseCreatesScope) {
+        this.compiler.emit.line('frame = frame.pop();');
+        elseFrame = elseFrame.pop();
+      }
+
+      this.compiler.emit.line('};');
+    }
+
+    const syncOptionsCode = node.concurrentLimit
+      ? `{ concurrentLimit: ${limitVar} }`
+      : 'null';
+    this.compiler.emit(`runtime.iterate(${arr}, ${loopBodyFuncId}, ${elseFuncId}, null, [`);
+    loopVars.forEach((varName, index) => {
+      if (index > 0) {
+        this.compiler.emit(', ');
+      }
+      this.compiler.emit(`"${varName}"`);
+    });
+    this.compiler.emit(`], ${syncOptionsCode});`);
+    this.compiler.emit.line('');
+    this.compiler.emit.line('frame = frame.pop();');
   }
 
   _compileAsyncLoopBody(node, loopVars, sequentialLoopBody, hasConcurrencyLimit = false, whileConditionNode = null, loopVarNames = null, whilePoisonTargetChains = []) {
@@ -240,7 +237,6 @@ class CompileLoop {
     this.compiler.emit(
       `return runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, renderState, async (currentBuffer) => {`
     );
-    this.compiler.emit.asyncClosureDepth++;
 
     this.compiler.buffer.withBufferState({
       currentBuffer: 'currentBuffer',
@@ -262,24 +258,26 @@ class CompileLoop {
           });
 
           let whileCondId;
-          let whileErrorContext = null;
 
           if (whileConditionNode) {
             whileCondId = this.compiler._tmpid();
-            this.compiler.emit(`let ${whileCondId};`);
-            this.compiler.emit('try {');
-            this.compiler.emit(`${whileCondId} = `);
-            this.compiler.buffer.skipOwnWaitedChain(() => {
-              this.compiler._compileAwaitedExpression(whileConditionNode, null);
-            });
-            this.compiler.emit.line(';');
-            whileErrorContext = this.compiler.emitErrorContext(whileConditionNode);
-            this.compiler.boundaries.emitBranchPoisonCatch(
+            const whileCondValueId = this.compiler._tmpid();
+            const whilePoisonHandlerId = this.compiler.boundaries.emitBranchPoisonHandlerFunction(
               this.compiler.buffer,
               whilePoisonTargetChains,
-              whileErrorContext,
-              () => this.compiler.emit(`  ${whileCondId} = false;`)
+              () => this.compiler.emit.line('  return false;')
             );
+            this.compiler.emit(`let ${whileCondValueId} = `);
+            this.compiler.buffer.skipOwnWaitedChain(() => {
+              this.compiler._compileExpression(whileConditionNode, null, whileConditionNode);
+            });
+            this.compiler.emit.line(';');
+            this.compiler.emit.line(
+              `let ${whileCondId} = runtime.resolveThen(${whileCondValueId}, (value) => value, (err) => ${whilePoisonHandlerId}(err, ${this.compiler.emitErrorContext(whileConditionNode)}));`
+            );
+            this.compiler.emit.line(`if (${whileCondId} && typeof ${whileCondId}.then === 'function') {`);
+            this.compiler.emit.line(`  ${whileCondId} = await ${whileCondId};`);
+            this.compiler.emit.line('}');
             this.compiler.emit(`if (!${whileCondId}) {`);
             this.compiler.emit.line('  return false;');
             this.compiler.emit.line('}');
@@ -313,9 +311,7 @@ class CompileLoop {
           );
         }
       });
-
     });
-    this.compiler.emit.asyncClosureDepth--;
     this.compiler.emit.line(`}, ${iterationBoundaryContextArg});`);
     this.compiler.emit.line('}).bind(context);');
 

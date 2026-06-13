@@ -24,6 +24,13 @@ class CompileBoundaries {
     );
   }
 
+  _emitBoundaryCallback(prefix, callbackParams, emitBody, suffix, { asyncCallback = false } = {}) {
+    const asyncPrefix = asyncCallback ? 'async ' : '';
+    this.compiler.emit(`${prefix}${asyncPrefix}${callbackParams} => {`);
+    emitBody();
+    this.compiler.emit(suffix);
+  }
+
   compileExpressionControlFlowBoundary(bufferCompiler, node, emitBody, stackFields = {}) {
     const parentBufferArg = bufferCompiler.currentBuffer;
     const {
@@ -40,11 +47,9 @@ class CompileBoundaries {
       stackFields
     });
     this.compiler.emit(`runtime.runValueBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, async (currentBuffer) => {`);
-    this.compiler.emit.asyncClosureDepth++;
     bufferCompiler.withBufferState({ currentBuffer: 'currentBuffer' }, () => {
       emitBody.call(this.compiler);
     });
-    this.compiler.emit.asyncClosureDepth--;
     this.compiler.emit(`}, ${bufferStackErrorContextArg})`);
   }
 
@@ -64,7 +69,6 @@ class CompileBoundaries {
     this.compiler.emit.line(
       `runtime.runValueBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, async (currentBuffer) => {`
     );
-    this.compiler.emit.asyncClosureDepth++;
 
     bufferCompiler.withBufferState({
       currentBuffer: 'currentBuffer',
@@ -80,12 +84,11 @@ class CompileBoundaries {
       this.compiler.emit.line('}');
       this.compiler.emit.line(`}, ${bufferStackErrorContextArg})`);
     });
-    this.compiler.emit.asyncClosureDepth--;
   }
 
-  compileAsyncControlFlowBoundary(bufferCompiler, node, emitFunc = null, errorContextNode = node, stackFields = {}) {
+  compileAsyncControlFlowBoundary(bufferCompiler, node, emitFunc = null, errorContextNode = node, stackFields = {}, options = {}) {
     if (bufferCompiler.currentWaitedChainName) {
-      return this._compileAsyncWaitedControlFlowBoundary(bufferCompiler, node, emitFunc, errorContextNode, stackFields);
+      return this._compileAsyncWaitedControlFlowBoundary(bufferCompiler, node, emitFunc, errorContextNode, stackFields, options);
     }
 
     const parentBufferArg = bufferCompiler.currentBuffer;
@@ -100,27 +103,28 @@ class CompileBoundaries {
       owned: true
     });
 
-    this.compiler.emit(
-      `let ${controlFlowPromiseId} = runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, renderState, async (currentBuffer) => {`
+    this._emitBoundaryCallback(
+      `let ${controlFlowPromiseId} = runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, renderState, `,
+      '(currentBuffer)',
+      () => {
+        bufferCompiler.withBufferState({
+          currentBuffer: 'currentBuffer',
+          currentWaitedChainName: bufferCompiler.currentWaitedChainName,
+          currentWaitedOwnerBuffer: bufferCompiler.currentWaitedOwnerBuffer
+        }, () => {
+          if (emitFunc) {
+            emitFunc();
+          }
+        });
+      },
+      `}, ${bufferStackErrorContextArg});\n`,
+      options
     );
-    this.compiler.emit.asyncClosureDepth++;
-
-    bufferCompiler.withBufferState({
-      currentBuffer: 'currentBuffer',
-      currentWaitedChainName: bufferCompiler.currentWaitedChainName,
-      currentWaitedOwnerBuffer: bufferCompiler.currentWaitedOwnerBuffer
-    }, () => {
-      if (emitFunc) {
-        emitFunc();
-      }
-    });
-    this.compiler.emit.asyncClosureDepth--;
-    this.compiler.emit.line(`}, ${bufferStackErrorContextArg});`);
     bufferCompiler.emitLimitedLoopCompletion(controlFlowPromiseId, node);
     return {};
   }
 
-  _compileAsyncWaitedControlFlowBoundary(bufferCompiler, node, emitFunc = null, errorContextNode = node, stackFields = {}) {
+  _compileAsyncWaitedControlFlowBoundary(bufferCompiler, node, emitFunc = null, errorContextNode = node, stackFields = {}, options = {}) {
     const parentBufferArg = bufferCompiler.currentBuffer;
     const {
       linkedChainsArg,
@@ -135,46 +139,42 @@ class CompileBoundaries {
       owned: true
     });
 
-    this.compiler.emit(
-      `let ${controlFlowPromiseId} = runtime.runWaitedControlFlowBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, renderState, async (currentBuffer) => {`
+    this._emitBoundaryCallback(
+      `let ${controlFlowPromiseId} = runtime.runWaitedControlFlowBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, renderState, `,
+      '(currentBuffer)',
+      () => {
+        bufferCompiler.withBufferState({
+          currentBuffer: 'currentBuffer',
+          currentWaitedChainName: controlFlowWaitedChainName,
+          currentWaitedOwnerBuffer: controlFlowWaitedOwnerBufferId
+        }, () => {
+          this.compiler.emit.line(`runtime.declareBufferChain(currentBuffer, "${controlFlowWaitedChainName}", "var", context, null);`);
+          this.compiler.emit.line(`const ${controlFlowWaitedOwnerBufferId} = currentBuffer;`);
+
+          if (emitFunc) {
+            emitFunc();
+          }
+        });
+      },
+      `}, "${controlFlowWaitedChainName}", ${bufferStackErrorContextArg});\n`,
+      options
     );
-    this.compiler.emit.asyncClosureDepth++;
-
-    bufferCompiler.withBufferState({
-      currentBuffer: 'currentBuffer',
-      currentWaitedChainName: controlFlowWaitedChainName,
-      currentWaitedOwnerBuffer: controlFlowWaitedOwnerBufferId
-    }, () => {
-      this.compiler.emit.line(`runtime.declareBufferChain(currentBuffer, "${controlFlowWaitedChainName}", "var", context, null);`);
-      this.compiler.emit.line(`const ${controlFlowWaitedOwnerBufferId} = currentBuffer;`);
-
-      if (emitFunc) {
-        emitFunc();
-      }
-    });
-    this.compiler.emit.asyncClosureDepth--;
-    this.compiler.emit.line(`}, "${controlFlowWaitedChainName}", ${bufferStackErrorContextArg});`);
     bufferCompiler.emitLimitedLoopCompletion(controlFlowPromiseId, node);
     return {};
   }
 
-  compileSyncControlFlowBoundary(bufferCompiler, node, frame, emitFunc = null) {
-    if (typeof emitFunc === 'function') {
-      emitFunc(frame, bufferCompiler.currentBuffer);
-    }
-    return { frame };
-  }
-
   // Branch/control-flow selector failures poison the chains
   //  that the skipped region could have written.
-  emitBranchPoisonCatch(bufferCompiler, poisonTargetChains, errorContextExpr, emitCatchTail = null) {
-    this.compiler.emit('} catch (e) {');
-    this.compiler.emit.line('  if (!runtime.isPoisonError(e)) {');
-    this.compiler.emit.line(`    runtime.RuntimeError.reportAndThrow(e, ${errorContextExpr});`);
+  emitBranchPoisonHandler(bufferCompiler, poisonTargetChains, errorContextExpr, errorExpr, emitCatchTail = null) {
+    this.compiler.emit.line(`  if (runtime.isRuntimeError(${errorExpr})) {`);
+    this.compiler.emit.line(`    throw ${errorExpr};`);
+    this.compiler.emit.line('  }');
+    this.compiler.emit.line(`  if (!runtime.isPoisonError(${errorExpr})) {`);
+    this.compiler.emit.line(`    runtime.RuntimeError.reportAndThrow(${errorExpr}, ${errorContextExpr});`);
     this.compiler.emit.line('  }');
     if (poisonTargetChains.length > 0) {
       const contextualErrorVar = this.compiler._tmpid();
-      this.compiler.emit(`  const ${contextualErrorVar} = e;`);
+      this.compiler.emit.line(`  const ${contextualErrorVar} = ${errorExpr};`);
       for (const chainName of poisonTargetChains) {
         this.compiler.emit.line(
           `    ${bufferCompiler.currentBuffer}.addCommand(new runtime.ErrorCommand(${contextualErrorVar}, ${errorContextExpr}), "${chainName}");`
@@ -184,7 +184,14 @@ class CompileBoundaries {
     if (emitCatchTail) {
       emitCatchTail();
     }
-    this.compiler.emit('}');
+  }
+
+  emitBranchPoisonHandlerFunction(bufferCompiler, poisonTargetChains, emitCatchTail = null) {
+    const poisonHandlerId = this.compiler._tmpid();
+    this.compiler.emit.line(`const ${poisonHandlerId} = (err, errorContext) => {`);
+    this.emitBranchPoisonHandler(bufferCompiler, poisonTargetChains, 'errorContext', 'err', emitCatchTail);
+    this.compiler.emit.line('};');
+    return poisonHandlerId;
   }
 
   _compileAsyncRenderBoundaryImpl(emitCompiler, node, innerBodyFunction, callbackName, positionNode = node, stackFields = {}) {
@@ -204,9 +211,6 @@ class CompileBoundaries {
     const textChainName = this.compiler.buffer.currentTextChainName;
     emitCompiler.line(`let ${resultId}_textChainVar = runtime.declareBufferChain(currentBuffer, "${textChainName}", "text", context, null);`);
 
-    const originalAsyncClosureDepth = emitCompiler.asyncClosureDepth;
-    emitCompiler.asyncClosureDepth = 0;
-
     this._withBoundaryBufferState(this.compiler.buffer, {
       bufferExpr: 'currentBuffer',
       textChainVar: `${resultId}_textChainVar`,
@@ -219,8 +223,6 @@ class CompileBoundaries {
         innerBodyFunction.call(this.compiler);
       }
     });
-
-    emitCompiler.asyncClosureDepth = originalAsyncClosureDepth;
 
     if (this.compiler.scriptMode) {
       this.compiler.return.emitFinalSnapshot('currentBuffer', resultId);
@@ -304,23 +306,22 @@ class CompileBoundaries {
       stackFields
     });
 
-    this.compiler.emit.line(
-      `${boundaryPrefix}runtime.runControlFlowBoundary(${parentBufferExpr}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, renderState, async ${callbackParams} => {`
+    this._emitBoundaryCallback(
+      `${boundaryPrefix}runtime.runControlFlowBoundary(${parentBufferExpr}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, renderState, `,
+      callbackParams,
+      () => {
+        emitBody();
+        this._emitBoundaryTextCommand(
+          bufferCompiler,
+          emitBody.resultId,
+          positionNode,
+          targetChainName,
+          targetBufferExpr,
+          normalizeTextArgs
+        );
+      },
+      `}, ${bufferStackErrorContextArg});\n`
     );
-    this.compiler.emit.asyncClosureDepth++;
-
-    emitBody();
-    this._emitBoundaryTextCommand(
-      bufferCompiler,
-      emitBody.resultId,
-      positionNode,
-      targetChainName,
-      targetBufferExpr,
-      normalizeTextArgs
-    );
-
-    this.compiler.emit.asyncClosureDepth--;
-    this.compiler.emit.line(`}, ${bufferStackErrorContextArg});`);
 
     if (boundaryPromiseId) {
       bufferCompiler.emitLimitedLoopCompletion(boundaryPromiseId, waitedPositionNode);
@@ -381,28 +382,27 @@ class CompileBoundaries {
       stackFields
     });
 
-    this.compiler.emit(
-      `runtime.runControlFlowBoundary(${outerParentBuffer}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, renderState, async (currentBuffer) => {`
+    this._emitBoundaryCallback(
+      `runtime.runControlFlowBoundary(${outerParentBuffer}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, renderState, `,
+      '(currentBuffer)',
+      () => {
+        this._withBoundaryBufferState(bufferCompiler, {
+          bufferExpr: 'currentBuffer',
+          textChainVar: 'output_textChainVar',
+          textChainName: captureTextOutputName
+        }, () => {
+          // Capture owns a separate text tree. The child buffer exists for that
+          // boundary, not because capture text values need pre-resolution.
+          this.compiler.emit.line('let output = currentBuffer;');
+          this.compiler.emit.line(`let output_textChainVar = runtime.declareBufferChain(currentBuffer, "${captureTextOutputName}", "text", context, null);`);
+
+          innerBodyFunction.call(this.compiler);
+          this._emitTextChainSnapshot('currentBuffer', captureTextOutputName, positionNode, 'captureResult');
+          this.compiler.emit.line('return captureResult;');
+        });
+      },
+      `}, ${bufferStackErrorContextArg})`
     );
-    this.compiler.emit.asyncClosureDepth++;
-
-    this._withBoundaryBufferState(bufferCompiler, {
-      bufferExpr: 'currentBuffer',
-      textChainVar: 'output_textChainVar',
-      textChainName: captureTextOutputName
-    }, () => {
-      // Capture owns a separate text tree. The child buffer exists for that
-      // boundary, not because capture text values need pre-resolution.
-      this.compiler.emit.line('let output = currentBuffer;');
-      this.compiler.emit.line(`let output_textChainVar = runtime.declareBufferChain(currentBuffer, "${captureTextOutputName}", "text", context, null);`);
-
-      innerBodyFunction.call(this.compiler);
-      this._emitTextChainSnapshot('currentBuffer', captureTextOutputName, positionNode, 'captureResult');
-      this.compiler.emit.line('return captureResult;');
-    });
-
-    this.compiler.emit.asyncClosureDepth--;
-    this.compiler.emit(`}, ${bufferStackErrorContextArg})`);
 
   }
 

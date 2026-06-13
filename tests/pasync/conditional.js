@@ -1,7 +1,7 @@
 import expect from 'expect.js';
 import {delay} from '../util.js';
 
-const {AsyncEnvironment} = typeof window !== 'undefined'
+const {AsyncEnvironment, AsyncTemplate} = typeof window !== 'undefined'
   ? window.nunjucks
   : await import('../../src/environment/environment.js');
 
@@ -16,6 +16,39 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
     });
 
     describe('Conditional Statements', () => {
+      it('should compile runtime-resolved if conditions without forcing async boundary awaits', () => {
+        const template = new AsyncTemplate('{% if someCondition %}Admin{% else %}Not admin{% endif %}', env);
+        const source = template.compileSource();
+
+        expect(source).to.contain('runtime.runControlFlowBoundary');
+        expect(source).to.contain('runtime.resolveThen');
+        expect(source).to.not.contain('async (currentBuffer)');
+        expect(source).to.not.contain('(await context.lookup("someCondition"');
+        expect(source).to.not.contain('} catch');
+      });
+
+      it('should compile literal-case switches without forcing async boundary awaits', () => {
+        const template = new AsyncTemplate('{% switch someValue %}{% case "a" %}A{% default %}D{% endswitch %}', env);
+        const source = template.compileSource();
+
+        expect(source).to.contain('runtime.runControlFlowBoundary');
+        expect(source).to.contain('runtime.resolveThen');
+        expect(source).to.not.contain('async (currentBuffer)');
+        expect(source).to.not.contain('(await context.lookup("someValue"');
+        expect(source).to.not.contain('} catch');
+      });
+
+      it('should compile dynamic-case switches without forcing outer boundary awaits', () => {
+        const template = new AsyncTemplate('{% switch someValue %}{% case otherValue %}A{% default %}D{% endswitch %}', env);
+        const source = template.compileSource();
+
+        expect(source).to.contain('runtime.runControlFlowBoundary');
+        expect(source).to.contain('runtime.resolveThen');
+        expect(source).to.not.contain('async (currentBuffer)');
+        expect(source).to.not.contain('await runtime.resolveSingle');
+        expect(source).to.not.contain('(await context.lookup("otherValue"');
+      });
+
       it('should handle async function in if condition', async () => {
         const context = {
           async isUserAdmin(id) {
@@ -285,6 +318,37 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
 
         const result = await env.renderTemplateString(template, context);
         expect(result.trim()).to.equal('First B');
+      });
+
+      it('should not consume later dynamic case expressions after a switch match', async () => {
+        const calls = [];
+        const context = {
+          value: 'A',
+          async matchValue() {
+            calls.push('match');
+            await delay(3);
+            return 'A';
+          },
+          unusedValue() {
+            calls.push('unused');
+            throw new Error('unused case should not be evaluated');
+          }
+        };
+
+        const template = `
+			{% switch value %}
+			  {% case matchValue() %}
+				Matched
+			  {% case unusedValue() %}
+				Unused
+			  {% default %}
+				Default
+			{% endswitch %}
+		  `;
+
+        const result = await env.renderTemplateString(template, context);
+        expect(result.trim()).to.equal('Matched');
+        expect(calls).to.eql(['match']);
       });
 
       // Test default case

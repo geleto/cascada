@@ -1,7 +1,7 @@
 import expect from 'expect.js';
 import {StringLoader, delay} from '../util.js';
 
-const {AsyncEnvironment} = typeof window !== 'undefined'
+const {AsyncEnvironment, AsyncTemplate} = typeof window !== 'undefined'
   ? window.nunjucks
   : await import('../../src/environment/environment.js');
 const runtime = typeof window !== 'undefined' ? window.nunjucks.runtime : await import('../../src/runtime/runtime.js');
@@ -1367,6 +1367,16 @@ const {isPoisonError} = runtime;
     let env;
     beforeEach(() => {
       env = new AsyncEnvironment();
+    });
+
+    it('should compile while conditions through resolveThen without a broad condition catch', () => {
+      const template = new AsyncTemplate('{% set i = 0 %}{% while keepGoing(i) %}{% set i = i + 1 %}{% endwhile %}', env);
+      const source = template.compileSource();
+
+      expect(source).to.contain('runtime.resolveThen');
+      expect(source).to.contain("typeof");
+      expect(source).to.contain(".then === 'function'");
+      expect(source).to.not.contain('} catch');
     });
 
     it('should handle basic while loop with async condition', async () => {
