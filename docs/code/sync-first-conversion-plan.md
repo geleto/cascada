@@ -237,24 +237,36 @@ Tests:
   is `_completionResolved` and contains only sync values.
 - return tests proving unrelated root work does not delay a ready return value.
 
-## Pass 3: Runtime Loop Dispatcher Sync-First
+## Pass 3: Runtime Loop Dispatcher Sync-First - implemented
 
 File: `src/runtime/loop.js`
 
-Current shape: top-level `iterate(...)` is async, so even simple async-mode
-array loops return a promise from the dispatcher.
+Done as the third implementation pass. Top-level `iterate(...)` is now a
+sync-first wrapper for the highest-frequency case: concrete parallel arrays
+with no sequential advancement, return-chain check, or concurrency limit.
+Promised iterables, object loops, async iterators, sequential loops, all
+concurrent-limit paths, and scalar validation still delegate to the async
+dispatcher. Empty concrete arrays may still return a thenable if the loop-else
+body itself starts async work.
 
-`iterateArrayParallel(...)` is already non-async, so the parallel array fast
-path can be fully synchronous.
+`iterateArrayParallel(...)` was already non-async, so this pass avoids the
+former loop-level async wrapper without duplicating the object and
+concurrent-limit dispatch rules.
 
 Target shape:
 
 - introduce a non-async `iterate(...)` wrapper;
 - keep async helpers for async iterators, sequential loops, concurrent limits,
-  promise iterables, and async else bodies;
-- use direct array/object fast paths when the iterable, limit, and loop body
-  dispatch path can complete synchronously;
+  promise iterables, and validation/error paths;
+- use a direct array fast path when the iterable and dispatch path can complete
+  synchronously;
 - preserve body-poisoning and else-poisoning semantics.
+
+Implementation note: the wrapper is intentionally conservative. It handles
+already-concrete, unbounded parallel arrays synchronously and falls back to the
+old async dispatcher for object loops, sequential advancement, return-chain
+checks, all limit handling, promised values, async iterators, and malformed
+object arity cases that should follow the existing fatal path.
 
 Risks:
 
@@ -273,6 +285,8 @@ Tests:
 - `tests/pasync/loops.js`;
 - `tests/pasync/loop-concurrent-limit.js`;
 - `tests/poison/handler-poisoning.js`;
+- runtime tests proving concrete parallel arrays return non-thenables, while
+  promised/object/sequential/limited paths remain thenable;
 - generated-source tests are less important here than runtime behavior.
 
 ## Pass 4: Linked Expression Control-Flow Boundaries

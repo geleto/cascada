@@ -721,7 +721,40 @@ function poisonLoopEffects(buffer, asyncOptions, poisonError, didIterate) {
   addPoisonCommands(buffer, asyncOptions.elsePoisonChains, poisonError, asyncOptions.errorContext);
 }
 
-async function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOptions = null) {
+function canUseSyncArrayDispatch(iterable, asyncOptions) {
+  if (asyncOptions) {
+    if (
+      (iterable && typeof iterable.then === 'function') ||
+      (iterable && typeof iterable[Symbol.asyncIterator] === 'function') ||
+      asyncOptions.sequential ||
+      asyncOptions.returnCheckChainName ||
+      (asyncOptions.concurrentLimit !== null && asyncOptions.concurrentLimit !== undefined) ||
+      (asyncOptions.scriptMode && (typeof iterable === 'string' || isScalarPrimitive(iterable)))
+    ) {
+      return false;
+    }
+  }
+
+  return Array.isArray(iterable);
+}
+
+function iterateSync(arr, loopBody, loopElse, buffer, loopVars, asyncOptions, errorContext) {
+  const didIterate = iterateArrayParallel(arr, loopBody, loopVars, errorContext, buffer, asyncOptions);
+  if (didIterate || !loopElse) {
+    return undefined;
+  }
+  return loopElse();
+}
+
+function iterate(arr, loopBody, loopElse, buffer, loopVars = [], asyncOptions = null) {
+  const errorContext = asyncOptions ? asyncOptions.errorContext : null;
+  if (canUseSyncArrayDispatch(arr, asyncOptions)) {
+    return iterateSync(arr, loopBody, loopElse, buffer, loopVars, asyncOptions, errorContext);
+  }
+  return iterateAsync(arr, loopBody, loopElse, buffer, loopVars, asyncOptions);
+}
+
+async function iterateAsync(arr, loopBody, loopElse, buffer, loopVars = [], asyncOptions = null) {
   const errorContext = asyncOptions ? asyncOptions.errorContext : null;
 
   // Handle poison detection if in async mode

@@ -5,7 +5,19 @@ const {AsyncEnvironment, AsyncTemplate} = typeof window !== 'undefined'
   ? window.nunjucks
   : await import('../../src/environment/environment.js');
 const runtime = typeof window !== 'undefined' ? window.nunjucks.runtime : await import('../../src/runtime/runtime.js');
-const {isPoisonError} = runtime;
+const {isPoisonError, iterate} = runtime;
+const TEST_EC = [1, 1, 'Loop.Test', 'loops.js', null, null];
+const isThenable = (value) => !!(value && typeof value.then === 'function');
+const createAsyncLoopOptions = (overrides = {}) => ({
+  sequential: false,
+  bodyPoisonChains: [],
+  elsePoisonChains: [],
+  concurrentLimit: null,
+  returnCheckChainName: null,
+  scriptMode: false,
+  errorContext: TEST_EC,
+  ...overrides
+});
 
 (function () {
 
@@ -16,6 +28,67 @@ const {isPoisonError} = runtime;
     let env;
     beforeEach(() => {
       env = new AsyncEnvironment();
+    });
+
+    describe('runtime iterate sync-first dispatch', () => {
+      it('returns without a thenable for concrete parallel arrays in async mode', () => {
+        const seen = [];
+        const result = iterate([1, 2, 3], (item, index, len, last) => {
+          seen.push(`${item}:${index}:${len}:${last}`);
+        }, null, null, ['item'], createAsyncLoopOptions());
+
+        expect(isThenable(result)).to.be(false);
+        expect(seen).to.eql(['1:0:3:false', '2:1:3:false', '3:2:3:true']);
+      });
+
+      it('keeps async dispatch for promised, object, sequential, and limited loops', async () => {
+        const promisedSeen = [];
+        const promised = iterate(Promise.resolve([1]), (item) => {
+          promisedSeen.push(item);
+        }, null, null, ['item'], createAsyncLoopOptions());
+
+        expect(isThenable(promised)).to.be(true);
+        await promised;
+        expect(promisedSeen).to.eql([1]);
+
+        const objectLoop = iterate({ a: 1 }, () => undefined, null, null, ['key', 'value'], createAsyncLoopOptions());
+        expect(isThenable(objectLoop)).to.be(true);
+        await objectLoop;
+
+        const sequential = iterate([1], () => undefined, null, null, ['item'], createAsyncLoopOptions({
+          sequential: true
+        }));
+
+        expect(isThenable(sequential)).to.be(true);
+        await sequential;
+
+        const oversizedLimit = iterate([1, 2], () => undefined, null, null, ['item'], createAsyncLoopOptions({
+          concurrentLimit: 3
+        }));
+        expect(isThenable(oversizedLimit)).to.be(true);
+        await oversizedLimit;
+
+        const boundedLimit = iterate([1, 2, 3], () => undefined, null, null, ['item'], createAsyncLoopOptions({
+          concurrentLimit: 2
+        }));
+        expect(isThenable(boundedLimit)).to.be(true);
+        await boundedLimit;
+      });
+
+      it('keeps async iterator dispatch for arrays that define an async iterator', async () => {
+        const iterableArray = [1];
+        iterableArray[Symbol.asyncIterator] = async function* () {
+          yield 9;
+        };
+        const seen = [];
+        const result = iterate(iterableArray, (item) => {
+          seen.push(item);
+        }, null, null, ['item'], createAsyncLoopOptions());
+
+        expect(isThenable(result)).to.be(true);
+        await result;
+        expect(seen).to.eql([9]);
+      });
     });
 
     describe('Loops', () => {
