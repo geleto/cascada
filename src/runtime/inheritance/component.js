@@ -17,7 +17,7 @@ function requireComponentSharedSchemaEntry(instance, chainName, errorContext) {
   return schemaEntry;
 }
 
-async function observeComponentSharedChain(instance, observationCommand, errorContext, implicitVarRead = false) {
+function observeComponentSharedChain(instance, observationCommand, errorContext, implicitVarRead = false) {
   instance.assertCanInvoke(errorContext);
   if (!isUniversalObservationCommand(observationCommand) || !observationCommand.chainName) {
     RuntimeError.reportAndThrow('Component shared observation requires a universal observational chain command', errorContext);

@@ -2,7 +2,7 @@
 import expect from 'expect.js';
 import {AsyncEnvironment, AsyncTemplate, Script} from '../../src/environment/environment.js';
 import {StringLoader, delay} from '../util.js';
-import {createPoison, isPoisonError, PoisonError, RuntimeError, TextCommand, SnapshotCommand, CommandBuffer, declareBufferChain, cloneWithAddedContext} from '../../src/runtime/runtime.js';
+import {createPoison, isPoisonError, PoisonError, RuntimeError, TextCommand, SnapshotCommand, WaitResolveCommand, CommandBuffer, declareBufferChain, cloneWithAddedContext} from '../../src/runtime/runtime.js';
 import * as parser from '../../src/language/parser.js';
 import * as nodes from '../../src/language/nodes.js';
 import * as scopeBoundaries from '../../src/compiler/scope-boundaries.js';
@@ -2446,6 +2446,125 @@ const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC
       const matches = source.match(/new runtime\.WaitResolveCommand/g);
       return matches ? matches.length : 0;
     }
+
+    it('applies sync WaitResolveCommand values without returning a promise', function () {
+      let target;
+      const chain = {
+        _setTarget(value) {
+          target = value;
+        }
+      };
+      const cmd = new WaitResolveCommand({
+        chainName: '__waited__',
+        args: [42],
+        errorContext: TEST_EC
+      });
+
+      const result = cmd.apply(chain);
+
+      expect(result).to.be(42);
+      expect(target).to.be(42);
+    });
+
+    it('applies promised WaitResolveCommand values through the async path', async function () {
+      let target;
+      const chain = {
+        _setTarget(value) {
+          target = value;
+        }
+      };
+      const cmd = new WaitResolveCommand({
+        chainName: '__waited__',
+        args: [Promise.resolve(42)],
+        errorContext: TEST_EC
+      });
+
+      const result = cmd.apply(chain);
+
+      expect(!!(result && typeof result.then === 'function')).to.be(true);
+      expect(await result).to.be(42);
+      expect(target).to.be(42);
+    });
+
+    it('ignores poison wait failures without setting the waited target', function () {
+      let target = 'unchanged';
+      const chain = {
+        _setTarget(value) {
+          target = value;
+        }
+      };
+      const cmd = new WaitResolveCommand({
+        chainName: '__waited__',
+        args: [createTestPoison(new Error('wait poison'))],
+        errorContext: TEST_EC
+      });
+
+      const result = cmd.apply(chain);
+
+      expect(result).to.be(undefined);
+      expect(target).to.be('unchanged');
+    });
+
+    it('ignores rejected poison wait failures without setting the waited target', async function () {
+      let target = 'unchanged';
+      const chain = {
+        _setTarget(value) {
+          target = value;
+        }
+      };
+      const cmd = new WaitResolveCommand({
+        chainName: '__waited__',
+        args: [Promise.reject(PoisonError.wrap(new Error('wait poison'), TEST_EC, 'UserCallThrew'))],
+        errorContext: TEST_EC
+      });
+
+      const result = cmd.apply(chain);
+
+      expect(!!(result && typeof result.then === 'function')).to.be(true);
+      expect(await result).to.be(undefined);
+      expect(target).to.be('unchanged');
+    });
+
+    it('propagates rejected fatal wait failures', async function () {
+      const fatal = RuntimeError.create('wait fatal', TEST_EC);
+      const chain = {
+        _setTarget() {
+          expect().fail('fatal wait failure should not set the target');
+        }
+      };
+      const cmd = new WaitResolveCommand({
+        chainName: '__waited__',
+        args: [Promise.reject(fatal)],
+        errorContext: TEST_EC
+      });
+
+      const result = cmd.apply(chain);
+
+      expect(!!(result && typeof result.then === 'function')).to.be(true);
+      try {
+        await result;
+        expect().fail('Expected fatal wait failure to reject');
+      } catch (err) {
+        expect(err).to.be(fatal);
+      }
+    });
+
+    it('does not hide command-local wait assignment failures', function () {
+      const chain = {
+        _setTarget() {
+          throw new Error('assignment failed');
+        }
+      };
+      const cmd = new WaitResolveCommand({
+        chainName: '__waited__',
+        args: [42],
+        errorContext: TEST_EC
+      });
+
+      expect(() => cmd.apply(chain)).to.throwException((err) => {
+        expect(err.message).to.contain('assignment failed');
+      });
+    });
 
     it('declares internal __waited__ chain for limited loop iterations', function () {
       const env = new AsyncEnvironment();

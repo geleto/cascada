@@ -1,6 +1,6 @@
 import expect from 'expect.js';
 
-const {AsyncEnvironment, Environment} = typeof window !== 'undefined'
+const {AsyncEnvironment, AsyncTemplate, Environment, Script} = typeof window !== 'undefined'
   ? window.nunjucks
   : await import('../../src/environment/environment.js');
 
@@ -15,6 +15,37 @@ const {AsyncEnvironment, Environment} = typeof window !== 'undefined'
     let env;
     beforeEach(() => {
       env = new AsyncEnvironment();
+    });
+
+    describe('Sync-first generated expression shapes', () => {
+      it('emits a plain continuation for non-linked inline if expressions', () => {
+        const source = new AsyncTemplate('{{ "A" if cond else "B" }}', env, 'inline-if-source.njk').compileSource();
+
+        expect(source).to.contain('runtime.resolveThen');
+        expect(source).to.contain(', function(cond) {');
+        expect(source).to.not.contain('async function(cond)');
+      });
+
+      it('emits plain continuations for non-linked logical short-circuit expressions', () => {
+        const source = new AsyncTemplate('{{ left or right }} {{ left and right }}', env, 'logical-source.njk').compileSource();
+
+        expect(source).to.contain(', function(left) {');
+        expect(source).to.not.contain('async function(left)');
+      });
+
+      it('emits async comparison continuations only for chained comparisons', () => {
+        const templateSingle = new AsyncTemplate('{{ a < b }}', env, 'single-compare-source.njk').compileSource();
+        const templateChained = new AsyncTemplate('{{ a < b < c }}', env, 'chained-compare-source.njk').compileSource();
+        const scriptSingle = new Script('return a < b', env, 'single-compare-source.casc').compileSource();
+        const scriptChained = new Script('return a < b < c', env, 'chained-compare-source.casc').compileSource();
+
+        expect(templateSingle).to.contain('function([expr, ref1]){');
+        expect(templateSingle).to.not.contain('async function([expr, ref1])');
+        expect(templateChained).to.contain('async function([expr, ref1])');
+
+        expect(scriptSingle).to.not.match(/async function\(\[[^,\]]+, [^\]]+\]\)\{/);
+        expect(scriptChained).to.match(/async function\(\[[^,\]]+, [^\]]+\]\)\{/);
+      });
     });
 
     describe('Basic Set Expression Tests', () => {

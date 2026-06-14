@@ -62,8 +62,9 @@ Target shape:
 
 - make `apply` non-async;
 - call `resolveAll(values)`;
-- use `thenValue(...)` only when the result is promise-like;
-- keep the current swallow-on-failure behavior.
+- use `thenValue(...)` to preserve sync-first resolved/poison handling and
+  delegate actual promises to the async path;
+- swallow poison wait failures, but propagate non-poison/fatal failures.
 
 Why: `WaitResolveCommand` is used for limited/sequential loop completion,
 caller scheduling, imports/includes in limited loops, and other timing-only
@@ -318,4 +319,3 @@ Paths that look async-without-await but should stay async, and why:
 
 Add any path consciously deferred during implementation here, rather than
 leaving it implicitly skipped.
-

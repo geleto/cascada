@@ -226,7 +226,7 @@ class CompilerBaseAsync extends CompilerCommon {
 
     this.emit('runtime.resolveThen(');
     this.compile(node.cond, null);
-    this.emit(', async function(cond) {');
+    this.emit(', function(cond) {');
     this.emit('  if(cond) {');
     this.emit('    return ');
     this.compile(node.body, null);
@@ -335,7 +335,7 @@ class CompilerBaseAsync extends CompilerCommon {
     this.compile(node.expr, null);
     this.emit(',');
     this.compile(node.ops[0].expr, null);
-    this.emit('), async function([expr, ref1]){');
+    this.emit(`), ${node.ops.length > 1 ? 'async ' : ''}function([expr, ref1]){`);
     this.emit(`return expr ${compareOps[node.ops[0].type]} ref1`);
     node.ops.forEach((op, index) => {
       if (index > 0) {
@@ -363,7 +363,7 @@ class CompilerBaseAsync extends CompilerCommon {
     this.compile(node.expr, null);
     this.emit(',');
     this.compile(node.ops[0].expr, null);
-    this.emit(`), async function([${leftId}, ${rightId}]){`);
+    this.emit(`), ${node.ops.length > 1 ? 'async ' : ''}function([${leftId}, ${rightId}]){`);
 
     this.emit(`let ${resultId} = runtime.scriptCompareOperator(${leftId}, ${rightId}, "${node.ops[0].type}", ${this.emitErrorContext(node)});`);
     this.emit(`if (runtime.isPoison(${resultId}) || !${resultId}) return ${resultId};`);
@@ -549,7 +549,7 @@ class CompilerBaseAsync extends CompilerCommon {
 
     this.emit('runtime.resolveThen(');
     this.compile(node.left, null);
-    this.emit(', async function(left) {');
+    this.emit(', function(left) {');
 
     const check = isOr ? 'left' : '!left';
     this.emit(`  if (${check}) {`);

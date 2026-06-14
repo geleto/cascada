@@ -281,23 +281,24 @@ class CompileMacro {
     // Macro-body boundary errors report through the compiled reportError
     // callback and propagate through chain poison, not by rejecting here.
     const callerReadyVar = hasCallerSupport ? compiler._tmpid() : null;
-    const callerSyncPrefix =
+    const callerSchedulingPrefix =
       (hasCallerSupport ? `const ${callerReadyVar} = ${bufferId}.addCommand(new runtime.SnapshotCommand({ chainName: "${CALLER_SCHED_CHAIN_NAME}", errorContext: ${compiler.emitErrorContext(node)} }), "${CALLER_SCHED_CHAIN_NAME}");` : '') +
       (hasCallerSupport ? `await ${callerReadyVar};` : '') +
       (hasCallerSupport ? `if (${allCallersBufferId}) {${allCallersBufferId}.finish();}` : '');
+    const iifeOpen = hasCallerSupport ? '(async () => {' : '(() => {';
 
     if (compiler.scriptMode) {
       const returnVar = compiler._tmpid();
-      return `(async () => {` +
-        callerSyncPrefix +
+      return iifeOpen +
+        callerSchedulingPrefix +
         `${bufferId}.finish();` +
         `const ${returnVar}_snapshot = ${bufferId}.getChain("${RETURN_CHAIN_NAME}").finalSnapshot();` +
         `return runtime.thenValue(${returnVar}_snapshot, (value) => value === runtime.RETURN_UNSET ? null : value);` +
         `})()`;
     } else {
       const textSnapshotVar = compiler._tmpid();
-      return `(async () => {` +
-        callerSyncPrefix +
+      return iifeOpen +
+        callerSchedulingPrefix +
         `${bufferId}.finish();` +
         `const ${textSnapshotVar} = ${bufferId}.getChain("${compiler.buffer.currentTextChainName}").finalSnapshot();` +
         `return runtime.thenValue(${textSnapshotVar}, (value) => runtime.markSafe(value));` +

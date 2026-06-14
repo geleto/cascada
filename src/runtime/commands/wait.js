@@ -1,5 +1,15 @@
-import {resolveAll} from '../resolve.js';
+import {resolveAll, thenValue} from '../resolve.js';
+import {isPoisonError} from '../errors.js';
 import {ChainCommand, ObservableCommand, requireCommandErrorContext} from './base.js';
+
+// WaitResolveCommand is a timing-only barrier. Poison from the waited value is
+// observed through its real chain; non-poison failures must stay fatal.
+function ignorePoisonWaitFailure(err) {
+  if (isPoisonError(err)) {
+    return;
+  }
+  throw err;
+}
 
 class WaitResolveCommand extends ChainCommand {
   constructor({ chainName, args = null, errorContext }) {
@@ -10,11 +20,9 @@ class WaitResolveCommand extends ChainCommand {
     });
   }
 
-  async apply(chain) {
+  apply(chain) {
     super.apply(chain);
-    try {
-      const values = Array.isArray(this.arguments) ? this.arguments : [];
-      const resolvedArgs = await resolveAll(values);
+    const settle = (resolvedArgs) => {
       const resolved = Array.isArray(resolvedArgs) && resolvedArgs.length <= 1
         ? resolvedArgs[0]
         : resolvedArgs;
@@ -22,10 +30,12 @@ class WaitResolveCommand extends ChainCommand {
         chain._setTarget(resolved);
       }
       return resolved;
-    } catch (err) {
-      void err;
-      return undefined;
-    }
+    };
+
+    const values = Array.isArray(this.arguments) ? this.arguments : [];
+    // resolveAllAsync returns poison as a PoisonedValue, which async promise
+    // assimilation routes to this rejection handler.
+    return thenValue(resolveAll(values), settle, ignorePoisonWaitFailure);
   }
 }
 

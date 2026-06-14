@@ -1,7 +1,7 @@
 import expect from 'expect.js';
 import {delay} from '../util.js';
 
-const {AsyncEnvironment} = typeof window !== 'undefined'
+const {AsyncEnvironment, AsyncTemplate, Script} = typeof window !== 'undefined'
   ? window.nunjucks
   : await import('../../src/environment/environment.js');
 const runtime = typeof window !== 'undefined'
@@ -16,6 +16,39 @@ const runtime = typeof window !== 'undefined'
     let env;
     beforeEach(() => {
       env = new AsyncEnvironment();
+    });
+
+    describe('Sync-first generated macro shapes', () => {
+      it('emits a plain return IIFE for simple template and script macros', () => {
+        const templateSource = new AsyncTemplate(
+          '{% macro greet(name) %}Hi {{ name }}{% endmacro %}{{ greet("Ada") }}',
+          env,
+          'simple-macro-source.njk'
+        ).compileSource();
+        const scriptSource = new Script([
+          'function greet(name)',
+          '  return name',
+          'endfunction',
+          'return greet("Ada")'
+        ].join('\n'), env, 'simple-macro-source.casc').compileSource();
+
+        expect(templateSource).to.contain('(() => {');
+        expect(templateSource).to.not.contain('async () =>');
+        expect(scriptSource).to.contain('(() => {');
+        expect(scriptSource).to.not.contain('async () =>');
+      });
+
+      it('keeps the async return path for caller-capable macros', () => {
+        const source = new AsyncTemplate(
+          '{% macro wrap() %}{{ caller() }}{% endmacro %}{% call wrap() %}x{% endcall %}',
+          env,
+          'caller-macro-source.njk'
+        ).compileSource();
+
+        expect(source).to.contain('async () =>');
+        expect(source).to.contain('await');
+        expect(source).to.contain('__caller__');
+      });
     });
 
     describe('Nunjucks Async Macro Handling Tests', () => {
