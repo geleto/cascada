@@ -46,7 +46,7 @@ class CompileBoundaries {
       errorContextNode: node,
       stackFields
     });
-    this.compiler.emit(`runtime.runValueBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, async (currentBuffer) => {`);
+    this.compiler.emit(`runtime.runValueBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, (currentBuffer) => {`);
     bufferCompiler.withBufferState({ currentBuffer: 'currentBuffer' }, () => {
       emitBody.call(this.compiler);
     });
@@ -67,7 +67,7 @@ class CompileBoundaries {
     });
 
     this.compiler.emit.line(
-      `runtime.runValueBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, async (currentBuffer) => {`
+      `runtime.runValueBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, (currentBuffer) => {`
     );
 
     bufferCompiler.withBufferState({
@@ -78,9 +78,14 @@ class CompileBoundaries {
       this.compiler.emit(`  let ${resultId} = `);
       emitValue.call(this.compiler, node);
       this.compiler.emit.line(';');
-      this.compiler.emit.line(`  return await ${resultId};`);
+      // Keep both handlers: thenValue preserves poison as a value while
+      // attaching context to raw async rejection; catch reports synchronous
+      // fatal/runtime failures while building/attaching that path.
+      this.compiler.emit.line(`  return runtime.thenValue(${resultId}, (value) => value, (e) => {`);
+      this.compiler.emit.line(`    return runtime.poisonOrReport(e, ${errorContextArg});`);
+      this.compiler.emit.line('  });');
       this.compiler.emit.line('} catch (e) {');
-      this.compiler.emit.line(`  runtime.rethrowPoisonOrReport(e, ${errorContextArg});`);
+      this.compiler.emit.line(`  runtime.RuntimeError.reportAndThrow(e, ${errorContextArg});`);
       this.compiler.emit.line('}');
       this.compiler.emit.line(`}, ${bufferStackErrorContextArg})`);
     });

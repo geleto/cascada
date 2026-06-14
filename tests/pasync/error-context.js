@@ -1342,6 +1342,21 @@ describe('error context tracing runtime foundation', () => {
     expect(child.getDiagnosticStack()).to.eql([child.bufferStackErrorContext, root.bufferStackErrorContext]);
   });
 
+  it('returns sync value-boundary results without a thenable and finishes immediately', () => {
+    const root = new CommandBuffer({ path: 'script.casc' }, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+    const boundaryEc = [11, 6, 'FunCall', 'script.casc', null, null];
+    let child = null;
+
+    const result = runValueBoundary(root, null, null, (currentBuffer) => {
+      child = currentBuffer;
+      return 42;
+    }, boundaryEc);
+
+    expect(result).to.be(42);
+    expect(!!(result && typeof result.then === 'function')).to.be(false);
+    expect(child.isFinished()).to.be(true);
+  });
+
   it('stores buffer stack error context on runtime control-flow boundaries', async () => {
     const root = new CommandBuffer({ path: 'script.casc' }, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
     const boundaryEc = [12, 3, 'If.Condition(Symbol)', 'script.casc', null, null];

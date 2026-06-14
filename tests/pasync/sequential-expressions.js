@@ -1,6 +1,6 @@
 
 import expect from 'expect.js';
-import {AsyncEnvironment} from '../../src/index.js';
+import {AsyncEnvironment, AsyncTemplate} from '../../src/index.js';
 import {delay, expectAsyncError} from '../util.js';
 
 describe('Sequential Operations in Expressions', function () {
@@ -582,6 +582,21 @@ describe('Sequential Operations in Expressions', function () {
     beforeEach(() => {
       env = new AsyncEnvironment();
     });
+
+    it('emits sync-first linked expression control-flow boundaries', () => {
+      const source = new AsyncTemplate(`
+        {% set inline = (account!.deposit(10) if cond else 'skipped') %}
+        {% set anded = (cond and account!.deposit(20)) %}
+        {% set ored = (cond or account!.deposit(30)) %}
+        {{ inline }} {{ anded }} {{ ored }}
+      `, env, 'linked-expression-control-flow-source.njk').compileSource();
+
+      expect(source).to.contain('runtime.runValueBoundary');
+      expect(source).to.contain('runtime.resolveThen');
+      expect(source).to.not.contain('async (currentBuffer)');
+      expect(source).to.not.contain('await runtime.resolveSingle');
+    });
+
     it('should skip sequential operations in short-circuited AND (false && seq)', async function () {
       const src = `
     {% set res = (false and account!.deposit(10)) %}

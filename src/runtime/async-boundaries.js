@@ -1,6 +1,6 @@
 
 import {isPoisonError, isRuntimeError, markPromiseHandled, RuntimeError} from './errors.js';
-import {resolveThen, thenValue} from './resolve.js';
+import {finallyValue, resolveThen, thenValue} from './resolve.js';
 import {CommandBuffer} from './command-buffer.js';
 import {ErrorCommand} from './commands/errors.js';
 
@@ -177,21 +177,28 @@ function runRenderBoundary(context, renderState, boundaryFn, bufferStackErrorCon
 }
 
 /**
- * Run a value-returning async boundary that may need a child buffer before
+ * Run a value-returning sync-first boundary that may need a child buffer before
  * the eventual dispatched call decides whether it is command-emitting.
+ * Returns a plain value for sync work, a thenable for async work, or throws
+ * synchronously when the boundary body throws.
  *
  * Unlike runControlFlowBoundary(...), this helper preserves normal expression
  * rejection semantics: errors are rethrown to the awaiting caller.
  */
-function runValueBoundary(parentBuffer, linkedChainNames, linkedMutatedChainNames, asyncFn, bufferStackErrorContext) {
+function runValueBoundary(parentBuffer, linkedChainNames, linkedMutatedChainNames, boundaryFn, bufferStackErrorContext) {
   const childBuffer = _createChildBoundary(parentBuffer, linkedChainNames, linkedMutatedChainNames, null, bufferStackErrorContext);
-  const promise = Promise.resolve()
-    .then(() => asyncFn(childBuffer))
-    .finally(() => {
-      childBuffer.finish();
-    });
-  markPromiseHandled(promise);
-  return promise;
+  let result;
+  try {
+    result = boundaryFn(childBuffer);
+  } catch (err) {
+    childBuffer.finish();
+    throw err;
+  }
+  const finalized = finallyValue(result, () => {
+    childBuffer.finish();
+  });
+  markPromiseHandled(finalized);
+  return finalized;
 }
 
 export {

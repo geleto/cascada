@@ -1,7 +1,7 @@
 import expect from 'expect.js';
 import {StringLoader, unescape} from '../util.js';
 
-const {AsyncEnvironment} = typeof window !== 'undefined'
+const {AsyncEnvironment, AsyncTemplate} = typeof window !== 'undefined'
   ? window.nunjucks
   : await import('../../src/environment/environment.js');
 
@@ -95,6 +95,19 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
             <label>Enter Username:</label>
             </div>`
           );
+        });
+
+        it('should compile imported callable value boundaries without async callbacks', () => {
+          const source = new AsyncTemplate(
+            '{% from "forms.njk" import label %}{{ label("Name") }}',
+            env,
+            'imported-callable-source.njk'
+          ).compileSource();
+
+          expect(source).to.contain('runtime.runValueBoundary');
+          expect(source).to.contain('runtime.thenValue');
+          expect(source).to.not.contain('async (currentBuffer)');
+          expect(source).to.not.contain('return await');
         });
 
         it('should not export macros declared inside blocks', async () => {

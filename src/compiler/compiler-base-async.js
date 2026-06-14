@@ -204,22 +204,23 @@ class CompilerBaseAsync extends CompilerCommon {
     const hasLinkedMutations = node._analysis.linkedMutatedChains !== null;
     if (hasLinkedMutations) {
       this.boundaries.compileExpressionControlFlowBoundary(this.buffer, node, function() {
-        this.emit('const cond = await runtime.resolveSingle(');
+        this.emit('return runtime.resolveThen(');
         this.compile(node.cond, null);
-        this.emit.line(');');
-        this.emit('if(cond) {');
-        this.emit('return ');
+        this.emit(', function(cond) {');
+        this.emit('  if(cond) {');
+        this.emit('    return ');
         this.compile(node.body, null);
-        this.emit.line(';');
-        this.emit('} else {');
+        this.emit(';');
+        this.emit('  } else {');
         if (node.else_) {
-          this.emit('return ');
+          this.emit('    return ');
           this.compile(node.else_, null);
-          this.emit.line(';');
+          this.emit(';');
         } else {
-          this.emit.line('return "";');
+          this.emit('    return "";');
         }
-        this.emit('}');
+        this.emit('  }');
+        this.emit('})');
       });
       return;
     }
@@ -532,17 +533,18 @@ class CompilerBaseAsync extends CompilerCommon {
     const hasLinkedMutations = node._analysis.linkedMutatedChains !== null;
     if (hasLinkedMutations) {
       this.boundaries.compileExpressionControlFlowBoundary(this.buffer, node, function() {
-        this.emit('const left = await runtime.resolveSingle(');
+        this.emit('return runtime.resolveThen(');
         this.compile(node.left, null);
-        this.emit.line(');');
+        this.emit(', function(left) {');
         const check = isOr ? 'left' : '!left';
-        this.emit(`if (${check}) {`);
-        this.emit.line('return left;');
-        this.emit('} else {');
-        this.emit('return ');
+        this.emit(`  if (${check}) {`);
+        this.emit('    return left;');
+        this.emit('  } else {');
+        this.emit('    return ');
         this.compile(node.right, null);
-        this.emit.line(';');
-        this.emit('}');
+        this.emit(';');
+        this.emit('  }');
+        this.emit('})');
       });
       return;
     }

@@ -99,11 +99,11 @@ Tests:
 - generated-source assertion that a simple macro does not emit `async () =>`;
 - behavior test for caller-capable macros to ensure the scheduling wait remains.
 
-### Non-Linked Inline If
+### Inline If Without Linked Parent Mutations
 
 File: `src/compiler/compiler-base-async.js`
 
-Current shape: non-linked inline-if emits
+Current shape: inline-if without linked parent mutations emits
 `runtime.resolveThen(cond, async function(cond) { ... })`.
 
 Target shape:
@@ -115,16 +115,23 @@ Target shape:
 Why: inline conditionals are expression-level control flow, and the selected
 branch can already return a concrete value or thenable.
 
+Note: "without linked parent mutations" is narrower than "contains no
+sequencing." A sequence path read can still run through this shape when it only
+observes an existing ordered path. If the inline-if condition or selected branch
+mutates a parent-owned ordered path, for example through a `!` sequence call,
+analysis sets `linkedMutatedChains` and the expression uses the value-boundary
+path covered by Pass 4 instead.
+
 Tests:
 
 - `tests/pasync/expressions.js` or `tests/pasync/conditional.js`;
 - generated-source assertion for `{{ "a" if cond else "b" }}`.
 
-### Non-Linked `and` / `or`
+### `and` / `or` Without Linked Parent Mutations
 
 File: `src/compiler/compiler-base-async.js`
 
-Current shape: non-linked short-circuit operators emit
+Current shape: short-circuit operators without linked parent mutations emit
 `runtime.resolveThen(left, async function(left) { ... })`.
 
 Target shape:
@@ -135,6 +142,10 @@ Target shape:
 
 Why: the short-circuit decision only consumes one value. The right expression is
 already a value/thenable boundary.
+
+As with inline-if, sequence reads can still be present here. Sequence calls or
+other parent-owned command mutations are excluded from this pass by
+`linkedMutatedChains` and stay on the value-boundary path.
 
 Tests:
 
@@ -289,7 +300,7 @@ Tests:
   promised/object/sequential/limited paths remain thenable;
 - generated-source tests are less important here than runtime behavior.
 
-## Pass 4: Linked Expression Control-Flow Boundaries
+## Pass 4: Linked Expression Control-Flow Boundaries - implemented
 
 Files:
 
@@ -297,39 +308,40 @@ Files:
 - `src/compiler/async-boundaries.js`
 - `src/runtime/async-boundaries.js`
 
-This pass is the **linked counterpart of Pass 1's non-linked inline-if /
-`and` / `or` work**, and should reuse that proven design (the value-boundary
-analog of `consumeControlFlowValue(...)`) rather than inventing a new shape.
+Done as the fourth implementation pass. This pass is the **linked-mutating
+counterpart of Pass 1's inline-if / `and` / `or` work**, reusing the proven
+sync-first `resolveThen(...)` continuation design.
 
-Current shape: linked inline-if and linked `and`/`or` expression boundaries emit
-local `await runtime.resolveSingle(...)` inside `runValueBoundary(...)`.
+Previous shape: inline-if and `and`/`or` expression boundaries that mutate
+parent-owned linked chains emit local `await runtime.resolveSingle(...)` inside
+`runValueBoundary(...)`.
 
-Target shape:
+Implemented shape:
 
-- first decide whether `compileValueBoundary(...)` belongs in this pass. If it
-  is deferred, list it under [Out of scope](#out-of-scope) with the reason.
-- **Convert `runValueBoundary(...)` itself to a sync-first runner** (analogous
-  to `_runWithChildBuffer`). It currently forces a promise unconditionally via
-  `Promise.resolve().then(() => asyncFn(...))`, so a sync compiler callback gains
-  nothing until the runner stops re-promisifying it. This is the gating change.
-- design a value-boundary equivalent of `consumeControlFlowValue(...)`;
-- keep expression rejection semantics distinct from statement skipped-chain
-  poisoning;
-- remove local awaits from generated expression control-flow callbacks when the
-  selected branch can be returned directly.
+- `runValueBoundary(...)` is sync-first and no longer starts with
+  `Promise.resolve().then(...)`;
+- callers must treat `runValueBoundary(...)` as returning value-or-thenable,
+  with synchronous throws preserved;
+- linked-mutating inline-if and `and`/`or` expression callbacks are plain
+  functions that call `runtime.resolveThen(...)`;
+- `compileValueBoundary(...)` is included in this pass, so imported callable
+  value boundaries also use a plain callback plus `runtime.thenValue(...)`
+  instead of `return await ...`;
+- no expression-specific equivalent of `consumeControlFlowValue(...)` is kept:
+  expression boundaries propagate values and rejections to their consumer, so
+  plain `resolveThen(...)` / `thenValue(...)` are the correct abstraction;
+- child buffers still finish after an actual returned thenable settles, matching
+  the old value-boundary cleanup timing without forcing a microtask for sync
+  values.
 
-Scope: `compileValueBoundary(...)` (used by `call.js` for call value boundaries)
-also emits `async (currentBuffer) => { ... return await ... }` on the same
-`runValueBoundary` runner. Decide explicitly: convert it in this pass once the
-runner is sync-first, or defer it and list it under [Out of scope](#out-of-scope).
+Scope: `compileValueBoundary(...)` (used by `call.js` for imported callable
+value boundaries) was converted in this pass once the runner became sync-first.
 
-Risks:
+Preserved semantics:
 
 - expression boundaries must preserve rejection to the expression consumer;
 - statement-boundary skipped-chain poisoning must not leak into expression
-  semantics;
-- this probably needs a small runtime helper rather than inlining `.then` logic
-  at each compiler site.
+  semantics.
 
 Tests:
 
