@@ -1,6 +1,8 @@
 
-import {isPoisonError, markPromiseHandled} from './errors.js';
+import {isPoisonError, isRuntimeError, markPromiseHandled, RuntimeError} from './errors.js';
+import {resolveThen, thenValue} from './resolve.js';
 import {CommandBuffer} from './command-buffer.js';
+import {ErrorCommand} from './commands/errors.js';
 
 function _createChildBoundary(parentBuffer, linkedChainNames, linkedMutatedChainNames = null, isolatedContext = null, bufferStackErrorContext, traceParent = null, renderState = null) {
   const bufferContext = parentBuffer && parentBuffer._context ? parentBuffer._context : isolatedContext;
@@ -41,7 +43,7 @@ function normalizeStructuralBoundaryError(err, renderState, childBuffer) {
   if (isPoisonError(err)) {
     return err;
   }
-  let normalizedErr = err;
+  let normalizedErr;
   try {
     renderState.reportAndThrowFatalError(err, childBuffer.bufferStackErrorContext, childBuffer);
   } catch (reportedErr) {
@@ -132,6 +134,37 @@ function runWaitedControlFlowBoundary(parentBuffer, linkedChainNames, linkedMuta
   return markPromiseHandled(_runWithChildBuffer(childBuffer, renderState, boundaryFn, waitedChainName));
 }
 
+function poisonControlFlowTargets(buffer, poisonTargetChains, err, errorContext) {
+  if (isRuntimeError(err)) {
+    throw err;
+  }
+  if (!isPoisonError(err)) {
+    RuntimeError.reportAndThrow(err, errorContext);
+  }
+  if (!poisonTargetChains) {
+    return;
+  }
+  for (const chainName of poisonTargetChains) {
+    buffer.addCommand(new ErrorCommand(err, errorContext), chainName);
+  }
+}
+
+function consumeControlFlowValue(value, buffer, poisonTargetChains, errorContext, onValue, onPoison = null) {
+  return resolveThen(value, onValue, (err) => {
+    poisonControlFlowTargets(buffer, poisonTargetChains, err, errorContext);
+    return onPoison ? onPoison(err) : undefined;
+  });
+}
+
+function finishBufferAndWait(buffer, waitedChainName) {
+  buffer.finish();
+  return buffer.getChain(waitedChainName).finalSnapshot();
+}
+
+function finishBufferAndContinue(buffer, waitedChainName) {
+  return thenValue(finishBufferAndWait(buffer, waitedChainName), () => true);
+}
+
 /**
  * Run an isolated render boundary as a child buffer that is not linked into
  * the parent tree. The boundary function receives (childBuffer) and should
@@ -161,4 +194,12 @@ function runValueBoundary(parentBuffer, linkedChainNames, linkedMutatedChainName
   return promise;
 }
 
-export { runControlFlowBoundary, runWaitedControlFlowBoundary, runRenderBoundary, runValueBoundary };
+export {
+  runControlFlowBoundary,
+  runWaitedControlFlowBoundary,
+  consumeControlFlowValue,
+  finishBufferAndContinue,
+  finishBufferAndWait,
+  runRenderBoundary,
+  runValueBoundary
+};

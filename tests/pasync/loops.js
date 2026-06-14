@@ -1369,13 +1369,14 @@ const {isPoisonError} = runtime;
       env = new AsyncEnvironment();
     });
 
-    it('should compile while conditions through resolveThen without a broad condition catch', () => {
+    it('should compile while conditions through control-flow value consumption without a broad condition catch', () => {
       const template = new AsyncTemplate('{% set i = 0 %}{% while keepGoing(i) %}{% set i = i + 1 %}{% endwhile %}', env);
       const source = template.compileSource();
 
-      expect(source).to.contain('runtime.resolveThen');
-      expect(source).to.contain("typeof");
-      expect(source).to.contain(".then === 'function'");
+      expect(source).to.contain('runtime.consumeControlFlowValue');
+      expect(source).to.contain('runtime.finishBufferAndContinue');
+      expect(source).to.not.contain('.then === \'function\'');
+      expect(source).to.not.contain('async (currentBuffer)');
       expect(source).to.not.contain('} catch');
     });
 

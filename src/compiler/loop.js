@@ -89,7 +89,7 @@ class CompileLoop {
       if (node.else_) {
         elseFuncId = this.compiler._tmpid();
         this.compiler.emit(`let ${elseFuncId} = `);
-        this.compiler.emit('(async function() {');
+        this.compiler.emit('(function() {');
         this.compiler.withInheritedLabelOverride('"Loop.Else"', () => {
           this.compiler.compile(node.else_, null);
         });
@@ -121,8 +121,8 @@ class CompileLoop {
       if (shouldTrackNestedLoopCompletion) {
         this.compiler.buffer.emitLimitedLoopCompletion(iteratePromiseId, node);
       }
-      this.compiler.emit.line(`await ${iteratePromiseId};`);
-    }, node, { loopVariables: loopVars }, { asyncCallback: true });
+      this.compiler.emit.line(`return ${iteratePromiseId};`);
+    }, node, { loopVariables: loopVars });
   }
 
   compileFor(node) {
@@ -206,7 +206,7 @@ class CompileLoop {
   }
 
   _compileAsyncLoopBody(node, loopVars, sequentialLoopBody, hasConcurrencyLimit = false, whileConditionNode = null, loopVarNames = null, whilePoisonTargetChains = []) {
-    this.compiler.emit('(async function(');
+    this.compiler.emit('(function(');
     loopVars.forEach((varName, index) => {
       if (index > 0) {
         this.compiler.emit(', ');
@@ -235,7 +235,7 @@ class CompileLoop {
     const loopAddedContextVar = this.compiler.createInheritedAddedContextVar(`{ loop: ${loopMetaVar} }`);
     const iterationBoundaryContextArg = `runtime.setContextLabel(runtime.cloneWithAddedContext(${this.compiler._emitStaticErrorContext(node)}, ${loopAddedContextVar}), "Iteration")`;
     this.compiler.emit(
-      `return runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, renderState, async (currentBuffer) => {`
+      `return runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedChainsArg}, ${linkedMutatedChainsArg}, context, renderState, (currentBuffer) => {`
     );
 
     this.compiler.buffer.withBufferState({
@@ -248,6 +248,21 @@ class CompileLoop {
           this.compiler.emit.line(`runtime.declareBufferChain(${this.compiler.buffer.currentBuffer}, "${WAITED_CHAIN_NAME}", "var", context, null);`);
         }
 
+        const emitBodyAndCompletion = () => {
+          this.compiler.emit.withScopedSyntax(() => {
+            this.compiler.compile(node.body, null);
+          });
+
+          if (shouldAwaitLoopBody) {
+            const completionHelper = whileConditionNode ? 'finishBufferAndContinue' : 'finishBufferAndWait';
+            this.compiler.emit.line(`return runtime.${completionHelper}(${this.compiler.buffer.currentBuffer}, "${WAITED_CHAIN_NAME}");`);
+            return;
+          }
+          if (whileConditionNode) {
+            this.compiler.emit.line('return true;');
+          }
+        };
+
         const compileIterationBody = () => {
           const buffer = this.compiler.buffer.currentBuffer;
           loopVars.forEach((name) => {
@@ -257,47 +272,26 @@ class CompileLoop {
             this._emitLoopValueAssignment(node, varName, valueExpr);
           });
 
-          let whileCondId;
-
           if (whileConditionNode) {
-            whileCondId = this.compiler._tmpid();
+            const whileCondId = this.compiler._tmpid();
             const whileCondValueId = this.compiler._tmpid();
-            const whilePoisonHandlerId = this.compiler.boundaries.emitBranchPoisonHandlerFunction(
-              this.compiler.buffer,
-              whilePoisonTargetChains,
-              () => this.compiler.emit.line('  return false;')
-            );
             this.compiler.emit(`let ${whileCondValueId} = `);
             this.compiler.buffer.skipOwnWaitedChain(() => {
               this.compiler._compileExpression(whileConditionNode, null, whileConditionNode);
             });
             this.compiler.emit.line(';');
             this.compiler.emit.line(
-              `let ${whileCondId} = runtime.resolveThen(${whileCondValueId}, (value) => value, (err) => ${whilePoisonHandlerId}(err, ${this.compiler.emitErrorContext(whileConditionNode)}));`
+              `return runtime.consumeControlFlowValue(${whileCondValueId}, ${this.compiler.buffer.currentBuffer}, ${JSON.stringify(whilePoisonTargetChains)}, ${this.compiler.emitErrorContext(whileConditionNode)}, (${whileCondId}) => {`
             );
-            this.compiler.emit.line(`if (${whileCondId} && typeof ${whileCondId}.then === 'function') {`);
-            this.compiler.emit.line(`  ${whileCondId} = await ${whileCondId};`);
-            this.compiler.emit.line('}');
             this.compiler.emit(`if (!${whileCondId}) {`);
             this.compiler.emit.line('  return false;');
             this.compiler.emit.line('}');
+            emitBodyAndCompletion();
+            this.compiler.emit.line('}, () => false);');
+            return;
           }
 
-          this.compiler.emit.withScopedSyntax(() => {
-            this.compiler.compile(node.body, null);
-          });
-
-          if (shouldAwaitLoopBody) {
-            const waitedSnapshotId = this.compiler._tmpid();
-            this.compiler.emit.line(`${this.compiler.buffer.currentBuffer}.finish();`);
-            this.compiler.emit.line(`const ${waitedSnapshotId} = ${this.compiler.buffer.currentBuffer}.getChain("${WAITED_CHAIN_NAME}").finalSnapshot();`);
-            if (whileConditionNode) {
-              this.compiler.emit.line(`await ${waitedSnapshotId};`);
-              this.compiler.emit.line('return true;');
-            } else {
-              this.compiler.emit.line(`return ${waitedSnapshotId};`);
-            }
-          }
+          emitBodyAndCompletion();
         };
 
         if (!usesWaitedChain) {

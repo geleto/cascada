@@ -163,37 +163,6 @@ class CompileBoundaries {
     return {};
   }
 
-  // Branch/control-flow selector failures poison the chains
-  //  that the skipped region could have written.
-  emitBranchPoisonHandler(bufferCompiler, poisonTargetChains, errorContextExpr, errorExpr, emitCatchTail = null) {
-    this.compiler.emit.line(`  if (runtime.isRuntimeError(${errorExpr})) {`);
-    this.compiler.emit.line(`    throw ${errorExpr};`);
-    this.compiler.emit.line('  }');
-    this.compiler.emit.line(`  if (!runtime.isPoisonError(${errorExpr})) {`);
-    this.compiler.emit.line(`    runtime.RuntimeError.reportAndThrow(${errorExpr}, ${errorContextExpr});`);
-    this.compiler.emit.line('  }');
-    if (poisonTargetChains.length > 0) {
-      const contextualErrorVar = this.compiler._tmpid();
-      this.compiler.emit.line(`  const ${contextualErrorVar} = ${errorExpr};`);
-      for (const chainName of poisonTargetChains) {
-        this.compiler.emit.line(
-          `    ${bufferCompiler.currentBuffer}.addCommand(new runtime.ErrorCommand(${contextualErrorVar}, ${errorContextExpr}), "${chainName}");`
-        );
-      }
-    }
-    if (emitCatchTail) {
-      emitCatchTail();
-    }
-  }
-
-  emitBranchPoisonHandlerFunction(bufferCompiler, poisonTargetChains, emitCatchTail = null) {
-    const poisonHandlerId = this.compiler._tmpid();
-    this.compiler.emit.line(`const ${poisonHandlerId} = (err, errorContext) => {`);
-    this.emitBranchPoisonHandler(bufferCompiler, poisonTargetChains, 'errorContext', 'err', emitCatchTail);
-    this.compiler.emit.line('};');
-    return poisonHandlerId;
-  }
-
   _compileAsyncRenderBoundaryImpl(emitCompiler, node, innerBodyFunction, callbackName, positionNode = node, stackFields = {}) {
     const emitCallbackResult = (resultExpr) => {
       if (callbackName) {
@@ -205,7 +174,7 @@ class CompileBoundaries {
       errorContextNode: positionNode,
       stackFields
     });
-    emitCompiler.line('runtime.runRenderBoundary(context, renderState, async (currentBuffer) =>{');
+    emitCompiler.line('runtime.runRenderBoundary(context, renderState, (currentBuffer) =>{');
     const resultId = this.compiler._tmpid();
 
     const textChainName = this.compiler.buffer.currentTextChainName;

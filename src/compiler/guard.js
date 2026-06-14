@@ -105,7 +105,7 @@ class CompileGuard {
 
       const guardErrorsVar = compiler._tmpid();
       this.emit.line(
-        `const ${guardErrorsVar} = await runtime.guard.finalizeGuard(${guardStateVar || 'null'}, ${compiler.buffer.currentBuffer}, ${JSON.stringify(guardChains)}, ${chainGuardStateVar || 'null'}, ${guardErrorContext});`
+        `return runtime.thenValue(runtime.guard.finalizeGuard(${guardStateVar || 'null'}, ${compiler.buffer.currentBuffer}, ${JSON.stringify(guardChains)}, ${chainGuardStateVar || 'null'}, ${guardErrorContext}), (${guardErrorsVar}) => {`
       );
       this.emit.line(`if (${guardErrorsVar}.length > 0) {`);
 
@@ -115,8 +115,9 @@ class CompileGuard {
 
       this.emit.line('} else {');
       this.emit.line('}');
+      this.emit.line('});');
       compiler.guardDepth = previousGuardDepth;
-    }, node, {}, { asyncCallback: true });
+    }, node, {});
   }
 
   _compileRecoveryScope(node, guardErrorsVar) {

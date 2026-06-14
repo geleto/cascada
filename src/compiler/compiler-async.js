@@ -226,18 +226,17 @@ class CompilerAsync extends CompilerBaseAsync {
     this.boundaries.compileAsyncControlFlowBoundary(this.buffer, node, () => {
       const poisonTargetChains = node._analysis.poisonTargetChains;
       const switchResultId = this._tmpid();
-      const poisonHandlerId = this.boundaries.emitBranchPoisonHandlerFunction(this.buffer, poisonTargetChains);
       const hasDynamicCases = node.cases.some((c) => !(c.cond instanceof nodes.Literal));
 
-      this.emit('return runtime.resolveThen(');
+      this.emit('return runtime.consumeControlFlowValue(');
       this._compileExpression(node.expr, null, node.expr);
-      this.emit.line(`, (${switchResultId}) => {`);
+      this.emit.line(`, ${this.buffer.currentBuffer}, ${JSON.stringify(poisonTargetChains)}, ${this.emitErrorContext(node.expr)}, (${switchResultId}) => {`);
       if (hasDynamicCases) {
-        this._emitDynamicSwitch(node, switchResultId, poisonHandlerId);
+        this._emitDynamicSwitch(node, switchResultId, poisonTargetChains);
       } else {
         this._emitLiteralSwitch(node, switchResultId);
       }
-      this.emit.line(`}, (err) => ${poisonHandlerId}(err, ${this.emitErrorContext(node.expr)}));`);
+      this.emit.line('});');
     }, node.expr);
   }
 
@@ -267,7 +266,7 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit('}');
   }
 
-  _emitDynamicSwitch(node, switchResultId, poisonHandlerId) {
+  _emitDynamicSwitch(node, switchResultId, poisonTargetChains) {
     const switchTargetId = this._tmpid();
     const switchDispatchId = this._tmpid();
     const defaultTarget = node.default ? node.cases.length : -1;
@@ -275,7 +274,7 @@ class CompilerAsync extends CompilerBaseAsync {
 
     this.emit.line(`let ${switchTargetId} = ${defaultTarget};`);
     this._emitSwitchDispatch(node, switchTargetId, switchDispatchId, defaultTarget);
-    this._emitSwitchMatcher(node, 0, switchResultId, switchTargetId, targetByCase, switchDispatchId, poisonHandlerId);
+    this._emitSwitchMatcher(node, 0, switchResultId, switchTargetId, targetByCase, switchDispatchId, poisonTargetChains);
   }
 
   _switchBodyTarget(node, startIndex, defaultTarget) {
@@ -313,7 +312,7 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit.line('};');
   }
 
-  _emitSwitchMatcher(node, caseIndex, switchResultId, switchTargetId, targetByCase, switchDispatchId, poisonHandlerId) {
+  _emitSwitchMatcher(node, caseIndex, switchResultId, switchTargetId, targetByCase, switchDispatchId, poisonTargetChains) {
     if (caseIndex >= node.cases.length) {
       this.emit.line(`return ${switchDispatchId}();`);
       return;
@@ -325,7 +324,7 @@ class CompilerAsync extends CompilerBaseAsync {
       this.emit.line(`return ${switchDispatchId}();`);
     };
     const emitNoMatch = () => {
-      this._emitSwitchMatcher(node, caseIndex + 1, switchResultId, switchTargetId, targetByCase, switchDispatchId, poisonHandlerId);
+      this._emitSwitchMatcher(node, caseIndex + 1, switchResultId, switchTargetId, targetByCase, switchDispatchId, poisonTargetChains);
     };
 
     if (c.cond instanceof nodes.Literal) {
@@ -345,13 +344,15 @@ class CompilerAsync extends CompilerBaseAsync {
     this.emit(`const ${rawCaseValueId} = `);
     this._compileExpression(c.cond, null, c.cond);
     this.emit.line(';');
-    this.emit.line(`return runtime.resolveThen(${rawCaseValueId}, (${caseValueId}) => {`);
+    this.emit.line(
+      `return runtime.consumeControlFlowValue(${rawCaseValueId}, ${this.buffer.currentBuffer}, ${JSON.stringify(poisonTargetChains)}, ${this.emitErrorContext(c.cond)}, (${caseValueId}) => {`
+    );
     this.emit(`if (${switchResultId} === ${caseValueId}) {`);
     emitMatch();
     this.emit('} else {');
     emitNoMatch();
     this.emit('}');
-    this.emit.line(`}, (err) => ${poisonHandlerId}(err, ${this.emitErrorContext(c.cond)}));`);
+    this.emit.line('});');
   }
 
   _switchCaseAddedContext(caseNode) {
@@ -408,11 +409,10 @@ class CompilerAsync extends CompilerBaseAsync {
     this.boundaries.compileAsyncControlFlowBoundary(this.buffer, node, () => {
       const poisonTargetChains = node._analysis.poisonTargetChains;
       const condResultId = this._tmpid();
-      const poisonHandlerId = this.boundaries.emitBranchPoisonHandlerFunction(this.buffer, poisonTargetChains);
 
-      this.emit('return runtime.resolveThen(');
+      this.emit('return runtime.consumeControlFlowValue(');
       this._compileExpression(node.cond, null, node.cond);
-      this.emit.line(`, (${condResultId}) => {`);
+      this.emit.line(`, ${this.buffer.currentBuffer}, ${JSON.stringify(poisonTargetChains)}, ${this.emitErrorContext(node.cond)}, (${condResultId}) => {`);
       this.emit(`if (${condResultId}) {`);
       this.withBranchAddedContext(null, 'If.Then', () => {
         this.compile(node.body, null);
@@ -424,7 +424,7 @@ class CompilerAsync extends CompilerBaseAsync {
         }
       });
       this.emit('}');
-      this.emit.line(`}, (err) => ${poisonHandlerId}(err, ${this.emitErrorContext(node.cond)}));`);
+      this.emit.line('});');
     }, node.cond);
   }
 

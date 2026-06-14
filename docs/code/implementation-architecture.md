@@ -117,14 +117,28 @@ Child buffers represent an async boundary where the future command shape is unkn
 
 Four boundary primitives exist in `src/runtime/async-boundaries.js`. All except `runRenderBoundary` take `(parentBuffer, linkedChainNames, linkedMutatedChainNames, ...)` as their leading arguments.
 
-| Function | Level | Error path | When to use |
+| Function | Level | Completion/error path | When to use |
 |---|---|---|---|
-| `runControlFlowBoundary` | Statement | `cb(err)` | `if`, `for`, `each`, includes, macros |
-| `runWaitedControlFlowBoundary` | Statement | `cb(err)` | Concurrency-limited loops; `waitedChainName` enforces slot-N-before-N+1 ordering |
-| `runRenderBoundary` | Statement | `cb(err)` | Render-scope boundaries with no parent chain links |
+| `runControlFlowBoundary` | Statement | Boundary callback returns a value or thenable; runner finishes child buffer and reports structural failures | `if`, `for`, `each`, includes, macros |
+| `runWaitedControlFlowBoundary` | Statement | Same as `runControlFlowBoundary`, then drains `waitedChainName` before completion | Concurrency-limited loops; `waitedChainName` enforces slot-N-before-N+1 ordering |
+| `runRenderBoundary` | Statement | Boundary callback returns a value or thenable; runner finishes isolated render buffer and reports structural failures | Render-scope boundaries with no parent chain links |
 | `runValueBoundary` | Expression | Preserves `asyncFn` rejection | Async value must resolve before expression continues; generated code wraps consumption errors as `PoisonError` |
 
 Using the wrong primitive causes silently swallowed errors or broken expression evaluation.
+
+Generated statement-boundary callbacks should be sync/async hybrids: emit a
+plain function that returns either a concrete result or a thenable, and let the
+runtime boundary runner handle the thenable path. For branch selectors
+(`if`, `switch`, dynamic `case`, `while` continuation), use
+`runtime.consumeControlFlowValue(...)` so selector resolution, poison
+normalization, and skipped-chain poisoning stay in the runtime instead of being
+reimplemented in generated `try/catch` or manual `.then` probes. Waited loop
+callbacks should return `runtime.finishBufferAndWait(...)` rather than locally
+awaiting the waited chain, or `runtime.finishBufferAndContinue(...)` when a
+clean waited-chain completion should resolve to a control-flow signal such as
+`true` for another `while` iteration. Use `asyncCallback` only for callback
+bodies that genuinely need local `await` because they must produce multiple
+values at different generated-code points.
 
 ---
 

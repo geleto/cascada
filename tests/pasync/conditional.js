@@ -21,7 +21,7 @@ const {AsyncEnvironment, AsyncTemplate} = typeof window !== 'undefined'
         const source = template.compileSource();
 
         expect(source).to.contain('runtime.runControlFlowBoundary');
-        expect(source).to.contain('runtime.resolveThen');
+        expect(source).to.contain('runtime.consumeControlFlowValue');
         expect(source).to.not.contain('async (currentBuffer)');
         expect(source).to.not.contain('(await context.lookup("someCondition"');
         expect(source).to.not.contain('} catch');
@@ -32,7 +32,7 @@ const {AsyncEnvironment, AsyncTemplate} = typeof window !== 'undefined'
         const source = template.compileSource();
 
         expect(source).to.contain('runtime.runControlFlowBoundary');
-        expect(source).to.contain('runtime.resolveThen');
+        expect(source).to.contain('runtime.consumeControlFlowValue');
         expect(source).to.not.contain('async (currentBuffer)');
         expect(source).to.not.contain('(await context.lookup("someValue"');
         expect(source).to.not.contain('} catch');
@@ -43,7 +43,7 @@ const {AsyncEnvironment, AsyncTemplate} = typeof window !== 'undefined'
         const source = template.compileSource();
 
         expect(source).to.contain('runtime.runControlFlowBoundary');
-        expect(source).to.contain('runtime.resolveThen');
+        expect(source).to.contain('runtime.consumeControlFlowValue');
         expect(source).to.not.contain('async (currentBuffer)');
         expect(source).to.not.contain('await runtime.resolveSingle');
         expect(source).to.not.contain('(await context.lookup("otherValue"');
