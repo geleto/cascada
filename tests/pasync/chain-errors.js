@@ -22,11 +22,12 @@ import {
 } from '../../src/runtime/chains/index.js';
 
 import {CommandBuffer} from '../../src/runtime/command-buffer.js';
-import {createArray} from '../../src/runtime/resolve.js';
+import {createArray, RESOLVE_MARKER, RESOLVED_VALUE_MARKER} from '../../src/runtime/resolve.js';
 
 const TEST_EC = [1, 1, 'Test', 'test.casc', null, null];
 const ORIGIN_EC = [9, 9, 'Origin', 'origin.casc', null, null];
 const TEST_DIAGNOSTIC_CONTEXT = cloneWithAddedContext(TEST_EC, { branch: 'test' });
+const isThenable = (value) => !!(value && typeof value.then === 'function');
 
 function testError(message) {
   return PoisonError.create(message, TEST_EC, 'UserCallThrew');
@@ -391,6 +392,71 @@ describe('chain errors', function () {
       expect(result.message).to.contain('fatal inspection failure');
     });
 
+    it('inspects all-sync targets without returning a thenable', () => {
+      const healthy = inspectTargetForErrors({ nested: ['ok', { count: 1 }] });
+      expect(isThenable(healthy)).to.be(false);
+      expect(healthy).to.be(null);
+
+      const poisoned = inspectTargetForErrors({
+        nested: [createPoison(testError('sync nested poison'))]
+      });
+      expect(isThenable(poisoned)).to.be(false);
+      expect(isPoisonError(poisoned)).to.be(true);
+      expect(poisoned.errors[0].message).to.contain('sync nested poison');
+    });
+
+    it('unwraps resolved-value wrappers without entering the async path', () => {
+      let thenCalled = false;
+      const wrapped = {
+        value: createPoison(testError('wrapped sync poison')),
+        [RESOLVED_VALUE_MARKER]: true,
+        then() {
+          thenCalled = true;
+          throw new Error('should not assimilate resolved-value wrapper');
+        }
+      };
+
+      const result = inspectTargetForErrors(wrapped);
+
+      expect(isThenable(result)).to.be(false);
+      expect(isPoisonError(result)).to.be(true);
+      expect(result.errors[0].message).to.contain('wrapped sync poison');
+      expect(thenCalled).to.be(false);
+    });
+
+    it('returns sync observations for clean and poisoned completed var chains', () => {
+      const clean = new VarChain(null, 'value', null, 'var', 'ok');
+      clean._resolveIteratorCompletion();
+
+      const cleanIsError = clean._isError();
+      const cleanErrors = clean._getErrors();
+      expect(isThenable(cleanIsError)).to.be(false);
+      expect(isThenable(cleanErrors)).to.be(false);
+      expect(cleanIsError).to.be(false);
+      expect(cleanErrors).to.be(null);
+
+      const poisoned = new VarChain(null, 'value', null, 'var', createPoison(testError('completed sync poison')));
+      poisoned._resolveIteratorCompletion();
+
+      const poisonedIsError = poisoned._isError();
+      const poisonedErrors = poisoned._getErrors();
+      expect(isThenable(poisonedIsError)).to.be(false);
+      expect(isThenable(poisonedErrors)).to.be(false);
+      expect(poisonedIsError).to.be(true);
+      expect(isPoisonError(poisonedErrors)).to.be(true);
+      expect(poisonedErrors.errors[0].message).to.contain('completed sync poison');
+    });
+
+    it('returns completed healthy final snapshots synchronously', () => {
+      const output = new VarChain(null, 'value', null, 'var', 'ready');
+      output._resolveIteratorCompletion();
+
+      const result = output.finalSnapshot();
+
+      expect(isThenable(result)).to.be(false);
+      expect(result).to.be('ready');
+    });
+
     it('collects poison from nested arrays/objects/promises', async () => {
       const target = {
         direct: createPoison(testError('direct poison')),
@@ -401,7 +467,9 @@ describe('chain errors', function () {
         wrapped: Promise.reject(PoisonError.group([testError('poison rejection')]))
       };
 
-      const result = await inspectTargetForErrors(target);
+      const inspection = inspectTargetForErrors(target);
+      expect(isThenable(inspection)).to.be(true);
+      const result = await inspection;
 
       expect(isPoisonError(result)).to.be(true);
 
@@ -424,6 +492,21 @@ describe('chain errors', function () {
       expect(result.errors[0].message).to.contain('marker rejection');
     });
 
+    it('revisits marker-backed structures after successful marker resolution', async () => {
+      const target = {
+        nested: createPoison(testError('resolved marker leaf poison'))
+      };
+      Object.defineProperty(target, RESOLVE_MARKER, {
+        value: Promise.resolve(),
+        configurable: true
+      });
+
+      const result = await inspectTargetForErrors(target);
+
+      expect(isPoisonError(result)).to.be(true);
+      expect(result.errors[0].message).to.contain('resolved marker leaf poison');
+    });
+
     it('treats raw promise failures during target inspection as fatal', async () => {
       const raw = new Error('raw inspection failure');
 
@@ -432,6 +515,38 @@ describe('chain errors', function () {
         expect().fail('Should have thrown');
       } catch (err) {
         expect(err).to.be(raw);
+      }
+    });
+
+    it('drains nested pending inspections before throwing a fatal error', async () => {
+      const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const fastFatal = new Error('fast inspection fatal');
+      const nestedFatal = new Error('nested inspection fatal');
+      const unhandled = [];
+      const onUnhandled = (reason) => {
+        unhandled.push(reason);
+      };
+
+      process.on('unhandledRejection', onUnhandled);
+      try {
+        try {
+          await inspectTargetForErrors({
+            fast: Promise.reject(fastFatal),
+            nested: pause(1).then(() => [
+              pause(5).then(() => {
+                throw nestedFatal;
+              })
+            ])
+          });
+          expect().fail('Should have thrown');
+        } catch (err) {
+          expect(err).to.be(fastFatal);
+        }
+
+        await pause(20);
+        expect(unhandled).to.eql([]);
+      } finally {
+        process.off('unhandledRejection', onUnhandled);
       }
     });
 

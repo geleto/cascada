@@ -6,6 +6,12 @@ import * as scriptTranspiler from '../../src/language/script-transpiler.js';
 
 describe('Cascada Script return', function () {
   let env;
+  const waitForAsyncWork = async (predicate) => {
+    const deadline = Date.now() + 200;
+    while (!predicate() && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  };
 
   beforeEach(function () {
     env = new AsyncEnvironment();
@@ -690,6 +696,7 @@ return made`;
       });
 
       expect(result).to.be('done');
+      await waitForAsyncWork(() => events.length === 2);
       expect(events).to.eql(['outer-1', 'outer-2']);
     });
 
@@ -1431,7 +1438,31 @@ return made`;
       });
 
       expect(result).to.be('done');
+      await waitForAsyncWork(() => events.length === 1);
       expect(events).to.eql(['falsey']);
+    });
+
+    it('does not wait for unrelated root work once the return value is ready', async function () {
+      const events = [];
+      const result = await env.renderScriptString([
+        'slowRootWork()',
+        'return "done"'
+      ].join('\n'), {
+        slowRootWork() {
+          return new Promise((resolve) => {
+            setTimeout(() => {
+              events.push('slow-done');
+              resolve();
+            }, 20);
+          });
+        }
+      });
+
+      expect(result).to.be('done');
+      expect(events).to.eql([]);
+
+      await waitForAsyncWork(() => events.length === 1);
+      expect(events).to.eql(['slow-done']);
     });
 
     it('returns null from caller bodies that complete without return', async function () {
@@ -1481,6 +1512,7 @@ return made`;
       });
 
       expect(result).to.be('done');
+      await waitForAsyncWork(() => events.length === 1);
       expect(events).to.eql(['falsey']);
     });
 

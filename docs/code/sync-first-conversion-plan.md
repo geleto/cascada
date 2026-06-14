@@ -28,15 +28,15 @@ These apply to all passes; individual sections list only their deltas.
 **Sequencing and payoff.** Passes are ordered by ascending risk, *not* by
 payoff. The largest performance return is in Pass 2 (every chain snapshot) and
 Pass 3 (every loop); Pass 1's expression conversions are lower-frequency. If
-effort gets squeezed, do not drop Pass 2/3 — they are the point of the exercise.
+effort gets squeezed, do not drop Pass 2/3 - they are the point of the exercise.
 
-**Measurement (required).** Every conversion is semantics-preserving, so the
-*only* evidence it helped is a measurement. Before starting Pass 2, capture a
-baseline microbenchmark over loop-heavy, macro-heavy, and snapshot-heavy
-templates. For each pass, add a test that proves the fast path stays
-synchronous — e.g. assert the helper/callback returns a non-thenable for
-all-concrete inputs, or count microtasks/promise allocations — and re-run the
-benchmark to confirm a real (not regressed) delta.
+**Measurement and proof.** Conversions should preserve user-visible semantics
+unless an error-model correction is explicitly called out. Each pass must add a
+test that proves the fast path stays synchronous - e.g. assert the
+helper/callback returns a non-thenable for all-concrete inputs, or count
+microtasks/promise allocations. Benchmark loop-heavy, macro-heavy, and
+snapshot-heavy templates before claiming a measured speedup; do not treat a
+sync-shape test as a benchmark result.
 
 **Landing.** Each pass is independently landable: one commit, full suite green,
 no behavior change. Do not batch passes into a single change.
@@ -46,7 +46,7 @@ no behavior change. Do not batch passes into a single change.
 non-poison-fatal / generated-source-shape / multi-value error collection). Each
 pass below lists only pass-specific test deltas.
 
-## Pass 1: Small Hot-Path Conversions — implemented (staged)
+## Pass 1: Small Hot-Path Conversions - implemented
 
 Done as one implementation pass. Each item is local, low-risk, and has a clear
 generated-source or unit-test signal.
@@ -181,13 +181,14 @@ Tests:
 
 - existing component shared observation tests.
 
-## Pass 2: Chain Snapshot / Error-State Sync-First
+## Pass 2: Chain Snapshot / Error-State Sync-First - implemented
 
 File: `src/runtime/chains/base.js`
 
-Current shape: `_ensureErrorState()` and `inspectTargetForErrors(...)` are
-async. Base-chain `finalSnapshot()` therefore often becomes promise-shaped even
-when the target is fully synchronous.
+Done as the second implementation pass. `_ensureErrorState()` and
+`inspectTargetForErrors(...)` are now sync-first, so base-chain
+`finalSnapshot()` can stay synchronous when the chain is complete and the target
+contains only concrete values or poison.
 
 This pass is well prepared: the callers of `_ensureErrorState()`
 (`_getResultOrThrow`, `_isError`, `_getErrors`) already branch on
@@ -198,16 +199,28 @@ Target shape:
 - split `inspectTargetForErrors` into a single sync traversal that collects sync
   errors *and* a list of pending thenables/markers: if that list is empty,
   return the error state synchronously; otherwise await the pending list in an
-  async helper. (Do not scan twice or early-bail on the first pending value —
+  async helper. (Do not scan twice or early-bail on the first pending value -
   that would miss later errors.)
+- when a pending branch hits a raw fatal rejection, continue draining already
+  discovered and newly discovered pending inspections before throwing the first
+  fatal error, so later nested rejections cannot become unhandled.
 - make `_ensureErrorState()` non-async and return cached/synchronously inspected
   state directly when possible;
 - preserve the "inspect all values before reporting" behavior.
+- add direct `_isError()` and `_getErrors()` checks for already-complete chains
+  with sync-clean and sync-poison targets, because those methods are the primary
+  public consumers of `_ensureErrorState()`.
 
-Note: `finalSnapshot()` has a *second* async gate — `_completionResolved` /
-`_completionPromise.then(...)` — independent of error state. Making error
+Note: `finalSnapshot()` has a *second* async gate - `_completionResolved` /
+`_completionPromise.then(...)` - independent of error state. Making error
 inspection sync does not make `finalSnapshot()` sync unless completion is
 already resolved. Scope the test below to the `_completionResolved` case.
+
+Implementation note: script finalization waits for the returned value's own
+promise/chain dependencies, not for all outstanding root structural work. Do
+not add a root-wide completion lane just to restore the old accidental
+microtask delay; unrelated root work may continue after the return value is
+ready.
 
 Risks:
 
@@ -222,6 +235,7 @@ Tests:
 - poison aggregation tests;
 - a runtime test proving `finalSnapshot()` is not promise-shaped when the chain
   is `_completionResolved` and contains only sync values.
+- return tests proving unrelated root work does not delay a ready return value.
 
 ## Pass 3: Runtime Loop Dispatcher Sync-First
 
@@ -238,14 +252,14 @@ Target shape:
 - introduce a non-async `iterate(...)` wrapper;
 - keep async helpers for async iterators, sequential loops, concurrent limits,
   promise iterables, and async else bodies;
-- use direct array/object fast paths when the iterable, limit, and body mode are
-  synchronous;
+- use direct array/object fast paths when the iterable, limit, and loop body
+  dispatch path can complete synchronously;
 - preserve body-poisoning and else-poisoning semantics.
 
 Risks:
 
 - **Guard drift.** The async `iterate(...)` does substantial entry work before
-  dispatch (poison `arr`, scalar-in-scriptMode, object→`fromIterator`,
+  dispatch (poison `arr`, scalar-in-scriptMode, object->`fromIterator`,
   concurrency resolution). The sync wrapper must re-check enough of these to
   choose the fast path; factor those guards into a *shared* helper rather than
   duplicating them, so the sync and async entries cannot diverge.
@@ -278,6 +292,8 @@ local `await runtime.resolveSingle(...)` inside `runValueBoundary(...)`.
 
 Target shape:
 
+- first decide whether `compileValueBoundary(...)` belongs in this pass. If it
+  is deferred, list it under [Out of scope](#out-of-scope) with the reason.
 - **Convert `runValueBoundary(...)` itself to a sync-first runner** (analogous
   to `_runWithChildBuffer`). It currently forces a promise unconditionally via
   `Promise.resolve().then(() => asyncFn(...))`, so a sync compiler callback gains
@@ -311,11 +327,11 @@ Tests:
 
 Paths that look async-without-await but should stay async, and why:
 
-- `compileAsyncInclude` (`composition.js`) — genuinely needs multiple ordered
+- `compileAsyncInclude` (`composition.js`) - genuinely needs multiple ordered
   awaits (resolve name, then resolve template) with branching error handling
   between them; cannot collapse into a single `thenValue(...)` continuation.
 - Inherently async iterators, sequential loops, concurrent-limit loops, and
-  promise iterables in `loop.js` — these always await.
+  promise iterables in `loop.js` - these always await.
 
 Add any path consciously deferred during implementation here, rather than
 leaving it implicitly skipped.

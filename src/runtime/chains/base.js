@@ -1,5 +1,5 @@
 
-import {RESOLVE_MARKER} from '../resolve.js';
+import {RESOLVE_MARKER, isWrappedResolvedValue, unwrapResolvedValue} from '../resolve.js';
 
 import {isObservableCommand} from '../commands/base.js';
 import {
@@ -67,11 +67,11 @@ class Chain {
     return this._stateVersion;
   }
 
-  async _computeTargetErrorState(target) {
+  _computeTargetErrorState(target) {
     return inspectTargetForErrors(target);
   }
 
-  async _ensureErrorState() {
+  _ensureErrorState() {
     if (this._errorStateCache.version === this._stateVersion) {
       return this._errorStateCache.error;
     }
@@ -86,16 +86,22 @@ class Chain {
 
     const inspectedVersion = this._stateVersion;
     const inspectedTarget = this._getTarget();
-    const error = await this._computeTargetErrorState(inspectedTarget);
+    const error = this._computeTargetErrorState(inspectedTarget);
+    const cache = (settledError) => {
+      if (this._stateVersion === inspectedVersion) {
+        this._errorStateCache = {
+          version: inspectedVersion,
+          error: settledError
+        };
+      }
+      return settledError;
+    };
 
-    if (this._stateVersion === inspectedVersion) {
-      this._errorStateCache = {
-        version: inspectedVersion,
-        error
-      };
+    if (error && typeof error.then === 'function') {
+      return error.then(cache);
     }
 
-    return error;
+    return cache(error);
   }
 
   _getCurrentResult() {
@@ -339,93 +345,138 @@ function getPoisonError(value) {
   return null;
 }
 
-async function inspectTargetForErrors(target) {
-  const seenObjects = new Set();
-  const errors = [];
-
-  const addError = (err) => {
-    if (!err) {
-      return;
-    }
-    errors.push(err);
+function inspectTargetForErrors(target) {
+  const state = {
+    seenObjects: new Set(),
+    queuedMarkers: new Set(),
+    errors: [],
+    pending: []
   };
 
-  const addErrors = (list) => {
-    if (!Array.isArray(list)) {
-      return;
-    }
-    for (const err of list) {
-      addError(err);
-    }
-  };
+  visitTargetForErrors(target, state);
 
-  const visit = async (value) => {
-    if (isPoison(value)) {
-      addErrors(value.errors);
-      return;
-    }
+  if (state.pending.length > 0) {
+    return inspectPendingTargetErrors(state);
+  }
 
-    if (value && typeof value.then === 'function') {
-      try {
-        const resolved = await value;
-        await visit(resolved);
-      } catch (err) {
-        if (isPoisonError(err)) {
-          addErrors(err.errors);
-        } else {
-          // This diagnostic walker has no source context of its own; raw
-          // promise/marker failures must surface unchanged as fatal errors.
-          throw err;
-        }
-      }
-      return;
-    }
+  return getInspectionError(state.errors);
+}
 
-    if (value && value[RESOLVE_MARKER]) {
-      try {
-        await value[RESOLVE_MARKER];
-      } catch (err) {
-        if (isPoisonError(err)) {
-          addErrors(err.errors);
-        } else {
-          // This diagnostic walker has no source context of its own; raw
-          // promise/marker failures must surface unchanged as fatal errors.
-          throw err;
-        }
-        return;
+async function inspectPendingTargetErrors(state) {
+  let checked = 0;
+  let fatalError = null;
+  // Pending inspection callbacks can discover more pending work while this
+  // function awaits. Drain in waves so every discovered promise gets a handler.
+  // If any branch reports a fatal error, keep draining first to avoid late
+  // unhandled rejections, then rethrow the first fatal error.
+  while (checked < state.pending.length) {
+    const batch = state.pending.slice(checked);
+    checked = state.pending.length;
+    const results = await Promise.allSettled(batch);
+    for (const result of results) {
+      if (result.status === 'rejected' && !fatalError) {
+        fatalError = result.reason;
       }
     }
+  }
+  if (fatalError) {
+    throw fatalError;
+  }
+  return getInspectionError(state.errors);
+}
 
-    if (!value || typeof value !== 'object') {
-      return;
-    }
-
-    if (seenObjects.has(value)) {
-      return;
-    }
-    seenObjects.add(value);
-
-    if (Array.isArray(value)) {
-      await Promise.all(value.map((entry) => visit(entry)));
-      return;
-    }
-
-    if (isPlainObject(value)) {
-      const values = [];
-      for (const key of Object.keys(value)) {
-        const descriptor = Object.getOwnPropertyDescriptor(value, key);
-        // Error inspection must not trigger accessor side effects on external objects.
-        if (descriptor && (typeof descriptor.get === 'function' || typeof descriptor.set === 'function')) {
-          continue;
-        }
-        values.push(value[key]);
-      }
-      await Promise.all(values.map((entry) => visit(entry)));
-    }
-  };
-
-  await visit(target);
-
+function getInspectionError(errors) {
   return errors.length === 0 ? null : PoisonError.group(errors);
 }
 
+function addInspectionError(state, err) {
+  if (err) {
+    state.errors.push(err);
+  }
+}
+
+function addInspectionErrors(state, list) {
+  if (!Array.isArray(list)) {
+    return;
+  }
+  for (const err of list) {
+    addInspectionError(state, err);
+  }
+}
+
+function collectOrThrowInspectionError(state, err) {
+  if (isPoisonError(err)) {
+    addInspectionErrors(state, err.errors);
+    return;
+  }
+  // This diagnostic walker has no source context of its own; raw
+  // promise/marker failures must surface unchanged as fatal errors.
+  throw err;
+}
+
+function queueResolvedInspection(value, state, onResolved) {
+  state.pending.push(Promise.resolve(value).then(
+    onResolved,
+    (err) => collectOrThrowInspectionError(state, err)
+  ));
+}
+
+function queueMarkerInspection(value, state) {
+  if (state.queuedMarkers.has(value)) {
+    return;
+  }
+  state.queuedMarkers.add(value);
+  // Once the marker has finalized the object in place, revisit the same object
+  // but skip marker handling so normal array/object traversal can inspect the
+  // resolved leaves.
+  queueResolvedInspection(value[RESOLVE_MARKER], state, () => visitTargetForErrors(value, state, true));
+}
+
+function visitTargetForErrors(value, state, markerAlreadyResolved = false) {
+  if (isWrappedResolvedValue(value)) {
+    visitTargetForErrors(unwrapResolvedValue(value), state, markerAlreadyResolved);
+    return;
+  }
+
+  if (isPoison(value)) {
+    addInspectionErrors(state, value.errors);
+    return;
+  }
+
+  if (value && typeof value.then === 'function') {
+    queueResolvedInspection(value, state, (resolved) => visitTargetForErrors(resolved, state));
+    return;
+  }
+
+  if (value && value[RESOLVE_MARKER] && !markerAlreadyResolved) {
+    queueMarkerInspection(value, state);
+    return;
+  }
+
+  if (!value || typeof value !== 'object') {
+    return;
+  }
+
+  if (state.seenObjects.has(value)) {
+    return;
+  }
+  state.seenObjects.add(value);
+
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      visitTargetForErrors(entry, state);
+    }
+    return;
+  }
+
+  if (isPlainObject(value)) {
+    for (const key of Object.keys(value)) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      // Error inspection must not trigger accessor side effects on external objects.
+      if (descriptor && (typeof descriptor.get === 'function' || typeof descriptor.set === 'function')) {
+        continue;
+      }
+      visitTargetForErrors(value[key], state);
+    }
+  }
+}
