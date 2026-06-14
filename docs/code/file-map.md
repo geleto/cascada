@@ -110,6 +110,7 @@ Complete source and documentation file reference. The most critical files for da
 May not be fully up-to-date. Treat as design context, not authority over live behavior.
 
 -   `implementation-architecture.md` — Full compiler/runtime architecture reference: async execution model, chain system, buffer mechanics, value resolution, error propagation, sequential operations.
+-   `sync-first.md` — Sync-first runtime/compiler pattern for new async-aware helpers and generated callbacks.
 -   `testing-guide.md` — Test assertion examples, advanced testing techniques, development scenario walkthroughs.
 -   `file-map.md` — This file.
 -   `Error Handling Guide.md` — Overview of the Poison error system.
