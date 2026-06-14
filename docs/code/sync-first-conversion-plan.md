@@ -1,7 +1,14 @@
 # Sync-First Conversion Plan
 
 Plan for converting remaining accidental async/runtime microtask paths to
-sync-first hybrids. This document includes only paths that should be converted.
+sync-first hybrids, following the pattern in
+[`sync-first.md`](sync-first.md).
+
+This list was derived by grepping for `async` functions and generated callbacks
+that contain no `await` (or only a single awaited value), cross-checked against
+the loop / snapshot / macro paths that dominate runtime profiles. It includes
+only paths that should be converted; see [Out of scope](#out-of-scope) for paths
+deliberately left async.
 
 ## Goal
 
@@ -14,10 +21,35 @@ at runtime. Hot helpers and generated callbacks should therefore:
 4. avoid local `await` in generated statement or expression callbacks unless the
    callback genuinely needs more than one asynchronous step.
 
-## Pass 1: Small Hot-Path Conversions
+## Conventions for every pass
 
-Do these as one implementation pass. Each item is local, low-risk, and has a
-clear generated-source or unit-test signal.
+These apply to all passes; individual sections list only their deltas.
+
+**Sequencing and payoff.** Passes are ordered by ascending risk, *not* by
+payoff. The largest performance return is in Pass 2 (every chain snapshot) and
+Pass 3 (every loop); Pass 1's expression conversions are lower-frequency. If
+effort gets squeezed, do not drop Pass 2/3 — they are the point of the exercise.
+
+**Measurement (required).** Every conversion is semantics-preserving, so the
+*only* evidence it helped is a measurement. Before starting Pass 2, capture a
+baseline microbenchmark over loop-heavy, macro-heavy, and snapshot-heavy
+templates. For each pass, add a test that proves the fast path stays
+synchronous — e.g. assert the helper/callback returns a non-thenable for
+all-concrete inputs, or count microtasks/promise allocations — and re-run the
+benchmark to confirm a real (not regressed) delta.
+
+**Landing.** Each pass is independently landable: one commit, full suite green,
+no behavior change. Do not batch passes into a single change.
+
+**Testing.** Reuse the Test Checklist in [`sync-first.md`](sync-first.md#test-checklist)
+(concrete-value / promise / existing-poison / rejected-promise-poison /
+non-poison-fatal / generated-source-shape / multi-value error collection). Each
+pass below lists only pass-specific test deltas.
+
+## Pass 1: Small Hot-Path Conversions — implemented (staged)
+
+Done as one implementation pass. Each item is local, low-risk, and has a clear
+generated-source or unit-test signal.
 
 ### `WaitResolveCommand.apply`
 
@@ -156,12 +188,25 @@ Current shape: `_ensureErrorState()` and `inspectTargetForErrors(...)` are
 async. Base-chain `finalSnapshot()` therefore often becomes promise-shaped even
 when the target is fully synchronous.
 
+This pass is well prepared: the callers of `_ensureErrorState()`
+(`_getResultOrThrow`, `_isError`, `_getErrors`) already branch on
+`error.then`, so making error state sync-when-possible needs no caller changes.
+
 Target shape:
 
-- split error inspection into a sync-first scanner plus async helper;
-- return cached or synchronously inspected error state directly when possible;
-- delegate to async only when a promise or `RESOLVE_MARKER` is encountered;
+- split `inspectTargetForErrors` into a single sync traversal that collects sync
+  errors *and* a list of pending thenables/markers: if that list is empty,
+  return the error state synchronously; otherwise await the pending list in an
+  async helper. (Do not scan twice or early-bail on the first pending value —
+  that would miss later errors.)
+- make `_ensureErrorState()` non-async and return cached/synchronously inspected
+  state directly when possible;
 - preserve the "inspect all values before reporting" behavior.
+
+Note: `finalSnapshot()` has a *second* async gate — `_completionResolved` /
+`_completionPromise.then(...)` — independent of error state. Making error
+inspection sync does not make `finalSnapshot()` sync unless completion is
+already resolved. Scope the test below to the `_completionResolved` case.
 
 Risks:
 
@@ -174,8 +219,8 @@ Tests:
 - `tests/pasync/chain-errors.js`;
 - snapshot/output tests;
 - poison aggregation tests;
-- add a source or runtime test proving a clean sync `finalSnapshot()` is not
-  promise-shaped when the chain is finished and contains only sync values.
+- a runtime test proving `finalSnapshot()` is not promise-shaped when the chain
+  is `_completionResolved` and contains only sync values.
 
 ## Pass 3: Runtime Loop Dispatcher Sync-First
 
@@ -183,6 +228,9 @@ File: `src/runtime/loop.js`
 
 Current shape: top-level `iterate(...)` is async, so even simple async-mode
 array loops return a promise from the dispatcher.
+
+`iterateArrayParallel(...)` is already non-async, so the parallel array fast
+path can be fully synchronous.
 
 Target shape:
 
@@ -195,6 +243,11 @@ Target shape:
 
 Risks:
 
+- **Guard drift.** The async `iterate(...)` does substantial entry work before
+  dispatch (poison `arr`, scalar-in-scriptMode, object→`fromIterator`,
+  concurrency resolution). The sync wrapper must re-check enough of these to
+  choose the fast path; factor those guards into a *shared* helper rather than
+  duplicating them, so the sync and async entries cannot diverge.
 - loop else handling differs before/after iteration;
 - concurrent limits and async iterators are inherently async;
 - poison from iterator selection and malformed destructuring must still poison
@@ -215,16 +268,29 @@ Files:
 - `src/compiler/async-boundaries.js`
 - `src/runtime/async-boundaries.js`
 
+This pass is the **linked counterpart of Pass 1's non-linked inline-if /
+`and` / `or` work**, and should reuse that proven design (the value-boundary
+analog of `consumeControlFlowValue(...)`) rather than inventing a new shape.
+
 Current shape: linked inline-if and linked `and`/`or` expression boundaries emit
 local `await runtime.resolveSingle(...)` inside `runValueBoundary(...)`.
 
 Target shape:
 
+- **Convert `runValueBoundary(...)` itself to a sync-first runner** (analogous
+  to `_runWithChildBuffer`). It currently forces a promise unconditionally via
+  `Promise.resolve().then(() => asyncFn(...))`, so a sync compiler callback gains
+  nothing until the runner stops re-promisifying it. This is the gating change.
 - design a value-boundary equivalent of `consumeControlFlowValue(...)`;
 - keep expression rejection semantics distinct from statement skipped-chain
   poisoning;
 - remove local awaits from generated expression control-flow callbacks when the
   selected branch can be returned directly.
+
+Scope: `compileValueBoundary(...)` (used by `call.js` for call value boundaries)
+also emits `async (currentBuffer) => { ... return await ... }` on the same
+`runValueBoundary` runner. Decide explicitly: convert it in this pass once the
+runner is sync-first, or defer it and list it under [Out of scope](#out-of-scope).
 
 Risks:
 
@@ -239,4 +305,17 @@ Tests:
 - inline-if and short-circuit expression tests with linked mutations;
 - poison and fatal error tests for expression conditions;
 - generated-source assertions for absence of local condition awaits.
+
+## Out of scope
+
+Paths that look async-without-await but should stay async, and why:
+
+- `compileAsyncInclude` (`composition.js`) — genuinely needs multiple ordered
+  awaits (resolve name, then resolve template) with branching error handling
+  between them; cannot collapse into a single `thenValue(...)` continuation.
+- Inherently async iterators, sequential loops, concurrent-limit loops, and
+  promise iterables in `loop.js` — these always await.
+
+Add any path consciously deferred during implementation here, rather than
+leaving it implicitly skipped.
 
