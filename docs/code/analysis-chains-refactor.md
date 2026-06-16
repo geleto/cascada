@@ -96,7 +96,7 @@ should not derive parent links by hand with node-specific subtraction rules.
 ## Current Smell
 
 Historically `compileCaptureBoundary(...)` had to subtract nested capture text
-outputs from `node._analysis.usedChains` before creating `boundaryLinkedChainsArg`.
+outputs from `node._analysis.usedChains` before serializing boundary links.
 Stage 1 removed that specific workaround by making generated capture text
 outputs internal declarations and by keeping child-owned chains out of stored
 usage facts.
@@ -282,7 +282,7 @@ Work:
 Validation:
 
 - focused boundary suites plus compile-source tests that assert emitted
-  `boundaryLinkedChainsArg` no longer contains child-owned implementation chains
+  `chainFacts.boundaryLinkedChains` no longer contains child-owned implementation chains
 
 ### Stage 4. Audit And Delete Workarounds
 
@@ -534,7 +534,7 @@ duplicated linked-chain calculation:
   `caller`, generated formal chain aliases, or `__waited__`
 - boundary-specific link builders, including local
   `Array.from(usedChains).filter(...)`, `used - declared`, or hand-built
-  `boundaryLinkedChainsArg` logic in boundary/compiler helpers
+  `chainFacts.boundaryLinkedChains` logic in boundary/compiler helpers
 - central node-type allowlists that try to infer which AST nodes need
   `boundaryLinkedChains`; child-buffer/link behavior should be explicit analysis
   metadata set by the relevant analyzer

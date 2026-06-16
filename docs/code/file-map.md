@@ -30,7 +30,7 @@ Complete source and documentation file reference. The most critical files for da
 -   `src/runtime/errors.js` — Poison and error helpers: `PoisonError`, `isPoison`, `isPoisonError`, `createSyncRuntimeError`.
 -   `src/runtime/resolve.js` — Promise/poison resolution: `resolveAll`, `resolveSingle`, sync-first helpers.
 -   `src/runtime/command-buffer.js` — Command buffer implementation. Creates and links runtime buffers, routes commands to chains.
--   `src/runtime/buffer-iterator.js` — Buffer iterator. Walks the command buffer tree depth-first in source order, applies commands, waits on unfilled child slots.
+-   `src/runtime/command-iterator.js` — Lane input iterator used by command-buffer observe/mutate/iterate runners.
 -   `src/runtime/async-boundaries.js` — Runtime support for compiler-inserted async boundaries.
 -   `src/runtime/markers.js` — `RESOLVE_MARKER` and related value-shape markers.
 -   `src/runtime/guard.js` — Guard snapshot/restore for conditional error-recovery blocks.
@@ -62,7 +62,7 @@ Complete source and documentation file reference. The most critical files for da
 -   `src/compiler/compiler-base-sync.js` — Sync expression compiler.
 -   `src/compiler/compiler-base.js` — Shared expression compiler base.
 -   `src/compiler/compiler-common.js` — Shared statement compiler base.
--   `src/compiler/analysis.js` — Chain analysis pre-pass. Computes `declaredChains`, `usedChains`, `mutatedChains`, `sequenceLocks`.
+-   `src/compiler/analysis.js` — Chain analysis pre-pass. Computes observed, mutated, declared, linked, and sequenced chain facts.
 -   `src/compiler/buffer.js` — Buffer/codegen helpers. Emits command construction and command-buffer interactions.
 -   `src/compiler/emit.js` — Low-level code generation primitives.
 -   `src/compiler/async-boundaries.js` — Async boundary emission. Emits `runControlFlowBoundary` / `runValueBoundary` wiring.

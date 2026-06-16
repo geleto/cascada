@@ -3,14 +3,14 @@ import {CHAIN_TYPES} from '../chain-types.js';
 const RETURN_CHAIN_NAME = '__return__';
 const RETURN_IS_UNSET_FUNCTION_NAME = '__return_is_unset__';
 const RESERVED_RETURN_SENTINEL_SYMBOL_NAME = '__RETURN_UNSET__';
-const CALLER_SCHED_CHAIN_NAME = '__caller__';
+const CALLER_CHAIN_NAME = '__caller__';
 const WAITED_CHAIN_NAME = '__waited__';
 
 const INTERNAL_DECLARATION_NAMES = [
   RETURN_CHAIN_NAME,
   RETURN_IS_UNSET_FUNCTION_NAME,
   RESERVED_RETURN_SENTINEL_SYMBOL_NAME,
-  CALLER_SCHED_CHAIN_NAME,
+  CALLER_CHAIN_NAME,
   WAITED_CHAIN_NAME
 ];
 
@@ -53,7 +53,7 @@ function isReservedDeclaration(decl, { asyncMode = false, scriptMode = false } =
 }
 
 export {
-  CALLER_SCHED_CHAIN_NAME,
+  CALLER_CHAIN_NAME,
   RETURN_CHAIN_NAME,
   RETURN_IS_UNSET_FUNCTION_NAME,
   WAITED_CHAIN_NAME,

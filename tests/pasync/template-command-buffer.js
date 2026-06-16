@@ -6,6 +6,54 @@ import * as runtime from '../../src/runtime/runtime.js';
 const TEST_EC = [1, 1, 'Test', 'test.casc', null, null];
 const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch: 'test' });
 
+function createDeferred() {
+  let resolve;
+  const promise = new Promise((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
+function flushAsync() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+class DeferredObservation extends runtime.Command {
+  constructor(label, deferred, events) {
+    super();
+    this._createResultPromise();
+    this.chainName = 'value';
+    this.errorContext = TEST_EC;
+    this.label = label;
+    this.deferred = deferred;
+    this.events = events;
+  }
+
+  observe(chain) {
+    this.events.push(`observe:${this.label}`);
+    return this.deferred.promise.then(() => {
+      this.events.push(`observed:${this.label}`);
+      this.resolveResult(chain._getCurrentResult());
+    });
+  }
+}
+
+class RecordingMutation extends runtime.Command {
+  constructor(label, value, events) {
+    super();
+    this.chainName = 'value';
+    this.errorContext = TEST_EC;
+    this.label = label;
+    this.value = value;
+    this.events = events;
+  }
+
+  mutate(chain) {
+    this.events.push(`mutate:${this.label}`);
+    chain._setTarget(this.value);
+  }
+}
+
 (function () {
   describe('Async template command buffering parity', function () {
     it('should preserve literal/interpolation parity and source ordering', async function () {
@@ -64,6 +112,77 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
 
       expect(await result).to.be('mutated');
       expect(calls).to.eql(['mutate', 'observe']);
+    });
+
+    it('should run adjacent observations concurrently before a mutation barrier', async function () {
+      const events = [];
+      const first = createDeferred();
+      const second = createDeferred();
+
+      const buffer = new runtime.CommandBuffer(null, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+      const chain = runtime.declareBufferChain(buffer, 'value', 'var', null, 'initial');
+      buffer.addCommand(new DeferredObservation('first', first, events), 'value');
+      buffer.addCommand(new DeferredObservation('second', second, events), 'value');
+      buffer.addCommand(new RecordingMutation('mutate', 'done', events), 'value');
+
+      expect(events).to.eql(['observe:first', 'observe:second']);
+      first.resolve();
+      await flushAsync();
+      expect(events).to.eql(['observe:first', 'observe:second', 'observed:first']);
+
+      second.resolve();
+      buffer.finish();
+
+      expect(await chain.finalSnapshot()).to.be('done');
+      expect(events).to.eql([
+        'observe:first',
+        'observe:second',
+        'observed:first',
+        'observed:second',
+        'mutate:mutate'
+      ]);
+    });
+
+    it('should treat a mixed child buffer as a full-completion mutation barrier', async function () {
+      const events = [];
+      const beforeMutation = createDeferred();
+      const afterMutation = createDeferred();
+
+      const parent = new runtime.CommandBuffer(null, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+      const chain = runtime.declareBufferChain(parent, 'value', 'var', null, 'initial');
+      const child = new runtime.CommandBuffer(null, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+      child._installLinkedChain('value', chain);
+
+      child.addCommand(new DeferredObservation('child-before', beforeMutation, events), 'value');
+      child.addCommand(new RecordingMutation('child-mutate', 'child', events), 'value');
+      child.addCommand(new DeferredObservation('child-after', afterMutation, events), 'value');
+      child.finish();
+
+      parent.addBuffer(child, 'value');
+      parent.addCommand(new RecordingMutation('parent-mutate', 'parent', events), 'value');
+
+      expect(events).to.eql(['observe:child-before']);
+      beforeMutation.resolve();
+      await flushAsync();
+      expect(events).to.eql([
+        'observe:child-before',
+        'observed:child-before',
+        'mutate:child-mutate',
+        'observe:child-after'
+      ]);
+
+      afterMutation.resolve();
+      parent.finish();
+
+      expect(await chain.finalSnapshot()).to.be('parent');
+      expect(events).to.eql([
+        'observe:child-before',
+        'observed:child-before',
+        'mutate:child-mutate',
+        'observe:child-after',
+        'observed:child-after',
+        'mutate:parent-mutate'
+      ]);
     });
 
     it('should preserve loop/conditional output parity', async function () {
@@ -206,7 +325,7 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       }
     });
 
-    it('should keep inherited text placement boundaries out of shared invocation lanes', async function () {
+    it('should let observe-only shared-lane siblings run concurrently with invocation reads', async function () {
       const createRootBuffer = () => {
         const rootBuffer = new runtime.CommandBuffer(null, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
         runtime.declareBufferChain(rootBuffer, '__text__', 'text', null, null);
@@ -220,11 +339,11 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       };
 
       const blockedRoot = createRootBuffer();
-      // This sibling buffer represents the incorrect text-placement boundary
-      // shape: linking it into the shared lane creates an earlier source-order
-      // slot that the invocation snapshot must wait behind.
-      const sharedLaneSibling = new runtime.CommandBuffer(null, null, ['theme'], blockedRoot, null, TEST_DIAGNOSTIC_CONTEXT);
-      const invocationBuffer = new runtime.CommandBuffer(null, null, ['theme'], blockedRoot, null, TEST_DIAGNOSTIC_CONTEXT);
+      // Observe-only child buffers are observable entries in Stage 1, so an
+      // empty earlier sibling in the same shared lane must not block a later
+      // invocation snapshot.
+      const sharedLaneSibling = new runtime.CommandBuffer(null, null, [["theme"]], null, blockedRoot, TEST_DIAGNOSTIC_CONTEXT);
+      const invocationBuffer = new runtime.CommandBuffer(null, null, [["theme"]], null, blockedRoot, TEST_DIAGNOSTIC_CONTEXT);
       const blockedRead = invocationBuffer.addCommand(new runtime.SnapshotCommand({
         chainName: 'theme',
         errorContext: TEST_EC
@@ -235,15 +354,15 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       });
 
       await Promise.resolve();
-      expect(blockedReadSettled).to.be(false);
+      expect(blockedReadSettled).to.be(true);
       sharedLaneSibling.finish();
       invocationBuffer.finish();
       blockedRoot.finish();
       expect(await blockedRead).to.be('dark');
 
       const textRoot = createRootBuffer();
-      const textPlacementBoundary = new runtime.CommandBuffer(null, null, ['__text__'], textRoot, null, TEST_DIAGNOSTIC_CONTEXT);
-      const admittedInvocation = new runtime.CommandBuffer(null, null, ['theme'], textRoot, null, TEST_DIAGNOSTIC_CONTEXT);
+      const textPlacementBoundary = new runtime.CommandBuffer(null, null, [["__text__"]], null, textRoot, TEST_DIAGNOSTIC_CONTEXT);
+      const admittedInvocation = new runtime.CommandBuffer(null, null, [["theme"]], null, textRoot, TEST_DIAGNOSTIC_CONTEXT);
       const admittedRead = admittedInvocation.addCommand(new runtime.SnapshotCommand({
         chainName: 'theme',
         errorContext: TEST_EC

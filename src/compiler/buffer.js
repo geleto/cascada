@@ -36,8 +36,10 @@ class CompileBuffer {
     bufferId,
     parentBufferId = null,
     textChainVar = null,
-    boundaryLinkedChains = null,
-    boundaryLinkedMutatedChains = null,
+    observedFacts = null,
+    mutatedFacts = null,
+    observedFactsArg = observedFacts ? JSON.stringify(observedFacts) : 'null',
+    mutatedFactsArg = mutatedFacts ? JSON.stringify(mutatedFacts) : 'null',
     bufferStackErrorContextArg = 'null',
     traceParentArg = 'null',
     declareTextChain = true
@@ -45,13 +47,7 @@ class CompileBuffer {
     if (this.compiler.asyncMode) {
       const textId = textChainVar || `${bufferId}_textChainVar`;
       const parentArg = parentBufferId || 'null';
-      const boundaryLinkedChainsArg = Array.isArray(boundaryLinkedChains) && boundaryLinkedChains.length > 0
-        ? JSON.stringify(boundaryLinkedChains)
-        : 'null';
-      const boundaryLinkedMutatedChainsArg = Array.isArray(boundaryLinkedMutatedChains) && boundaryLinkedMutatedChains.length > 0
-        ? JSON.stringify(boundaryLinkedMutatedChains)
-        : 'null';
-      this.compiler.emit.line(`let ${bufferId} = new runtime.CommandBuffer(context, ${parentArg}, ${boundaryLinkedChainsArg}, ${parentArg}, ${boundaryLinkedMutatedChainsArg}, ${bufferStackErrorContextArg}, ${traceParentArg}, renderState);`);
+      this.compiler.emit.line(`let ${bufferId} = new runtime.CommandBuffer(context, ${parentArg}, ${observedFactsArg}, ${mutatedFactsArg}, ${parentArg}, ${bufferStackErrorContextArg}, ${traceParentArg}, renderState);`);
       if (declareTextChain && !this.compiler.scriptMode) {
         this.compiler.emit.line(`let ${textId} = runtime.declareBufferChain(${bufferId}, "${this.currentTextChainName}", "text", context, null);`);
       }

@@ -10,11 +10,9 @@ import {
   CommandBuffer,
   declareBufferChain,
   createPoison,
-  createRenderState,
   isPoisonError,
   PoisonError,
   linkInheritanceCallableFootprintChains,
-  runControlFlowBoundary,
   cloneWithAddedContext
 } from '../../src/runtime/runtime.js';
 
@@ -154,10 +152,9 @@ describe('chain.finalSnapshot', function () {
       expect(child.getChainIfExists('text')).to.be(chain);
     });
 
-    it('disposes finished iterator state after completion', async function () {
+    it('clears completed lane storage after completion', async function () {
       const buffer = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       const chain = declareBufferChain(buffer, 'text', 'text', context, null);
-      const iterator = chain._iterator;
 
       buffer.addCommand(new TextCommand({
         chainName: 'text',
@@ -171,11 +168,7 @@ describe('chain.finalSnapshot', function () {
 
       expect(first).to.be('A');
       expect(second).to.be('A');
-      expect(chain._iterator).to.be(null);
-      expect(iterator.finished).to.be(true);
-      expect(iterator.stack).to.eql([]);
-      expect(iterator.output).to.be(null);
-      expect(iterator._pendingObservables).to.be(null);
+      expect(buffer.arrays.text).to.be(null);
     });
 
     it('clears chain completion promise state after completion', async function () {
@@ -243,20 +236,59 @@ describe('chain.finalSnapshot', function () {
       expect(buffer.isChainFinished('unused')).to.be(true);
     });
 
+    it('exposes only phase methods needed by compiled lane facts', function () {
+      const observeOnly = new CommandBuffer(context, null, [null, ['text']], null, null, TEST_DIAGNOSTIC_CONTEXT);
+      const mutateOnly = new CommandBuffer(context, null, null, [null, ['text']], null, TEST_DIAGNOSTIC_CONTEXT);
+      const mixed = new CommandBuffer(context, null, [null, ['text']], [null, ['text']], null, TEST_DIAGNOSTIC_CONTEXT);
+      const unknown = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+
+      expect(typeof observeOnly.observe).to.be('function');
+      expect(observeOnly.mutate).to.be(null);
+      expect(mutateOnly.observe).to.be(null);
+      expect(typeof mutateOnly.mutate).to.be('function');
+      expect(mixed.observe).to.be(null);
+      expect(mixed.mutate).to.be(null);
+      expect(unknown.observe).to.be(null);
+      expect(unknown.mutate).to.be(null);
+    });
+
+    it('does not change command methods when linking a chain object after construction', function () {
+      const parent = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+      const chain = declareBufferChain(parent, 'text', 'text', context, null);
+      const child = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+
+      expect(child.observe).to.be(null);
+      expect(child.mutate).to.be(null);
+      child._installLinkedChain('text', chain);
+      expect(child.observe).to.be(null);
+      expect(child.mutate).to.be(null);
+    });
+
+    it('runs an observe-only child as a barrier inside a mutating parent lane', async function () {
+      const parent = new CommandBuffer(context, null, null, [null, ['text']], null, TEST_DIAGNOSTIC_CONTEXT);
+      const chain = declareBufferChain(parent, 'text', 'text', context, null);
+      const child = new CommandBuffer(context, null, [['text']], null, null, TEST_DIAGNOSTIC_CONTEXT);
+
+      expect(child.mutate).to.be(null);
+      child._installLinkedChain('text', chain);
+      child.addCommand(new SnapshotCommand({
+        chainName: 'text',
+        errorContext: TEST_EC
+      }), 'text');
+      child.finish();
+
+      await parent._processMutateEntry(child, 'text');
+    });
+
     it('fails when a linked parent chain has no registered chain object', function () {
       const parent = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       declareBufferChain(parent, 'text', 'text', context, null);
       delete parent._chains.text;
 
-      expect(() => new CommandBuffer(context, null, ['text'], parent, null, TEST_DIAGNOSTIC_CONTEXT)).to.throwError((err) => {
+      expect(() => new CommandBuffer(context, null, [["text"]], null, parent, TEST_DIAGNOSTIC_CONTEXT)).to.throwError((err) => {
         expect(err.message).to.contain('Cannot link chain \'text\' without a registered chain object');
       });
       expect(parent.arrays.text).to.have.length(0);
-    });
-
-    it('rejects duplicate linked lane metadata', function () {
-      expect(() => new CommandBuffer(context, null, ['text', 'text'], null, null, TEST_DIAGNOSTIC_CONTEXT)).to.throwError(/boundaryLinkedChains contains duplicate chain 'text'/);
-      expect(() => new CommandBuffer(context, null, [42], null, null, TEST_DIAGNOSTIC_CONTEXT)).to.throwError(/boundaryLinkedChains contains a non-string chain name/);
     });
 
     it('treats repeated lane creation as an invariant failure', function () {
@@ -274,31 +306,12 @@ describe('chain.finalSnapshot', function () {
       expect(buffer._chainTypes.text).to.be('text');
     });
 
-    it('does not hide invalid async-boundary lane metadata', async function () {
+    it('stores linked mutated metadata from constructor facts', function () {
       const parent = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       declareBufferChain(parent, 'text', 'text', context, null);
-      try {
-        await runControlFlowBoundary(parent, 'text', null, context, createRenderState(), async () => null, TEST_EC);
-        throw new Error('expected invalid linked chain metadata to fail');
-      } catch (err) {
-        expect(err.name).to.be('RuntimeError');
-        expect(err.message).to.contain('boundaryLinkedChains must be an array when provided');
-      }
-    });
 
-
-    it('stores linked mutated metadata for construction-time and late links', function () {
-      const parent = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
-      declareBufferChain(parent, 'text', 'text', context, null);
-      declareBufferChain(parent, 'data', 'data', context, null);
-
-      const constructedChild = new CommandBuffer(context, null, ['text'], parent, ['text'], TEST_DIAGNOSTIC_CONTEXT);
+      const constructedChild = new CommandBuffer(context, null, [["text"]], [["text"]], parent, TEST_DIAGNOSTIC_CONTEXT);
       expect(constructedChild.isBoundaryLinkedMutatedChain('text')).to.be(true);
-
-      const lateLinkedChild = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
-      linkInheritanceCallableFootprintChains(parent, lateLinkedChild, ['text', 'data'], ['data'], TEST_EC);
-      expect(lateLinkedChild.isBoundaryLinkedMutatedChain('text')).to.be(false);
-      expect(lateLinkedChild.isBoundaryLinkedMutatedChain('data')).to.be(true);
     });
 
     it('links a child to an already-finished parent chain without structural insertion', function () {
@@ -307,7 +320,7 @@ describe('chain.finalSnapshot', function () {
       parent.finish();
 
       const child = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
-      linkInheritanceCallableFootprintChains(parent, child, ['text'], null, TEST_EC);
+      linkInheritanceCallableFootprintChains(parent, child, ['text'], TEST_EC);
 
       expect(child.getChain('text')).to.be(chain);
       expect(parent.arrays.text).to.be(null);
@@ -355,8 +368,21 @@ describe('chain.finalSnapshot', function () {
       const buffer = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
 
       expect(() => {
-        buffer.onIteratorEnterBuffer({ onBufferFinished() {} }, 'text');
+        buffer._registerActiveIterator({ onAnyChange() {} }, 'text');
       }).to.throwError(/has no linked lane/);
+    });
+
+    it('rejects a second active iterator for the same lane', function () {
+      const buffer = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+      buffer._createLane('text');
+      const first = { onAnyChange() {} };
+      const second = { onAnyChange() {} };
+
+      buffer._registerActiveIterator(first, 'text');
+      expect(() => {
+        buffer._registerActiveIterator(second, 'text');
+      }).to.throwError(/more than one active iterator/);
+      buffer._unregisterActiveIterator(first, 'text');
     });
   });
 

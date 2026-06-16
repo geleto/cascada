@@ -165,7 +165,7 @@ class CompileAnalysis {
       mutatedChainsFromParent: null,
       boundaryLinkedChains: null,
       // Parent-owned linked chains this boundary may mutate. Future command-buffer
-      // scheduling can use this to distinguish read-only child buffers.
+      // command-buffer lane runners can use this to distinguish read-only child buffers.
       boundaryLinkedMutatedChains: null,
       wantsLinkedChildBuffer: false,
       createsLinkedChildBuffer: false,

@@ -223,14 +223,6 @@ class CompileInheritanceEmit {
 
   callableEntryParentLinks(callableNode, isScriptMethod) {
     this.emit.line(`${this.compiler.buffer.currentBuffer}._context = context;`);
-    this.emit.line(
-      `runtime.linkInheritanceCallableFootprintChains(` +
-      `parentBuffer, ${this.compiler.buffer.currentBuffer}, ` +
-      `methodData.mergedLinkedChains, ` +
-      `methodData.mergedMutatedChains, ` +
-      `${this.compiler.emitErrorContext(callableNode)}` +
-      `);`
-    );
     if (!isScriptMethod) {
       this.emit.line(`${this.compiler.buffer.currentTextChainVar}._context = context;`);
     }
@@ -250,7 +242,12 @@ class CompileInheritanceEmit {
   inheritedCallableFunction(callableNode, functionName, emitBody) {
     this.emit.entryFunction(callableNode, functionName, emitBody, {
       extraParams: INHERITED_CALLABLE_EXTRA_PARAMS,
-      noReturn: true
+      noReturn: true,
+      ...this.compiler.chain.getCommandBufferFactsArgsWithLinked(
+        callableNode,
+        'methodData.mergedLinkedChains',
+        'methodData.mergedMutatedChains'
+      )
     });
   }
 

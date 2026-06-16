@@ -1,5 +1,5 @@
 import * as nodes from '../language/nodes.js';
-import {CALLER_SCHED_CHAIN_NAME} from './reserved.js';
+import {CALLER_CHAIN_NAME} from './reserved.js';
 
 class CompileCall {
   constructor(compiler) {
@@ -168,9 +168,9 @@ class CompileCall {
       mutates.push(textChain);
     }
     // caller() is a reserved macro call-block binding in async mode. Its
-    // invocation scheduling uses the macro-local __caller__ lane, so any
+    // invocation ordering uses the macro-local __caller__ lane, so any
     // nested child boundary containing caller() must link that lane.
-    mutates.push(CALLER_SCHED_CHAIN_NAME);
+    mutates.push(CALLER_CHAIN_NAME);
     return { mutates, directCallerCall: true };
   }
 

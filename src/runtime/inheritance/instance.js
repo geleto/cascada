@@ -116,16 +116,12 @@ class InheritanceInstance {
   }
 
   _invokeFromMethodData(methodData, args, errorContext, parentBuffer, context, traceParent = null) {
-    const visibleChains = Array.from(new Set([
-      ...methodData.mergedLinkedChains,
-      ...methodData.mergedMutatedChains
-    ]));
     const invocationBuffer = new this.ownerState.runtime.CommandBuffer(
       context,
       parentBuffer,
-      visibleChains,
+      [methodData.mergedLinkedChains],
+      [methodData.mergedMutatedChains],
       parentBuffer,
-      methodData.mergedMutatedChains,
       this.ownerState.runtime.cloneWithAddedContext(errorContext, {
         methodName: methodData.name,
         methodSignature: `${methodData.name}(${methodData.signature.argNames.join(', ')})`

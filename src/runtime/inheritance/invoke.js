@@ -43,22 +43,14 @@ function createInheritanceCallableArgumentFrame(
   return argumentFrame;
 }
 
-function linkInheritanceCallableFootprintChains(parentBuffer, currentBuffer, boundaryLinkedChainNames, boundaryLinkedMutatedChainNames = null, errorContext) {
+function linkInheritanceCallableFootprintChains(parentBuffer, currentBuffer, boundaryLinkedChainNames, errorContext) {
   if (parentBuffer === currentBuffer) {
     return currentBuffer;
   }
 
-  const boundaryLinkedMutatedChainSet = new Set(boundaryLinkedMutatedChainNames || []);
-  const markBoundaryLinkedMutation = (chainName) => {
-    if (boundaryLinkedMutatedChainSet.has(chainName)) {
-      currentBuffer._markBoundaryLinkedMutatedChain(chainName);
-    }
-  };
-
   for (const chainName of boundaryLinkedChainNames) {
     const chain = parentBuffer.getChain(chainName);
     if (currentBuffer.getChainIfExists(chainName) === chain) {
-      markBoundaryLinkedMutation(chainName);
       continue;
     }
     if (currentBuffer.hasChain(chainName)) {
@@ -69,11 +61,9 @@ function linkInheritanceCallableFootprintChains(parentBuffer, currentBuffer, bou
     }
     if (parentBuffer.isChainFinished(chainName) || parentBuffer.isFinished()) {
       currentBuffer._installLinkedChain(chainName, chain);
-      markBoundaryLinkedMutation(chainName);
       continue;
     }
     parentBuffer.addBuffer(currentBuffer, chainName);
-    markBoundaryLinkedMutation(chainName);
   }
 
   return currentBuffer;

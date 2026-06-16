@@ -168,9 +168,9 @@ function requireCommandErrorContext(errorContext, commandName) {
 }
 
 function isObservableCommand(command) {
-  // Stage 0+ scheduler capability is method-shaped. Universal observations
+  // Stage 0+ command capability is method-shaped. Universal observations
   // remain class-shaped because they have extra cross-chain semantics.
-  return !!(command && typeof command.observe === 'function');
+  return !!(command && command.observe);
 }
 
 function isUniversalObservationCommand(command) {

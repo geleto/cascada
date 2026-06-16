@@ -1618,8 +1618,7 @@ describe('Inheritance rebuild', function () {
       const buffer = new runtime.CommandBuffer(
         { path: 'shared-sequence.script' },
         null,
-        null,
-        null,
+        null, null,
         null,
         runtime.cloneWithAddedContext(TEST_EC, { branch: 'test' }),
         null,
@@ -2215,8 +2214,7 @@ describe('Inheritance rebuild', function () {
       const ownerBuffer = new runtime.CommandBuffer(
         ownerContext,
         null,
-        null,
-        null,
+        null, null,
         null,
         runtime.cloneWithAddedContext(TEST_EC, { branch: 'test' }),
         null,

@@ -311,19 +311,25 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       expect(root.mutatedChains.has('both')).to.be(true);
     });
 
-    it('should classify var declarations with initializers as mutations', function () {
+    it('should classify chain declarations with command initializers as mutations', function () {
       const ast = analyzeScriptSource([
         'var x = 5',
+        'data result = { a: 1 }',
+        'text body = "hi"',
+        'sequence logger = createLogger()',
         'return x'
-      ].join('\n'), 'initialized-var-chain-facts.casc');
+      ].join('\n'), 'initialized-chain-facts.casc');
       const root = ast._analysis;
 
       expect(root.declaredChains.has('x')).to.be(true);
       expect(root.usedChains.has('x')).to.be(true);
       expect(root.mutatedChains.has('x')).to.be(true);
+      expect(root.mutatedChains.has('result')).to.be(true);
+      expect(root.mutatedChains.has('body')).to.be(true);
+      expect(root.mutatedChains.has('logger')).to.be(false);
     });
 
-    it('should preserve broad used-chain parent footprints for representative scheduler consumers', function () {
+    it('should preserve broad used-chain parent footprints for representative phase consumers', function () {
       const controlFlowAst = analyzeScriptSource([
         'data result',
         'var flag = true',

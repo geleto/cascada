@@ -62,9 +62,10 @@ class CompileEmit {
   }
 
   entryFunction(node, name, emitFunc, {
-    boundaryLinkedChains = null,
     extraParams = [],
-    noReturn = false
+    noReturn = false,
+    observedFactsArg = null,
+    mutatedFactsArg = null
   } = {}) {
     const rootTextChainName = (!this.compiler.scriptMode && node && node._analysis && node._analysis.textOutput)
       ? node._analysis.textOutput
@@ -76,13 +77,21 @@ class CompileEmit {
       currentWaitedChainName: null,
       currentWaitedOwnerBuffer: null
     }, () => {
-      this._beginEntryFunction(node, name, boundaryLinkedChains, extraParams);
+      this._beginEntryFunction(node, name, {
+        extraParams,
+        observedFactsArg,
+        mutatedFactsArg
+      });
       emitFunc.call(this.compiler);
       this._endEntryFunction(node, noReturn);
     });
   }
 
-  _beginEntryFunction(node, name, boundaryLinkedChains = null, extraParams = []) {
+  _beginEntryFunction(node, name, {
+    extraParams = [],
+    observedFactsArg = null,
+    mutatedFactsArg = null
+  } = {}) {
     this.scopeClosers = '';
     if (this.compiler.asyncMode) {
       if (name === 'root') {
@@ -111,7 +120,8 @@ class CompileEmit {
       this.compiler.buffer.emitScopeCommandBuffer({
         bufferId: this.compiler.buffer.currentBuffer,
         textChainVar: this.compiler.buffer.currentTextChainVar,
-        bufferStackErrorContextArg: rootBufferStackErrorContext
+        bufferStackErrorContextArg: rootBufferStackErrorContext,
+        ...this.compiler.chain.getCommandBufferFacts(node)
       });
     } else {
       const scopeBufferStackErrorContext = this.compiler.asyncMode
@@ -121,9 +131,13 @@ class CompileEmit {
         bufferId: this.compiler.buffer.currentBuffer,
         parentBufferId: this.compiler.asyncMode ? 'parentBuffer' : null,
         textChainVar: this.compiler.buffer.currentTextChainVar,
-        boundaryLinkedChains,
         bufferStackErrorContextArg: scopeBufferStackErrorContext,
-        traceParentArg: this.compiler.asyncMode ? 'parentBuffer' : 'null'
+        traceParentArg: this.compiler.asyncMode ? 'parentBuffer' : 'null',
+        ...(this.compiler.asyncMode
+          ? (observedFactsArg || mutatedFactsArg
+            ? { observedFactsArg: observedFactsArg || 'null', mutatedFactsArg: mutatedFactsArg || 'null' }
+            : this.compiler.chain.getCommandBufferFacts(node))
+          : {})
       });
     }
     if (!this.compiler.asyncMode) {
@@ -172,10 +186,9 @@ class CompileEmit {
     const parentBufferId = parentBufferOverride !== undefined
       ? parentBufferOverride
       : (this.compiler.buffer.currentBuffer || null);
-    const {
-      boundaryLinkedChains,
-      boundaryLinkedMutatedChains
-    } = this.getScopeBufferBoundaryLinkedChains(analysisNode, parentBufferId);
+    const facts = this.compiler.asyncMode
+      ? this.compiler.chain.getCommandBufferFacts(analysisNode)
+      : {};
     const bufferId = this.compiler._tmpid();
 
     const emitScope = () => this.compiler.buffer.withBufferState({
@@ -194,10 +207,9 @@ class CompileEmit {
         bufferId,
         parentBufferId,
         textChainVar: `${bufferId}_textOutputVar`,
-        boundaryLinkedChains,
-        boundaryLinkedMutatedChains,
         bufferStackErrorContextArg: scopeBufferStackErrorContext,
         traceParentArg,
+        ...facts,
         declareTextChain
       });
       if (typeof emitFunc === 'function') {
@@ -247,31 +259,6 @@ class CompileEmit {
     );
   }
 
-  getBoundaryLinkedChainsArg(node) {
-    const boundaryLinkedChains = this.getBoundaryLinkedChains(node);
-    return boundaryLinkedChains.length > 0 ? JSON.stringify(boundaryLinkedChains) : 'null';
-  }
-
-  getBoundaryLinkedMutatedChainsArg(node) {
-    const boundaryLinkedMutatedChains = this.getBoundaryLinkedMutatedChains(node);
-    return boundaryLinkedMutatedChains.length > 0 ? JSON.stringify(boundaryLinkedMutatedChains) : 'null';
-  }
-
-  getBoundaryLinkedChainArgs(node) {
-    return {
-      boundaryLinkedChainsArg: this.getBoundaryLinkedChainsArg(node),
-      boundaryLinkedMutatedChainsArg: this.getBoundaryLinkedMutatedChainsArg(node)
-    };
-  }
-
-  getScopeBufferBoundaryLinkedChains(node, parentBufferId) {
-    const hasAnalysis = parentBufferId && node && node._analysis;
-    return {
-      boundaryLinkedChains: hasAnalysis ? this.getBoundaryLinkedChains(node) : null,
-      boundaryLinkedMutatedChains: hasAnalysis ? this.getBoundaryLinkedMutatedChains(node) : null
-    };
-  }
-
   getBufferStackErrorContextArg({
     errorContextNode,
     stackFields = null,
@@ -281,33 +268,6 @@ class CompileEmit {
       return null;
     }
     return this.compiler.emitBufferStackErrorContext(errorContextNode, stackFields, { owned });
-  }
-
-  _getAnalysis(node, helperName) {
-    if (!node || !node._analysis) {
-      const nodeType = node && (node.typename || node.constructor && node.constructor.name);
-      throw new Error(`${helperName} requires analysis metadata for ${nodeType || 'unknown node'}`);
-    }
-    return node._analysis;
-  }
-
-  getBoundaryLinkedChains(node) {
-    const analysis = this._getAnalysis(node, 'getBoundaryLinkedChains');
-    // Do not link currentWaitedChainName here.
-    // __waited__ must stay flat: it tracks local WaitResolveCommand leaves, not child buffers.
-    // Nested control-flow buffers are applied through their own chains/iterators.
-    if (!analysis.boundaryLinkedChains) {
-      return [];
-    }
-    return Array.from(analysis.boundaryLinkedChains);
-  }
-
-  getBoundaryLinkedMutatedChains(node) {
-    const analysis = this._getAnalysis(node, 'getBoundaryLinkedMutatedChains');
-    if (!analysis.boundaryLinkedMutatedChains) {
-      return [];
-    }
-    return Array.from(analysis.boundaryLinkedMutatedChains);
   }
 
 };

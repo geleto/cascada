@@ -2,16 +2,16 @@
 
 ## Goal
 
-Separate scheduler facts from broad chain-footprint facts.
+Separate phase-driving facts from broad chain-footprint facts.
 
-Today `usedChains` is overloaded. It includes non-mutating lane participation, mutations, declaration/addressability bookkeeping, and current implementation shortcuts such as `_addChainMutation(...)` also adding the same name to `usedChains`. The command-buffer scheduler needs sharper facts:
+Today `usedChains` is overloaded. It includes non-mutating lane participation, mutations, declaration/addressability bookkeeping, and current implementation shortcuts such as `_addChainMutation(...)` also adding the same name to `usedChains`. The command-buffer lane runner needs sharper facts:
 
 - `observedChains`: lanes this node/buffer may participate in without mutating that lane
 - `mutatedChains`: lanes this node/buffer may mutate
 - `declaredChains`: lanes this node/scope declares
 - `usedChains`: broad compatibility footprint equivalent to observed + mutated + declared names
 
-`usedChains` remains important, but it should stop being the authored scheduler input.
+`usedChains` remains important, but it should stop being the authored phase-classification input.
 
 ## Current State
 
@@ -44,7 +44,7 @@ The implementation no longer has a `uses` authoring path. Producers classify
 their local facts directly as `observes`, `mutates`, or `declares`; broad
 `usedChains` is derived during finalization.
 
-`declares`, `declaresInParent`, and finalized `declaredChains` already exist. `declaresInParent` is declaration-placement plumbing, not scheduler capability metadata, and should stay out of the command-buffer scheduler plan.
+`declares`, `declaresInParent`, and finalized `declaredChains` already exist. `declaresInParent` is declaration-placement plumbing, not phase capability metadata, and should stay out of the command-buffer lane runner plan.
 
 ## Target Facts
 
@@ -87,7 +87,7 @@ parent classification: observedChainsFromParent / mutatedChainsFromParent
 parent placement: boundaryLinkedChains
 ```
 
-`observedChainsFromParent` and `mutatedChainsFromParent` are the shadowing-safe facts a parent scheduler should use when deciding whether a child buffer lane is observable, mutable, or mixed. They are the owned facts minus locally declared chain names:
+`observedChainsFromParent` and `mutatedChainsFromParent` are the shadowing-safe facts a parent lane runner should use when deciding whether a child buffer lane is observable, mutable, or mixed. They are the owned facts minus locally declared chain names:
 
 ```text
 observedChainsFromParent = observedChains minus locally declared chains
@@ -103,13 +103,15 @@ This matters because a child can declare local `x` while the parent also has a l
 boundaryLinkedChains = parent-visible projection of usedChainsFromParent
 ```
 
-Do not add `linkedObservedChains` as a scheduler input. Parent phase classification uses `observedChainsFromParent` / `mutatedChainsFromParent`; parent placement uses `boundaryLinkedChains`. If existing code still needs `boundaryLinkedMutatedChains` during migration, keep it as a temporary compatibility field derived from `mutatedChainsFromParent`, then remove or rename it when the command-buffer scheduler consumes the new facts directly.
+Do not add `linkedObservedChains` as a phase-classification input. Parent phase classification uses `observedChainsFromParent` / `mutatedChainsFromParent`; parent placement uses `boundaryLinkedChains`. If existing code still needs `boundaryLinkedMutatedChains` during migration, keep it as a temporary compatibility field derived from `mutatedChainsFromParent`, then remove or rename it when the command-buffer lane runner consumes the new facts directly.
 
 The current implementation carries placement to runtime through `boundaryLinkedChains`
-and the temporary `boundaryLinkedMutatedChains` compatibility bridge. It does not emit a
-runtime `linkedObservedChains`; scheduler work that needs read-only
-classification should consume `observedChainsFromParent` from analysis, with
-`boundaryLinkedChains` remaining only the placement set.
+and the temporary `boundaryLinkedMutatedChains` compatibility bridge inside the same
+`chainFacts` object as `observedChains`, `mutatedChains`, `observedChainsFromParent`,
+and `mutatedChainsFromParent`. It does not emit a runtime `linkedObservedChains`;
+phase-dispatch work that needs read-only classification should consume
+`observedChainsFromParent` from analysis, with `boundaryLinkedChains` remaining
+only the placement set.
 
 ## Producer Classification
 
@@ -121,17 +123,17 @@ runtime behavior:
 | --- | --- |
 | chain declarations in `chain.js` | `declares`; derived `usedChains` includes the declared name, but this is not `observes` |
 | chain `snapshot`, `isError`, `getError`, and sequence get/status reads | `observes` |
-| ordinary chain mutation commands | `mutates`; add `observes` only if the command also schedules non-mutating source-order work on that lane |
+| ordinary chain mutation commands | `mutates`; add `observes` only if the command also emits non-mutating source-order work on that lane |
 | template output, include output, call-extension text output | `mutates` for the text lane |
 | return statements | `mutates` for the return lane |
 | `isReturnUnset()` | `observes` for the return lane |
 | variable/bare-name lookups that read a declared chain | `observes` |
 | assignments, including shared set paths | `mutates` for the assigned lane |
 | declarations with initializers, such as `var x = 5` | `declares` plus `mutates`; a value command is emitted for the initialized variable |
-| imported callable and caller scheduling lanes | classify each touched lane by the boundary/command it actually schedules: non-mutating source-order participation is `observes`, writes are `mutates` |
+| imported callable and caller ordering lanes | classify each touched lane by the boundary/command it actually emits: non-mutating source-order participation is `observes`, writes are `mutates` |
 | sequence lock lookups | setup metadata stays in `sequenceLocks`; status/get-like checks are `observes`; sequential calls or repairs are `mutates` |
 
-The table is intentionally behavior-based. If a site exists only to keep a boundary attached to a lane without changing it, that is an observation in scheduler terms even if it is not a data read. If a site exists only for declaration placement or validation, keep it out of scheduler facts and preserve it through derived broad footprint data if needed.
+The table is intentionally behavior-based. If a site exists only to keep a boundary attached to a lane without changing it, that is an observation in phase terms even if it is not a data read. If a site exists only for declaration placement or validation, keep it out of phase-driving facts and preserve it through derived broad footprint data if needed.
 
 Compound chain/component call paths use `operationOwnedPath` on the AST nodes
 that make up the already-classified static target. This suppresses ordinary
@@ -165,7 +167,7 @@ function addChainMutation(usage, name) {
 Broad use is the compatibility footprint. It is updated by observation and
 mutation helpers, and finalized declarations add their names directly to
 `usedChains`. This keeps current source-order behavior without reintroducing
-declarations as scheduler observations.
+declarations as phase-driving observations.
 
 `usedChains` is derived from observations, mutations, and finalized
 declarations. New producer sites should not author broad-use facts directly.
@@ -179,7 +181,7 @@ Validation should use the narrow facts that match the question:
 - declaration conflicts: `declares` / `declaredChains`
 - compatibility consumers that need broad footprint: derived `usedChains` / `usedChainsFromParent`
 
-Do not use broad `usedChains` for scheduler phase classification.
+Do not use broad `usedChains` for phase classification.
 
 ## Migration Plan
 
@@ -190,7 +192,8 @@ Do not use broad `usedChains` for scheduler phase classification.
 5. Preserve `usedChains` / `usedChainsFromParent` as broad compatibility footprints with semantics equivalent to observed + mutated + declared names.
 6. Derive `boundaryLinkedChains` from `usedChainsFromParent`.
 7. Keep `boundaryLinkedMutatedChains` only as a compatibility bridge if current emit/runtime paths still need it; do not introduce `linkedObservedChains`.
-8. Future scheduler work should consume placement via `boundaryLinkedChains` and phase classification from `observedChainsFromParent` / `mutatedChainsFromParent` (or owned `observedChains` / `mutatedChains` for local starts). The current runtime construction keeps only `boundaryLinkedChains` and temporary `boundaryLinkedMutatedChains` metadata.
+8. Serialize boundary placement and lane classification together as compact `observedFacts` and `mutatedFacts` vectors; do not keep separate boundary-link constructor or runtime-helper arguments.
+9. Future lane-runner work should consume placement via `boundaryLinkedChains` and phase classification from `observedChainsFromParent` / `mutatedChainsFromParent` (or owned `observedChains` / `mutatedChains` for local starts). Runtime construction receives those fields as `[linked, owned, parentVisible]` vectors split by observation and mutation.
 
 ## Focused Tests
 
@@ -199,7 +202,7 @@ Do not use broad `usedChains` for scheduler phase classification.
 - snapshot/error/sequence-read commands appear in `observedChains` without `mutatedChains`
 - lanes that both observe and mutate appear in both sets
 - local declarations are removed from `observedChainsFromParent`, `mutatedChainsFromParent`, and `usedChainsFromParent`
-- parent scheduling classifies child lanes from `observedChainsFromParent` / `mutatedChainsFromParent`, not raw child facts
+- parent phase dispatch classifies child lanes from `observedChainsFromParent` / `mutatedChainsFromParent`, not raw child facts
 - local-name shadowing does not make a child-local lane visible as a parent lane
 - `boundaryLinkedChains` controls placement only and is derived from `usedChainsFromParent`
 - owned `start(chainName)` classification sees local observed/mutated facts even when the chain is not parent-visible

@@ -4,7 +4,7 @@ import {finallyValue, resolveThen, thenValue} from './resolve.js';
 import {CommandBuffer} from './command-buffer.js';
 import {ErrorCommand} from './commands/errors.js';
 
-function _createChildBoundary(parentBuffer, boundaryLinkedChainNames, boundaryLinkedMutatedChainNames = null, isolatedContext = null, bufferStackErrorContext, traceParent = null, renderState = null) {
+function _createChildBoundary(parentBuffer, observedFacts = null, mutatedFacts = null, isolatedContext = null, bufferStackErrorContext, traceParent = null, renderState = null) {
   const bufferContext = parentBuffer && parentBuffer._context ? parentBuffer._context : isolatedContext;
   const diagnosticTraceParent = traceParent || parentBuffer || null;
   const boundaryRenderState = renderState || (parentBuffer && parentBuffer.renderState) || null;
@@ -17,9 +17,9 @@ function _createChildBoundary(parentBuffer, boundaryLinkedChainNames, boundaryLi
   const childBuffer = new CommandBuffer(
     bufferContext,
     null,
-    boundaryLinkedChainNames,
+    observedFacts,
+    mutatedFacts,
     parentBuffer || null,
-    boundaryLinkedMutatedChainNames,
     bufferStackErrorContext,
     diagnosticTraceParent,
     boundaryRenderState
@@ -33,9 +33,9 @@ function _createChildBoundary(parentBuffer, boundaryLinkedChainNames, boundaryLi
  * The boundary function receives (childBuffer) and runs the branch body inside
  * that single child boundary. Synchronous bodies complete without a microtask.
  */
-function runControlFlowBoundary(parentBuffer, boundaryLinkedChainNames, boundaryLinkedMutatedChainNames, context, renderState, boundaryFn, bufferStackErrorContext) {
+function runControlFlowBoundary(parentBuffer, observedFacts, mutatedFacts, context, renderState, boundaryFn, bufferStackErrorContext) {
   renderState.throwIfFatalErrorReported();
-  const childBuffer = _createChildBoundary(parentBuffer, boundaryLinkedChainNames, boundaryLinkedMutatedChainNames, null, bufferStackErrorContext, null, renderState);
+  const childBuffer = _createChildBoundary(parentBuffer, observedFacts, mutatedFacts, null, bufferStackErrorContext, null, renderState);
   return markPromiseHandled(_runWithChildBuffer(childBuffer, renderState, boundaryFn));
 }
 
@@ -128,9 +128,9 @@ async function _runWithChildBufferAsync(childBuffer, renderState, resultPromise,
  * waited chain. This is loop-specific structural behavior and stays out of
  * the generic control-flow helper.
  */
-function runWaitedControlFlowBoundary(parentBuffer, boundaryLinkedChainNames, boundaryLinkedMutatedChainNames, context, renderState, boundaryFn, waitedChainName, bufferStackErrorContext) {
+function runWaitedControlFlowBoundary(parentBuffer, observedFacts, mutatedFacts, context, renderState, boundaryFn, waitedChainName, bufferStackErrorContext) {
   renderState.throwIfFatalErrorReported();
-  const childBuffer = _createChildBoundary(parentBuffer, boundaryLinkedChainNames, boundaryLinkedMutatedChainNames, null, bufferStackErrorContext, null, renderState);
+  const childBuffer = _createChildBoundary(parentBuffer, observedFacts, mutatedFacts, null, bufferStackErrorContext, null, renderState);
   return markPromiseHandled(_runWithChildBuffer(childBuffer, renderState, boundaryFn, waitedChainName));
 }
 
@@ -185,8 +185,8 @@ function runRenderBoundary(context, renderState, boundaryFn, bufferStackErrorCon
  * Unlike runControlFlowBoundary(...), this helper preserves normal expression
  * rejection semantics: errors are rethrown to the awaiting caller.
  */
-function runValueBoundary(parentBuffer, boundaryLinkedChainNames, boundaryLinkedMutatedChainNames, boundaryFn, bufferStackErrorContext) {
-  const childBuffer = _createChildBoundary(parentBuffer, boundaryLinkedChainNames, boundaryLinkedMutatedChainNames, null, bufferStackErrorContext);
+function runValueBoundary(parentBuffer, observedFacts, mutatedFacts, boundaryFn, bufferStackErrorContext) {
+  const childBuffer = _createChildBoundary(parentBuffer, observedFacts, mutatedFacts, null, bufferStackErrorContext, null, null);
   let result;
   try {
     result = boundaryFn(childBuffer);

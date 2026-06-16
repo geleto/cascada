@@ -14,6 +14,7 @@ export * from './errors.js';
 export * from './resolve.js';
 export * from './render-state.js';
 export * from './command-buffer.js';
+export * from './command-iterator.js';
 export * from './frame.js';
 export * from './inheritance/callable.js';
 export * from './inheritance/load.js';

@@ -11,7 +11,6 @@ import {
   createPoison,
   poisonOrReportedFatal,
 } from '../errors.js';
-import {BufferIterator} from '../buffer-iterator.js';
 
 class Chain {
   constructor(buffer, chainName, context, chainType = null, target = undefined, base = null) {
@@ -22,7 +21,6 @@ class Chain {
     this._target = target;
     this._base = base;
 
-    this._iterator = new BufferIterator(this);
     this._stateVersion = 0;
     this._fatalError = null;
     this._errorStateCache = {
@@ -177,9 +175,7 @@ class Chain {
     try {
       cmd.resolved = true;
       this._beforeApplyCommand(cmd);
-      const result = typeof cmd.mutate === 'function'
-        ? cmd.mutate(this)
-        : cmd.apply(this);
+      const result = cmd.mutate(this);
       if (result && typeof result.then === 'function') {
         return result.then(undefined, (err) => {
           this._recordError(err, cmd);
@@ -191,7 +187,7 @@ class Chain {
     }
   }
 
-  _resolveIteratorCompletion() {
+  _resolveChainCompletion() {
     if (this._completionResolved) {
       return;
     }

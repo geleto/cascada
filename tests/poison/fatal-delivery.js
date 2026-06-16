@@ -96,15 +96,13 @@ import {
 
       const result = runControlFlowBoundary(
         rootBuffer,
-        null,
-        null,
+        null, null,
         {},
         renderState,
         async (outerBuffer) => {
           runControlFlowBoundary(
             outerBuffer,
-            null,
-            null,
+            null, null,
             {},
             renderState,
             async (siblingBuffer) => {
@@ -114,8 +112,7 @@ import {
           );
           runControlFlowBoundary(
             outerBuffer,
-            null,
-            null,
+            null, null,
             {},
             renderState,
             async () => {
@@ -142,7 +139,7 @@ import {
       const errorContext = [1, 1, 'Fatal.Observable', 'fatal-observable.njk', null, renderState];
       const rootBuffer = new CommandBuffer({}, null, null, null, null, errorContext, null, renderState);
       declareBufferChain(rootBuffer, 'text', 'text', {}, null);
-      const childBuffer = new CommandBuffer({}, rootBuffer, ['text'], null, null, errorContext, null, renderState);
+      const childBuffer = new CommandBuffer({}, rootBuffer, [["text"]], [["text"]], null, errorContext, null, renderState);
       const output = rootBuffer.getChain('text');
 
       childBuffer.addCommand(new TextCommand({

@@ -9,6 +9,47 @@ class CompileChain {
     this.compiler = compiler;
   }
 
+  getCommandBufferObservedFacts(node) {
+    const analysis = node._analysis;
+    return compactChainFactGroups([
+      chainSetToArray(analysis.boundaryLinkedChains),
+      chainSetToArray(analysis.observedChains),
+      chainSetToArray(analysis.observedChainsFromParent)
+    ]);
+  }
+
+  getCommandBufferMutatedFacts(node) {
+    const analysis = node._analysis;
+    return compactChainFactGroups([
+      chainSetToArray(analysis.boundaryLinkedMutatedChains),
+      chainSetToArray(analysis.mutatedChains),
+      chainSetToArray(analysis.mutatedChainsFromParent)
+    ]);
+  }
+
+  getCommandBufferFacts(node) {
+    return {
+      observedFacts: this.getCommandBufferObservedFacts(node),
+      mutatedFacts: this.getCommandBufferMutatedFacts(node)
+    };
+  }
+
+  getCommandBufferFactsArgs(node) {
+    const facts = this.getCommandBufferFacts(node);
+    return {
+      observedFactsArg: JSON.stringify(facts.observedFacts),
+      mutatedFactsArg: JSON.stringify(facts.mutatedFacts)
+    };
+  }
+
+  getCommandBufferFactsArgsWithLinked(node, observedLinkedArg, mutatedLinkedArg) {
+    const facts = this.getCommandBufferFacts(node);
+    return {
+      observedFactsArg: chainFactGroupsArgWithLinked(facts.observedFacts, observedLinkedArg),
+      mutatedFactsArg: chainFactGroupsArgWithLinked(facts.mutatedFacts, mutatedLinkedArg)
+    };
+  }
+
   emitLocalVarChainDeclaration(bufferId, name) {
     this.compiler.emit.line(`runtime.declareBufferChain(${bufferId}, "${name}", "var", context, null);`);
   }
@@ -269,7 +310,7 @@ class CompileChain {
     node.name.addAnalysis({ declarationTarget: true });
     validateChainDeclarationNode(this.compiler, node);
     const name = node.name.value;
-    return {
+    const result = {
       declares: [{
         name,
         type: node.chainType,
@@ -277,6 +318,18 @@ class CompileChain {
         shared: !!node.isShared
       }]
     };
+    const chainFacts = CHAIN_TYPE_FACTS[node.chainType];
+    if (
+      node.initializer &&
+      (
+        node.isShared ||
+        !chainFacts ||
+        !chainFacts.requiresInitializer
+      )
+    ) {
+      result.mutates = [name];
+    }
+    return result;
   }
 
   compileChainDeclaration(node) {
@@ -588,6 +641,31 @@ class CompileChain {
     return false;
   }
 
+}
+
+function compactChainFactGroups(groups) {
+  let end = groups.length;
+  while (end > 0 && groups[end - 1] === null) {
+    end--;
+  }
+  return end > 0 ? groups.slice(0, end) : null;
+}
+
+function chainSetToArray(chains) {
+  return chains ? Array.from(chains) : null;
+}
+
+function chainFactGroupsArgWithLinked(facts, linkedArg) {
+  const groups = [
+    linkedArg,
+    JSON.stringify((facts && facts[1]) || null),
+    JSON.stringify((facts && facts[2]) || null)
+  ];
+  let end = groups.length;
+  while (end > 1 && groups[end - 1] === 'null') {
+    end--;
+  }
+  return `[${groups.slice(0, end).join(', ')}]`;
 }
 
 export {CompileChain};

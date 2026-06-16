@@ -1379,8 +1379,7 @@ describe('error context tracing runtime foundation', () => {
     const root = new CommandBuffer(
       { path: 'script.casc' },
       null,
-      null,
-      null,
+      null, null,
       null,
       TEST_DIAGNOSTIC_CONTEXT,
       null,
@@ -1392,8 +1391,7 @@ describe('error context tracing runtime foundation', () => {
 
     const boundaryResult = runWaitedControlFlowBoundary(
       root,
-      null,
-      null,
+      null, null,
       { path: 'script.casc' },
       renderState,
       async (currentBuffer) => {
@@ -1475,7 +1473,7 @@ describe('error context tracing runtime foundation', () => {
       expect(source).to.match(/\[6,7,\d+\]/);
       expect(source).to.match(/\[\d+,\d+,"[^"]+"\]/);
       expect(source).to.match(/\[\d+,\d+,\d+,\{"entryName":"root"\}\]/);
-      expect(source).to.match(/new runtime\.CommandBuffer\(context, null, null, null, null, __ec\[\d+\], null, renderState\);/);
+      expect(source).to.match(/new runtime\.CommandBuffer\(context, null, (?:null|\[[^\n;]+\]), null, __ec\[\d+\], null, renderState\);/);
     });
 
     it('uses parent-provided semantic labels in generated diagnostics', () => {

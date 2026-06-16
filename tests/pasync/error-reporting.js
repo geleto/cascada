@@ -970,8 +970,7 @@ import * as runtime from '../../src/runtime/runtime.js';
 
       runtime.runValueBoundary(
         null,
-        null,
-        null,
+        null, null,
         asyncBody,
         [1, 1, 'test execution', 'test.njk', null, null]
       ).then(() => {

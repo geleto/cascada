@@ -66,9 +66,7 @@ class SequenceObjectChain extends Chain {
       }
 
       const sequencedObject = this._ensureSequencedObjectResolved();
-      const mutate = () => typeof cmd.mutate === 'function'
-        ? cmd.mutate(this)
-        : cmd.apply(this);
+      const mutate = () => cmd.mutate(this);
       const result = (sequencedObject && typeof sequencedObject.then === 'function')
         ? sequencedObject.then(mutate)
         : mutate();

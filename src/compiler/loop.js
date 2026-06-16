@@ -228,16 +228,13 @@ class CompileLoop {
 
     const shouldAwaitLoopBody = sequentialLoopBody || hasConcurrencyLimit;
     const parentBufferArg = this.compiler.buffer.currentBuffer;
-    const {
-      boundaryLinkedChainsArg,
-      boundaryLinkedMutatedChainsArg
-    } = this.compiler.emit.getBoundaryLinkedChainArgs(node);
+    const { observedFactsArg, mutatedFactsArg } = this.compiler.chain.getCommandBufferFactsArgs(node);
     // The iteration boundary owns its label slot; loop metadata stays in added
     // context so nested commands can inherit it without changing source labels.
     const loopAddedContextVar = this.compiler.createInheritedAddedContextVar(`{ loop: ${loopMetaVar} }`);
     const iterationBoundaryContextArg = `runtime.setContextLabel(runtime.cloneWithAddedContext(${this.compiler._emitStaticErrorContext(node)}, ${loopAddedContextVar}), "Iteration")`;
     this.compiler.emit(
-      `return runtime.runControlFlowBoundary(${parentBufferArg}, ${boundaryLinkedChainsArg}, ${boundaryLinkedMutatedChainsArg}, context, renderState, (currentBuffer) => {`
+      `return runtime.runControlFlowBoundary(${parentBufferArg}, ${observedFactsArg}, ${mutatedFactsArg}, context, renderState, (currentBuffer) => {`
     );
 
     this.compiler.buffer.withBufferState({

@@ -426,7 +426,7 @@ describe('chain errors', function () {
 
     it('returns sync observations for clean and poisoned completed var chains', () => {
       const clean = new VarChain(null, 'value', null, 'var', 'ok');
-      clean._resolveIteratorCompletion();
+      clean._resolveChainCompletion();
 
       const cleanIsError = clean._isError();
       const cleanErrors = clean._getErrors();
@@ -436,7 +436,7 @@ describe('chain errors', function () {
       expect(cleanErrors).to.be(null);
 
       const poisoned = new VarChain(null, 'value', null, 'var', createPoison(testError('completed sync poison')));
-      poisoned._resolveIteratorCompletion();
+      poisoned._resolveChainCompletion();
 
       const poisonedIsError = poisoned._isError();
       const poisonedErrors = poisoned._getErrors();
@@ -449,7 +449,7 @@ describe('chain errors', function () {
 
     it('returns completed healthy final snapshots synchronously', () => {
       const output = new VarChain(null, 'value', null, 'var', 'ready');
-      output._resolveIteratorCompletion();
+      output._resolveChainCompletion();
 
       const result = output.finalSnapshot();
 
