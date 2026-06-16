@@ -591,9 +591,9 @@ Existing compiler/runtime paths:
     chains and call `_emitSharedChainObservation(...)` with `isError` /
     `getError`.
 - Shared chain calls and snapshots
-  - `analyzeFunCall(...)` already builds `specialChainCall` from static paths
+  - `analyzeFunCall(...)` already builds `chainOperationCall` from static paths
     whose root is a declared chain.
-  - `_compileSpecialChainFunCall(...)` is the likely reuse point for
+  - `compileChainOperationFunCall(...)` is the likely reuse point for
     `this.log(...)`, `this.result...`, `this.db.insert(...)`, and
     `this.chain.snapshot()`.
 - Shared sequence chains

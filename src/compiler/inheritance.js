@@ -315,7 +315,6 @@ class CompileInheritance {
     const textChain = this.compiler.analysis.getCurrentTextChain(node._analysis);
     return {
       wantsLinkedChildBuffer: true,
-      uses: textChain ? [textChain] : [],
       mutates: textChain ? [textChain] : []
     };
   }
@@ -582,7 +581,6 @@ class CompileInheritance {
     return {
       createScope: true,
       scopeBoundary: true,
-      uses: textChain ? [textChain] : [],
       mutates: textChain ? [textChain] : [],
       wantsLinkedChildBuffer: true
     };

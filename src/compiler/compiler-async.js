@@ -21,7 +21,7 @@ class CompilerAsync extends CompilerBaseAsync {
     }
     const textChain = this.analysis.getCurrentTextChain(node._analysis);
     return textChain
-      ? { uses: [textChain], mutates: [textChain] }
+      ? { mutates: [textChain] }
       : {};
   }
 
@@ -166,10 +166,10 @@ class CompilerAsync extends CompilerBaseAsync {
     return { createScope: true, declares, wantsLinkedChildBuffer: true };
   }
 
-  analyzeWhile(node, analysisPass) {
-    const result = this._collectLoopDeclarationFacts(node, analysisPass);
+  analyzeWhile(node) {
+    node.body.addAnalysis({ createScope: true });
     node.cond.addAnalysis({ errorContextLabel: 'While.Condition' });
-    return result;
+    return { wantsLinkedChildBuffer: true };
   }
 
   postAnalyzeWhile(node) {
@@ -383,7 +383,8 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   analyzeCase(node) {
-    return { createScope: true };
+    node.body.addAnalysis({ createScope: true });
+    return {};
   }
 
   analyzeIf(node) {
@@ -478,7 +479,6 @@ class CompilerAsync extends CompilerBaseAsync {
       : null;
     return this.scriptMode ? {}
       : {
-        uses: [textChain],
         mutates: [textChain],
         // Output is analyzed as one source-order text slot even though
         // compileOutput emits per-child text boundaries. The aggregate link set
@@ -526,7 +526,7 @@ class CompilerAsync extends CompilerBaseAsync {
 
   compileDo(node) {
     node.children.forEach((child) => {
-      if (isSharedChainCommandExpression(child)) {
+      if (isSharedChainOperationExpression(child)) {
         // Shared text/data calls enqueue commands instead of returning an
         // expression value, so they cannot be wrapped by the discard observer.
         this.compileExpression(child, null, child);
@@ -572,7 +572,6 @@ class CompilerAsync extends CompilerBaseAsync {
     }
     const textChain = this.analysis.getCurrentTextChain(node._analysis);
     return {
-      uses: textChain ? [textChain] : [],
       mutates: textChain ? [textChain] : [],
       wantsLinkedChildBuffer: true
     };
@@ -686,12 +685,12 @@ class CompilerAsync extends CompilerBaseAsync {
 
 }
 
-function isSharedChainCommandExpression(node) {
-  const specialChainCall = node?._analysis?.specialChainCall;
+function isSharedChainOperationExpression(node) {
+  const chainOperationCall = node._analysis.chainOperationCall;
   return !!(
-    specialChainCall &&
-    specialChainCall.shared &&
-    (specialChainCall.chainType === 'text' || specialChainCall.chainType === 'data')
+    chainOperationCall &&
+    chainOperationCall.shared &&
+    (chainOperationCall.chainType === 'text' || chainOperationCall.chainType === 'data')
   );
 }
 

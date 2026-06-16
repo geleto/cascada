@@ -61,7 +61,7 @@ class CompileReturn {
   collectIsUnsetCallFacts(node) {
     this._validateIsUnsetCall(node);
     return {
-      uses: [RETURN_CHAIN_NAME],
+      observes: [RETURN_CHAIN_NAME],
       mutates: []
     };
   }

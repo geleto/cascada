@@ -98,7 +98,7 @@ reference.
 ### Correctness fix
 - **Observation commands (snapshot, isError, getError) are listed as
   command-emitting expressions, but they only emit commands in script mode.**
-  `compileSpecialChainFunCall()` returns `false` when `!compiler.scriptMode`
+  `compileChainOperationFunCall()` returns `false` when `!compiler.scriptMode`
   (chain.js:265-267) and they fall through to normal dynamic calls in template
   expressions. The document must qualify this as script-mode chain syntax or
   remove observations from the general command-emitting list.

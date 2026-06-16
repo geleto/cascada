@@ -21,7 +21,7 @@ class CompileAssignment {
   analyzeSet(node, analysisPass) {
     const compiler = this.compiler;
     const declares = [];
-    const uses = [];
+    const observes = [];
     const mutates = [];
     const isDeclaration = node.varType === 'declaration';
     const targets = node.targets;
@@ -44,15 +44,22 @@ class CompileAssignment {
     }
     const thisSharedPath = compiler.chain.collectThisSharedSetPathFacts(node, analysisPass);
     if (thisSharedPath) {
-      uses.push(thisSharedPath.name);
+      targets.forEach((target) => compiler.chain.markOperationOwnedPath(target));
+      // Nested shared-var assignment reads the current value via RawSnapshot
+      // before writing the patched value. Data-chain shared sets enqueue a
+      // direct data mutation command and do not need a separate observation.
+      if (thisSharedPath.type === 'var' && thisSharedPath.path.length > 0) {
+        observes.push(thisSharedPath.name);
+      }
       mutates.push(thisSharedPath.name);
       return {
         declares,
-        uses,
+        observes,
         mutates,
         thisSharedSetPath: thisSharedPath
       };
     }
+    const assignsValue = !!(node.value || node.body) && !node.declarationOnly;
     targets.forEach((target) => {
       if (target instanceof nodes.Symbol) {
         target.addAnalysis({ declarationTarget: true });
@@ -72,14 +79,20 @@ class CompileAssignment {
           !declaration;
         if (isDeclaration || shouldDeclareImplicitTemplateVar) {
           declares.push({ name, type: 'var', initializer: null, explicit: !!isDeclaration });
+          if (assignsValue) {
+            mutates.push(name);
+          }
         } else {
+          if (node.path) {
+            observes.push(name);
+          }
           mutates.push(name);
         }
       }
     });
     return {
       declares,
-      uses,
+      observes,
       mutates
     };
   }

@@ -72,10 +72,7 @@ class CompileSequential {
       return null;
     }
     this.compiler._failIfSequenceRootIsDeclared(node, sequenceLockLookup.key, analysisPass);
-    // Bare sequence lock lookups cover both value reads and status observations
-    // such as `path! is error`; current consumers only need the shared `uses`
-    // fact, not a separate read-vs-observe split.
-    analysis.uses.push(sequenceLockLookup.key);
+    analysis.observes.push(sequenceLockLookup.key);
     return sequenceLockLookup;
   }
 

@@ -6,7 +6,7 @@ import {CHAIN_TYPES} from '../chain-types.js';
  * Chain analysis pass.
  *
  * This pass annotates AST nodes with `_analysis` metadata, validates scope
- * ownership, and derives declaration/use/mutation/link metadata for codegen.
+ * ownership, and derives declaration/observation/mutation/use/link metadata for codegen.
  * Node analyzers seed local facts during the first walk. Post-analyzers run
  * after children in the finalization pass so custom nodes can aggregate
  * immediate child facts without walking whole subtrees.
@@ -101,7 +101,7 @@ class CompileAnalysis {
       this._analyzeNode(currentNode);
       this.compiler._generateErrorContext(currentNode);
       this._recordDeclarations(analysis);
-      this._validateUses(analysis);
+      this._validateObservations(analysis);
       this._validateMutations(analysis);
     }, parentNode, parentField);
   }
@@ -137,7 +137,7 @@ class CompileAnalysis {
     // the analyzer that owns that feature.
     //
     // Analysis facts are populated in two passes: node analyzers seed local
-    // declarations/uses/boundary flags during the walk. Post-analyzers run
+    // declarations/observations/mutations/boundary flags during the walk. Post-analyzers run
     // after child facts are ready and before this node's aggregate chain
     // footprint is derived.
     node._analysis = {
@@ -150,14 +150,19 @@ class CompileAnalysis {
       textOutput: null,
       declares: [],
       declaresInParent: [],
+      observes: [],
+      // Legacy/custom compatibility authoring path; first-party producers
+      // should write observes instead.
       uses: [],
       mutates: [],
       // First-pass source-order lookup table. This is intentionally separate
       // from finalized scope ownership in `declaredChains`.
       sourceVisibleDeclarations: null,
       declaredChains: null,
+      observedChains: null,
       usedChains: null,
       mutatedChains: null,
+      observedChainsFromParent: null,
       usedChainsFromParent: null,
       mutatedChainsFromParent: null,
       linkedChains: null,
@@ -203,7 +208,7 @@ class CompileAnalysis {
       // checks the returned object for own linked fields before deriving
       // defaults. Writing them through node.addAnalysis() will be overwritten.
       // Finalization below normalizes linked-chain facts before codegen
-      // observes them; ordinary uses/mutates belong to the first pass.
+      // observes them; ordinary observes/mutates belong to the first pass.
       const returned = handler
         ? this.callCompilerMethod(handler, node, this)
         : analyzer.call(this.compiler, node, this);
@@ -219,15 +224,23 @@ class CompileAnalysis {
   // post-analyzers (children finalize before their parent) and from codegen.
   // First-pass analyzers must not call them — the facts are still null there.
   getChainsUsedFromParent(node) {
-    const analysis = node?._analysis;
+    const analysis = node._analysis;
     if (!analysis || !analysis.usedChainsFromParent) {
       return [];
     }
     return Array.from(analysis.usedChainsFromParent);
   }
 
+  getChainsObservedFromParent(node) {
+    const analysis = node._analysis;
+    if (!analysis || !analysis.observedChainsFromParent) {
+      return [];
+    }
+    return Array.from(analysis.observedChainsFromParent);
+  }
+
   getChainsMutatedFromParent(node) {
-    const analysis = node?._analysis;
+    const analysis = node._analysis;
     if (!analysis || !analysis.mutatedChainsFromParent) {
       return [];
     }
@@ -561,11 +574,11 @@ class CompileAnalysis {
     }
   }
 
-  _validateUses(analysis) {
+  _validateObservations(analysis) {
     const currentTextChain = this.getCurrentTextChain(analysis);
-    const localUses = analysis.uses;
-    for (let i = 0; i < localUses.length; i++) {
-      const name = localUses[i];
+    const localObserves = analysis.observes.concat(analysis.uses);
+    for (let i = 0; i < localObserves.length; i++) {
+      const name = localObserves[i];
       if (this._shouldSkipChainAccessValidation(name, currentTextChain)) {
         continue;
       }
@@ -667,22 +680,28 @@ class CompileAnalysis {
       node.addAnalysis(postAnalysisFacts);
     }
 
-    const localUses = analysis.uses;
+    const localObserves = analysis.observes.concat(analysis.uses);
     const localMutates = analysis.mutates;
     const usage = this._createChainUsageAggregate();
 
-    localUses.forEach((name) => {
-      this._addChainUse(usage, name);
+    localObserves.forEach((name) => {
+      this._addChainObservation(usage, name);
     });
     localMutates.forEach((name) => {
       this._addChainMutation(usage, name);
     });
     this._mergeChainUsage(usage, childUsage);
+    const declaredHere = analysis.declaredChains;
+    if (declaredHere) {
+      declaredHere.forEach((_decl, name) => {
+        this._addBroadChainUse(usage, name);
+      });
+    }
 
+    analysis.observedChains = usage.observedChains.size > 0 ? usage.observedChains : null;
     analysis.usedChains = usage.usedChains.size > 0 ? usage.usedChains : null;
     analysis.mutatedChains = usage.mutatedChains.size > 0 ? usage.mutatedChains : null;
-    const declaredHere = analysis.declaredChains;
-    const chainsFromParent = this._deriveChainsFromParent(usage.usedChains, usage.mutatedChains, declaredHere);
+    const chainsFromParent = this._deriveChainsFromParent(usage, declaredHere);
     const hasCustomLinkedChains = !!(
       postAnalysisFacts &&
       Object.prototype.hasOwnProperty.call(postAnalysisFacts, 'linkedChains')
@@ -691,6 +710,7 @@ class CompileAnalysis {
       postAnalysisFacts &&
       Object.prototype.hasOwnProperty.call(postAnalysisFacts, 'linkedMutatedChains')
     );
+    analysis.observedChainsFromParent = chainsFromParent.observedChains.size > 0 ? chainsFromParent.observedChains : null;
     analysis.usedChainsFromParent = chainsFromParent.usedChains.size > 0 ? chainsFromParent.usedChains : null;
     analysis.mutatedChainsFromParent = chainsFromParent.mutatedChains.size > 0 ? chainsFromParent.mutatedChains : null;
     if (!hasCustomLinkedChains) {
@@ -704,7 +724,7 @@ class CompileAnalysis {
     this._finalizeBufferCreation(analysis);
     return this._getPropagatedChainUsage(
       analysis,
-      localUses,
+      localObserves,
       localMutates,
       chainsFromParent
     );
@@ -712,36 +732,44 @@ class CompileAnalysis {
 
   _createChainUsageAggregate() {
     return {
+      observedChains: new Set(),
       usedChains: new Set(),
       mutatedChains: new Set()
     };
   }
 
   _mergeChainUsage(target, source) {
-    source.usedChains.forEach((name) => this._addChainUse(target, name));
+    source.usedChains.forEach((name) => this._addBroadChainUse(target, name));
+    source.observedChains.forEach((name) => this._addChainObservation(target, name));
     source.mutatedChains.forEach((name) => this._addChainMutation(target, name));
   }
 
-  _addChainUse(usage, name) {
+  _addChainObservation(usage, name) {
+    if (name) {
+      usage.observedChains.add(name);
+      this._addBroadChainUse(usage, name);
+    }
+  }
+
+  _addChainMutation(usage, name) {
+    if (name) {
+      usage.mutatedChains.add(name);
+      this._addBroadChainUse(usage, name);
+    }
+  }
+
+  _addBroadChainUse(usage, name) {
     if (name) {
       usage.usedChains.add(name);
     }
   }
 
-  _addChainMutation(usage, name) {
-    if (!name) {
-      return;
-    }
-    usage.usedChains.add(name);
-    usage.mutatedChains.add(name);
-  }
-
-  _deriveChainsFromParent(usedChains, mutatedChains, declaredChains) {
+  _deriveChainsFromParent(usage, declaredChains) {
     const parentUsage = this._createChainUsageAggregate();
-    usedChains.forEach((name) => this._addChainUse(parentUsage, name));
-    mutatedChains.forEach((name) => this._addChainMutation(parentUsage, name));
+    this._mergeChainUsage(parentUsage, usage);
     if (declaredChains) {
       declaredChains.forEach((_decl, name) => {
+        parentUsage.observedChains.delete(name);
         parentUsage.usedChains.delete(name);
         parentUsage.mutatedChains.delete(name);
       });
@@ -749,7 +777,7 @@ class CompileAnalysis {
     return parentUsage;
   }
 
-  _getPropagatedChainUsage(analysis, localUses, localMutates, chainsFromParent) {
+  _getPropagatedChainUsage(analysis, localObserves, localMutates, chainsFromParent) {
     // This is the read-only footprint this node contributes to its parent,
     // not the parent-visible footprint this node consumes from its parent.
     if (analysis.scopeBoundary) {
@@ -759,30 +787,22 @@ class CompileAnalysis {
         return this._createChainUsageAggregate();
       }
       const parentUsage = this._createChainUsageAggregate();
-      localUses.forEach((name) => {
-        this._addChainUse(parentUsage, name);
+      localObserves.forEach((name) => {
+        this._addChainObservation(parentUsage, name);
       });
       localMutates.forEach((name) => {
         this._addChainMutation(parentUsage, name);
       });
-      return this._deriveChainsFromParent(
-        parentUsage.usedChains,
-        parentUsage.mutatedChains,
-        analysis.declaredChains
-      );
+      return this._deriveChainsFromParent(parentUsage, analysis.declaredChains);
     }
     return chainsFromParent;
   }
 
   _deriveBoundaryLinkedChains(analysis, chainsFromParent) {
-    if (!this._wantsLinkableChildBuffer(analysis)) {
+    if (!this._wantsLinkableChildBuffer(analysis) || chainsFromParent.size === 0) {
       return null;
     }
-    const linkedChains = new Set();
-    chainsFromParent.forEach((name) => {
-      linkedChains.add(name);
-    });
-    return linkedChains.size > 0 ? linkedChains : null;
+    return new Set(chainsFromParent);
   }
 
   _normalizeChainSet(value, field, analysis) {

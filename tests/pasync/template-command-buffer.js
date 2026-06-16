@@ -84,14 +84,18 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
   function expectFinalizedChainSetFacts(ast) {
     const fields = [
       'usedChains',
+      'observedChains',
       'mutatedChains',
       'usedChainsFromParent',
+      'observedChainsFromParent',
       'mutatedChainsFromParent',
       'linkedChains',
       'linkedMutatedChains'
     ];
     const supersetPairs = [
+      ['observedChains', 'usedChains'],
       ['mutatedChains', 'usedChains'],
+      ['observedChainsFromParent', 'usedChainsFromParent'],
       ['mutatedChainsFromParent', 'usedChainsFromParent'],
       ['linkedMutatedChains', 'linkedChains']
     ];
@@ -116,6 +120,39 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
           });
         }
       });
+    });
+  }
+
+  function sortedChainNames(value) {
+    return Array.from(value || []).sort();
+  }
+
+  function addChainNames(target, chains) {
+    if (chains) {
+      chains.forEach((name) => target.add(name));
+    }
+  }
+
+  function addDeclaredChainNames(target, declarations) {
+    if (declarations) {
+      declarations.forEach((_declaration, name) => target.add(name));
+    }
+  }
+
+  function expectBroadUsedChainParity(ast) {
+    collectAllNodes(ast).forEach((node) => {
+      const analysis = node._analysis;
+      const expectedUsed = new Set();
+      addChainNames(expectedUsed, analysis.observedChains);
+      addChainNames(expectedUsed, analysis.mutatedChains);
+      addDeclaredChainNames(expectedUsed, analysis.declaredChains);
+
+      const expectedUsedFromParent = new Set();
+      addChainNames(expectedUsedFromParent, analysis.observedChainsFromParent);
+      addChainNames(expectedUsedFromParent, analysis.mutatedChainsFromParent);
+
+      expect(sortedChainNames(analysis.usedChains)).to.eql(sortedChainNames(expectedUsed));
+      expect(sortedChainNames(analysis.usedChainsFromParent)).to.eql(sortedChainNames(expectedUsedFromParent));
     });
   }
 
@@ -218,6 +255,145 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       expect(rootAnalysis.declaredChains.has('someVar')).to.be(true);
     });
 
+    it('should separate declared, observed, mutated, and broad used chain facts', function () {
+      const ast = analyzeScriptSource([
+        'data declaredOnly',
+        'data mutatedOnly',
+        'data observedOnly',
+        'data both',
+        'mutatedOnly.push("m")',
+        'var snapshot = observedOnly.snapshot()',
+        'both.push("b")',
+        'var bothSnapshot = both.snapshot()',
+        'return snapshot'
+      ].join('\n'), 'separated-chain-facts.casc');
+      const root = ast._analysis;
+
+      expect(root.declaredChains.has('declaredOnly')).to.be(true);
+      expect(root.usedChains.has('declaredOnly')).to.be(true);
+      expect(root.observedChains.has('declaredOnly')).to.be(false);
+      expect(root.mutatedChains.has('declaredOnly')).to.be(false);
+
+      expect(root.usedChains.has('mutatedOnly')).to.be(true);
+      expect(root.observedChains.has('mutatedOnly')).to.be(false);
+      expect(root.mutatedChains.has('mutatedOnly')).to.be(true);
+
+      expect(root.usedChains.has('observedOnly')).to.be(true);
+      expect(root.observedChains.has('observedOnly')).to.be(true);
+      expect(root.mutatedChains.has('observedOnly')).to.be(false);
+
+      expect(root.observedChains.has('both')).to.be(true);
+      expect(root.mutatedChains.has('both')).to.be(true);
+    });
+
+    it('should classify var declarations with initializers as mutations', function () {
+      const ast = analyzeScriptSource([
+        'var x = 5',
+        'return x'
+      ].join('\n'), 'initialized-var-chain-facts.casc');
+      const root = ast._analysis;
+
+      expect(root.declaredChains.has('x')).to.be(true);
+      expect(root.usedChains.has('x')).to.be(true);
+      expect(root.mutatedChains.has('x')).to.be(true);
+    });
+
+    it('should preserve broad used-chain parent footprints for representative scheduler consumers', function () {
+      const controlFlowAst = analyzeScriptSource([
+        'data result',
+        'var flag = true',
+        'if flag',
+        '  result.push("yes")',
+        'else',
+        '  var local = "no"',
+        'endif',
+        'while flag',
+        '  var loopLocal = "tick"',
+        'endwhile',
+        'return result.snapshot()'
+      ].join('\n'), 'broad-used-chain-parity.casc');
+      const extendsBoundaryAst = analyzeTemplateSource(
+        '{% extends parentTemplate %}' +
+        '{% block body %}{{ value }}{% endblock %}',
+        'broad-used-template-extends-parity.njk'
+      );
+      const callerBoundaryAst = analyzeTemplateSource(
+        '{% set value = "v" %}' +
+        '{% macro wrap(tag) %}<{{ tag }}>{{ caller() }}</{{ tag }}>{% endmacro %}' +
+        '{% call wrap("span") %}{{ value }}{% endcall %}',
+        'broad-used-template-caller-parity.njk'
+      );
+      const guardAst = analyzeScriptSource([
+        'data result',
+        'guard result',
+        '  result.push("ok")',
+        '  var local = fail()',
+        'recover err',
+        '  result.recovered = err.message',
+        'endguard',
+        'return result.snapshot()'
+      ].join('\n'), 'broad-used-guard-parity.casc');
+      const ifNode = collectNodesByType(controlFlowAst, 'If')[0];
+      const whileNode = collectNodesByType(controlFlowAst, 'While')[0];
+      const callerNode = collectNodesByType(callerBoundaryAst, 'Caller')[0];
+      const guardNode = collectNodesByType(guardAst, 'Guard')[0];
+      const recoveryNode = collectNodesByType(guardAst, 'Guard.Recover')[0];
+
+      [controlFlowAst, extendsBoundaryAst, callerBoundaryAst, guardAst].forEach(expectBroadUsedChainParity);
+
+      expect(Array.from(controlFlowAst._analysis.usedChains || [])).to.eql(['flag', 'result', '__return__']);
+      expect(Array.from(ifNode._analysis.usedChainsFromParent || [])).to.eql(['flag', 'result']);
+      expect(Array.from(ifNode.body._analysis.usedChainsFromParent || [])).to.eql(['result']);
+      expect(Array.from(ifNode.else_._analysis.usedChainsFromParent || [])).to.eql([]);
+      expect(Array.from(whileNode._analysis.usedChainsFromParent || [])).to.eql(['flag']);
+      expect(Array.from(whileNode.body._analysis.usedChainsFromParent || [])).to.eql([]);
+      expect(whileNode._analysis.poisonTargetChains).to.eql([]);
+      expect(Array.from(callerNode._analysis.usedChainsFromParent || [])).to.eql(['value']);
+      expect(Array.from(guardNode.body._analysis.usedChainsFromParent || [])).to.eql(['result']);
+      expect(Array.from(recoveryNode._analysis.usedChainsFromParent || [])).to.eql(['result']);
+    });
+
+    it('should keep skipped-region local declarations out of parent-visible mutation facts', function () {
+      const ast = analyzeScriptSource([
+        'var mode = "a"',
+        'switch mode',
+        'case "a"',
+        '  var caseLocal = "case"',
+        'default',
+        '  var defaultLocal = "default"',
+        'endswitch',
+        'while mode == "b"',
+        '  var whileLocal = "while"',
+        'endwhile',
+        'return 1'
+      ].join('\n'), 'skipped-region-local-declarations.casc');
+      const switchNode = collectNodesByType(ast, 'Switch')[0];
+      const caseNode = collectNodesByType(ast, 'Case')[0];
+      const whileNode = collectNodesByType(ast, 'While')[0];
+
+      expect(Array.from(caseNode.body._analysis.mutatedChainsFromParent || [])).to.eql([]);
+      expect(Array.from(switchNode.default._analysis.mutatedChainsFromParent || [])).to.eql([]);
+      expect(Array.from(whileNode.body._analysis.mutatedChainsFromParent || [])).to.eql([]);
+      expect(switchNode._analysis.poisonTargetChains).to.eql([]);
+      expect(whileNode._analysis.poisonTargetChains).to.eql([]);
+    });
+
+    it('should remove local declarations from parent-visible observed and mutated facts', function () {
+      const ast = analyzeTemplateSource(
+        '{% macro localOnly(x) %}{{ x }}{% set x = "updated" %}{% endmacro %}',
+        'macro-local-shadow-analysis.njk'
+      );
+      const macro = collectNodesByType(ast, 'Macro')[0]._analysis;
+
+      expect(macro.observedChains.has('x')).to.be(true);
+      expect(macro.mutatedChains.has('x')).to.be(true);
+      expect(macro.usedChains.has('x')).to.be(true);
+      expect((macro.observedChainsFromParent || new Set()).has('x')).to.be(false);
+      expect((macro.mutatedChainsFromParent || new Set()).has('x')).to.be(false);
+      expect((macro.usedChainsFromParent || new Set()).has('x')).to.be(false);
+      expect(Array.from(macro.linkedChains || [])).to.eql([]);
+    });
+
     it('should keep nested capture text outputs out of outer stored chain facts', function () {
       const ast = analyzeTemplateSource(
         '{% set x = "v" %}' +
@@ -228,12 +404,16 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       const outer = captures[0]._analysis;
       const inner = captures[1]._analysis;
 
-      expect(Array.from(outer.usedChains || [])).to.eql([outer.textOutput, 'x']);
-      expect(Array.from(outer.mutatedChains || [])).to.eql([outer.textOutput]);
+      expect(Array.from(outer.observedChains || [])).to.eql(['x']);
+      expect(Array.from(outer.usedChains || [])).to.eql([outer.textOutput, 'x', 'inner']);
+      expect(Array.from(outer.mutatedChains || [])).to.eql([outer.textOutput, 'inner']);
+      expect(Array.from(inner.observedChains || [])).to.eql(['x']);
       expect(Array.from(inner.usedChains || [])).to.eql([inner.textOutput, 'x']);
       expect(Array.from(inner.mutatedChains || [])).to.eql([inner.textOutput]);
+      expect(Array.from(outer.observedChainsFromParent || [])).to.eql(['x']);
       expect(Array.from(outer.usedChainsFromParent || [])).to.eql(['x']);
       expect(Array.from(outer.mutatedChainsFromParent || [])).to.eql([]);
+      expect(Array.from(inner.observedChainsFromParent || [])).to.eql(['x']);
       expect(Array.from(inner.usedChainsFromParent || [])).to.eql(['x']);
       expect(Array.from(inner.mutatedChainsFromParent || [])).to.eql([]);
       expect(outer.usedChains.has(inner.textOutput)).to.be(false);
@@ -250,12 +430,16 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       const outer = captures[0]._analysis;
       const inner = captures[1]._analysis;
 
-      expect(Array.from(outer.usedChains || [])).to.eql(['x']);
-      expect(Array.from(outer.mutatedChains || [])).to.eql(['x']);
+      expect(Array.from(outer.observedChains || [])).to.eql(['x']);
+      expect(Array.from(outer.usedChains || [])).to.eql(['x', 'inner', outer.textOutput]);
+      expect(Array.from(outer.mutatedChains || [])).to.eql(['x', 'inner']);
+      expect(Array.from(inner.observedChains || [])).to.eql(['x']);
       expect(Array.from(inner.usedChains || [])).to.eql([inner.textOutput, 'x']);
       expect(Array.from(inner.mutatedChains || [])).to.eql([inner.textOutput, 'x']);
+      expect(Array.from(outer.observedChainsFromParent || [])).to.eql(['x']);
       expect(Array.from(outer.usedChainsFromParent || [])).to.eql(['x']);
       expect(Array.from(outer.mutatedChainsFromParent || [])).to.eql(['x']);
+      expect(Array.from(inner.observedChainsFromParent || [])).to.eql(['x']);
       expect(Array.from(inner.usedChainsFromParent || [])).to.eql(['x']);
       expect(Array.from(inner.mutatedChainsFromParent || [])).to.eql(['x']);
       expect(outer.usedChains.has(inner.textOutput)).to.be(false);
@@ -324,6 +508,74 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       expect(inlineIfNode._analysis.createsLinkedChildBuffer).to.be(true);
       expect(Array.from(inlineIfNode._analysis.linkedChains || [])).to.eql(['result']);
       expect(Array.from(inlineIfNode._analysis.linkedMutatedChains || [])).to.eql(['result']);
+    });
+
+    it('should classify component binding side-lane work as parent-visible mutation facts', function () {
+      const ast = analyzeScriptSource([
+        'component "Component.script" as ns',
+        'var selected = ns.theme if true else "fallback"',
+        'return selected'
+      ].join('\n'), 'component-binding-chain-facts.casc');
+      const inlineIfNode = collectNodesByType(ast, 'InlineIf')[0];
+
+      expect(Array.from(inlineIfNode._analysis.observedChainsFromParent || [])).to.eql([]);
+      expect(Array.from(inlineIfNode._analysis.mutatedChainsFromParent || [])).to.eql(['ns']);
+      expect(Array.from(inlineIfNode._analysis.linkedChains || [])).to.eql(['ns']);
+      expect(Array.from(inlineIfNode._analysis.linkedMutatedChains || [])).to.eql(['ns']);
+    });
+
+    it('should keep dynamic keys visible inside operation-owned chain paths', function () {
+      const ast = analyzeScriptSource([
+        'data result',
+        'var key = "items"',
+        'result[key].push("a")',
+        'return result.snapshot()'
+      ].join('\n'), 'dynamic-key-chain-command-facts.casc');
+      const keySymbols = collectNodesByType(ast, 'Symbol').filter((node) => node.value === 'key');
+      const command = collectNodesByType(ast, 'ChainCommand')[0]._analysis;
+
+      expect(keySymbols.some((node) => node._analysis.operationOwnedPath)).to.be(false);
+      expect(keySymbols.some((node) => node._analysis.lookupDeclaration?.name === 'key')).to.be(true);
+      expect(command.observedChains.has('key')).to.be(true);
+      expect(command.mutatedChains.has('result')).to.be(true);
+      expect(command.usedChains.has('key')).to.be(true);
+      expect(command.usedChains.has('result')).to.be(true);
+    });
+
+    it('should keep dynamic keys visible inside operation-owned component paths', function () {
+      const ast = analyzeScriptSource([
+        'component "Component.script" as ns',
+        'var method = "build"',
+        'var selected = ns[method]() if true else "fallback"',
+        'return selected'
+      ].join('\n'), 'dynamic-key-component-call-facts.casc');
+      const inlineIfNode = collectNodesByType(ast, 'InlineIf')[0];
+      const methodSymbols = collectNodesByType(ast, 'Symbol').filter((node) => node.value === 'method');
+
+      expect(methodSymbols.some((node) => node._analysis.operationOwnedPath)).to.be(false);
+      expect(methodSymbols.some((node) => node._analysis.lookupDeclaration?.name === 'method')).to.be(true);
+      expect(Array.from(inlineIfNode._analysis.observedChainsFromParent || [])).to.eql(['method']);
+      expect(Array.from(inlineIfNode._analysis.mutatedChainsFromParent || [])).to.eql(['ns']);
+      expect(sortedChainNames(inlineIfNode._analysis.linkedChains)).to.eql(['method', 'ns']);
+      expect(Array.from(inlineIfNode._analysis.linkedMutatedChains || [])).to.eql(['ns']);
+    });
+
+    it('should observe nested shared-var sets without observing shared data sets', function () {
+      const ast = analyzeScriptSource([
+        'shared var theme',
+        'shared data state',
+        'this.theme.name = "dark"',
+        'this.state.count = 1',
+        'return null'
+      ].join('\n'), 'shared-set-observation-facts.casc');
+      const sets = collectNodesByType(ast, 'Set');
+      const sharedVarSet = sets[0]._analysis;
+      const sharedDataSet = sets[1]._analysis;
+
+      expect(Array.from(sharedVarSet.observedChains || [])).to.eql(['$theme']);
+      expect(Array.from(sharedVarSet.mutatedChains || [])).to.eql(['$theme']);
+      expect(Array.from(sharedDataSet.observedChains || [])).to.eql([]);
+      expect(Array.from(sharedDataSet.mutatedChains || [])).to.eql(['$state']);
     });
 
     it('should derive caller invocation links from analysis-owned caller facts', function () {

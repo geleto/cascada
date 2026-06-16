@@ -58,12 +58,12 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   analyzeSymbol(node, analysisPass) {
-    if (node._analysis?.declarationTarget || node.isCompilerInternal) {
+    if (node._analysis?.declarationTarget || node._analysis?.operationOwnedPath || node.isCompilerInternal) {
       return {};
     }
     const name = node.value;
 
-    const uses = [];
+    const observes = [];
     const mutates = [];
     const sequenceLockLookup = this.sequential.recordSequenceLockLookup(node);
     node.addAnalysis({ sequenceLockLookup });
@@ -78,23 +78,21 @@ class CompilerBaseAsync extends CompilerCommon {
         );
       }
       this._failIfSequenceRootIsDeclared(node, sequenceLockLookup.key, analysisPass);
-      uses.push(sequenceLockLookup.key);
-      if (sequenceLockLookup.repair) {
-        mutates.push(sequenceLockLookup.key);
-      }
+      const target = sequenceLockLookup.repair ? mutates : observes;
+      target.push(sequenceLockLookup.key);
     }
 
     const declaration = analysisPass.recordLookupDeclaration(node, name);
     if (declaration && !(this.scriptMode && declaration.shared)) {
-      uses.push(name);
+      observes.push(name);
     }
 
-    return { uses, mutates };
+    return { observes, mutates };
   }
 
   postAnalyzeSymbol(node, analysisPass) {
     const facts = this.chain.collectDataPathSegmentFacts(node);
-    if (!node._analysis?.declarationTarget && !node.isCompilerInternal) {
+    if (!node._analysis?.declarationTarget && !node._analysis?.operationOwnedPath && !node.isCompilerInternal) {
       const sequenceLockLookup = this.sequential.recordBareSequenceLockLookup(node, analysisPass);
       if (sequenceLockLookup) {
         facts.sequenceLockLookup = sequenceLockLookup;

@@ -8,6 +8,9 @@ class CompileLookup {
   }
 
   analyzeLookupVal(node, analysisPass) {
+    if (node._analysis?.operationOwnedPath) {
+      return {};
+    }
     const facts = this._createAnalysisFacts();
     this.compiler.chain.recordDataPathLookup(node);
 
@@ -26,6 +29,9 @@ class CompileLookup {
   }
 
   postAnalyzeLookupVal(node, analysisPass) {
+    if (node._analysis?.operationOwnedPath) {
+      return {};
+    }
     const facts = {};
     const sequenceLockLookup = this.compiler.sequential.recordBareSequenceLockLookup(node, analysisPass);
     if (sequenceLockLookup) {
@@ -58,7 +64,7 @@ class CompileLookup {
 
   _createAnalysisFacts() {
     return {
-      uses: [],
+      observes: [],
       mutates: [],
       sequenceChainLookup: null,
       thisSharedAccessFacts: null,
@@ -74,10 +80,8 @@ class CompileLookup {
     node.addAnalysis({ sequenceLockLookup });
     if (sequenceLockLookup) {
       compiler._failIfSequenceRootIsDeclared(node, sequenceLockLookup.key, analysisPass);
-      facts.uses.push(sequenceLockLookup.key);
-      if (sequenceLockLookup.repair) {
-        facts.mutates.push(sequenceLockLookup.key);
-      }
+      const target = sequenceLockLookup.repair ? facts.mutates : facts.observes;
+      target.push(sequenceLockLookup.key);
     }
   }
 
@@ -89,7 +93,7 @@ class CompileLookup {
     }
 
     facts.thisSharedAccessFacts = thisSharedFacts;
-    facts.uses.push(thisSharedFacts.chainName);
+    facts.observes.push(thisSharedFacts.chainName);
     if (
       compiler.scriptMode &&
       thisSharedFacts.chainType === 'sequence' &&
@@ -108,6 +112,10 @@ class CompileLookup {
     const compiler = this.compiler;
     facts.componentBindingRoot = compiler.component.findBindingRoot(node);
     facts.componentBindingFacts = compiler.component.findBindingFacts(node);
+    if (facts.componentBindingRoot) {
+      compiler.chain.markOperationOwnedPath(node);
+      facts.mutates.push(facts.componentBindingRoot.bindingName);
+    }
   }
 
   _collectScriptSequenceChainLookup(node, analysisPass, facts) {
@@ -118,7 +126,7 @@ class CompileLookup {
 
     const lookupFacts = this._collectSequenceChainLookupFacts(node, analysisPass);
     if (lookupFacts) {
-      facts.uses.push(lookupFacts.chainName);
+      facts.observes.push(lookupFacts.chainName);
       facts.sequenceChainLookup = lookupFacts;
     }
   }

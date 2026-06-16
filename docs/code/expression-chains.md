@@ -24,7 +24,7 @@ These expression forms can enqueue commands:
 - sequential path reads and writes, such as `db!.query()` and `obj!.prop`
 - `caller()` invocation paths
 - sequence-chain calls and reads, such as `data.push(...)` and
-  `data.snapshot()` (script mode only — `compileSpecialChainFunCall` returns
+  `data.snapshot()` (script mode only — `compileChainOperationFunCall` returns
   `false` in template mode, so these fall through to normal dynamic calls)
 - chain/output observations that produce values through snapshot/error
   commands (script mode only, same guard as above)

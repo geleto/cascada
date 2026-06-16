@@ -8,8 +8,11 @@ class CompileCall {
   }
 
   analyzeFunCall(node, analysisPass) {
+    if (node._analysis?.operationOwnedPath) {
+      return {};
+    }
     const compiler = this.compiler;
-    const uses = [];
+    const observes = [];
     const mutates = [];
 
     const sequenceLockLookup = compiler.sequential.recordSequenceLockLookup(node);
@@ -31,15 +34,19 @@ class CompileCall {
     }
 
     const directMacroCall = this._collectDirectMacroCallFacts(node, analysisPass);
-    const importedCallable = this._collectImportedCallableUsage(node, analysisPass, uses);
+    const importedCallable = this._collectImportedCallableUsage(node, analysisPass, observes);
     const inheritedMethodCallName =
       compiler.inheritance.findInheritedMethodCallNameForAnalysis(node, analysisPass);
-    const specialChainCall = this._collectSpecialChainCallUsage(node, analysisPass, uses, mutates);
+    const componentBindingName = this._collectComponentCallUsage(node);
+    if (componentBindingName) {
+      mutates.push(componentBindingName);
+    }
+    const chainOperationCall = this._collectChainOperationCallUsage(node, analysisPass, observes, mutates);
 
     return {
-      uses,
+      observes,
       mutates,
-      specialChainCall,
+      chainOperationCall,
       importedCallable,
       directCallerCall: false,
       directMacroCall,
@@ -79,7 +86,7 @@ class CompileCall {
     if (this._compileComponentCall(node)) {
       return;
     }
-    if (compiler.chain.compileSpecialChainFunCall(node)) {
+    if (compiler.chain.compileChainOperationFunCall(node)) {
       return;
     }
     if (this._compileCallerCall(node)) {
@@ -123,7 +130,6 @@ class CompileCall {
     }
     compiler._failIfSequenceRootIsDeclared(node, sequenceLockLookup.key, analysisPass);
     return {
-      uses: [sequenceLockLookup.key],
       mutates: [sequenceLockLookup.key]
     };
   }
@@ -156,19 +162,16 @@ class CompileCall {
       return null;
     }
 
-    const uses = [];
     const mutates = [];
     const textChain = analysisPass.getCurrentTextChain(node._analysis);
     if (textChain) {
-      uses.push(textChain);
       mutates.push(textChain);
     }
     // caller() is a reserved macro call-block binding in async mode. Its
     // invocation scheduling uses the macro-local __caller__ lane, so any
     // nested child boundary containing caller() must link that lane.
-    uses.push(CALLER_SCHED_CHAIN_NAME);
     mutates.push(CALLER_SCHED_CHAIN_NAME);
-    return { uses, mutates, directCallerCall: true };
+    return { mutates, directCallerCall: true };
   }
 
   _compileCallerCall(node) {
@@ -213,7 +216,7 @@ class CompileCall {
     return true;
   }
 
-  _collectImportedCallableUsage(node, analysisPass, uses) {
+  _collectImportedCallableUsage(node, analysisPass, observes) {
     const compiler = this.compiler;
     if (!node.name || !analysisPass.findDeclaration) {
       return null;
@@ -230,11 +233,11 @@ class CompileCall {
 
     const importedChainName = importedDecl && (importedDecl.runtimeName || importedRoot);
     if (importedChainName) {
-      uses.push(importedChainName);
+      observes.push(importedChainName);
     }
     const textChain = analysisPass.getCurrentTextChain(node._analysis);
     if (textChain) {
-      uses.push(textChain);
+      observes.push(textChain);
     }
     return true;
   }
@@ -255,27 +258,38 @@ class CompileCall {
     return true;
   }
 
-  _collectSpecialChainCallUsage(node, analysisPass, uses, mutates) {
+  _collectComponentCallUsage(node) {
+    const componentBindingFacts = node.name
+      ? this.compiler.component.findBindingFacts(node.name, { forCall: true })
+      : null;
+    if (componentBindingFacts) {
+      this.compiler.chain.markOperationOwnedPath(node.name);
+    }
+    return componentBindingFacts
+      ? componentBindingFacts.bindingName
+      : null;
+  }
+
+  _collectChainOperationCallUsage(node, analysisPass, observes, mutates) {
     const compiler = this.compiler;
     if (!node.name || node._analysis.sequenceLockLookup) {
       return null;
     }
 
-    const callFacts = this._getSpecialChainCallFacts(node, analysisPass);
+    const callFacts = this._getChainOperationCallFacts(node, analysisPass);
     if (!callFacts) {
       return null;
     }
-    if (!compiler.scriptMode && callFacts.chainType === 'var') {
+    if (callFacts.chainType === 'var') {
       return null;
     }
-    uses.push(callFacts.chainName);
-    if (!callFacts.isObservation) {
-      mutates.push(callFacts.chainName);
-    }
+    compiler.chain.markOperationOwnedPath(node.name);
+    const target = callFacts.isObservation ? observes : mutates;
+    target.push(callFacts.chainName);
     return callFacts;
   }
 
-  _getSpecialChainCallFacts(node, analysisPass) {
+  _getChainOperationCallFacts(node, analysisPass) {
     const compiler = this.compiler;
     const thisSharedFacts = compiler.chain.probeThisSharedAccessFacts(
       node.name,

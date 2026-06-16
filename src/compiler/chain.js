@@ -154,6 +154,22 @@ class CompileChain {
     return this._collectThisSharedAccessFacts(node, analysisPass, analysisNode, 'strict');
   }
 
+  // Some compound expressions are already classified by a higher-level
+  // analyzer as exactly one chain/component lane effect. Suppress ordinary
+  // per-segment lookup facts on the static target path so the path root is not
+  // double-counted as an observation. Dynamic lookup keys remain ordinary
+  // expression inputs and must keep their own analysis facts.
+  markOperationOwnedPath(node) {
+    node.addAnalysis({ operationOwnedPath: true });
+    if (node instanceof nodes.FunCall) {
+      this.markOperationOwnedPath(node.name);
+      return;
+    }
+    if (node instanceof nodes.LookupVal) {
+      this.markOperationOwnedPath(node.target);
+    }
+  }
+
   probeThisSharedAccessFacts(node, analysisPass = this.compiler.analysis, analysisNode = null) {
     return this._collectThisSharedAccessFacts(node, analysisPass, analysisNode, 'probe');
   }
@@ -259,8 +275,7 @@ class CompileChain {
         type: node.chainType,
         initializer: node.initializer || null,
         shared: !!node.isShared
-      }],
-      uses: [name]
+      }]
     };
   }
 
@@ -346,6 +361,7 @@ class CompileChain {
     if (!path || path.length === 0) {
       return {};
     }
+    this.markOperationOwnedPath(node.call);
     const chainName = path[0];
     const chainDecl = chainName ? compiler.analysis.recordLookupDeclaration(node, chainName) : null;
     const chainType = node.chainType || (chainDecl ? chainDecl.type : null);
@@ -358,7 +374,7 @@ class CompileChain {
     if (chainType === 'data' && callNode && !isObservation && callNode.args.children.length > 0) {
       this._recordDataCommandPath(callNode.args.children[0]);
     }
-    const result = isObservation ? { uses: [chainName] } : { uses: [chainName], mutates: [chainName] };
+    const result = isObservation ? { observes: [chainName] } : { mutates: [chainName] };
     result.chainCommandFacts = {
       callNode,
       chainType,
@@ -462,69 +478,69 @@ class CompileChain {
     this.compiler.buffer.compileChainCommand(node);
   }
 
-  compileSpecialChainFunCall(node) {
-    const specialChainCall = node._analysis.specialChainCall;
-    if (!specialChainCall) {
+  compileChainOperationFunCall(node) {
+    const chainOperationCall = node._analysis.chainOperationCall;
+    if (!chainOperationCall) {
       return false;
     }
-    if (specialChainCall.chainType === 'var') {
+    if (chainOperationCall.chainType === 'var') {
       return false;
     }
-    if (this._compileChainObservationFunCall(node, specialChainCall)) {
+    if (this._compileChainObservationFunCall(node, chainOperationCall)) {
       return true;
     }
-    if (this._compileSequenceChainFunCall(node, specialChainCall)) {
+    if (this._compileSequenceChainFunCall(node, chainOperationCall)) {
       return true;
     }
-    return this._compileSharedChainStatementFunCall(node, specialChainCall);
+    return this._compileSharedChainStatementFunCall(node, chainOperationCall);
   }
 
-  _compileChainObservationFunCall(node, specialChainCall) {
+  _compileChainObservationFunCall(node, chainOperationCall) {
     const compiler = this.compiler;
-    if (specialChainCall.pathPrefix.length !== 0) {
+    if (chainOperationCall.pathPrefix.length !== 0) {
       return false;
     }
-    if (specialChainCall.chainType === 'sequence' && specialChainCall.methodName === 'snapshot') {
+    if (chainOperationCall.chainType === 'sequence' && chainOperationCall.methodName === 'snapshot') {
       return false;
     }
-    if (specialChainCall.methodName === 'snapshot') {
-      if (specialChainCall.shared) {
-        compiler.inheritance.emitSharedChainObservation(specialChainCall.chainName, node, 'snapshot');
+    if (chainOperationCall.methodName === 'snapshot') {
+      if (chainOperationCall.shared) {
+        compiler.inheritance.emitSharedChainObservation(chainOperationCall.chainName, node, 'snapshot');
       } else {
-        compiler.buffer.emitAddSnapshot(specialChainCall.chainName, node);
+        compiler.buffer.emitAddSnapshot(chainOperationCall.chainName, node);
       }
       return true;
     }
-    if (specialChainCall.methodName === 'isError') {
-      if (specialChainCall.shared) {
-        compiler.inheritance.emitSharedChainObservation(specialChainCall.chainName, node, 'isError');
+    if (chainOperationCall.methodName === 'isError') {
+      if (chainOperationCall.shared) {
+        compiler.inheritance.emitSharedChainObservation(chainOperationCall.chainName, node, 'isError');
       } else {
-        compiler.buffer.emitAddIsError(specialChainCall.chainName, node);
+        compiler.buffer.emitAddIsError(chainOperationCall.chainName, node);
       }
       return true;
     }
-    if (specialChainCall.methodName === 'getError') {
-      if (specialChainCall.shared) {
-        compiler.inheritance.emitSharedChainObservation(specialChainCall.chainName, node, 'getError');
+    if (chainOperationCall.methodName === 'getError') {
+      if (chainOperationCall.shared) {
+        compiler.inheritance.emitSharedChainObservation(chainOperationCall.chainName, node, 'getError');
       } else {
-        compiler.buffer.emitAddGetError(specialChainCall.chainName, node);
+        compiler.buffer.emitAddGetError(chainOperationCall.chainName, node);
       }
       return true;
     }
     return false;
   }
 
-  _compileSequenceChainFunCall(node, specialChainCall) {
+  _compileSequenceChainFunCall(node, chainOperationCall) {
     const compiler = this.compiler;
-    if (specialChainCall.chainType !== 'sequence') {
+    if (chainOperationCall.chainType !== 'sequence') {
       return false;
     }
     compiler._compileAggregate(node.args, null, '[', ']', false, false, function (resolvedArgs) {
       this.emit('return ');
       this.buffer.emitAddSequenceCall(
-        specialChainCall.chainName,
-        specialChainCall.methodName,
-        specialChainCall.pathPrefix,
+        chainOperationCall.chainName,
+        chainOperationCall.methodName,
+        chainOperationCall.pathPrefix,
         resolvedArgs,
         node
       );
@@ -533,31 +549,31 @@ class CompileChain {
     return true;
   }
 
-  _compileSharedChainStatementFunCall(node, specialChainCall) {
+  _compileSharedChainStatementFunCall(node, chainOperationCall) {
     const compiler = this.compiler;
-    if (!specialChainCall.shared) {
+    if (!chainOperationCall.shared) {
       return false;
     }
-    if (specialChainCall.chainType === 'text') {
+    if (chainOperationCall.chainType === 'text') {
       compiler.buffer.asyncAddValueToBuffer((resultVar) => {
-        compiler.emit(`${resultVar} = new runtime.TextCommand({ chainName: ${JSON.stringify(specialChainCall.chainName)}, `);
-        if (specialChainCall.methodName) {
-          compiler.emit(`operation: ${JSON.stringify(specialChainCall.methodName)}, `);
+        compiler.emit(`${resultVar} = new runtime.TextCommand({ chainName: ${JSON.stringify(chainOperationCall.chainName)}, `);
+        if (chainOperationCall.methodName) {
+          compiler.emit(`operation: ${JSON.stringify(chainOperationCall.methodName)}, `);
         }
         compiler.emit('normalizeArgs: true, args: ');
         compiler._compileAggregate(node.args, null, '[', ']', false, true);
         compiler.emit(`, errorContext: ${compiler.emitErrorContext(node)} })`);
-      }, node, specialChainCall.chainName);
+      }, node, chainOperationCall.chainName);
       return true;
     }
-    if (specialChainCall.chainType === 'data') {
-      if (!specialChainCall.methodName) {
+    if (chainOperationCall.chainType === 'data') {
+      if (!chainOperationCall.methodName) {
         compiler.fail('Invalid data command syntax: expected this.dataChain.command(...)', node.lineno, node.colno, node);
       }
       compiler.buffer.asyncAddValueToBuffer((resultVar) => {
-        compiler.emit(`${resultVar} = new runtime.DataCommand({ chainName: ${JSON.stringify(specialChainCall.chainName)}, operation: ${JSON.stringify(specialChainCall.methodName)}, args: `);
-        const pathArg = specialChainCall.pathPrefix && specialChainCall.pathPrefix.length > 0
-          ? JSON.stringify(specialChainCall.pathPrefix)
+        compiler.emit(`${resultVar} = new runtime.DataCommand({ chainName: ${JSON.stringify(chainOperationCall.chainName)}, operation: ${JSON.stringify(chainOperationCall.methodName)}, args: `);
+        const pathArg = chainOperationCall.pathPrefix && chainOperationCall.pathPrefix.length > 0
+          ? JSON.stringify(chainOperationCall.pathPrefix)
           : 'null';
         compiler.emit(`[${pathArg}`);
         if (node.args && node.args.children && node.args.children.length > 0) {
@@ -566,7 +582,7 @@ class CompileChain {
         }
         compiler.emit(']');
         compiler.emit(`, errorContext: ${compiler.emitErrorContext(node)} })`);
-      }, node, specialChainCall.chainName);
+      }, node, chainOperationCall.chainName);
       return true;
     }
     return false;

@@ -776,7 +776,7 @@ The refactor should preserve and strengthen invariants such as:
 - `_linkedChains` is removed
 - child lexical scope never becomes visible to the parent through buffer traversal
 - no runtime-dynamic chain names remain
-- special chains receive no command-buffer-level shortcut treatment
+- chain operations receive no command-buffer-level shortcut treatment
 - aggregate finish depends only on this buffer's lane set
 - lookup/snapshot logic cannot observe a lane unless the buffer was explicitly wired to that lane's ordered structure
 - alias-based lookup, lane creation, and visibility installation all agree on the same canonical runtime name

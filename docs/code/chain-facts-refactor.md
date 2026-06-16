@@ -9,7 +9,7 @@ Today `usedChains` is overloaded. It includes non-mutating lane participation, m
 - `observedChains`: lanes this node/buffer may participate in without mutating that lane
 - `mutatedChains`: lanes this node/buffer may mutate
 - `declaredChains`: lanes this node/scope declares
-- `usedChains`: broad compatibility footprint derived after the sharper facts are finalized
+- `usedChains`: broad compatibility footprint equivalent to observed + mutated + declared names
 
 `usedChains` remains important, but it should stop being the authored scheduler input.
 
@@ -63,7 +63,7 @@ usedChainsFromParent
 linkedChains
 ```
 
-`usedChains` is derived after finalization:
+`usedChains` is maintained as broad compatibility metadata during finalization, with this semantic meaning:
 
 ```text
 usedChains = observedChains union mutatedChains union declared chain names
@@ -99,6 +99,12 @@ linkedChains = parent-visible projection of usedChainsFromParent
 
 Do not add `linkedObservedChains` as a scheduler input. Parent phase classification uses `observedChainsFromParent` / `mutatedChainsFromParent`; parent placement uses `linkedChains`. If existing code still needs `linkedMutatedChains` during migration, keep it as a temporary compatibility field derived from `mutatedChainsFromParent`, then remove or rename it when the command-buffer scheduler consumes the new facts directly.
 
+The current implementation carries placement to runtime through `linkedChains`
+and the temporary `linkedMutatedChains` compatibility bridge. It does not emit a
+runtime `linkedObservedChains`; scheduler work that needs read-only
+classification should consume `observedChainsFromParent` from analysis, with
+`linkedChains` remaining only the placement set.
+
 ## Producer Classification
 
 The risky migration is every current `{ uses, mutates }` producer. Do not mechanically rename `uses` to `observes`. Classify by emitted runtime behavior:
@@ -113,10 +119,17 @@ The risky migration is every current `{ uses, mutates }` producer. Do not mechan
 | `isReturnUnset()` | `observes` for the return lane |
 | variable/bare-name lookups that read a declared chain | `observes` |
 | assignments, including shared set paths | `mutates` for the assigned lane |
+| declarations with initializers, such as `var x = 5` | `declares` plus `mutates`; a value command is emitted for the initialized variable |
 | imported callable and caller scheduling lanes | classify each touched lane by the boundary/command it actually schedules: non-mutating source-order participation is `observes`, writes are `mutates` |
 | sequence lock lookups | setup metadata stays in `sequenceLocks`; status/get-like checks are `observes`; sequential calls or repairs are `mutates` |
 
 The table is intentionally behavior-based. If a site exists only to keep a boundary attached to a lane without changing it, that is an observation in scheduler terms even if it is not a data read. If a site exists only for declaration placement or validation, keep it out of scheduler facts and preserve it through derived broad footprint data if needed.
+
+Compound chain/component call paths use `operationOwnedPath` on the AST nodes
+that make up the already-classified static target. This suppresses ordinary
+per-segment lookup observations so the root is not double-counted. Dynamic
+lookup keys must not be marked this way because they are real expression
+inputs.
 
 ## Finalization
 
@@ -125,8 +138,8 @@ The aggregate should track observation and mutation independently:
 ```js
 {
   observedChains: new Set(),
-  mutatedChains: new Set(),
-  declaredChainNames: new Set()
+  usedChains: new Set(),
+  mutatedChains: new Set()
 }
 ```
 
@@ -136,19 +149,15 @@ Mutation must not imply observation:
 function addChainMutation(usage, name) {
   if (name) {
     usage.mutatedChains.add(name);
+    usage.usedChains.add(name);
   }
 }
 ```
 
-Broad use is derived once all observation, mutation, and declaration facts are known:
-
-```js
-const usedChains = union(
-  observedChains,
-  mutatedChains,
-  declaredChainNames
-);
-```
+Broad use is the compatibility footprint. It is updated by observation and
+mutation helpers, and finalized declarations add their names directly to
+`usedChains`. This keeps current source-order behavior without reintroducing
+declarations as scheduler observations.
 
 Do not switch `usedChains` to derived mode until every producer site has been migrated from `uses` to either `observes`, `mutates`, `declares`, or an explicit non-scheduler compatibility fact. During migration, keep the old `uses` path as a compatibility source and gate the final flip behind parity tests.
 
@@ -170,10 +179,10 @@ Do not use broad `usedChains` for scheduler phase classification.
 3. Add helper accessors for `observedChainsFromParent` and `mutatedChainsFromParent`.
 4. Migrate the producer sites in the classification table, deciding each old `uses` entry deliberately.
 5. Keep `declares`, `declaresInParent`, and finalized `declaredChains` unchanged.
-6. Derive `usedChains` and `usedChainsFromParent` only after all producer sites have moved.
+6. Preserve `usedChains` / `usedChainsFromParent` as broad compatibility footprints with semantics equivalent to observed + mutated + declared names.
 7. Derive `linkedChains` from `usedChainsFromParent`.
 8. Keep `linkedMutatedChains` only as a compatibility bridge if current emit/runtime paths still need it; do not introduce `linkedObservedChains`.
-9. Update command-buffer construction/runtime metadata to carry the facts the scheduler needs: placement via `linkedChains`, parent lane classification via `observedChainsFromParent` / `mutatedChainsFromParent`, and owned starts via `observedChains` / `mutatedChains`.
+9. Future scheduler work should consume placement via `linkedChains` and phase classification from `observedChainsFromParent` / `mutatedChainsFromParent` (or owned `observedChains` / `mutatedChains` for local starts). The current runtime construction keeps only `linkedChains` and temporary `linkedMutatedChains` metadata.
 10. Remove the old `uses` authoring path after parity tests prove broad footprint behavior is preserved.
 
 ## Focused Tests
