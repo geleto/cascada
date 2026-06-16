@@ -56,7 +56,7 @@ class SequenceObjectChain extends Chain {
       cmd.resolved = true;
 
       if (isObservableCommand(cmd)) {
-        const result = cmd.apply(this);
+        const result = cmd.observe(this);
         if (result && typeof result.then === 'function') {
           return result.then(undefined, (err) => {
             cmd.rejectResult(poisonOrReportedFatal(err, cmd.errorContext));
@@ -66,10 +66,12 @@ class SequenceObjectChain extends Chain {
       }
 
       const sequencedObject = this._ensureSequencedObjectResolved();
-      const apply = () => cmd.apply(this);
+      const mutate = () => typeof cmd.mutate === 'function'
+        ? cmd.mutate(this)
+        : cmd.apply(this);
       const result = (sequencedObject && typeof sequencedObject.then === 'function')
-        ? sequencedObject.then(apply)
-        : apply();
+        ? sequencedObject.then(mutate)
+        : mutate();
       if (result && typeof result.then === 'function') {
         return result.then(undefined, (err) => {
           cmd.rejectResult(poisonOrReportedFatal(err, cmd.errorContext));

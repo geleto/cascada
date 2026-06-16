@@ -161,7 +161,7 @@ class Chain {
     try {
       cmd.resolved = true;
       this._beforeApplyCommand(cmd);
-      const result = cmd.apply(this);
+      const result = cmd.observe(this);
       if (result && typeof result.then === 'function') {
         return result.then(undefined, (err) => {
           cmd.rejectResult(poisonOrReportedFatal(err, cmd.errorContext));
@@ -177,7 +177,9 @@ class Chain {
     try {
       cmd.resolved = true;
       this._beforeApplyCommand(cmd);
-      const result = cmd.apply(this);
+      const result = typeof cmd.mutate === 'function'
+        ? cmd.mutate(this)
+        : cmd.apply(this);
       if (result && typeof result.then === 'function') {
         return result.then(undefined, (err) => {
           this._recordError(err, cmd);

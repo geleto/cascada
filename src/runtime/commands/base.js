@@ -76,6 +76,9 @@ class Command {
 }
 
 class MutatingCommand extends Command {
+  mutate(ctx) {
+    return this.apply(ctx);
+  }
 }
 
 class MutatingResultCommand extends MutatingCommand {
@@ -89,6 +92,10 @@ class ObservableCommand extends Command {
   constructor() {
     super();
     this._createResultPromise();
+  }
+
+  observe(ctx) {
+    return this.apply(ctx);
   }
 }
 
@@ -161,7 +168,9 @@ function requireCommandErrorContext(errorContext, commandName) {
 }
 
 function isObservableCommand(command) {
-  return command instanceof ObservableCommand;
+  // Stage 0+ scheduler capability is method-shaped. Universal observations
+  // remain class-shaped because they have extra cross-chain semantics.
+  return !!(command && typeof command.observe === 'function');
 }
 
 function isUniversalObservationCommand(command) {

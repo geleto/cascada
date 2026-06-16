@@ -17,6 +17,55 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       expect(result).to.equal('A1B2C');
     });
 
+    it('should dispatch runtime commands through observe and mutate methods', async function () {
+      const calls = [];
+
+      class PhaseOnlyMutation extends runtime.Command {
+        constructor() {
+          super();
+          this.chainName = 'value';
+          this.errorContext = TEST_EC;
+        }
+
+        mutate(chain) {
+          calls.push('mutate');
+          chain._setTarget('mutated');
+        }
+
+        apply() {
+          throw new Error('mutating apply should not be called');
+        }
+      }
+
+      class PhaseOnlyObservation extends runtime.Command {
+        constructor() {
+          super();
+          this._createResultPromise();
+          this.chainName = 'value';
+          this.errorContext = TEST_EC;
+        }
+
+        observe(chain) {
+          calls.push('observe');
+          this.resolveResult(chain._getCurrentResult());
+        }
+
+        apply() {
+          throw new Error('observable apply should not be called');
+        }
+      }
+
+      const buffer = new runtime.CommandBuffer(null, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+      runtime.declareBufferChain(buffer, 'value', 'var', null, null);
+      buffer.addCommand(new PhaseOnlyMutation(), 'value');
+      const result = buffer.addCommand(new PhaseOnlyObservation(), 'value');
+
+      buffer.finish();
+
+      expect(await result).to.be('mutated');
+      expect(calls).to.eql(['mutate', 'observe']);
+    });
+
     it('should preserve loop/conditional output parity', async function () {
       const env = new AsyncEnvironment();
       const result = await env.renderTemplateString(
