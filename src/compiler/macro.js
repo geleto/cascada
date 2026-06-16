@@ -175,16 +175,16 @@ class CompileMacro {
     seenParamNames.add(name);
   }
 
-  bodyUsesCallerScheduling(bodyNode) {
-    // __caller__ intentionally remains in generic use/mutate facts so nested
+  bodyMutatesCallerScheduling(bodyNode) {
+    // __caller__ intentionally remains in generic mutation facts so nested
     // caller() boundaries can link it, but macro support checks should go
     // through this helper instead of open-coding the internal lane name.
-    return this.compiler.analysis.getChainsUsedFromParent(bodyNode).includes(CALLER_SCHED_CHAIN_NAME);
+    return this.compiler.analysis.getChainsMutatedFromParent(bodyNode).includes(CALLER_SCHED_CHAIN_NAME);
   }
 
   postAnalyzeMacro(node) {
     return {
-      hasCallerSupport: this.bodyUsesCallerScheduling(node.body)
+      hasCallerSupport: this.bodyMutatesCallerScheduling(node.body)
     };
   }
 

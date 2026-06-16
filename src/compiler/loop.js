@@ -77,13 +77,13 @@ class CompileLoop {
       );
 
       const bodyPoisonChains = this.compiler.analysis.getChainsMutatedFromParent(node.body);
-      const bodyObservationChains = sequentialLoopBody && !whileConditionNode
+      const bodyReturnStateChains = sequentialLoopBody && !whileConditionNode
         ? this.compiler.analysis.getChainsUsedFromParent(node.body)
         : [];
       const returnCheckChainName = this.compiler.return.getSequentialLoopAdvanceCheckChain({
         sequentialLoopBody,
         whileConditionNode,
-        bodyObservationChains
+        bodyReturnStateChains
       });
       let elseFuncId = 'null';
       let elsePoisonChains = [];

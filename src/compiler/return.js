@@ -119,10 +119,10 @@ class CompileReturn {
     return chainNames.includes(RETURN_CHAIN_NAME);
   }
 
-  getSequentialLoopAdvanceCheckChain({ sequentialLoopBody, whileConditionNode, bodyObservationChains }) {
+  getSequentialLoopAdvanceCheckChain({ sequentialLoopBody, whileConditionNode, bodyReturnStateChains }) {
     return sequentialLoopBody &&
       !whileConditionNode &&
-      this.hasReturnStateObservation(bodyObservationChains)
+      this.hasReturnStateObservation(bodyReturnStateChains)
       ? RETURN_CHAIN_NAME
       : null;
   }
