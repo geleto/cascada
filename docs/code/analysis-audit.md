@@ -88,9 +88,9 @@ the loop options: `return.js` currently checks `bodyChains.includes(...)`, so th
 rename/split must keep that observation purpose explicit instead of silently
 changing it to mutation-only.
 
-The correct poison set has mutation-only semantics like `linkedMutatedChains`,
+The correct poison set has mutation-only semantics like `boundaryLinkedMutatedChains`,
 but must be derived from the **skipped body/branch/else region**, not blindly
-from the outer boundary's own `linkedMutatedChains` (which may also include
+from the outer boundary's own `boundaryLinkedMutatedChains` (which may also include
 condition or selector effects).
 
 ### Tests
@@ -144,8 +144,8 @@ Current relevant fields include:
 - `mutatedChains`
 - `usedChainsFromParent`
 - `mutatedChainsFromParent`
-- `linkedChains`
-- `linkedMutatedChains`
+- `boundaryLinkedChains`
+- `boundaryLinkedMutatedChains`
 
 `_normalizeChainSet` now coerces custom post-analysis linked-chain iterables back
 to a `Set` ([analysis.js](../../src/compiler/analysis.js)). This is a useful
@@ -183,7 +183,7 @@ custom post-analysis linked facts. Compiler-owned usage aggregates are built as
 sets directly, so a second finalized-field shape assertion would only repeat the
 same invariant before codegen observes it.
 
-**Risk:** low. The suite already pins `linkedChains instanceof Set`.
+**Risk:** low. The suite already pins `boundaryLinkedChains instanceof Set`.
 
 ---
 
@@ -365,7 +365,7 @@ Buffer creation policy is centralized in `_finalizeBufferCreation` /
 - mutation dependencies.
 
 `createsLinkedChildBuffer` now means the node creates a child `CommandBuffer`.
-It can be true even when `linkedChains` and `linkedMutatedChains` are empty.
+It can be true even when `boundaryLinkedChains` and `boundaryLinkedMutatedChains` are empty.
 
 `_markLinkedMutatedChain(...)` was audited and kept. Inherited callable
 invocation buffers are already constructed when finalized callable footprint

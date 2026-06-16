@@ -5,12 +5,12 @@ import {getRenderState, isCompactErrorContext} from './error-context.js';
 import {RuntimeError} from './errors.js';
 
 class CommandBuffer {
-  constructor(context, parent = null, linkedChains = null, linkTarget = null, linkedMutatedChains = null, bufferStackErrorContext, traceParent = null, renderState = null) {
+  constructor(context, parent = null, boundaryLinkedChains = null, linkTarget = null, boundaryLinkedMutatedChains = null, bufferStackErrorContext, traceParent = null, renderState = null) {
     if (!isCompactErrorContext(bufferStackErrorContext)) {
       throw new TypeError('CommandBuffer requires compact bufferStackErrorContext');
     }
-    const linkedLaneNames = validateLaneNames(linkedChains, 'linkedChains', bufferStackErrorContext);
-    const linkedMutatedLaneNames = validateLaneNames(linkedMutatedChains, 'linkedMutatedChains', bufferStackErrorContext);
+    const boundaryLinkedLaneNames = validateLaneNames(boundaryLinkedChains, 'boundaryLinkedChains', bufferStackErrorContext);
+    const boundaryLinkedMutatedLaneNames = validateLaneNames(boundaryLinkedMutatedChains, 'boundaryLinkedMutatedChains', bufferStackErrorContext);
 
     this._context = context;
     this.parent = parent;
@@ -29,7 +29,7 @@ class CommandBuffer {
     this.arrays = Object.create(null);
     // Linked parent lanes this buffer may mutate. This is metadata for future
     // scheduling that can let read-only child buffers stop blocking siblings.
-    this._linkedMutatedChains = new Set(linkedMutatedLaneNames || []);
+    this._boundaryLinkedMutatedChains = new Set(boundaryLinkedMutatedLaneNames || []);
     this._finishedPromise = null;
     this._finishedResolver = null;
 
@@ -43,9 +43,9 @@ class CommandBuffer {
     }
 
     const effectiveLinkTarget = linkTarget || parent;
-    if (effectiveLinkTarget && linkedLaneNames) {
-      for (let i = 0; i < linkedLaneNames.length; i++) {
-        effectiveLinkTarget.addBuffer(this, linkedLaneNames[i]);
+    if (effectiveLinkTarget && boundaryLinkedLaneNames) {
+      for (let i = 0; i < boundaryLinkedLaneNames.length; i++) {
+        effectiveLinkTarget.addBuffer(this, boundaryLinkedLaneNames[i]);
       }
     }
   }
@@ -312,17 +312,17 @@ class CommandBuffer {
     return this._chains[resolvedChainName];
   }
 
-  isLinkedMutatedChain(chainName) {
-    return this._linkedMutatedChains.has(this._resolveAliasedChainName(chainName));
+  isBoundaryLinkedMutatedChain(chainName) {
+    return this._boundaryLinkedMutatedChains.has(this._resolveAliasedChainName(chainName));
   }
 
   // Inherited callable invocations attach finalized callable footprint links
   // after the invocation buffer already exists, so keep late-linked mutation
   // metadata in sync with those installed parent lanes.
-  _markLinkedMutatedChain(chainName) {
+  _markBoundaryLinkedMutatedChain(chainName) {
     const resolvedChainName = this._resolveAliasedChainName(chainName);
     if (resolvedChainName) {
-      this._linkedMutatedChains.add(resolvedChainName);
+      this._boundaryLinkedMutatedChains.add(resolvedChainName);
     }
   }
 
@@ -368,7 +368,7 @@ class CommandBuffer {
 
   // Late inheritance callable linking may need to attach an already-finished
   // parent lane to an existing invocation buffer. Constructor-time child
-  // buffers should prefer the normal `linkedChains` constructor path.
+  // buffers should prefer the normal `boundaryLinkedChains` constructor path.
   _installLinkedChain(chainName, chain = null) {
     if (!chainName) {
       return;

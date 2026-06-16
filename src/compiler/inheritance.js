@@ -246,21 +246,21 @@ class CompileInheritance {
     }
   }
 
-  _collectCallableLinkedChainFacts(node) {
+  _collectCallableBoundaryLinkFacts(node) {
     // Blocks contribute template text output; script methods contribute return output.
     const footprint = this._getCallableSharedFootprint(node);
     return {
-      linkedChains: footprint.sharedDependencies,
-      linkedMutatedChains: footprint.mutationDependencies
+      boundaryLinkedChains: footprint.sharedDependencies,
+      boundaryLinkedMutatedChains: footprint.mutationDependencies
     };
   }
 
   postAnalyzeBlock(node) {
-    return this._collectCallableLinkedChainFacts(node);
+    return this._collectCallableBoundaryLinkFacts(node);
   }
 
   postAnalyzeMethodDefinition(node) {
-    return this._collectCallableLinkedChainFacts(node);
+    return this._collectCallableBoundaryLinkFacts(node);
   }
 
   collectRootAnalysis(node) {
@@ -636,7 +636,7 @@ class CompileInheritance {
 
   _getCallableSharedFootprint(ownerNode) {
     // Naming path: shared/mutation dependencies become generic
-    // linkedChains/linkedMutatedChains in analysis, then ownLinkedChains/
+    // boundaryLinkedChains/boundaryLinkedMutatedChains in analysis, then ownLinkedChains/
     // ownMutatedChains in the emitted inheritance ABI.
     const bodyNode = ownerNode.body || ownerNode;
     const usedChains = this.compiler.analysis.getChainsUsedFromParent(bodyNode);

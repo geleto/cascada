@@ -46,7 +46,7 @@ Prevents race conditions and ensures sequential equivalence when concurrent bloc
 -   **Compile-time analysis** (`src/compiler/analysis.js`): Annotates AST nodes with declaration/use/mutation metadata. Important fields include `declaredChains`, `usedChains`, `mutatedChains`, `usedChainsFromParent`, `mutatedChainsFromParent`, and `sequenceLocks`.
 -   **Buffer code generation** (`src/compiler/buffer.js`, `src/compiler/emit.js`): Emits command creation, linked-chain metadata, child buffer creation, and async boundary wiring.
 -   **Implicit Variable Synchronization**: Chain observations and `resolveAll`/`resolveSingle` await pending values only when consumed. Data dependencies serialize naturally without explicit locks.
--   **Linked chains**: `analysis.js` derives `linkedChains` and `linkedMutatedChains` from the boundary's chain footprint (see Chain Scope And Visibility). Analyzers set `wantsLinkedChildBuffer` as intent; finalization computes `createsLinkedChildBuffer` as the outcome. `createsLinkedChildBuffer` means the node creates a child `CommandBuffer`; it can be true even when the finalized link sets are empty. `emit.js`/`buffer.js` pass finalized links to `new CommandBuffer(...)` and boundary functions so child buffers route commands to the correct parent lanes. Pure-observation expression boundaries keep the intent but compute `createsLinkedChildBuffer = false` and drop both link sets. If a chain is not linked, fix analysis/emit rather than adding runtime fallbacks.
+-   **Linked chains**: `analysis.js` derives `boundaryLinkedChains` and `boundaryLinkedMutatedChains` from the boundary's chain footprint (see Chain Scope And Visibility). Analyzers set `wantsLinkedChildBuffer` as intent; finalization computes `createsLinkedChildBuffer` as the outcome. `createsLinkedChildBuffer` means the node creates a child `CommandBuffer`; it can be true even when the finalized link sets are empty. `emit.js`/`buffer.js` pass finalized links to `new CommandBuffer(...)` and boundary functions so child buffers route commands to the correct parent lanes. Pure-observation expression boundaries keep the intent but compute `createsLinkedChildBuffer = false` and drop both link sets. If a chain is not linked, fix analysis/emit rather than adding runtime fallbacks.
 
 ---
 
@@ -57,10 +57,10 @@ A chain is visible in a scope only if it is declared there or linked from a pare
 -   `declaredChains` — chains introduced at this scope level; not linked to the parent even if the parent has the same name.
 -   `usedChains` / `mutatedChains` — full aggregate read and write footprint, including chains declared by this node.
 -   `usedChainsFromParent` / `mutatedChainsFromParent` — parent-visible read and write footprint, derived from the aggregate footprint minus local declarations. Compiler consumers that need outer dependencies should use the `analysis.getChainsUsedFromParent(...)` / `analysis.getChainsMutatedFromParent(...)` helpers.
--   `linkedChains` — parent-visible chains the child can observe, derived from `usedChainsFromParent` unless custom node analysis narrows it.
--   `linkedMutatedChains` — parent-visible chains the child can mutate, derived from `mutatedChainsFromParent` unless custom node analysis narrows it.
+-   `boundaryLinkedChains` — parent-visible chains the child can observe, derived from `usedChainsFromParent` unless custom node analysis narrows it.
+-   `boundaryLinkedMutatedChains` — parent-visible chains the child can mutate, derived from `mutatedChainsFromParent` unless custom node analysis narrows it.
 
-If a child cannot see a chain, fix `usedChainsFromParent`/`mutatedChainsFromParent` in `analysis.js` or the `linkedChainNames`/`linkedMutatedChainNames` emit path. Do not add runtime lookup fallbacks.
+If a child cannot see a chain, fix `usedChainsFromParent`/`mutatedChainsFromParent` in `analysis.js` or the `boundaryLinkedChainNames`/`boundaryLinkedMutatedChainNames` emit path. Do not add runtime lookup fallbacks.
 
 Function, macro, and method bodies create scope boundaries where outer chains are not automatically visible; their linked sets must cover every chain the body touches.
 
@@ -115,7 +115,7 @@ Prefer creating the command-buffer shape synchronously. Plain async values usual
 
 Child buffers represent an async boundary where the future command shape is unknown until a value resolves. Common cases are async conditions (`if`/`switch`), loops whose iterable or continuation is async (`for`/`each`/`while`), includes/imports/extends or composition loading, caller/macro scheduling, and other constructs where resolving a value decides which commands exist or how many commands are produced. Do not delay adding an ordinary command merely because one of its arguments is a promise — the parent preserves the source-order slot and the iterator waits only when it reaches that slot.
 
-Four boundary primitives exist in `src/runtime/async-boundaries.js`. All except `runRenderBoundary` take `(parentBuffer, linkedChainNames, linkedMutatedChainNames, ...)` as their leading arguments.
+Four boundary primitives exist in `src/runtime/async-boundaries.js`. All except `runRenderBoundary` take `(parentBuffer, boundaryLinkedChainNames, boundaryLinkedMutatedChainNames, ...)` as their leading arguments.
 
 | Function | Level | Completion/error path | When to use |
 |---|---|---|---|
@@ -247,8 +247,8 @@ Cascada treats errors as data ("Poison") flowing through the system.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Child can't see parent chain value | Missing `linkedChains` | Fix `usedChains` in `analysis.js` or linked-chain emit |
-| Child mutation not reflected in parent | Missing `linkedMutatedChains` | Fix `mutatedChains` in `analysis.js` or emit |
+| Child can't see parent chain value | Missing `boundaryLinkedChains` | Fix `usedChains` in `analysis.js` or linked-chain emit |
+| Child mutation not reflected in parent | Missing `boundaryLinkedMutatedChains` | Fix `mutatedChains` in `analysis.js` or emit |
 | Output order wrong or race condition | Command added to wrong buffer | Always use `currentBuffer`; never jump to parent/root |
 | Unhandled-rejection warning | Promise not handled before deferred consumption | Call `markPromiseHandled()` or stage as command argument immediately |
 | Poison silently swallowed | Wrong boundary primitive | Control-flow errors need `cb`; expression errors need `runValueBoundary` |
@@ -261,7 +261,7 @@ Cascada treats errors as data ("Poison") flowing through the system.
 ## Debugging
 
 -   **Inspect generated JS** — call `script._compileSource()` or `template._compileSource()` on a compiled object to log or step through the emitted buffer/chain code.
--   **Check analysis metadata** — `node._analysis.usedChains`, `.usedChainsFromParent`, `.linkedChains`, `.mutatedChains`, etc. on a parsed AST node to verify chain footprints before they reach codegen.
+-   **Check analysis metadata** — `node._analysis.usedChains`, `.usedChainsFromParent`, `.boundaryLinkedChains`, `.mutatedChains`, etc. on a parsed AST node to verify chain footprints before they reach codegen.
 -   **Render hangs** — find the buffer or chain where `finished === false`; trace why `markFinished()` / `markChainFinished()` was not called on all code paths.
 -   **Unhandled rejection** — locate where the promise was created and verify it is either staged as a command argument or has `markPromiseHandled()` called before deferral.
 -   **Wrong output order** — trace which `CommandBuffer` `currentBuffer` points to at the emit site; commands added to the wrong buffer break source-order assembly.

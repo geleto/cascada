@@ -79,7 +79,7 @@ M = chainName in mutatedChains
 Parent scheduling of a child buffer has two steps:
 
 ```text
-linkedChains decides whether the child buffer appears in the parent lane
+boundaryLinkedChains decides whether the child buffer appears in the parent lane
 observedChainsFromParent / mutatedChainsFromParent decide how that resolved lane runs once selected
 ```
 
@@ -101,13 +101,13 @@ O && M  -> call iterate(chainName, observerState)
 
 This means parent-visible facts are not enough for owned starts. A buffer can mutate or observe local lanes that are not visible from its parent, and `start(chainName)` must still classify those lanes correctly.
 
-`linkedChains` is therefore a visibility/insertion fact, not the phase classifier. Do not derive scheduler observations from `usedChains`; classify lanes from `observedChains` and `mutatedChains`.
+`boundaryLinkedChains` is therefore a visibility/insertion fact, not the phase classifier. Do not derive scheduler observations from `usedChains`; classify lanes from `observedChains` and `mutatedChains`.
 
-When there is no parent/child link for a lane, there is no `linkedChains` projection to consult, so the scheduler must use the buffer's own resolved chain facts.
+When there is no parent/child link for a lane, there is no `boundaryLinkedChains` projection to consult, so the scheduler must use the buffer's own resolved chain facts.
 
 `sequenceLocks` are declaration/setup metadata for sequential-path lanes, not scheduler-shape metadata. Actual sequence operations already flow into normal facts: sequence get/status checks contribute observation facts, and sequence calls or repairs contribute mutation facts.
 
-Runtime assertions should verify that child placement matches `linkedChains` and lane dispatch matches finalized `observedChains` / `mutatedChains`.
+Runtime assertions should verify that child placement matches `boundaryLinkedChains` and lane dispatch matches finalized `observedChains` / `mutatedChains`.
 
 ### Command Methods
 
@@ -139,7 +139,7 @@ Command-buffer methods process one lane. They do not classify the lane by themse
 - `mutate(chainName)` runs a lane that has mutations and no observations for the current caller.
 - `iterate(chainName, observerState)` runs a lane that has both observations and mutations for the current caller.
 
-Parent schedulers use `linkedChains` to place child buffers in lanes, then classify the selected child lane from the child's `observedChainsFromParent` / `mutatedChainsFromParent`. Root/owner `start(...)` classifies its own buffer with owned facts. `start(...)` is only a one-shot dispatcher, not another lane-processing loop.
+Parent schedulers use `boundaryLinkedChains` to place child buffers in lanes, then classify the selected child lane from the child's `observedChainsFromParent` / `mutatedChainsFromParent`. Root/owner `start(...)` classifies its own buffer with owned facts. `start(...)` is only a one-shot dispatcher, not another lane-processing loop.
 
 ```js
 async observe(chainName) {
@@ -197,20 +197,20 @@ M = mutatedChains has chainName
 Parent scheduling of a child buffer:
 
 ```text
-linkedChains has chainName -> the child is present in the parent lane
+boundaryLinkedChains has chainName -> the child is present in the parent lane
 O = child observedChainsFromParent has chainName
 M = child mutatedChainsFromParent has chainName
 ```
 
 Rules:
 
-1. For child buffers, `linkedChains` only decides presence in the parent lane; phase dispatch uses the child's parent-visible `observedChainsFromParent` / `mutatedChainsFromParent`.
+1. For child buffers, `boundaryLinkedChains` only decides presence in the parent lane; phase dispatch uses the child's parent-visible `observedChainsFromParent` / `mutatedChainsFromParent`.
 2. If neither `O` nor `M`, no entry should be present for the lane in that caller context.
 3. If `O` is true and `M` is false, call `observe(chainName)`.
 4. If `M` is true and `O` is false, call `mutate(chainName)`.
 5. If both `O` and `M` are true, use the composite `iterate(...)` path.
 
-This is per-lane and shadowing-safe. A buffer that observes parent-visible lane `x` and mutates parent-visible lane `y` can be observable for `x` and mutable for `y`. A buffer that mutates a local lane not visible from the parent can still be observable for a parent-visible lane. Local mutations do not pessimize the parent lane because the parent sees the child only through `linkedChains`, then classifies the selected lane through the child's parent-visible facts.
+This is per-lane and shadowing-safe. A buffer that observes parent-visible lane `x` and mutates parent-visible lane `y` can be observable for `x` and mutable for `y`. A buffer that mutates a local lane not visible from the parent can still be observable for a parent-visible lane. Local mutations do not pessimize the parent lane because the parent sees the child only through `boundaryLinkedChains`, then classifies the selected lane through the child's parent-visible facts.
 
 ## Lane Execution and Observer State
 
@@ -263,7 +263,7 @@ start(chainName) {
 
 `start(...)` does not process entries itself. It classifies the owned lane from `observedChains` / `mutatedChains`, calls exactly one of `observe(...)`, `mutate(...)`, or `iterate(...)`, passes the resulting observation and mutation completions to `handleStartedLane(observeDone, mutateDone)`, and returns no completion record.
 
-Use `start(chainName)` only for the buffer that owns the lane start, such as a root/final-drain lane. Parent schedulers never call `child.start(...)`; they use `linkedChains` for child placement, classify the selected child lane from parent-visible observed/mutated facts, and then call `observe(...)`, `mutate(...)`, or `iterate(...)`.
+Use `start(chainName)` only for the buffer that owns the lane start, such as a root/final-drain lane. Parent schedulers never call `child.start(...)`; they use `boundaryLinkedChains` for child placement, classify the selected child lane from parent-visible observed/mutated facts, and then call `observe(...)`, `mutate(...)`, or `iterate(...)`.
 
 `start(chainName)` is lane-scoped. It does not mean "start the whole buffer". There is no whole-buffer start/drain helper in the scheduler contract. Buffer input is closed with `finish()` / `finishChain(...)`; execution is pulled by the chain lane that needs completion.
 
@@ -451,7 +451,7 @@ async function runMixedIteration(iterator, chainName, observerState, completion)
 }
 ```
 
-`entryObservesLane(...)` / `entryMutatesLane(...)` are conceptual helpers. For ordinary commands they read method presence. For child command buffers they read the child's `observedChainsFromParent` / `mutatedChainsFromParent` for the current parent lane. `linkedChains` only explains why the child entry is present in that parent lane.
+`entryObservesLane(...)` / `entryMutatesLane(...)` are conceptual helpers. For ordinary commands they read method presence. For child command buffers they read the child's `observedChainsFromParent` / `mutatedChainsFromParent` for the current parent lane. `boundaryLinkedChains` only explains why the child entry is present in that parent lane.
 
 Because `runMixedIteration(...)` is detached from the immediate caller, it must attach rejection handlers, mark the task handled, and report fatal errors through the owning render state or buffer context. Rejecting the completion record is not enough when Stage 2 callers intentionally do not await `observeDone`. Inherited Stage 2 iterations must not end by awaiting `observerState.drain()` because that would wait on ancestor or later-parent observations and keep a useless child coroutine alive.
 
@@ -839,8 +839,8 @@ Stage 0:
 
 Stage 1:
 
-1. Implement or consume [chain-facts-refactor.md](./chain-facts-refactor.md): `observedChains`, `mutatedChains`, `declaredChains`, derived `usedChains`, and `linkedChains`.
-2. Use `linkedChains` to decide which parent lanes receive a child buffer.
+1. Implement or consume [chain-facts-refactor.md](./chain-facts-refactor.md): `observedChains`, `mutatedChains`, `declaredChains`, derived `usedChains`, and `boundaryLinkedChains`.
+2. Use `boundaryLinkedChains` to decide which parent lanes receive a child buffer.
 3. Classify owned `start(chainName)` from `observedChains` / `mutatedChains`.
 4. Classify child-buffer phase dispatch from the child's `observedChainsFromParent` / `mutatedChainsFromParent` for the current parent lane.
 5. Add single-start void `start(chainName)` that dispatches once to the buffer's own `observe(...)`, `mutate(...)`, or `iterate(...)` method and resolves existing chain completion from that return value.
@@ -889,7 +889,7 @@ Direct runtime tests:
 - child observe-only buffer behaves like an observable command
 - child mutate-only buffer behaves like a mutable command
 - owned `start(chainName)` uses local `observedChains` / `mutatedChains` even when the lane is not parent-visible
-- parent scheduling inserts child buffers through `linkedChains`, then classifies the selected lane from child `observedChainsFromParent` / `mutatedChainsFromParent`
+- parent scheduling inserts child buffers through `boundaryLinkedChains`, then classifies the selected lane from child `observedChainsFromParent` / `mutatedChainsFromParent`
 - a buffer that observes parent lane `x` and mutates local lane `y` is observable to the parent on `x` but mutating when `start(y)` runs
 - a buffer that observes parent lane `x` and mutates parent lane `y` is classified per lane instead of object-wide mixed
 - Stage 1 mixed child blocks until full completion

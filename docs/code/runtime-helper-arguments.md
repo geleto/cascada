@@ -4,7 +4,7 @@ Design note for keeping Cascada runtime helper calls readable, compact, and stab
 
 > **Read first.** Positional arguments are the default. Named object-form records are used only where genuinely warranted (see Decision Boundary). The positional signatures shown here exist in the source; per `AGENTS.md`, prefer current source when docs and implementation disagree -- verify before assuming an object-form API exists.
 >
-> **On parameter names.** Signature blocks use the real source identifiers where it matters for correctness (e.g. `obj`, `linkedChainNames`, `asyncFn`). Some prose uses domain-friendly aliases (`target`, `key`) for readability. When in doubt, the source is authoritative.
+> **On parameter names.** Signature blocks use the real source identifiers where it matters for correctness (e.g. `obj`, `boundaryLinkedChainNames`, `asyncFn`). Some prose uses domain-friendly aliases (`target`, `key`) for readability. When in doubt, the source is authoritative.
 >
 > **Related work.** Two concrete cleanups (boundary-body consolidation and readable `CommandBuffer` construction) are tracked in [runtime-helper-arguments-cleanup.md](runtime-helper-arguments-cleanup.md).
 
@@ -56,7 +56,7 @@ domain operands, execution context, placement, diagnostics, options
 
 1.  **Domain operands** -- values the operation acts on: `target`, `key`, `func`, `funcName`, `args`, `arr`, `loopBody`.
 2.  **Execution context** -- usually `context`.
-3.  **Placement** -- `currentBuffer`, `parentBuffer`, `linkedChainNames`, `linkedMutatedChainNames`.
+3.  **Placement** -- `currentBuffer`, `parentBuffer`, `boundaryLinkedChainNames`, `boundaryLinkedMutatedChainNames`.
 4.  **Diagnostics / fatal-state handle** -- `errorContext`; add `renderState` only when the helper needs direct fatal reporting or root-boundary coordination.
 5.  **Options** -- booleans, limits, modes, repair flags.
 
@@ -118,13 +118,13 @@ Pick the shape by family, not by field count.
 
 ### CommandBuffer construction
 
-Positional constructor (`new CommandBuffer(context, parent, linkedChains, linkTarget, linkedMutatedChains, bufferStackErrorContext, traceParent, renderState)`, [`command-buffer.js`](../../src/runtime/command-buffer.js)). The long, nullable, same-typed list is unreadable at call sites, so an object-form `CommandBuffer.fromSpec({ ... })` factory for runtime-owned construction is warranted; compiler-emitted `new runtime.CommandBuffer(...)` stays positional. Tracked in [runtime-helper-arguments-cleanup.md](runtime-helper-arguments-cleanup.md).
+Positional constructor (`new CommandBuffer(context, parent, boundaryLinkedChains, linkTarget, boundaryLinkedMutatedChains, bufferStackErrorContext, traceParent, renderState)`, [`command-buffer.js`](../../src/runtime/command-buffer.js)). The long, nullable, same-typed list is unreadable at call sites, so an object-form `CommandBuffer.fromSpec({ ... })` factory for runtime-owned construction is warranted; compiler-emitted `new runtime.CommandBuffer(...)` stays positional. Tracked in [runtime-helper-arguments-cleanup.md](runtime-helper-arguments-cleanup.md).
 
 ---
 
 ## Objects To Avoid
 
-**UniversalRuntimeContext** -- bundling `env, context, runtime, renderState, currentBuffer, errorContext, parentBuffer, linkedChains, linkedMutatedChains` into one object. Too broad: it blurs user context vs runtime module, current buffer vs parent/link target, static vs owned error context, fatal reporting vs value poisoning, and structural setup vs expression evaluation -- and tempts helpers to take more authority than they need.
+**UniversalRuntimeContext** -- bundling `env, context, runtime, renderState, currentBuffer, errorContext, parentBuffer, boundaryLinkedChains, boundaryLinkedMutatedChains` into one object. Too broad: it blurs user context vs runtime module, current buffer vs parent/link target, static vs owned error context, fatal reporting vs value poisoning, and structural setup vs expression evaluation -- and tempts helpers to take more authority than they need.
 
 **Generic `options` for required state** -- `helper(value, { context, currentBuffer, errorContext })` when those fields are required for correctness. `options` should mean *optional behavior*; required state is positional or a named domain record.
 

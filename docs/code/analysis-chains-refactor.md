@@ -96,13 +96,13 @@ should not derive parent links by hand with node-specific subtraction rules.
 ## Current Smell
 
 Historically `compileCaptureBoundary(...)` had to subtract nested capture text
-outputs from `node._analysis.usedChains` before creating `linkedChainsArg`.
+outputs from `node._analysis.usedChains` before creating `boundaryLinkedChainsArg`.
 Stage 1 removed that specific workaround by making generated capture text
 outputs internal declarations and by keeping child-owned chains out of stored
 usage facts.
 
 The remaining smell is that emitters still derive links from stored facts
-instead of serializing the Stage 2 `linkedChains` metadata directly. That
+instead of serializing the Stage 2 `boundaryLinkedChains` metadata directly. That
 migration belongs to Stage 3.
 
 ## Desired Outcome
@@ -114,11 +114,11 @@ migration belongs to Stage 3.
 - the filtered upward aggregate and the stored per-node analysis facts do not
   disagree about child-owned chains.
 - `usedChains` / `mutatedChains` may still include locally declared
-  chains when the current node/body actually touches them. `linkedChains`
+  chains when the current node/body actually touches them. `boundaryLinkedChains`
   is the derived boundary subset that removes chains declared by that
   boundary.
-- only boundary nodes store `linkedChains`.
-- boundary `linkedChains` means "chains used or mutated by this boundary
+- only boundary nodes store `boundaryLinkedChains`.
+- boundary `boundaryLinkedChains` means "chains used or mutated by this boundary
   that are not declared by this boundary and must therefore be provided by the
   immediate parent."
 - analysis produces a separate parent-link set for each boundary node that
@@ -141,7 +141,7 @@ migration belongs to Stage 3.
   justified. Filtering is one visible workaround, but the audit should also
   look for special-case linking, silent skips, synthetic-name checks, defensive
   missing-chain handling, and duplicated chain-set calculations.
-- any place where the analysis-derived `linkedChains` set is not the final
+- any place where the analysis-derived `boundaryLinkedChains` set is not the final
   linked set emitted or used at runtime must be treated as suspicious. There
   may be valid local semantic additions/removals, but the default assumption is
   that a mismatch indicates an analysis bug, missing metadata, or a lingering
@@ -151,17 +151,17 @@ migration belongs to Stage 3.
 
 1. Fix stored per-node `usedChains` / `mutatedChains` so they obey the same
    child-ownership filtering as the aggregate returned upward.
-2. Add boundary-only `linkedChains` metadata during analysis finalization.
-3. Define boundary `linkedChains` from the already-filtered current node
+2. Add boundary-only `boundaryLinkedChains` metadata during analysis finalization.
+3. Define boundary `boundaryLinkedChains` from the already-filtered current node
    usage:
    - start from chains used or mutated by the boundary body
    - remove chains declared by the boundary itself
    - do not include child-boundary-owned chains, because they should already
      be absent from the boundary's stored `usedChains` / `mutatedChains`
-4. Update compiler boundary emitters to consume `node._analysis.linkedChains`
+4. Update compiler boundary emitters to consume `node._analysis.boundaryLinkedChains`
    instead of recomputing links from `usedChains`.
 5. Delete duplicated linked-chain calculations from compiler helpers once the
-   analysis-provided `linkedChains` set is available.
+   analysis-provided `boundaryLinkedChains` set is available.
 6. Audit boundary-local `usedChains` filters. Remove filters that are only
    compensating for missing analysis metadata; keep only filters that represent
    a real local semantic distinction.
@@ -174,7 +174,7 @@ migration belongs to Stage 3.
      a link without a provider
    Remove the workaround when the new analysis metadata makes it unnecessary,
    or document why it remains a real semantic rule.
-8. Compare analysis-provided `linkedChains` with final emitted/runtime link
+8. Compare analysis-provided `boundaryLinkedChains` with final emitted/runtime link
    sets. If a compiler path adds or removes chains after analysis, investigate
    it first as a likely bug or missing analysis fact. Keep the adjustment only
    when it represents a documented local semantic rule that analysis should not
@@ -209,7 +209,7 @@ Validation:
 - loops/includes inside captures
 - parent-owned chain reads and mutations inside child boundaries
 
-### Stage 2. Derive Boundary `linkedChains`
+### Stage 2. Derive Boundary `boundaryLinkedChains`
 
 Goal:
 
@@ -219,7 +219,7 @@ Goal:
 
 Work:
 
-- add boundary-only `linkedChains` metadata for nodes that create runtime
+- add boundary-only `boundaryLinkedChains` metadata for nodes that create runtime
   child buffers
 - add an explicit analysis flag, such as `wantsLinkedChildBuffer`, for nodes
   that may create a child command buffer whose chains need parent links
@@ -260,7 +260,7 @@ Goal:
 
 Work:
 
-- update boundary emitters to consume `node._analysis.linkedChains`
+- update boundary emitters to consume `node._analysis.boundaryLinkedChains`
 - resolve template output granularity before consuming links: `compileOutput(...)`
   emits per-child text boundaries, but each emitted text boundary represents
   the `Output` node's source-order slot and must link the output-level chain
@@ -276,13 +276,13 @@ Work:
   that only compensated for broad stored chain facts
 - keep only emitter-side chain adjustments that represent documented local
   semantics
-- compare final emitted/runtime link sets against analysis `linkedChains`
+- compare final emitted/runtime link sets against analysis `boundaryLinkedChains`
   during the transition
 
 Validation:
 
 - focused boundary suites plus compile-source tests that assert emitted
-  `linkedChainsArg` no longer contains child-owned implementation chains
+  `boundaryLinkedChainsArg` no longer contains child-owned implementation chains
 
 ### Stage 4. Audit And Delete Workarounds
 
@@ -292,7 +292,7 @@ Goal:
 - make runtime linking/buffer decisions consume analysis/callable link metadata
   instead of rediscovering link shape from buffer state
 - make inheritance, component, macro/caller, and callable-body paths use the
-  same standard `usedChains`, `mutatedChains`, and `linkedChains` model
+  same standard `usedChains`, `mutatedChains`, and `boundaryLinkedChains` model
   wherever they create a normal child buffer
 
 Work:
@@ -313,7 +313,7 @@ Work:
 - audit every compile-time child-buffer creation site and ensure it is either:
   - represented by analysis metadata via `wantsLinkedChildBuffer` /
     `createsLinkedChildBuffer` and
-    `linkedChains`
+    `boundaryLinkedChains`
   - documented as a root/scope-root/runtime-only buffer that does not belong to
     boundary-link analysis
 - audit inheritance/component invocation linking separately from ordinary
@@ -365,7 +365,7 @@ Goal:
 Work:
 
 - reproduce the shared-buffer timing bug found when inherited block text
-  boundaries use ordinary `linkedChains`
+  boundaries use ordinary `boundaryLinkedChains`
 - identify why linking shared lanes on the inherited block text placement boundary moves
   observations from method-invocation time to parent-render scheduling time
 - document the text-only text-placement semantic in
@@ -461,7 +461,7 @@ Work:
 
 - `src/compiler/emit.js#managedBlock(...)` no longer derives links from broad
   `usedChains`. Ordinary boundary nodes still use analysis-owned
-  `linkedChains`; non-boundary managed buffers do not link parent chains
+  `boundaryLinkedChains`; non-boundary managed buffers do not link parent chains
   implicitly.
 - macro managed buffers declare their own parameter/return/caller/text lanes
   and do not require parent-buffer links.
@@ -502,11 +502,11 @@ Implementation notes:
 Add or preserve tests for these behaviors:
 
 - nested set-block captures do not leak inner capture text outputs into the
-  outer capture's `linkedChains`
+  outer capture's `boundaryLinkedChains`
 - capture bodies still link legitimate parent-visible reads such as loop
   metadata, ordinary variables, and explicit chain observations
 - mutations of parent-owned chains inside boundaries are included in
-  `linkedChains`
+  `boundaryLinkedChains`
 - macro caller boundaries keep caller-local bindings local while linking real
   parent-visible dependencies
 - import/from-import/include boundaries do not link unrelated locals
@@ -520,7 +520,7 @@ Add or preserve tests for these behaviors:
 Guiding question for every chain-set adjustment:
 
 ```text
-If analysis linkedChains were correct, would this code still need to alter the chain set?
+If analysis boundaryLinkedChains were correct, would this code still need to alter the chain set?
 ```
 
 If the answer is no, the code is likely cleanup debt. If the answer is yes,
@@ -534,9 +534,9 @@ duplicated linked-chain calculation:
   `caller`, generated formal chain aliases, or `__waited__`
 - boundary-specific link builders, including local
   `Array.from(usedChains).filter(...)`, `used - declared`, or hand-built
-  `linkedChainsArg` logic in boundary/compiler helpers
+  `boundaryLinkedChainsArg` logic in boundary/compiler helpers
 - central node-type allowlists that try to infer which AST nodes need
-  `linkedChains`; child-buffer/link behavior should be explicit analysis
+  `boundaryLinkedChains`; child-buffer/link behavior should be explicit analysis
   metadata set by the relevant analyzer
 - runtime "maybe link" guards that check whether a parent has a chain and
   silently skip linking when it does not
@@ -575,7 +575,7 @@ Should we link through the caller, the shared root, or both?
 
 For each case, classify the decision:
 
-- **Metadata-owned:** the analysis/callable `linkedChains` set should already
+- **Metadata-owned:** the analysis/callable `boundaryLinkedChains` set should already
   specify the link. Runtime should install it or throw if the immediate parent
   cannot provide it.
 - **Runtime invariant:** the runtime check remains valid only as an assertion
@@ -595,7 +595,7 @@ current semantic rather than reintroducing phase markers.
 ## Adjacent Analysis Facts To Audit
 
 The primary refactor targets are `usedChains`, `mutatedChains`, and the new
-boundary-only `linkedChains`. While changing those, audit nearby analysis
+boundary-only `boundaryLinkedChains`. While changing those, audit nearby analysis
 facts that can affect chain ownership or linking:
 
 - `wantsLinkedChildBuffer`: should be the explicit analyzer-owned intent marker

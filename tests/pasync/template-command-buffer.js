@@ -89,15 +89,15 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       'usedChainsFromParent',
       'observedChainsFromParent',
       'mutatedChainsFromParent',
-      'linkedChains',
-      'linkedMutatedChains'
+      'boundaryLinkedChains',
+      'boundaryLinkedMutatedChains'
     ];
     const supersetPairs = [
       ['observedChains', 'usedChains'],
       ['mutatedChains', 'usedChains'],
       ['observedChainsFromParent', 'usedChainsFromParent'],
       ['mutatedChainsFromParent', 'usedChainsFromParent'],
-      ['linkedMutatedChains', 'linkedChains']
+      ['boundaryLinkedMutatedChains', 'boundaryLinkedChains']
     ];
     collectAllNodes(ast).forEach((node) => {
       fields.forEach((field) => {
@@ -170,8 +170,8 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       expect(rootTextDeclares).to.have.length(1);
       expect(rootTextDeclares[0].type).to.be('text');
       expect(rootTextDeclares[0].shared).to.not.be(true);
-      expect(blockNode._analysis.linkedChains instanceof Set).to.be(true);
-      expect(blockNode._analysis.linkedMutatedChains instanceof Set).to.be(true);
+      expect(blockNode._analysis.boundaryLinkedChains instanceof Set).to.be(true);
+      expect(blockNode._analysis.boundaryLinkedMutatedChains instanceof Set).to.be(true);
     });
 
     it('should finalize analysis chain-set facts as Set or null', function () {
@@ -186,7 +186,7 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       expectFinalizedChainSetFacts(ast);
     });
 
-    it('should reject invalid custom linked chain fact shapes during finalization', function () {
+    it('should reject invalid custom boundary-linked chain fact shapes during finalization', function () {
       const opts = {
         asyncMode: true,
         scriptMode: false,
@@ -194,15 +194,15 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       };
       const compiler = new CompilerAsync('invalid-linked-chain-facts.njk', opts);
       const ast = transform(parse('{% if flag %}{{ x }}{% endif %}', [], opts), [], 'invalid-linked-chain-facts.njk', opts);
-      compiler.postAnalyzeIf = () => ({ linkedChains: 'x' });
+      compiler.postAnalyzeIf = () => ({ boundaryLinkedChains: 'x' });
 
       expect(() => compiler.analysis.run(ast)).to.throwException((err) => {
-        expect(err.message).to.contain('Analysis fact \'linkedChains\'');
+        expect(err.message).to.contain('Analysis fact \'boundaryLinkedChains\'');
         expect(err.message).to.contain('must be a Set, array, or iterable collection of chain names');
       });
     });
 
-    it('should reject Map custom linked chain facts as invalid shapes', function () {
+    it('should reject Map custom boundary-linked chain facts as invalid shapes', function () {
       const opts = {
         asyncMode: true,
         scriptMode: false,
@@ -210,16 +210,16 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       };
       const compiler = new CompilerAsync('invalid-linked-chain-map-facts.njk', opts);
       const ast = transform(parse('{% if flag %}{{ x }}{% endif %}', [], opts), [], 'invalid-linked-chain-map-facts.njk', opts);
-      compiler.postAnalyzeIf = () => ({ linkedChains: new Map([['x', { name: 'x' }]]) });
+      compiler.postAnalyzeIf = () => ({ boundaryLinkedChains: new Map([['x', { name: 'x' }]]) });
 
       expect(() => compiler.analysis.run(ast)).to.throwException((err) => {
-        expect(err.message).to.contain('Analysis fact \'linkedChains\'');
+        expect(err.message).to.contain('Analysis fact \'boundaryLinkedChains\'');
         expect(err.message).to.contain('must be a Set, array, or iterable collection of chain names');
         expect(err.message).to.contain('got Map');
       });
     });
 
-    it('should reject invalid custom linked chain names during finalization', function () {
+    it('should reject invalid custom boundary-linked chain names during finalization', function () {
       const opts = {
         asyncMode: true,
         scriptMode: false,
@@ -227,11 +227,27 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       };
       const compiler = new CompilerAsync('invalid-linked-chain-names.njk', opts);
       const ast = transform(parse('{% if flag %}{{ x }}{% endif %}', [], opts), [], 'invalid-linked-chain-names.njk', opts);
-      compiler.postAnalyzeIf = () => ({ linkedChains: [''] });
+      compiler.postAnalyzeIf = () => ({ boundaryLinkedChains: [''] });
 
       expect(() => compiler.analysis.run(ast)).to.throwException((err) => {
-        expect(err.message).to.contain('Analysis fact \'linkedChains\'');
+        expect(err.message).to.contain('Analysis fact \'boundaryLinkedChains\'');
         expect(err.message).to.contain('contains an invalid chain name');
+      });
+    });
+
+    it('should reject legacy custom linked-chain facts', function () {
+      const opts = {
+        asyncMode: true,
+        scriptMode: false,
+        idPool: createIdPool()
+      };
+      const compiler = new CompilerAsync('legacy-linked-chain-facts.njk', opts);
+      const ast = transform(parse('{% if flag %}{{ x }}{% endif %}', [], opts), [], 'legacy-linked-chain-facts.njk', opts);
+      compiler.postAnalyzeIf = () => ({ linkedChains: ['x'] });
+
+      expect(() => compiler.analysis.run(ast)).to.throwException((err) => {
+        expect(err.message).to.contain("Analysis fact 'linkedChains' is no longer supported");
+        expect(err.message).to.contain("'boundaryLinkedChains'");
       });
     });
 
@@ -404,7 +420,7 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       expect((macro.observedChainsFromParent || new Set()).has('x')).to.be(false);
       expect((macro.mutatedChainsFromParent || new Set()).has('x')).to.be(false);
       expect((macro.usedChainsFromParent || new Set()).has('x')).to.be(false);
-      expect(Array.from(macro.linkedChains || [])).to.eql([]);
+      expect(Array.from(macro.boundaryLinkedChains || [])).to.eql([]);
     });
 
     it('should keep nested capture text outputs out of outer stored chain facts', function () {
@@ -459,7 +475,7 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       expect(outer.mutatedChains.has(inner.textOutput)).to.be(false);
     });
 
-    it('should derive boundary linked chains from stored facts minus declarations', function () {
+    it('should derive boundary-linked chains from stored facts minus declarations', function () {
       const ast = analyzeTemplateSource(
         '{% set x = "v" %}' +
         '{% set outer %}A{{ x }}{% set inner %}B{{ x }}{% endset %}C{% endset %}',
@@ -467,13 +483,13 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       );
       const captures = collectNodesByType(ast, 'Capture');
 
-      expect(Array.from(captures[0]._analysis.linkedChains || [])).to.eql(['x']);
-      expect(Array.from(captures[0]._analysis.linkedMutatedChains || [])).to.eql([]);
-      expect(Array.from(captures[1]._analysis.linkedChains || [])).to.eql(['x']);
-      expect(Array.from(captures[1]._analysis.linkedMutatedChains || [])).to.eql([]);
+      expect(Array.from(captures[0]._analysis.boundaryLinkedChains || [])).to.eql(['x']);
+      expect(Array.from(captures[0]._analysis.boundaryLinkedMutatedChains || [])).to.eql([]);
+      expect(Array.from(captures[1]._analysis.boundaryLinkedChains || [])).to.eql(['x']);
+      expect(Array.from(captures[1]._analysis.boundaryLinkedMutatedChains || [])).to.eql([]);
     });
 
-    it('should include parent-owned mutations in derived boundary linked chains', function () {
+    it('should include parent-owned mutations in derived boundary-linked chains', function () {
       const ast = analyzeTemplateSource(
         '{% set x = "v" %}' +
         '{% if flag %}{{ x }}{% set x = "updated" %}{% var local = "local" %}{{ local }}{% endif %}',
@@ -481,8 +497,8 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       );
       const ifNode = collectNodesByType(ast, 'If')[0];
 
-      expect(Array.from(ifNode._analysis.linkedChains || [])).to.eql(['__text__', 'x']);
-      expect(Array.from(ifNode._analysis.linkedMutatedChains || [])).to.eql(['__text__', 'x']);
+      expect(Array.from(ifNode._analysis.boundaryLinkedChains || [])).to.eql(['__text__', 'x']);
+      expect(Array.from(ifNode._analysis.boundaryLinkedMutatedChains || [])).to.eql(['__text__', 'x']);
     });
 
     it('should mark include, extends, and block nodes as linked child buffers', function () {
@@ -503,9 +519,9 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       expect(extendsNode._analysis.createsLinkedChildBuffer).to.be(true);
       expect(blockNode._analysis.wantsLinkedChildBuffer).to.be(true);
       expect(blockNode._analysis.createsLinkedChildBuffer).to.be(true);
-      expect(Array.from(includeNode._analysis.linkedChains || [])).to.eql(['__text__']);
-      expect(Array.from(extendsNode._analysis.linkedChains || [])).to.eql(['__text__']);
-      expect(Array.from(blockNode._analysis.linkedChains || [])).to.eql([]);
+      expect(Array.from(includeNode._analysis.boundaryLinkedChains || [])).to.eql(['__text__']);
+      expect(Array.from(extendsNode._analysis.boundaryLinkedChains || [])).to.eql(['__text__']);
+      expect(Array.from(blockNode._analysis.boundaryLinkedChains || [])).to.eql([]);
       expect(Array.from(blockNode._analysis.mutatedChains || [])).to.eql(['__text__']);
     });
 
@@ -519,8 +535,8 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
 
       expect(inlineIfNode._analysis.wantsLinkedChildBuffer).to.be(true);
       expect(inlineIfNode._analysis.createsLinkedChildBuffer).to.be(true);
-      expect(Array.from(inlineIfNode._analysis.linkedChains || [])).to.eql(['result']);
-      expect(Array.from(inlineIfNode._analysis.linkedMutatedChains || [])).to.eql(['result']);
+      expect(Array.from(inlineIfNode._analysis.boundaryLinkedChains || [])).to.eql(['result']);
+      expect(Array.from(inlineIfNode._analysis.boundaryLinkedMutatedChains || [])).to.eql(['result']);
     });
 
     it('should classify component binding side-lane work as parent-visible mutation facts', function () {
@@ -533,8 +549,8 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
 
       expect(Array.from(inlineIfNode._analysis.observedChainsFromParent || [])).to.eql([]);
       expect(Array.from(inlineIfNode._analysis.mutatedChainsFromParent || [])).to.eql(['ns']);
-      expect(Array.from(inlineIfNode._analysis.linkedChains || [])).to.eql(['ns']);
-      expect(Array.from(inlineIfNode._analysis.linkedMutatedChains || [])).to.eql(['ns']);
+      expect(Array.from(inlineIfNode._analysis.boundaryLinkedChains || [])).to.eql(['ns']);
+      expect(Array.from(inlineIfNode._analysis.boundaryLinkedMutatedChains || [])).to.eql(['ns']);
     });
 
     it('should keep dynamic keys visible inside operation-owned chain paths', function () {
@@ -569,8 +585,8 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       expect(methodSymbols.some((node) => node._analysis.lookupDeclaration?.name === 'method')).to.be(true);
       expect(Array.from(inlineIfNode._analysis.observedChainsFromParent || [])).to.eql(['method']);
       expect(Array.from(inlineIfNode._analysis.mutatedChainsFromParent || [])).to.eql(['ns']);
-      expect(sortedChainNames(inlineIfNode._analysis.linkedChains)).to.eql(['method', 'ns']);
-      expect(Array.from(inlineIfNode._analysis.linkedMutatedChains || [])).to.eql(['ns']);
+      expect(sortedChainNames(inlineIfNode._analysis.boundaryLinkedChains)).to.eql(['method', 'ns']);
+      expect(Array.from(inlineIfNode._analysis.boundaryLinkedMutatedChains || [])).to.eql(['ns']);
     });
 
     it('should observe nested shared-var sets without observing shared data sets', function () {
@@ -604,7 +620,7 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       expect(macroNode._analysis.hasCallerSupport).to.be(true);
       expect(callerNode._analysis.wantsLinkedChildBuffer).to.be(true);
       expect(callerNode._analysis.createsLinkedChildBuffer).to.be(true);
-      expect(Array.from(callerNode._analysis.linkedChains || [])).to.eql(['x']);
+      expect(Array.from(callerNode._analysis.boundaryLinkedChains || [])).to.eql(['x']);
       expect(Array.from(callerNode._analysis.declaredChains.keys())).to.eql(['caller', '__return__', '__text__']);
     });
 
@@ -627,8 +643,8 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       expect(recoveryNode._analysis.wantsLinkedChildBuffer).to.be(false);
       expect(recoveryNode._analysis.createsScopeBuffer).to.be(true);
       expect(recoveryNode._analysis.createsLinkedChildBuffer).to.be(false);
-      expect(Array.from(recoveryNode._analysis.linkedChains || [])).to.eql(['result']);
-      expect(Array.from(recoveryNode._analysis.linkedMutatedChains || [])).to.eql(['result']);
+      expect(Array.from(recoveryNode._analysis.boundaryLinkedChains || [])).to.eql(['result']);
+      expect(Array.from(recoveryNode._analysis.boundaryLinkedMutatedChains || [])).to.eql(['result']);
     });
 
     it('should keep loop and include-owned facts local inside captures', function () {
@@ -642,7 +658,7 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       );
       const captureNode = collectNodesByType(ast, 'Capture')[0];
 
-      expect(Array.from(captureNode._analysis.linkedChains || [])).to.eql([]);
+      expect(Array.from(captureNode._analysis.boundaryLinkedChains || [])).to.eql([]);
       expect(captureNode._analysis.usedChains.has('loop')).to.be(false);
       expect(captureNode._analysis.usedChains.has('item')).to.be(false);
       expect(captureNode._analysis.usedChains.has('includeTemplate')).to.be(false);
@@ -657,11 +673,11 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
 
       expect(ast._analysis.wantsLinkedChildBuffer).to.be(false);
       expect(ast._analysis.createsLinkedChildBuffer).to.be(false);
-      expect(ast._analysis.linkedChains).to.be(null);
+      expect(ast._analysis.boundaryLinkedChains).to.be(null);
       expect(macroNode._analysis.hasCallerSupport).to.be(false);
       expect(macroNode._analysis.wantsLinkedChildBuffer).to.be(false);
       expect(macroNode._analysis.createsLinkedChildBuffer).to.be(false);
-      expect(macroNode._analysis.linkedChains).to.be(null);
+      expect(macroNode._analysis.boundaryLinkedChains).to.be(null);
     });
 
     it('should derive short-circuit expression links only when command effects are present', function () {
@@ -675,16 +691,16 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
 
       expect(valueAndNode._analysis.wantsLinkedChildBuffer).to.be(true);
       expect(valueAndNode._analysis.createsLinkedChildBuffer).to.be(false);
-      expect(valueAndNode._analysis.linkedChains).to.be(null);
-      expect(valueAndNode._analysis.linkedMutatedChains).to.be(null);
+      expect(valueAndNode._analysis.boundaryLinkedChains).to.be(null);
+      expect(valueAndNode._analysis.boundaryLinkedMutatedChains).to.be(null);
       expect(valueOrNode._analysis.wantsLinkedChildBuffer).to.be(true);
       expect(valueOrNode._analysis.createsLinkedChildBuffer).to.be(false);
-      expect(valueOrNode._analysis.linkedChains).to.be(null);
-      expect(valueOrNode._analysis.linkedMutatedChains).to.be(null);
+      expect(valueOrNode._analysis.boundaryLinkedChains).to.be(null);
+      expect(valueOrNode._analysis.boundaryLinkedMutatedChains).to.be(null);
       expect(valueInlineIfNode._analysis.wantsLinkedChildBuffer).to.be(true);
       expect(valueInlineIfNode._analysis.createsLinkedChildBuffer).to.be(false);
-      expect(valueInlineIfNode._analysis.linkedChains).to.be(null);
-      expect(valueInlineIfNode._analysis.linkedMutatedChains).to.be(null);
+      expect(valueInlineIfNode._analysis.boundaryLinkedChains).to.be(null);
+      expect(valueInlineIfNode._analysis.boundaryLinkedMutatedChains).to.be(null);
 
       const commandEffectAst = analyzeScriptSource([
         'data result',
@@ -697,12 +713,12 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
 
       expect(commandAndNode._analysis.wantsLinkedChildBuffer).to.be(true);
       expect(commandAndNode._analysis.createsLinkedChildBuffer).to.be(true);
-      expect(Array.from(commandAndNode._analysis.linkedChains || [])).to.eql(['result']);
-      expect(Array.from(commandAndNode._analysis.linkedMutatedChains || [])).to.eql(['result']);
+      expect(Array.from(commandAndNode._analysis.boundaryLinkedChains || [])).to.eql(['result']);
+      expect(Array.from(commandAndNode._analysis.boundaryLinkedMutatedChains || [])).to.eql(['result']);
       expect(commandOrNode._analysis.wantsLinkedChildBuffer).to.be(true);
       expect(commandOrNode._analysis.createsLinkedChildBuffer).to.be(true);
-      expect(Array.from(commandOrNode._analysis.linkedChains || [])).to.eql(['result']);
-      expect(Array.from(commandOrNode._analysis.linkedMutatedChains || [])).to.eql(['result']);
+      expect(Array.from(commandOrNode._analysis.boundaryLinkedChains || [])).to.eql(['result']);
+      expect(Array.from(commandOrNode._analysis.boundaryLinkedMutatedChains || [])).to.eql(['result']);
     });
 
     it('should preserve literal/interpolation parity and source ordering', async function () {

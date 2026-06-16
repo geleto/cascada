@@ -163,10 +163,10 @@ class CompileAnalysis {
       observedChainsFromParent: null,
       usedChainsFromParent: null,
       mutatedChainsFromParent: null,
-      linkedChains: null,
+      boundaryLinkedChains: null,
       // Parent-owned linked chains this boundary may mutate. Future command-buffer
       // scheduling can use this to distinguish read-only child buffers.
-      linkedMutatedChains: null,
+      boundaryLinkedMutatedChains: null,
       wantsLinkedChildBuffer: false,
       createsLinkedChildBuffer: false,
       createsScopeBuffer: false,
@@ -542,14 +542,27 @@ class CompileAnalysis {
   }
 
   _validateAnalysisFacts(analysis) {
-    if (!Object.prototype.hasOwnProperty.call(analysis, 'uses')) {
-      return;
+    if (Object.prototype.hasOwnProperty.call(analysis, 'uses')) {
+      this._failUnsupportedAnalysisFact(
+        analysis,
+        'uses',
+        "'observes', 'mutates', or 'declares'"
+      );
     }
+    if (Object.prototype.hasOwnProperty.call(analysis, 'linkedChains')) {
+      this._failUnsupportedAnalysisFact(analysis, 'linkedChains', "'boundaryLinkedChains'");
+    }
+    if (Object.prototype.hasOwnProperty.call(analysis, 'linkedMutatedChains')) {
+      this._failUnsupportedAnalysisFact(analysis, 'linkedMutatedChains', "'boundaryLinkedMutatedChains'");
+    }
+  }
+
+  _failUnsupportedAnalysisFact(analysis, field, replacement) {
     const originNode = analysis.node || null;
     const lineno = originNode && originNode.lineno;
     const colno = originNode && originNode.colno;
     this.compiler.fail(
-      "Analysis fact 'uses' is no longer supported. Use 'observes', 'mutates', or 'declares' instead.",
+      `Analysis fact '${field}' is no longer supported. Use ${replacement} instead.`,
       lineno,
       colno,
       originNode || undefined
@@ -715,32 +728,32 @@ class CompileAnalysis {
     analysis.observedChains = usage.observedChains.size > 0 ? usage.observedChains : null;
     analysis.usedChains = usage.usedChains.size > 0 ? usage.usedChains : null;
     analysis.mutatedChains = usage.mutatedChains.size > 0 ? usage.mutatedChains : null;
-    const chainsFromParent = this._deriveChainsFromParent(usage, declaredHere);
-    const hasCustomLinkedChains = !!(
+    const scopeChainsFromParent = this._deriveChainsFromParent(usage, declaredHere);
+    const hasCustomBoundaryLinkedChains = !!(
       postAnalysisFacts &&
-      Object.prototype.hasOwnProperty.call(postAnalysisFacts, 'linkedChains')
+      Object.prototype.hasOwnProperty.call(postAnalysisFacts, 'boundaryLinkedChains')
     );
-    const hasCustomLinkedMutatedChains = !!(
+    const hasCustomBoundaryLinkedMutatedChains = !!(
       postAnalysisFacts &&
-      Object.prototype.hasOwnProperty.call(postAnalysisFacts, 'linkedMutatedChains')
+      Object.prototype.hasOwnProperty.call(postAnalysisFacts, 'boundaryLinkedMutatedChains')
     );
-    analysis.observedChainsFromParent = chainsFromParent.observedChains.size > 0 ? chainsFromParent.observedChains : null;
-    analysis.usedChainsFromParent = chainsFromParent.usedChains.size > 0 ? chainsFromParent.usedChains : null;
-    analysis.mutatedChainsFromParent = chainsFromParent.mutatedChains.size > 0 ? chainsFromParent.mutatedChains : null;
-    if (!hasCustomLinkedChains) {
-      analysis.linkedChains = this._deriveBoundaryLinkedChains(analysis, chainsFromParent.usedChains);
+    analysis.observedChainsFromParent = scopeChainsFromParent.observedChains.size > 0 ? scopeChainsFromParent.observedChains : null;
+    analysis.usedChainsFromParent = scopeChainsFromParent.usedChains.size > 0 ? scopeChainsFromParent.usedChains : null;
+    analysis.mutatedChainsFromParent = scopeChainsFromParent.mutatedChains.size > 0 ? scopeChainsFromParent.mutatedChains : null;
+    if (!hasCustomBoundaryLinkedChains) {
+      analysis.boundaryLinkedChains = this._deriveBoundaryLinkedChains(analysis, scopeChainsFromParent.usedChains);
     }
-    if (!hasCustomLinkedMutatedChains) {
-      analysis.linkedMutatedChains = this._deriveBoundaryLinkedChains(analysis, chainsFromParent.mutatedChains);
+    if (!hasCustomBoundaryLinkedMutatedChains) {
+      analysis.boundaryLinkedMutatedChains = this._deriveBoundaryLinkedChains(analysis, scopeChainsFromParent.mutatedChains);
     }
-    analysis.linkedChains = this._normalizeChainSet(analysis.linkedChains, 'linkedChains', analysis);
-    analysis.linkedMutatedChains = this._normalizeChainSet(analysis.linkedMutatedChains, 'linkedMutatedChains', analysis);
+    analysis.boundaryLinkedChains = this._normalizeChainSet(analysis.boundaryLinkedChains, 'boundaryLinkedChains', analysis);
+    analysis.boundaryLinkedMutatedChains = this._normalizeChainSet(analysis.boundaryLinkedMutatedChains, 'boundaryLinkedMutatedChains', analysis);
     this._finalizeBufferCreation(analysis);
     return this._getPropagatedChainUsage(
       analysis,
       localObserves,
       localMutates,
-      chainsFromParent
+      scopeChainsFromParent
     );
   }
 
@@ -791,9 +804,11 @@ class CompileAnalysis {
     return parentUsage;
   }
 
-  _getPropagatedChainUsage(analysis, localObserves, localMutates, chainsFromParent) {
+  _getPropagatedChainUsage(analysis, localObserves, localMutates, scopeChainsFromParent) {
     // This is the read-only footprint this node contributes to its parent,
     // not the parent-visible footprint this node consumes from its parent.
+    // Returning an empty aggregate at scope boundaries makes parent aggregates
+    // cover only the current span between nested boundaries.
     if (analysis.scopeBoundary) {
       const nodeType = analysis.node && analysis.node.typename;
       const isMethodOrBlockBoundary = nodeType === 'Block' || nodeType === 'MethodDefinition';
@@ -809,7 +824,7 @@ class CompileAnalysis {
       });
       return this._deriveChainsFromParent(parentUsage, analysis.declaredChains);
     }
-    return chainsFromParent;
+    return scopeChainsFromParent;
   }
 
   _deriveBoundaryLinkedChains(analysis, chainsFromParent) {
@@ -897,8 +912,8 @@ class CompileAnalysis {
   _finalizeBufferCreation(analysis) {
     analysis.createsLinkedChildBuffer = this._shouldCreateLinkedChildBuffer(analysis);
     if (!this._createsLinkableChildBuffer(analysis)) {
-      analysis.linkedChains = null;
-      analysis.linkedMutatedChains = null;
+      analysis.boundaryLinkedChains = null;
+      analysis.boundaryLinkedMutatedChains = null;
     }
   }
 
@@ -909,7 +924,7 @@ class CompileAnalysis {
     if (!analysis.expressionControlFlowBoundary) {
       return true;
     }
-    return analysis.linkedMutatedChains !== null;
+    return analysis.boundaryLinkedMutatedChains !== null;
   }
 
   _createsLinkableChildBuffer(analysis) {

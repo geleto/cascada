@@ -255,8 +255,8 @@ describe('chain.finalSnapshot', function () {
     });
 
     it('rejects duplicate linked lane metadata', function () {
-      expect(() => new CommandBuffer(context, null, ['text', 'text'], null, null, TEST_DIAGNOSTIC_CONTEXT)).to.throwError(/linkedChains contains duplicate chain 'text'/);
-      expect(() => new CommandBuffer(context, null, [42], null, null, TEST_DIAGNOSTIC_CONTEXT)).to.throwError(/linkedChains contains a non-string chain name/);
+      expect(() => new CommandBuffer(context, null, ['text', 'text'], null, null, TEST_DIAGNOSTIC_CONTEXT)).to.throwError(/boundaryLinkedChains contains duplicate chain 'text'/);
+      expect(() => new CommandBuffer(context, null, [42], null, null, TEST_DIAGNOSTIC_CONTEXT)).to.throwError(/boundaryLinkedChains contains a non-string chain name/);
     });
 
     it('treats repeated lane creation as an invariant failure', function () {
@@ -282,7 +282,7 @@ describe('chain.finalSnapshot', function () {
         throw new Error('expected invalid linked chain metadata to fail');
       } catch (err) {
         expect(err.name).to.be('RuntimeError');
-        expect(err.message).to.contain('linkedChains must be an array when provided');
+        expect(err.message).to.contain('boundaryLinkedChains must be an array when provided');
       }
     });
 
@@ -293,12 +293,12 @@ describe('chain.finalSnapshot', function () {
       declareBufferChain(parent, 'data', 'data', context, null);
 
       const constructedChild = new CommandBuffer(context, null, ['text'], parent, ['text'], TEST_DIAGNOSTIC_CONTEXT);
-      expect(constructedChild.isLinkedMutatedChain('text')).to.be(true);
+      expect(constructedChild.isBoundaryLinkedMutatedChain('text')).to.be(true);
 
       const lateLinkedChild = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       linkInheritanceCallableFootprintChains(parent, lateLinkedChild, ['text', 'data'], ['data'], TEST_EC);
-      expect(lateLinkedChild.isLinkedMutatedChain('text')).to.be(false);
-      expect(lateLinkedChild.isLinkedMutatedChain('data')).to.be(true);
+      expect(lateLinkedChild.isBoundaryLinkedMutatedChain('text')).to.be(false);
+      expect(lateLinkedChild.isBoundaryLinkedMutatedChain('data')).to.be(true);
     });
 
     it('links a child to an already-finished parent chain without structural insertion', function () {

@@ -29,8 +29,8 @@ mutatedChains: null,
 observedChainsFromParent: null,
 usedChainsFromParent: null,
 mutatedChainsFromParent: null,
-linkedChains: null,
-linkedMutatedChains: null
+boundaryLinkedChains: null,
+boundaryLinkedMutatedChains: null
 ```
 
 The old overloads were:
@@ -66,7 +66,7 @@ usedChains
 observedChainsFromParent
 mutatedChainsFromParent
 usedChainsFromParent
-linkedChains
+boundaryLinkedChains
 ```
 
 `usedChains` is maintained as broad compatibility metadata during finalization, with this semantic meaning:
@@ -84,7 +84,7 @@ Use three distinct layers:
 ```text
 owned classification: observedChains / mutatedChains
 parent classification: observedChainsFromParent / mutatedChainsFromParent
-parent placement: linkedChains
+parent placement: boundaryLinkedChains
 ```
 
 `observedChainsFromParent` and `mutatedChainsFromParent` are the shadowing-safe facts a parent scheduler should use when deciding whether a child buffer lane is observable, mutable, or mixed. They are the owned facts minus locally declared chain names:
@@ -97,19 +97,19 @@ usedChainsFromParent     = usedChains minus locally declared chains
 
 This matters because a child can declare local `x` while the parent also has a lane named `x`. Raw `child.observedChains.has("x")` would then be a false positive for the parent lane. Either use these `*FromParent` facts or move to true resolved chain identities everywhere; do not use raw name membership across a parent/child boundary.
 
-`linkedChains` decides whether the child buffer is inserted into a parent lane. It is derived from `usedChainsFromParent` for linkable child buffers:
+`boundaryLinkedChains` decides whether the child buffer is inserted into a parent lane. It is derived from `usedChainsFromParent` for linkable child buffers:
 
 ```text
-linkedChains = parent-visible projection of usedChainsFromParent
+boundaryLinkedChains = parent-visible projection of usedChainsFromParent
 ```
 
-Do not add `linkedObservedChains` as a scheduler input. Parent phase classification uses `observedChainsFromParent` / `mutatedChainsFromParent`; parent placement uses `linkedChains`. If existing code still needs `linkedMutatedChains` during migration, keep it as a temporary compatibility field derived from `mutatedChainsFromParent`, then remove or rename it when the command-buffer scheduler consumes the new facts directly.
+Do not add `linkedObservedChains` as a scheduler input. Parent phase classification uses `observedChainsFromParent` / `mutatedChainsFromParent`; parent placement uses `boundaryLinkedChains`. If existing code still needs `boundaryLinkedMutatedChains` during migration, keep it as a temporary compatibility field derived from `mutatedChainsFromParent`, then remove or rename it when the command-buffer scheduler consumes the new facts directly.
 
-The current implementation carries placement to runtime through `linkedChains`
-and the temporary `linkedMutatedChains` compatibility bridge. It does not emit a
+The current implementation carries placement to runtime through `boundaryLinkedChains`
+and the temporary `boundaryLinkedMutatedChains` compatibility bridge. It does not emit a
 runtime `linkedObservedChains`; scheduler work that needs read-only
 classification should consume `observedChainsFromParent` from analysis, with
-`linkedChains` remaining only the placement set.
+`boundaryLinkedChains` remaining only the placement set.
 
 ## Producer Classification
 
@@ -188,9 +188,9 @@ Do not use broad `usedChains` for scheduler phase classification.
 3. Migrate producer sites in the classification table by emitted runtime behavior.
 4. Keep `declares`, `declaresInParent`, and finalized `declaredChains` unchanged.
 5. Preserve `usedChains` / `usedChainsFromParent` as broad compatibility footprints with semantics equivalent to observed + mutated + declared names.
-6. Derive `linkedChains` from `usedChainsFromParent`.
-7. Keep `linkedMutatedChains` only as a compatibility bridge if current emit/runtime paths still need it; do not introduce `linkedObservedChains`.
-8. Future scheduler work should consume placement via `linkedChains` and phase classification from `observedChainsFromParent` / `mutatedChainsFromParent` (or owned `observedChains` / `mutatedChains` for local starts). The current runtime construction keeps only `linkedChains` and temporary `linkedMutatedChains` metadata.
+6. Derive `boundaryLinkedChains` from `usedChainsFromParent`.
+7. Keep `boundaryLinkedMutatedChains` only as a compatibility bridge if current emit/runtime paths still need it; do not introduce `linkedObservedChains`.
+8. Future scheduler work should consume placement via `boundaryLinkedChains` and phase classification from `observedChainsFromParent` / `mutatedChainsFromParent` (or owned `observedChains` / `mutatedChains` for local starts). The current runtime construction keeps only `boundaryLinkedChains` and temporary `boundaryLinkedMutatedChains` metadata.
 
 ## Focused Tests
 
@@ -201,7 +201,7 @@ Do not use broad `usedChains` for scheduler phase classification.
 - local declarations are removed from `observedChainsFromParent`, `mutatedChainsFromParent`, and `usedChainsFromParent`
 - parent scheduling classifies child lanes from `observedChainsFromParent` / `mutatedChainsFromParent`, not raw child facts
 - local-name shadowing does not make a child-local lane visible as a parent lane
-- `linkedChains` controls placement only and is derived from `usedChainsFromParent`
+- `boundaryLinkedChains` controls placement only and is derived from `usedChainsFromParent`
 - owned `start(chainName)` classification sees local observed/mutated facts even when the chain is not parent-visible
 - derived `usedChains` equals the old `usedChains` footprint on a representative script/template corpus
 - derived `usedChainsFromParent` equals the old `usedChainsFromParent` footprint on the same corpus

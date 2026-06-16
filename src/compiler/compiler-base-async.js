@@ -199,8 +199,8 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   compileInlineIf(node) {
-    const hasLinkedMutations = node._analysis.linkedMutatedChains !== null;
-    if (hasLinkedMutations) {
+    const hasBoundaryLinkedMutations = node._analysis.boundaryLinkedMutatedChains !== null;
+    if (hasBoundaryLinkedMutations) {
       this.boundaries.compileExpressionControlFlowBoundary(this.buffer, node, function() {
         this.emit('return runtime.resolveThen(');
         this.compile(node.cond, null);
@@ -528,8 +528,8 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   _compileAsyncBinOpShortCircuit(node, isOr) {
-    const hasLinkedMutations = node._analysis.linkedMutatedChains !== null;
-    if (hasLinkedMutations) {
+    const hasBoundaryLinkedMutations = node._analysis.boundaryLinkedMutatedChains !== null;
+    if (hasBoundaryLinkedMutations) {
       this.boundaries.compileExpressionControlFlowBoundary(this.buffer, node, function() {
         this.emit('return runtime.resolveThen(');
         this.compile(node.left, null);

@@ -43,22 +43,22 @@ function createInheritanceCallableArgumentFrame(
   return argumentFrame;
 }
 
-function linkInheritanceCallableFootprintChains(parentBuffer, currentBuffer, chainNames, linkedMutatedChainNames = null, errorContext) {
+function linkInheritanceCallableFootprintChains(parentBuffer, currentBuffer, boundaryLinkedChainNames, boundaryLinkedMutatedChainNames = null, errorContext) {
   if (parentBuffer === currentBuffer) {
     return currentBuffer;
   }
 
-  const linkedMutatedChainSet = new Set(linkedMutatedChainNames || []);
-  const markLinkedMutation = (chainName) => {
-    if (linkedMutatedChainSet.has(chainName)) {
-      currentBuffer._markLinkedMutatedChain(chainName);
+  const boundaryLinkedMutatedChainSet = new Set(boundaryLinkedMutatedChainNames || []);
+  const markBoundaryLinkedMutation = (chainName) => {
+    if (boundaryLinkedMutatedChainSet.has(chainName)) {
+      currentBuffer._markBoundaryLinkedMutatedChain(chainName);
     }
   };
 
-  for (const chainName of chainNames) {
+  for (const chainName of boundaryLinkedChainNames) {
     const chain = parentBuffer.getChain(chainName);
     if (currentBuffer.getChainIfExists(chainName) === chain) {
-      markLinkedMutation(chainName);
+      markBoundaryLinkedMutation(chainName);
       continue;
     }
     if (currentBuffer.hasChain(chainName)) {
@@ -69,11 +69,11 @@ function linkInheritanceCallableFootprintChains(parentBuffer, currentBuffer, cha
     }
     if (parentBuffer.isChainFinished(chainName) || parentBuffer.isFinished()) {
       currentBuffer._installLinkedChain(chainName, chain);
-      markLinkedMutation(chainName);
+      markBoundaryLinkedMutation(chainName);
       continue;
     }
     parentBuffer.addBuffer(currentBuffer, chainName);
-    markLinkedMutation(chainName);
+    markBoundaryLinkedMutation(chainName);
   }
 
   return currentBuffer;

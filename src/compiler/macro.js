@@ -42,7 +42,7 @@ class CompileMacro {
     const invocationBufferId = compiler._tmpid();
     const invocationFinishedId = compiler._tmpid();
     const invocationResultId = compiler._tmpid();
-    compiler.emit.line(`let ${invocationBufferId} = new runtime.CommandBuffer(context, ${activeContext.allCallersBufferId}, ${activeContext.rawCallerVar}.__callerLinkedChains || null, null, ${activeContext.rawCallerVar}.__callerLinkedMutatedChains || null, ${callerBufferStackErrorContext}, null, renderState);`);
+    compiler.emit.line(`let ${invocationBufferId} = new runtime.CommandBuffer(context, ${activeContext.allCallersBufferId}, ${activeContext.rawCallerVar}.__callerBoundaryLinkedChains || null, null, ${activeContext.rawCallerVar}.__callerBoundaryLinkedMutatedChains || null, ${callerBufferStackErrorContext}, null, renderState);`);
     compiler.emit.line(`let ${invocationFinishedId} = ${invocationBufferId}.getFinishedPromise();`);
     compiler.emit.line(`${bufferId}.addCommand(new runtime.WaitResolveCommand({ chainName: "${CALLER_SCHED_CHAIN_NAME}", args: [${invocationFinishedId}], errorContext: ${compiler.emitErrorContext(node)} }), "${CALLER_SCHED_CHAIN_NAME}");`);
     compiler.emit.line(`let ${invocationResultId} = runtime.finallyValue(runtime.invokeMacro(${activeContext.rawCallerVar}, context, ${argsId}, ${invocationBufferId}), () => ${invocationBufferId}.finish());`);
@@ -84,20 +84,20 @@ class CompileMacro {
     };
   }
 
-  _getCallerLinkedChains(node) {
-    const linkedChains = node._analysis.linkedChains;
-    if (!linkedChains) {
+  _getCallerBoundaryLinkedChains(node) {
+    const boundaryLinkedChains = node._analysis.boundaryLinkedChains;
+    if (!boundaryLinkedChains) {
       return [];
     }
-    return Array.from(linkedChains);
+    return Array.from(boundaryLinkedChains);
   }
 
-  _getCallerLinkedMutatedChains(node) {
-    const linkedMutatedChains = node._analysis.linkedMutatedChains;
-    if (!linkedMutatedChains) {
+  _getCallerBoundaryLinkedMutatedChains(node) {
+    const boundaryLinkedMutatedChains = node._analysis.boundaryLinkedMutatedChains;
+    if (!boundaryLinkedMutatedChains) {
       return [];
     }
-    return Array.from(linkedMutatedChains);
+    return Array.from(boundaryLinkedMutatedChains);
   }
 
   compileCaller(node) {
@@ -109,10 +109,10 @@ class CompileMacro {
 
   _compileAsyncCaller(node) {
     const funcId = this._compileAsyncMacro(node);
-    const callerLinkedChains = this._getCallerLinkedChains(node);
-    const callerLinkedMutatedChains = this._getCallerLinkedMutatedChains(node);
-    this.compiler.emit.line(`${funcId}.__callerLinkedChains = ${JSON.stringify(callerLinkedChains)};`);
-    this.compiler.emit.line(`${funcId}.__callerLinkedMutatedChains = ${JSON.stringify(callerLinkedMutatedChains)};`);
+    const callerBoundaryLinkedChains = this._getCallerBoundaryLinkedChains(node);
+    const callerBoundaryLinkedMutatedChains = this._getCallerBoundaryLinkedMutatedChains(node);
+    this.compiler.emit.line(`${funcId}.__callerBoundaryLinkedChains = ${JSON.stringify(callerBoundaryLinkedChains)};`);
+    this.compiler.emit.line(`${funcId}.__callerBoundaryLinkedMutatedChains = ${JSON.stringify(callerBoundaryLinkedMutatedChains)};`);
     return funcId;
   }
 
@@ -243,7 +243,7 @@ class CompileMacro {
     // all-callers buffer so multiple invocations can schedule independently.
     compiler.emit(`(${rawCallerVar} && ${rawCallerVar}.isMacro ? function() {`);
     compiler.emit(`let ${invocationArgsId} = Array.prototype.slice.call(arguments);`);
-    compiler.emit(`let ${invocationBufferId} = new runtime.CommandBuffer(context, ${allCallersBufferId}, ${rawCallerVar}.__callerLinkedChains || null, null, ${rawCallerVar}.__callerLinkedMutatedChains || null, ${callerBufferStackErrorContext}, null, renderState);`);
+    compiler.emit(`let ${invocationBufferId} = new runtime.CommandBuffer(context, ${allCallersBufferId}, ${rawCallerVar}.__callerBoundaryLinkedChains || null, null, ${rawCallerVar}.__callerBoundaryLinkedMutatedChains || null, ${callerBufferStackErrorContext}, null, renderState);`);
     compiler.emit(`let ${invocationFinishedId} = ${invocationBufferId}.getFinishedPromise();`);
     compiler.emit(`${bufferId}.addCommand(new runtime.WaitResolveCommand({ chainName: "${CALLER_SCHED_CHAIN_NAME}", args: [${invocationFinishedId}], errorContext: ${compiler.emitErrorContext(positionNode)} }), "${CALLER_SCHED_CHAIN_NAME}");`);
     // __caller__ timing is owned only by caller invocation code. Track both:
@@ -272,7 +272,7 @@ class CompileMacro {
     compiler.emit.line(`if (${rawCallerVar} && ${rawCallerVar}.isMacro) {`);
     // The all-callers buffer is parent-linked because caller() may emit
     // parent-visible observable commands, unlike the isolated macro buffer.
-    compiler.emit.line(`  ${allCallersBufferId} = new runtime.CommandBuffer(context, macroParentBuffer, ${rawCallerVar}.__callerLinkedChains || null, null, ${rawCallerVar}.__callerLinkedMutatedChains || null, ${callerBufferStackErrorContext}, macroParentBuffer, renderState);`);
+    compiler.emit.line(`  ${allCallersBufferId} = new runtime.CommandBuffer(context, macroParentBuffer, ${rawCallerVar}.__callerBoundaryLinkedChains || null, null, ${rawCallerVar}.__callerBoundaryLinkedMutatedChains || null, ${callerBufferStackErrorContext}, macroParentBuffer, renderState);`);
     compiler.emit.line('}');
   }
 

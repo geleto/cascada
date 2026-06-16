@@ -322,7 +322,7 @@ The compiler wraps async work in boundary helpers ([`src/runtime/async-boundarie
 Used for expressions that return a value to an awaiting expression consumer. The generated body returns value-or-thenable and is shaped:
 
 ```js
-runtime.runValueBoundary(parentBuffer, linkedChains, linkedMutatedChains, (currentBuffer) => {
+runtime.runValueBoundary(parentBuffer, boundaryLinkedChains, boundaryLinkedMutatedChains, (currentBuffer) => {
   try {
     let result = /* emitted expression */;
     return runtime.thenValue(result, (value) => value, (e) => {

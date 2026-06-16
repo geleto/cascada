@@ -119,7 +119,7 @@ Note: "without linked parent mutations" is narrower than "contains no
 sequencing." A sequence path read can still run through this shape when it only
 observes an existing ordered path. If the inline-if condition or selected branch
 mutates a parent-owned ordered path, for example through a `!` sequence call,
-analysis sets `linkedMutatedChains` and the expression uses the value-boundary
+analysis sets `boundaryLinkedMutatedChains` and the expression uses the value-boundary
 path covered by Pass 4 instead.
 
 Tests:
@@ -145,7 +145,7 @@ already a value/thenable boundary.
 
 As with inline-if, sequence reads can still be present here. Sequence calls or
 other parent-owned command mutations are excluded from this pass by
-`linkedMutatedChains` and stay on the value-boundary path.
+`boundaryLinkedMutatedChains` and stay on the value-boundary path.
 
 Tests:
 
