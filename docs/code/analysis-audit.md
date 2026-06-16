@@ -42,11 +42,11 @@ as the guard bug.
 Before this item was implemented, branch and loop poison target sets were
 derived from read+write facts:
 
-- `postAnalyzeIf` uses `getChainsUsedFromParent(node.body)` plus else branch
+- `postAnalyzeIf` used `getChainsUsedFromParent(node.body)` plus else branch
   ([compiler-async.js](../../src/compiler/compiler-async.js#L385)).
-- `postAnalyzeSwitch` unions `getChainsUsedFromParent(case.body)` / default
+- `postAnalyzeSwitch` unioned `getChainsUsedFromParent(case.body)` / default
   ([compiler-async.js](../../src/compiler/compiler-async.js#L278)).
-- `postAnalyzeWhile` uses `getChainsUsedFromParent(node.body)`
+- `postAnalyzeWhile` used `getChainsUsedFromParent(node.body)`
   ([compiler-async.js](../../src/compiler/compiler-async.js#L215)).
 - `loop.js` passed `bodyChains` / `elseChains`, also from
   `getChainsUsedFromParent(...)`, into `runtime.iterate(...)`
@@ -115,9 +115,9 @@ end.
 - **Per-construct "written -> still poisoned" regressions.** Existing suite
   coverage already exercises preserved write poisoning for branch/loop effects,
   so this is optional unless future churn touches this surface again.
-- **(noted, no action)** For `while`, body mutated-from-parent is computed twice
-  (`postAnalyzeWhile` and `loop.js`) and the runtime `bodyPoisonChains` likely
-  rarely fires for `while`. Compile-time, once-per-node, harmless - left as-is.
+- **Resolved during later cleanup:** branch and loop compile paths now compute
+  skipped-region poison targets directly from `mutatedChainsFromParent`; there
+  is no stored `postAnalyze*` poison-target fact to keep in sync.
 
 ---
 

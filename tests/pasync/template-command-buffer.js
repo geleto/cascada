@@ -235,6 +235,22 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       });
     });
 
+    it('should reject legacy custom uses facts', function () {
+      const opts = {
+        asyncMode: true,
+        scriptMode: false,
+        idPool: createIdPool()
+      };
+      const compiler = new CompilerAsync('legacy-uses-facts.njk', opts);
+      const ast = transform(parse('{% if true %}x{% endif %}', [], opts), [], 'legacy-uses-facts.njk', opts);
+      compiler.postAnalyzeIf = () => ({ uses: ['x'] });
+
+      expect(() => compiler.analysis.run(ast)).to.throwException((err) => {
+        expect(err.message).to.contain("Analysis fact 'uses' is no longer supported");
+        expect(err.message).to.contain("'observes', 'mutates', or 'declares'");
+      });
+    });
+
     it('should keep source-order declarations separate from finalized declarations', function () {
       const ast = analyzeScriptSource(
         'var before = someVar\n' +
@@ -347,7 +363,6 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       expect(Array.from(ifNode.else_._analysis.usedChainsFromParent || [])).to.eql([]);
       expect(Array.from(whileNode._analysis.usedChainsFromParent || [])).to.eql(['flag']);
       expect(Array.from(whileNode.body._analysis.usedChainsFromParent || [])).to.eql([]);
-      expect(whileNode._analysis.poisonTargetChains).to.eql([]);
       expect(Array.from(callerNode._analysis.usedChainsFromParent || [])).to.eql(['value']);
       expect(Array.from(guardNode.body._analysis.usedChainsFromParent || [])).to.eql(['result']);
       expect(Array.from(recoveryNode._analysis.usedChainsFromParent || [])).to.eql(['result']);
@@ -374,8 +389,6 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
       expect(Array.from(caseNode.body._analysis.mutatedChainsFromParent || [])).to.eql([]);
       expect(Array.from(switchNode.default._analysis.mutatedChainsFromParent || [])).to.eql([]);
       expect(Array.from(whileNode.body._analysis.mutatedChainsFromParent || [])).to.eql([]);
-      expect(switchNode._analysis.poisonTargetChains).to.eql([]);
-      expect(whileNode._analysis.poisonTargetChains).to.eql([]);
     });
 
     it('should remove local declarations from parent-visible observed and mutated facts', function () {

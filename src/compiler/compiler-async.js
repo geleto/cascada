@@ -172,12 +172,6 @@ class CompilerAsync extends CompilerBaseAsync {
     return { wantsLinkedChildBuffer: true };
   }
 
-  postAnalyzeWhile(node) {
-    return {
-      poisonTargetChains: this._getSkippedRegionPoisonChains([node.body])
-    };
-  }
-
   analyzeFor(node, analysisPass) {
     node.arr.addAnalysis({ errorContextLabel: 'For.Iterator' });
     if (node.concurrentLimit) {
@@ -214,17 +208,11 @@ class CompilerAsync extends CompilerBaseAsync {
     return { wantsLinkedChildBuffer: true };
   }
 
-  postAnalyzeSwitch(node) {
-    return {
-      poisonTargetChains: this._getSkippedRegionPoisonChains(
-        [...node.cases.map(c => c.body), node.default]
-      )
-    };
-  }
-
   compileSwitch(node) {
     this.boundaries.compileAsyncControlFlowBoundary(this.buffer, node, () => {
-      const poisonTargetChains = node._analysis.poisonTargetChains;
+      const poisonTargetChains = this._getSkippedRegionPoisonChains(
+        [...node.cases.map(c => c.body), node.default]
+      );
       const switchResultId = this._tmpid();
       const hasDynamicCases = node.cases.some((c) => !(c.cond instanceof nodes.Literal));
 
@@ -400,15 +388,9 @@ class CompilerAsync extends CompilerBaseAsync {
     return this.analyzeIf(node);
   }
 
-  postAnalyzeIf(node) {
-    return {
-      poisonTargetChains: this._getSkippedRegionPoisonChains([node.body, node.else_])
-    };
-  }
-
   compileIf(node) {
     this.boundaries.compileAsyncControlFlowBoundary(this.buffer, node, () => {
-      const poisonTargetChains = node._analysis.poisonTargetChains;
+      const poisonTargetChains = this._getSkippedRegionPoisonChains([node.body, node.else_]);
       const condResultId = this._tmpid();
 
       this.emit('return runtime.consumeControlFlowValue(');

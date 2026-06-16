@@ -11,10 +11,11 @@ The problem to solve here is that the analysis pass already computes a filtered
 upward aggregate, but the stored per-node `usedChains` and `mutatedChains`
 values are saved before that filtering.
 
-Today `_finalizeOutputUsage(...)` starts from direct node facts:
+Today chain-usage finalization starts from direct node facts:
 
-- `analysis.uses`
+- `analysis.observes`
 - `analysis.mutates`
+- `analysis.declares`
 
 It merges child aggregates into a local aggregate. Before returning that
 aggregate to the parent, it already applies two important rules:

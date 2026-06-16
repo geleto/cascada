@@ -20,23 +20,29 @@ Today `usedChains` is overloaded. It includes non-mutating lane participation, m
 ```js
 declares: [],
 declaresInParent: [],
-uses: [],
+observes: [],
 mutates: [],
 declaredChains: null,
+observedChains: null,
 usedChains: null,
 mutatedChains: null,
+observedChainsFromParent: null,
 usedChainsFromParent: null,
 mutatedChainsFromParent: null,
 linkedChains: null,
 linkedMutatedChains: null
 ```
 
-The main overloads are:
+The old overloads were:
 
-- AST analyzers push broad facts into `uses`.
+- AST analyzers pushed broad facts into `uses`.
 - Mutating facts are pushed into `mutates`.
 - `_addChainMutation(...)` adds to both `usedChains` and `mutatedChains`.
-- `analyzeChainDeclaration(...)` returns `uses: [name]`, even though declaration is not a runtime observation.
+- `analyzeChainDeclaration(...)` returned `uses: [name]`, even though declaration is not a runtime observation.
+
+The implementation no longer has a `uses` authoring path. Producers classify
+their local facts directly as `observes`, `mutates`, or `declares`; broad
+`usedChains` is derived during finalization.
 
 `declares`, `declaresInParent`, and finalized `declaredChains` already exist. `declaresInParent` is declaration-placement plumbing, not scheduler capability metadata, and should stay out of the command-buffer scheduler plan.
 
@@ -107,7 +113,9 @@ classification should consume `observedChainsFromParent` from analysis, with
 
 ## Producer Classification
 
-The risky migration is every current `{ uses, mutates }` producer. Do not mechanically rename `uses` to `observes`. Classify by emitted runtime behavior:
+The risky migration was every old `{ uses, mutates }` producer. Do not
+mechanically classify broad participation as `observes`; classify by emitted
+runtime behavior:
 
 | Current producer | Target facts |
 | --- | --- |
@@ -159,7 +167,8 @@ mutation helpers, and finalized declarations add their names directly to
 `usedChains`. This keeps current source-order behavior without reintroducing
 declarations as scheduler observations.
 
-Do not switch `usedChains` to derived mode until every producer site has been migrated from `uses` to either `observes`, `mutates`, `declares`, or an explicit non-scheduler compatibility fact. During migration, keep the old `uses` path as a compatibility source and gate the final flip behind parity tests.
+`usedChains` is derived from observations, mutations, and finalized
+declarations. New producer sites should not author broad-use facts directly.
 
 ## Validation
 
@@ -174,16 +183,14 @@ Do not use broad `usedChains` for scheduler phase classification.
 
 ## Migration Plan
 
-1. Add `observes: []`, finalized `observedChains`, and finalized `observedChainsFromParent` alongside the existing fields.
-2. Keep `uses` temporarily so current consumers remain stable while producer sites are migrated.
-3. Add helper accessors for `observedChainsFromParent` and `mutatedChainsFromParent`.
-4. Migrate the producer sites in the classification table, deciding each old `uses` entry deliberately.
-5. Keep `declares`, `declaresInParent`, and finalized `declaredChains` unchanged.
-6. Preserve `usedChains` / `usedChainsFromParent` as broad compatibility footprints with semantics equivalent to observed + mutated + declared names.
-7. Derive `linkedChains` from `usedChainsFromParent`.
-8. Keep `linkedMutatedChains` only as a compatibility bridge if current emit/runtime paths still need it; do not introduce `linkedObservedChains`.
-9. Future scheduler work should consume placement via `linkedChains` and phase classification from `observedChainsFromParent` / `mutatedChainsFromParent` (or owned `observedChains` / `mutatedChains` for local starts). The current runtime construction keeps only `linkedChains` and temporary `linkedMutatedChains` metadata.
-10. Remove the old `uses` authoring path after parity tests prove broad footprint behavior is preserved.
+1. Add `observes: []`, finalized `observedChains`, and finalized `observedChainsFromParent` alongside mutation facts.
+2. Add helper accessors for `observedChainsFromParent` and `mutatedChainsFromParent`.
+3. Migrate producer sites in the classification table by emitted runtime behavior.
+4. Keep `declares`, `declaresInParent`, and finalized `declaredChains` unchanged.
+5. Preserve `usedChains` / `usedChainsFromParent` as broad compatibility footprints with semantics equivalent to observed + mutated + declared names.
+6. Derive `linkedChains` from `usedChainsFromParent`.
+7. Keep `linkedMutatedChains` only as a compatibility bridge if current emit/runtime paths still need it; do not introduce `linkedObservedChains`.
+8. Future scheduler work should consume placement via `linkedChains` and phase classification from `observedChainsFromParent` / `mutatedChainsFromParent` (or owned `observedChains` / `mutatedChains` for local starts). The current runtime construction keeps only `linkedChains` and temporary `linkedMutatedChains` metadata.
 
 ## Focused Tests
 

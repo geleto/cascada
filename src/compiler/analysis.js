@@ -99,6 +99,7 @@ class CompileAnalysis {
     this._forEachNode(node, (currentNode, currentParentNode, currentParentField) => {
       const analysis = this._initializeAnalysis(currentNode, currentParentNode, currentParentField);
       this._analyzeNode(currentNode);
+      this._validateAnalysisFacts(analysis);
       this.compiler._generateErrorContext(currentNode);
       this._recordDeclarations(analysis);
       this._validateObservations(analysis);
@@ -151,9 +152,6 @@ class CompileAnalysis {
       declares: [],
       declaresInParent: [],
       observes: [],
-      // Legacy/custom compatibility authoring path; first-party producers
-      // should write observes instead.
-      uses: [],
       mutates: [],
       // First-pass source-order lookup table. This is intentionally separate
       // from finalized scope ownership in `declaredChains`.
@@ -543,6 +541,21 @@ class CompileAnalysis {
     );
   }
 
+  _validateAnalysisFacts(analysis) {
+    if (!Object.prototype.hasOwnProperty.call(analysis, 'uses')) {
+      return;
+    }
+    const originNode = analysis.node || null;
+    const lineno = originNode && originNode.lineno;
+    const colno = originNode && originNode.colno;
+    this.compiler.fail(
+      "Analysis fact 'uses' is no longer supported. Use 'observes', 'mutates', or 'declares' instead.",
+      lineno,
+      colno,
+      originNode || undefined
+    );
+  }
+
   _validateMutations(analysis) {
     const scopeOwner = this._getScopeOwner(analysis);
     const currentTextChain = this.getCurrentTextChain(analysis);
@@ -576,7 +589,7 @@ class CompileAnalysis {
 
   _validateObservations(analysis) {
     const currentTextChain = this.getCurrentTextChain(analysis);
-    const localObserves = analysis.observes.concat(analysis.uses);
+    const localObserves = analysis.observes;
     for (let i = 0; i < localObserves.length; i++) {
       const name = localObserves[i];
       if (this._shouldSkipChainAccessValidation(name, currentTextChain)) {
@@ -678,9 +691,10 @@ class CompileAnalysis {
     const postAnalysisFacts = this._postAnalyzeNode(node);
     if (postAnalysisFacts) {
       node.addAnalysis(postAnalysisFacts);
+      this._validateAnalysisFacts(analysis);
     }
 
-    const localObserves = analysis.observes.concat(analysis.uses);
+    const localObserves = analysis.observes;
     const localMutates = analysis.mutates;
     const usage = this._createChainUsageAggregate();
 

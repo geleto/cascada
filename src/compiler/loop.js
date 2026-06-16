@@ -63,7 +63,9 @@ class CompileLoop {
       const loopBodyFuncId = this.compiler._tmpid();
       this.compiler.emit(`let ${loopBodyFuncId} = `);
       const hasConcurrentLimit = node.concurrentLimit !== null;
-      const whilePoisonTargetChains = whileConditionNode ? node._analysis.poisonTargetChains : [];
+      const whilePoisonTargetChains = whileConditionNode
+        ? this.compiler._getSkippedRegionPoisonChains([node.body])
+        : [];
       this._compileAsyncLoopBody(
         node,
         loopVars,
