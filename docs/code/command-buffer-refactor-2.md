@@ -15,14 +15,14 @@ cmd.apply(chain); // currently reached through chain._applyCommand(cmd)
 to command-like phase methods:
 
 ```js
-entry.observe(chainName);
-entry.mutate(chainName);
+entry.observe(chain);
+entry.mutate(chain);
 ```
 
 Mixed child buffers use a composite child-buffer path:
 
 ```js
-entry.iterate(chainName, observerState);
+entry.iterate(chain, observerState);
 ```
 
 The execution model remains the same:
@@ -49,25 +49,32 @@ Phase completions are not result promises. Do not force-wrap resolved phase comp
 
 ## Capabilities
 
-This plan depends on [chain-facts-refactor.md](./chain-facts-refactor.md). That refactor separates phase-driving observations from broad chain usage:
+This plan depends on [chain-facts-refactor.md](./chain-facts-refactor.md). That refactor separates phase-driving observations from mutations and declarations:
 
 ```text
 observedChains
 mutatedChains
 declaredChains
-usedChains = observedChains union mutatedChains union declared chain names
 ```
 
-`usedChains` is not a phase-classification input for this refactor. It is a derived broad footprint.
+There is no `usedChains` input for command-buffer scheduling. Phase dispatch uses only observed and mutated facts; declarations create lanes but do not classify them as observation or mutation lanes.
 
 Command capability is represented by phase method presence:
 
 ```text
-observe-only -> has observe(chainName)
-mutate-only  -> has mutate(chainName)
+observe-only -> has observe(chain)
+mutate-only  -> has mutate(chain)
 ```
 
-Command-buffer lane capability is fact-driven. A command buffer may expose `observe(...)`, `mutate(...)`, and `iterate(...)` methods, but the lane runner decides which one to call from the lane facts for the current caller. Method presence alone must not classify command buffers.
+Command-buffer lane capability is also represented by constructor-assigned method presence. The constructor uses finalized chain facts to assign exactly the public phase method that is valid for the buffer's caller-visible shape:
+
+```text
+observe-only -> has observe(chain)
+mutate-only  -> has mutate(chain)
+mixed/unknown -> has neither observe nor mutate; use iterate(chain, observerState)
+```
+
+`iterate(...)` can exist as an internal method on every command buffer, but it is used only when neither public phase method is present. Late linking must not mutate command-buffer capability; dynamic inherited callable facts are passed into the constructor.
 
 Owned `start(chainName)` uses this buffer's own finalized facts:
 
@@ -83,9 +90,13 @@ boundaryLinkedChains decides whether the child buffer appears in the parent lane
 observedChainsFromParent / mutatedChainsFromParent decide how that resolved lane runs once selected
 ```
 
-Runtime carries these fields in one `chainFacts` payload. Do not add parallel
-constructor or boundary-helper arguments for placement facts; `boundaryLinkedChains`,
-`boundaryLinkedMutatedChains`, and the observed/mutated lane facts must stay together.
+Runtime carries these fields as compact `observedFacts` and `mutatedFacts` vectors. Each vector uses the same positional layout:
+
+```text
+[linked, owned, parentVisible]
+```
+
+For `observedFacts`, `linked` is `boundaryLinkedChains`, `owned` is `observedChains`, and `parentVisible` is `observedChainsFromParent`. For `mutatedFacts`, `linked` is `boundaryLinkedMutatedChains`, `owned` is `mutatedChains`, and `parentVisible` is `mutatedChainsFromParent`.
 
 Once the parent is processing a resolved lane, child-buffer capability uses the child's parent-visible per-lane facts:
 
@@ -97,15 +108,17 @@ M = chainName in child.mutatedChainsFromParent
 Per-lane rules:
 
 ```text
-O && !M -> call observe(chainName)
-M && !O -> call mutate(chainName)
-O && M  -> call iterate(chainName, observerState)
+O && !M -> call observe(chain)
+M && !O -> call mutate(chain)
+O && M  -> call iterate(chain, observerState)
 !O && !M -> no entry should be present for that lane
 ```
 
 This means parent-visible facts are not enough for owned starts. A buffer can mutate or observe local lanes that are not visible from its parent, and `start(chainName)` must still classify those lanes correctly.
 
-`boundaryLinkedChains` is therefore a visibility/insertion fact, not the phase classifier. Do not derive phase-driving observations from `usedChains`; classify lanes from `observedChains` and `mutatedChains`.
+`boundaryLinkedChains` is therefore a visibility/insertion fact, not the phase classifier. Classify lanes from `observedChains` and `mutatedChains`.
+
+If a linked lane appears in both linked facts and linked-mutated facts, that linked placement does not by itself make the buffer observable. Treat it as mutation-driven unless the buffer's observed facts also say that the caller-visible lane is observed.
 
 When there is no parent/child link for a lane, there is no `boundaryLinkedChains` projection to consult, so the lane runner must use the buffer's own resolved chain facts.
 
@@ -139,28 +152,31 @@ This is Stage 0: split command APIs without changing CommandBuffer traversal. St
 
 Command-buffer methods process one lane. They do not classify the lane by themselves:
 
-- `observe(chainName)` runs a lane that has observations and no mutations for the current caller.
-- `mutate(chainName)` runs a lane that has mutations and no observations for the current caller.
-- `iterate(chainName, observerState)` runs a lane that has both observations and mutations for the current caller.
+- `observe(chain)` runs a lane that has observations and no mutations for the current caller.
+- `mutate(chain)` runs a lane that has mutations and no observations for the current caller.
+- `iterate(chain, observerState)` runs a lane that has both observations and mutations for the current caller.
 
-Parent lane runners use `boundaryLinkedChains` to place child buffers in lanes, then classify the selected child lane from the child's `observedChainsFromParent` / `mutatedChainsFromParent`. Root/owner `start(...)` classifies its own buffer with owned facts. `start(...)` is only a one-shot dispatcher, not another lane-processing loop.
+Parent lane runners use `boundaryLinkedChains` to place child buffers in lanes. The child buffer constructor receives the relevant facts and assigns `observe` or `mutate` only when the selected shape is uniform. Root/owner `start(...)` calls the method that is present, or falls back to `iterate(...)` when neither phase method is present. `start(...)` is only a one-shot dispatcher, not another lane-processing loop.
 
 ```js
-async observe(chainName) {
+async observe(chain) {
+  const chainName = this._chainNameFor(chain);
   const observations = [];
   for await (const entry of new CommandIterator(this, chainName)) {
-    observations.push(entry.observe(chainName));
+    observations.push(entry.observe(chain));
   }
   await settleAllObservations(observations);
 }
 
-async mutate(chainName) {
+async mutate(chain) {
+  const chainName = this._chainNameFor(chain);
   for await (const entry of new CommandIterator(this, chainName)) {
-    await entry.mutate(chainName);
+    await entry.mutate(chain);
   }
 }
 
-iterate(chainName, observerState) {
+iterate(chain, observerState) {
+  const chainName = this._chainNameFor(chain);
   const completion = createIterationCompletion();
   const iterator = new CommandIterator(this, chainName);
   if (!observerState.attachObserveOwner(
@@ -176,7 +192,7 @@ iterate(chainName, observerState) {
 }
 ```
 
-This is the clear `for await` shape. Stage 3 replaces these loops with a non-`async` fast path. Do not add another redirection layer just to name "observe child lane" or "mutate child lane". The observe-only loop starts every child observation as soon as its entry is available, then waits for all of them while preserving the runtime's collect-all-errors discipline; the mutate-only loop awaits each child mutation in source order.
+This is the clear semantic shape. The implementation uses a sync-first lane loop rather than `for await`, but the behavior is the same: observe-only starts every child observation as soon as its entry is available, then waits for all thenable observations while preserving the runtime's collect-all-errors discipline; mutate-only runs child mutations in source order.
 
 A buffer lane with both observations and mutations is mixed:
 
@@ -185,7 +201,7 @@ A buffer lane with both observations and mutations is mixed:
 
 Stage 1 waits for both `mutateDone` and `observeDone` for mixed children, so a plain `mutate()` projection is not enough for full-completion barrier semantics.
 
-`iterate(...)` may exist on every command buffer as an internal method. Its presence alone does not classify a buffer as mixed. The lane runner uses it only when the current lane facts say both observation and mutation are possible.
+`iterate(...)` may exist on every command buffer as an internal method. Its presence alone does not classify a buffer as mixed. The lane runner uses it only when neither public phase method is present.
 
 ### Lane Shape Rules
 
@@ -206,15 +222,15 @@ O = child observedChainsFromParent has chainName
 M = child mutatedChainsFromParent has chainName
 ```
 
-Rules:
+Constructor/runtime rules:
 
-1. For child buffers, `boundaryLinkedChains` only decides presence in the parent lane; phase dispatch uses the child's parent-visible `observedChainsFromParent` / `mutatedChainsFromParent`.
+1. For child buffers, `boundaryLinkedChains` only decides presence in the parent lane; public phase method assignment uses the child's parent-visible `observedChainsFromParent` / `mutatedChainsFromParent`.
 2. If neither `O` nor `M`, no entry should be present for the lane in that caller context.
-3. If `O` is true and `M` is false, call `observe(chainName)`.
-4. If `M` is true and `O` is false, call `mutate(chainName)`.
-5. If both `O` and `M` are true, use the composite `iterate(...)` path.
+3. If `O` is true and `M` is false, the constructor assigns `observe(chain)`.
+4. If `M` is true and `O` is false, the constructor assigns `mutate(chain)`.
+5. If both `O` and `M` are true, the constructor assigns neither phase method and the lane runner uses `iterate(...)`.
 
-This is per-lane and shadowing-safe. A buffer that observes parent-visible lane `x` and mutates parent-visible lane `y` can be observable for `x` and mutable for `y`. A buffer that mutates a local lane not visible from the parent can still be observable for a parent-visible lane. Local mutations do not pessimize the parent lane because the parent sees the child only through `boundaryLinkedChains`, then classifies the selected lane through the child's parent-visible facts.
+This is shadowing-safe. A buffer that mutates a local lane not visible from the parent can still be observable for a parent-visible lane. Local mutations do not pessimize the parent lane because the parent sees the child only through `boundaryLinkedChains`, and the child constructor receives the parent-visible facts for its selected caller shape.
 
 ## Lane Execution and Observer State
 
@@ -227,19 +243,19 @@ buffer.start(chainName);
 There are observable entries:
 
 ```js
-bufferOrCommand.observe(chainName);
+bufferOrCommand.observe(chain);
 ```
 
 There are mutable entries:
 
 ```js
-bufferOrCommand.mutate(chainName);
+bufferOrCommand.mutate(chain);
 ```
 
 There are mixed command-buffer entries:
 
 ```js
-buffer.iterate(chainName, observerState);
+buffer.iterate(chain, observerState);
 ```
 
 These are not called as a sequence. `observe(...)`, `mutate(...)`, and `iterate(...)` are invoked only by `start(...)` or by another `observe(...)` / `mutate(...)` / `iterate(...)` loop while processing an entry.
@@ -248,24 +264,23 @@ These are not called as a sequence. `observe(...)`, `mutate(...)`, and `iterate(
 
 ```js
 start(chainName) {
-  const observes = this.observesOwnedLane(chainName);
-  const mutates = this.mutatesOwnedLane(chainName);
-  if (observes && !mutates) {
+  const chain = this.getChain(chainName);
+  if (this.observe) {
     // observe-only lanes cannot mutate final chain state
-    handleStartedLane(this.observe(chainName), undefined);
+    handleStartedLane(this.observe(chain), undefined);
     return;
   }
-  if (mutates && !observes) {
-    handleStartedLane(undefined, this.mutate(chainName));
+  if (this.mutate) {
+    handleStartedLane(undefined, this.mutate(chain));
     return;
   }
   const observerState = new ObserverState();
-  const completion = this.iterate(chainName, observerState);
+  const completion = this.iterate(chain, observerState);
   handleStartedLane(completion.observeDone, completion.mutateDone);
 }
 ```
 
-`start(...)` does not process entries itself. It classifies the owned lane from `observedChains` / `mutatedChains`, calls exactly one of `observe(...)`, `mutate(...)`, or `iterate(...)`, passes the resulting observation and mutation completions to `handleStartedLane(observeDone, mutateDone)`, and returns no completion record.
+`start(...)` does not process entries itself. It calls exactly one of the constructor-assigned `observe(...)` / `mutate(...)` methods, or `iterate(...)` when neither phase method is present, passes the resulting observation and mutation completions to `handleStartedLane(observeDone, mutateDone)`, and returns no completion record.
 
 Use `start(chainName)` only for the buffer that owns the lane start, such as a root/final-drain lane. Parent lane runners never call `child.start(...)`; they use `boundaryLinkedChains` for child placement, classify the selected child lane from parent-visible observed/mutated facts, and then call `observe(...)`, `mutate(...)`, or `iterate(...)`.
 
@@ -357,18 +372,19 @@ class ObserverState {
     return true;
   }
 
-  track(key, observeDone) {
+  track(observeDone) {
     if (!observeDone || typeof observeDone.then !== 'function') {
       return;
     }
+    const observerToken = {};
     if (!this.pendingObserversEmpty) {
       this.pendingObserversEmpty = new Promise((resolve) => {
         this.resolvePendingObserversEmpty = resolve;
       });
     }
-    this.pendingObservers.add(key);
+    this.pendingObservers.add(observerToken);
     observeDone.finally(() => {
-      this.pendingObservers.delete(key);
+      this.pendingObservers.delete(observerToken);
       if (
         this.pendingObservers.size === 0 &&
         this.resolvePendingObserversEmpty
@@ -425,24 +441,22 @@ The lane runner does not need a durable map of observe promises. The cleanup clo
 `iterate(...)` starts the mixed loop and returns its completion record immediately. The loop below shows the Stage 2 shared-observer-state branch for nested mixed buffers. Stage 1 uses the full-completion branch shown in the Stage 1 section.
 
 ```js
-async function runMixedIteration(iterator, chainName, observerState, completion) {
+async function runMixedIteration(iterator, chain, observerState, completion) {
   try {
     for await (const entry of iterator) {
-      const observes = entryObservesLane(entry, chainName);
-      const mutates = entryMutatesLane(entry, chainName);
-      if (observes && !mutates) {
-        const observeDone = entry.observe(chainName);
-        observerState.track(entry, observeDone);
+      if (entry.observe) {
+        const observeDone = entry.observe(chain);
+        observerState.track(observeDone);
         continue;
       }
-      if (mutates && !observes) {
+      if (entry.mutate) {
         await observerState.drain();
-        await entry.mutate(chainName);
+        await entry.mutate(chain);
         continue;
       }
       // Mixed command-buffer lane: child lane facts say both observe and mutate.
       assert(entry.iterate);
-      const childCompletion = entry.iterate(chainName, observerState);
+      const childCompletion = entry.iterate(chain, observerState);
       // Stage 2: child observations are already tracked in observerState.
       // The next mutable drains them through observerState.drain().
       await childCompletion.mutateDone;
@@ -455,21 +469,21 @@ async function runMixedIteration(iterator, chainName, observerState, completion)
 }
 ```
 
-`entryObservesLane(...)` / `entryMutatesLane(...)` are conceptual helpers. For ordinary commands they read method presence. For child command buffers they read the child's `observedChainsFromParent` / `mutatedChainsFromParent` for the current parent lane. `boundaryLinkedChains` only explains why the child entry is present in that parent lane.
+Ordinary commands and command buffers both use method presence for phase dispatch. Constructor-assigned command-buffer methods encode the relevant owned or parent-visible facts, while `boundaryLinkedChains` only explains why the child entry is present in that parent lane.
 
 Because `runMixedIteration(...)` is detached from the immediate caller, it must attach rejection handlers, mark the task handled, and report fatal errors through the owning render state or buffer context. Rejecting the completion record is not enough when Stage 2 callers intentionally do not await `observeDone`. Inherited Stage 2 iterations must not end by awaiting `observerState.drain()` because that would wait on ancestor or later-parent observations and keep a useless child coroutine alive.
 
-The `for await` loop is the clarity shape. The iterator handles waiting for appended entries and lane finish; the lane-processing method handles observe/mutate/iterate semantics. Stage 3 replaces this with a non-`async` outer loop so synchronously-ready entries do not allocate a promise or take a microtask hop per entry.
+The `for await` loop is the clarity shape. The iterator handles waiting for appended entries and lane finish; the lane-processing method handles observe/mutate/iterate semantics. The implementation uses a non-`async` outer loop so synchronously-ready entries do not allocate a promise or take a microtask hop per entry.
 
 Sync-first mutation composition:
 
 ```js
-function processMutateEntry(entry, chainName, observerState) {
+function processMutateEntry(entry, chain, observerState) {
   const drained = observerState.drain();
   if (drained && typeof drained.then === 'function') {
-    return drained.then(() => entry.mutate(chainName));
+    return drained.then(() => entry.mutate(chain));
   }
-  return entry.mutate(chainName);
+  return entry.mutate(chain);
 }
 ```
 
@@ -484,7 +498,7 @@ function processMutateEntry(entry, chainName, observerState) {
 - detecting that closed input has been fully consumed
 - fatal wakeup/abort if needed
 
-Async clarity shape:
+Sync-first pull shape:
 
 ```js
 class CommandIterator {
@@ -495,23 +509,20 @@ class CommandIterator {
     this.waiting = null;
   }
 
-  async *[Symbol.asyncIterator]() {
-    while (true) {
-      const entry = this._nextReadyEntry();
-      if (entry) {
-        yield entry;
-        continue;
-      }
-      if (this._isClosedAndConsumed()) {
-        return;
-      }
-      await this._waitForAppendOrFinish();
+  next() {
+    const entry = this._nextReadyEntry();
+    if (entry) {
+      return entry;
     }
+    if (this.isClosedAndConsumed()) {
+      return null;
+    }
+    return this._waitForAppendOrFinish();
   }
 }
 ```
 
-`_nextReadyEntry()` reads `buffer.arrays[chainName][nextIndex]`, increments `nextIndex` only when an entry exists, and yields entries in source order. `_waitForAppendOrFinish()` parks only when the iterator has reached the current end of an unfinished lane. `_isClosedAndConsumed()` should be a direct predicate over the existing lane-finished flag plus iterator-local position, roughly `buffer.isChainFinished(chainName) && nextIndex >= current lane length`.
+`_nextReadyEntry()` reads `buffer.arrays[chainName][nextIndex]`, increments `nextIndex` only when an entry exists, and yields entries in source order. `_waitForAppendOrFinish()` parks only when the iterator has reached the current end of an unfinished lane. `isClosedAndConsumed()` is a direct predicate over the existing lane-finished flag plus iterator-local position, roughly `buffer.isChainFinished(chainName) && nextIndex >= current lane length`.
 
 `finishChain(chainName)` means input is closed, not that all work has completed. Work completion is separate:
 
@@ -527,20 +538,21 @@ Use one active lane-execution registry for append/finish wakeups and fatal shutd
 
 ### Stage 3 Sync-First Execution
 
-Stage 3 is not only about `CommandIterator`. It makes the whole lane execution path sync-first:
+Stage 3 is not only about `CommandIterator`. Most of its lane-loop sync-first work has already landed:
 
-- `CommandIterator` returns a ready entry synchronously when one exists.
+- `CommandIterator.next()` returns a ready entry synchronously when one exists.
+- `CommandIterator.next()` returns a thenable only when waiting for append or finish.
+- `CommandIterator.next()` returns `null` when the lane is closed and consumed.
 - `observe(...)` and `mutate(...)` return non-thenable resolved values when all work finishes synchronously.
-- `iterate(...)` returns its completion record immediately; its `mutateDone` and `observeDone` fields may be non-thenable resolved values.
 - call sites check for thenables before composing waits.
 
-The async iterator form can remain for clarity or tests. Hot lane loops use a non-`async` pull method:
+The async iterator adapter is intentionally absent from the hot runtime path. Lane loops use the non-`async` pull method directly:
 
 ```js
-const next = iterator.nextReady();
+const next = iterator.next();
 ```
 
-`nextReady()` returns one of three shapes:
+`next()` returns one of three shapes:
 
 - a command or child buffer entry when an entry is synchronously available
 - a thenable when the lane is currently exhausted but still open
@@ -551,7 +563,7 @@ The lane loop then composes sync-first phase completions:
 ```js
 function advanceMixed(iterator, chainName, observerState, completion) {
   while (true) {
-    const next = iterator.nextReady();
+    const next = iterator.next();
     if (next === null) {
       completion.resolveMutateDone();
       observerState.checkObserveDone();
@@ -574,6 +586,8 @@ function advanceMixed(iterator, chainName, observerState, completion) {
 
 The same pattern applies to observe-only and mutate-only buffer projections. Observe-only starts every available observation before waiting; mutate-only waits after each mutation. Stage 3 is a performance stage, not a semantic change.
 
+Remaining Stage 3 work is mainly allocation cleanup: `iterate(...)` returns its completion record immediately, but its `mutateDone` and `observeDone` fields are still promise-backed even when they could be represented as non-thenable resolved values. Inherited Stage 2 execution should also avoid allocating an owned `observeDone` promise when `attachObserveOwner(...)` fails.
+
 Observe-only projections record only thenable observation completions. If no observation returns a thenable, the projection returns `undefined` without calling the all-settled helper. If there are thenables, the helper must use all-settled/collect-all-errors behavior rather than fail-fast `Promise.all(...)`.
 
 `handleStartedLane(observeDone, mutateDone)` follows the same rule. It resolves chain completion synchronously when `mutateDone` is absent or non-thenable, waits only when `mutateDone` is a thenable, and treats `observeDone` as cleanup/error-reporting work rather than the final-snapshot gate unless a root cleanup path explicitly needs full observation completion.
@@ -589,14 +603,14 @@ buffer.iterate(...)           -> completion record
 completion.mutateDone         -> undefined or thenable
 completion.observeDone        -> undefined or thenable
 observerState.drain()         -> undefined or thenable
-iterator.nextReady()          -> entry, wait-thenable, or null
+iterator.next()               -> entry, wait-thenable, or null
 start(chainName)              -> undefined
 ```
 
 Every conceptual `await` in the Stage 1/2 pseudocode must become explicit thenable composition in Stage 3:
 
 ```js
-const done = entry.mutate(chainName);
+const done = entry.mutate(chain);
 if (done && typeof done.then === 'function') {
   return done.then(continueAfterMutation);
 }
@@ -647,7 +661,7 @@ A black-box `child.mutate()` cannot satisfy both requirements:
 - `B` must overlap `A`
 - `C` must wait for `A` and `B`
 
-Therefore Stage 2 mixed children use `iterate(chainName, observerState)`. Observe-only children do not need this because they are a single observable entry.
+Therefore Stage 2 mixed children use `iterate(chain, observerState)`. Observe-only children do not need this because they are a single observable entry.
 
 ## Mutation Completion Limit
 
@@ -678,9 +692,9 @@ Stage 1 removes recursive iterator traversal while preserving current semantics.
 
 Stage 1 implements:
 
-- `observe(chainName)`
-- `mutate(chainName)`
-- `iterate(chainName, observerState)`
+- `observe(chain)`
+- `mutate(chain)`
+- `iterate(chain, observerState)`
 - `start(chainName)`
 
 Stage 1 parent phase dispatch does not use:
@@ -703,7 +717,7 @@ Mixed-child handling:
 ```js
 await observerState.drain();
 const childObserverState = new ObserverState();
-const childCompletion = child.iterate(chainName, childObserverState);
+const childCompletion = child.iterate(chain, childObserverState);
 await childCompletion.mutateDone;
 await childCompletion.observeDone;
 ```
@@ -715,7 +729,7 @@ Stage 1 should still have `iterate(...)` return the two-field completion record.
 Stage 2 introduces inherited observer state for mixed children:
 
 ```js
-const childCompletion = child.iterate(chainName, observerState);
+const childCompletion = child.iterate(chain, observerState);
 await childCompletion.mutateDone;
 // child observations are already tracked in observerState
 ```
@@ -829,23 +843,23 @@ The error model remains unchanged:
 
 ## Migration Checklist
 
-Stage 0:
+Stage 0 (complete):
 
 1. Add `observe()` and `mutate()` wrappers to command classes while preserving `apply()`.
 2. Keep existing `BufferIterator` traversal, but dispatch commands through `observe(...)` / `mutate(...)` based on method shape.
 3. Keep public command result promises unchanged.
 4. Add parity tests proving behavior matches the current `apply(...)` path.
 
-Stage 1:
+Stage 1 (complete):
 
-1. Implement or consume [chain-facts-refactor.md](./chain-facts-refactor.md): `observedChains`, `mutatedChains`, `declaredChains`, derived `usedChains`, and `boundaryLinkedChains`.
+1. Implement or consume [chain-facts-refactor.md](./chain-facts-refactor.md): `observedChains`, `mutatedChains`, `declaredChains`, and `boundaryLinkedChains`.
 2. Serialize compact `observedFacts` and `mutatedFacts` vectors into `CommandBuffer` construction and boundary helpers. Each vector is indexed as `[linked, owned, parentVisible]`; trailing empty slots may be omitted.
 3. Use `observedFacts[linked]` to decide which parent lanes receive a child buffer.
 4. Classify owned `start(chainName)` from `observedChains` / `mutatedChains`.
 5. Classify child-buffer phase dispatch from the child's `observedChainsFromParent` / `mutatedChainsFromParent` for the current parent lane.
 6. Add single-start void `start(chainName)` that dispatches once to the buffer's own `observe(...)`, `mutate(...)`, or `iterate(...)` method and resolves existing chain completion from that return value.
 7. Add `ObserverState` with `track(...)`, sync-first `drain()`, `pendingObservers`, and `pendingObserversEmpty`.
-8. Replace the recursive `BufferIterator` traversal with a narrow `CommandIterator` async iterator for next-entry, append wakeup, input closure, and fatal wakeup.
+8. Replace the recursive `BufferIterator` traversal with a narrow sync-first `CommandIterator` for next-entry, append wakeup, input closure, and fatal wakeup.
 9. Connect `CommandIterator` wakeups to appended entries and `finishChain(...)`.
 10. Route observe-only child lanes through `observe()` projections.
 11. Route mutate-only child lanes through `mutate()` projections.
@@ -854,26 +868,26 @@ Stage 1:
 14. Remove the obsolete `BufferIterator` implementation and leftover iterator-specific names/state, such as `_resolveIteratorCompletion`.
 15. Preserve cleanup, completion, and fatal rejection behavior.
 
-Stage 2:
+Stage 2 (complete):
 
-1. Add focused mixed-buffer concurrency tests.
-2. Route mixed child buffers through `iterate(...)` with inherited observer state instead of a fresh Stage 1 observer state.
-3. Wait only for child `mutateDone` in the Stage 2 parent path.
-4. Leave inherited child `observeDone` undefined or non-thenable resolved; do not compute it by terminally draining the shared observer state.
-5. Let following parent mutables drain the shared observer state.
+1. Done: add focused mixed-buffer concurrency tests.
+2. Done: route mixed child buffers through `iterate(...)` with inherited observer state instead of a fresh Stage 1 observer state.
+3. Done: wait only for child `mutateDone` in the Stage 2 parent path.
+4. Done: leave inherited child `observeDone` undefined; do not compute it by terminally draining the shared observer state.
+5. Done: let following parent mutables drain the shared observer state.
 
 Stage 3:
 
-1. Add `CommandIterator.nextReady()` for the non-`async` iterator fast path.
-2. Replace hot `for await` lane loops with sync-first outer loops.
-3. Make command-buffer `observe(...)` and `mutate(...)` return non-thenable resolved values on synchronous paths.
-4. Allow `iterate(...)` completion fields to be non-thenable resolved values.
-5. Replace every `await` on possibly non-thenable phase completion with an explicit thenable check.
-6. Keep the async iterator form only as a clarity/test adapter if useful.
-7. In observe-only projection loops, collect only thenable observation completions and return synchronously when the collection is empty.
-8. Preserve collect-all-errors behavior when observe-only projection loops do have thenable completions.
-9. Apply the same thenable checks in `handleStartedLane(observeDone, mutateDone)`.
-10. Preserve fire-and-forget rejection reporting for detached iteration tasks.
+1. Done: `CommandIterator.next()` is the non-`async` iterator fast path.
+2. Done: hot lane loops use sync-first outer loops.
+3. Done: command-buffer `observe(...)` and `mutate(...)` return non-thenable resolved values on synchronous paths.
+4. Remaining: allow `iterate(...)` completion fields to be non-thenable resolved values.
+5. Mostly done: replace every hot `await` on possibly non-thenable phase completion with an explicit thenable check.
+6. Done: remove the async iterator adapter; hot code uses `CommandIterator.next()` directly.
+7. Done: in observe-only projection loops, collect only thenable observation completions and return synchronously when the collection is empty.
+8. Done: preserve collect-all-errors behavior when observe-only projection loops do have thenable completions.
+9. Done: apply the same thenable checks in `handleStartedLane(observeDone, mutateDone)`.
+10. Done: preserve fire-and-forget rejection reporting for detached iteration tasks.
 
 ## Focused Tests
 

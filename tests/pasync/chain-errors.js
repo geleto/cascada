@@ -561,26 +561,22 @@ describe('chain errors', function () {
       });
     });
 
-    it('reports unexpected raw command apply failures through buffer iteration', async () => {
+    it('reports unclassifiable command entries through buffer iteration', async () => {
       const buffer = new CommandBuffer(null, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       const output = declareBufferChain(buffer, 'value', 'var', null, null);
-      const raw = new Error('unexpected iterator command failure');
 
       try {
         buffer.addCommand({
           chainName: 'value',
-          errorContext: TEST_EC,
-          apply() {
-            throw raw;
-          }
+          errorContext: TEST_EC
         });
         buffer.finish();
         await output.finalSnapshot();
         expect().fail('Should have thrown');
       } catch (err) {
         expect(err).to.be.a(RuntimeError);
-        expect(err.cause).to.be(raw);
-        expect(err.message).to.contain('unexpected iterator command failure');
+        expect(err.cause).to.be(null);
+        expect(err.message).to.contain("CommandBuffer cannot classify entry for chain 'value'");
       }
     });
 

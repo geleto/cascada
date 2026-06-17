@@ -1,4 +1,4 @@
-import {isPoison, PoisonError, poisonOrReportedFatal} from '../errors.js';
+import {isPoison, PoisonError} from '../errors.js';
 import {isObservableCommand} from '../commands/base.js';
 import {thenValue} from '../resolve.js';
 import {Chain} from './base.js';
@@ -49,42 +49,11 @@ class SequenceObjectChain extends Chain {
     return this._sequencedObjectReadyPromise;
   }
 
-  _applyCommand(cmd) {
-    if (!cmd) return;
-
-    try {
-      cmd.resolved = true;
-
-      if (isObservableCommand(cmd)) {
-        const result = cmd.observe(this);
-        if (result && typeof result.then === 'function') {
-          return result.then(undefined, (err) => {
-            cmd.rejectResult(poisonOrReportedFatal(err, cmd.errorContext));
-          });
-        }
-        return result;
-      }
-
-      const sequencedObject = this._ensureSequencedObjectResolved();
-      const mutate = () => cmd.mutate(this);
-      const result = (sequencedObject && typeof sequencedObject.then === 'function')
-        ? sequencedObject.then(mutate)
-        : mutate();
-      if (result && typeof result.then === 'function') {
-        return result.then(undefined, (err) => {
-          cmd.rejectResult(poisonOrReportedFatal(err, cmd.errorContext));
-          this._recordError(err, cmd);
-        });
-      }
-
-      return result;
-    } catch (err) {
-      if (isObservableCommand(cmd)) {
-        cmd.rejectResult(poisonOrReportedFatal(err, cmd.errorContext));
-        return;
-      }
-      this._recordError(err, cmd);
+  _beforeApplyCommand(cmd) {
+    if (isObservableCommand(cmd)) {
+      return undefined;
     }
+    return this._ensureSequencedObjectResolved();
   }
 
   _getCurrentResult() {

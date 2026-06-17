@@ -8,6 +8,7 @@ import {
   DataCommand,
   SequenceCallCommand,
   CommandBuffer,
+  ObserverState,
   declareBufferChain,
   createPoison,
   isPoisonError,
@@ -239,6 +240,8 @@ describe('chain.finalSnapshot', function () {
     it('exposes only phase methods needed by compiled lane facts', function () {
       const observeOnly = new CommandBuffer(context, null, [null, ['text']], null, null, TEST_DIAGNOSTIC_CONTEXT);
       const mutateOnly = new CommandBuffer(context, null, null, [null, ['text']], null, TEST_DIAGNOSTIC_CONTEXT);
+      const linkedObserveOnly = new CommandBuffer(context, null, [['text']], null, null, TEST_DIAGNOSTIC_CONTEXT);
+      const linkedMutateOnly = new CommandBuffer(context, null, [['text']], [['text']], null, TEST_DIAGNOSTIC_CONTEXT);
       const mixed = new CommandBuffer(context, null, [null, ['text']], [null, ['text']], null, TEST_DIAGNOSTIC_CONTEXT);
       const unknown = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
 
@@ -246,10 +249,43 @@ describe('chain.finalSnapshot', function () {
       expect(observeOnly.mutate).to.be(null);
       expect(mutateOnly.observe).to.be(null);
       expect(typeof mutateOnly.mutate).to.be('function');
+      expect(typeof linkedObserveOnly.observe).to.be('function');
+      expect(linkedObserveOnly.mutate).to.be(null);
+      expect(linkedMutateOnly.observe).to.be(null);
+      expect(typeof linkedMutateOnly.mutate).to.be('function');
       expect(mixed.observe).to.be(null);
       expect(mixed.mutate).to.be(null);
       expect(unknown.observe).to.be(null);
       expect(unknown.mutate).to.be(null);
+    });
+
+    it('tracks each pending observation independently', async function () {
+      let resolveFirst;
+      let resolveSecond;
+      const first = new Promise((resolve) => {
+        resolveFirst = resolve;
+      });
+      const second = new Promise((resolve) => {
+        resolveSecond = resolve;
+      });
+      const observerState = new ObserverState();
+
+      observerState.track(first);
+      observerState.track(second);
+
+      let drained = false;
+      const drain = observerState.drain();
+      drain.then(() => {
+        drained = true;
+      });
+
+      resolveFirst();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(drained).to.be(false);
+
+      resolveSecond();
+      await drain;
+      expect(drained).to.be(true);
     });
 
     it('does not change command methods when linking a chain object after construction', function () {
@@ -270,14 +306,16 @@ describe('chain.finalSnapshot', function () {
       const child = new CommandBuffer(context, null, [['text']], null, null, TEST_DIAGNOSTIC_CONTEXT);
 
       expect(child.mutate).to.be(null);
-      child._installLinkedChain('text', chain);
-      child.addCommand(new SnapshotCommand({
+      parent.addBuffer(child, 'text');
+      const snapshot = child.addCommand(new SnapshotCommand({
         chainName: 'text',
         errorContext: TEST_EC
       }), 'text');
       child.finish();
+      parent.finish();
 
-      await parent._processMutateEntry(child, 'text');
+      expect(await snapshot).to.be('');
+      expect(await chain.finalSnapshot()).to.be('');
     });
 
     it('fails when a linked parent chain has no registered chain object', function () {

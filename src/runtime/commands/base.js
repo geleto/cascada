@@ -1,4 +1,13 @@
-import {isPoison, PoisonError, createPoison, markPromiseHandled, markValuePromiseHandled} from '../errors.js';
+import {
+  isPoison,
+  PoisonError,
+  RuntimeError,
+  createPoison,
+  isPoisonError,
+  markPromiseHandled,
+  markValuePromiseHandled,
+  poisonOrReportedFatal
+} from '../errors.js';
 
 class Command {
   constructor() {
@@ -73,11 +82,43 @@ class Command {
     void ctx;
     throw new Error('Command.apply() must be overridden');
   }
+
+  _runPhase(chain, handleError) {
+    const apply = () => this.apply(chain);
+    try {
+      this.resolved = true;
+      const ready = chain && typeof chain._beforeApplyCommand === 'function'
+        ? chain._beforeApplyCommand(this)
+        : undefined;
+      const result = ready && typeof ready.then === 'function'
+        ? ready.then(apply)
+        : apply();
+      if (result && typeof result.then === 'function') {
+        return result.then(undefined, handleError);
+      }
+      return result;
+    } catch (err) {
+      return handleError(err);
+    }
+  }
 }
 
 class MutatingCommand extends Command {
-  mutate(ctx) {
-    return this.apply(ctx);
+  mutate(chain) {
+    const handleError = (err) => {
+      // Mutations change chain state, so their failures are fatal to the lane.
+      // Result-bearing mutations still reject their public result promise.
+      const normalizedError = isPoisonError(err)
+        ? err
+        : RuntimeError.create(err, this.errorContext);
+      this.rejectResult(normalizedError);
+      if (chain && typeof chain._recordError === 'function') {
+        chain._recordError(normalizedError, this);
+        return undefined;
+      }
+      throw normalizedError;
+    };
+    return this._runPhase(chain, handleError);
   }
 }
 
@@ -94,8 +135,14 @@ class ObservableCommand extends Command {
     this._createResultPromise();
   }
 
-  observe(ctx) {
-    return this.apply(ctx);
+  observe(chain) {
+    const handleError = (err) => {
+      // Observations produce values and do not mutate chain state. Poison
+      // failures reject the result; raw failures are reported as fatal.
+      this.rejectResult(poisonOrReportedFatal(err, this.errorContext));
+      return undefined;
+    };
+    return this._runPhase(chain, handleError);
   }
 }
 

@@ -1,7 +1,6 @@
 
 import {RESOLVE_MARKER, isWrappedResolvedValue, unwrapResolvedValue} from '../resolve.js';
 
-import {isObservableCommand} from '../commands/base.js';
 import {
   PoisonError,
   RuntimeError,
@@ -9,7 +8,6 @@ import {
   isPoisonError,
   isRuntimeError,
   createPoison,
-  poisonOrReportedFatal,
 } from '../errors.js';
 
 class Chain {
@@ -40,6 +38,12 @@ class Chain {
 
   get chainType() {
     return this._chainType;
+  }
+
+  get name() {
+    return this._buffer
+      ? this._buffer._resolveAliasedChainName(this._chainName)
+      : this._chainName;
   }
 
   _setTarget(nextTarget) {
@@ -144,47 +148,8 @@ class Chain {
   }
 
   _beforeApplyCommand(cmd) {
-    // Hook for chain types that need copy-on-write before mutations.
-  }
-
-  _applyCommand(cmd) {
-    if (!cmd) return;
-    if (isObservableCommand(cmd)) {
-      return this._applyObservableCommand(cmd);
-    }
-    return this._applyMutatingCommand(cmd);
-  }
-
-  _applyObservableCommand(cmd) {
-    try {
-      cmd.resolved = true;
-      this._beforeApplyCommand(cmd);
-      const result = cmd.observe(this);
-      if (result && typeof result.then === 'function') {
-        return result.then(undefined, (err) => {
-          cmd.rejectResult(poisonOrReportedFatal(err, cmd.errorContext));
-        });
-      }
-      return result;
-    } catch (err) {
-      cmd.rejectResult(poisonOrReportedFatal(err, cmd.errorContext));
-    }
-  }
-
-  _applyMutatingCommand(cmd) {
-    try {
-      cmd.resolved = true;
-      this._beforeApplyCommand(cmd);
-      const result = cmd.mutate(this);
-      if (result && typeof result.then === 'function') {
-        return result.then(undefined, (err) => {
-          this._recordError(err, cmd);
-        });
-      }
-      return result;
-    } catch (err) {
-      this._recordError(err, cmd);
-    }
+    // Hook for chain types that need copy-on-write or readiness gating before
+    // applying a command. Return a thenable to defer command application.
   }
 
   _resolveChainCompletion() {

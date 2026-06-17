@@ -9,23 +9,6 @@ class CommandIterator {
     this.buffer._registerActiveIterator(this, this.chainName);
   }
 
-  async *[Symbol.asyncIterator]() {
-    try {
-      while (true) {
-        const item = this.next();
-        const entry = item && typeof item.then === 'function'
-          ? await item
-          : item;
-        if (entry === null) {
-          return;
-        }
-        yield entry;
-      }
-    } finally {
-      this.dispose();
-    }
-  }
-
   next() {
     const entry = this._nextReadyEntry();
     if (entry) {
@@ -94,7 +77,8 @@ class CommandIterator {
   }
 }
 
-// Single-consumer thenable with resolve method.
+// Single-consumer thenable with resolve method. A plain Promise would force a
+// microtask hop; a resolved wait token can continue the lane loop synchronously.
 class IteratorWaitToken {
   constructor(getValue) {
     this.getValue = getValue;

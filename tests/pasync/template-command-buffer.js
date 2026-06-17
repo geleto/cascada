@@ -185,6 +185,98 @@ class RecordingMutation extends runtime.Command {
       ]);
     });
 
+    it('should overlap mixed child tail observations with following parent observations', async function () {
+      const events = [];
+      const beforeMutation = createDeferred();
+      const childTail = createDeferred();
+      const parentObservation = createDeferred();
+
+      const parent = new runtime.CommandBuffer(null, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+      const chain = runtime.declareBufferChain(parent, 'value', 'var', null, 'initial');
+      const child = new runtime.CommandBuffer(null, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+      child._installLinkedChain('value', chain);
+
+      child.addCommand(new DeferredObservation('child-before', beforeMutation, events), 'value');
+      child.addCommand(new RecordingMutation('child-mutate', 'child', events), 'value');
+      child.addCommand(new DeferredObservation('child-tail', childTail, events), 'value');
+      child.finish();
+
+      parent.addBuffer(child, 'value');
+      parent.addCommand(new DeferredObservation('parent-after', parentObservation, events), 'value');
+      parent.addCommand(new RecordingMutation('parent-mutate', 'parent', events), 'value');
+
+      expect(events).to.eql(['observe:child-before']);
+
+      beforeMutation.resolve();
+      await flushAsync();
+      expect(events).to.eql([
+        'observe:child-before',
+        'observed:child-before',
+        'mutate:child-mutate',
+        'observe:child-tail',
+        'observe:parent-after'
+      ]);
+
+      parentObservation.resolve();
+      await flushAsync();
+      expect(events).to.eql([
+        'observe:child-before',
+        'observed:child-before',
+        'mutate:child-mutate',
+        'observe:child-tail',
+        'observe:parent-after',
+        'observed:parent-after'
+      ]);
+
+      childTail.resolve();
+      parent.finish();
+
+      expect(await chain.finalSnapshot()).to.be('parent');
+      expect(events).to.eql([
+        'observe:child-before',
+        'observed:child-before',
+        'mutate:child-mutate',
+        'observe:child-tail',
+        'observe:parent-after',
+        'observed:parent-after',
+        'observed:child-tail',
+        'mutate:parent-mutate'
+      ]);
+    });
+
+    it('should not release a still-open mixed child before later mutations can arrive', async function () {
+      const events = [];
+
+      const parent = new runtime.CommandBuffer(null, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+      const chain = runtime.declareBufferChain(parent, 'value', 'var', null, 'initial');
+      const child = new runtime.CommandBuffer(null, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+      child._installLinkedChain('value', chain);
+
+      parent.addBuffer(child, 'value');
+      parent.addCommand(new RecordingMutation('parent-mutate', 'parent', events), 'value');
+      parent.finish();
+
+      child.addCommand(new RecordingMutation('child-first', 'child-first', events), 'value');
+      await flushAsync();
+      expect(events).to.eql(['mutate:child-first']);
+
+      child.addCommand(new RecordingMutation('child-second', 'child-second', events), 'value');
+      await flushAsync();
+      expect(events).to.eql([
+        'mutate:child-first',
+        'mutate:child-second'
+      ]);
+
+      child.finish();
+
+      expect(await chain.finalSnapshot()).to.be('parent');
+      expect(events).to.eql([
+        'mutate:child-first',
+        'mutate:child-second',
+        'mutate:parent-mutate'
+      ]);
+    });
+
     it('should preserve loop/conditional output parity', async function () {
       const env = new AsyncEnvironment();
       const result = await env.renderTemplateString(

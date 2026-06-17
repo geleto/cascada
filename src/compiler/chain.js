@@ -11,6 +11,7 @@ class CompileChain {
 
   getCommandBufferObservedFacts(node) {
     const analysis = node._analysis;
+    // CommandBuffer fact vectors are [linked, owned, parentVisible].
     return compactChainFactGroups([
       chainSetToArray(analysis.boundaryLinkedChains),
       chainSetToArray(analysis.observedChains),
@@ -20,6 +21,7 @@ class CompileChain {
 
   getCommandBufferMutatedFacts(node) {
     const analysis = node._analysis;
+    // CommandBuffer fact vectors are [linked, owned, parentVisible].
     return compactChainFactGroups([
       chainSetToArray(analysis.boundaryLinkedMutatedChains),
       chainSetToArray(analysis.mutatedChains),
