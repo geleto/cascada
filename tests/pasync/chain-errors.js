@@ -576,7 +576,7 @@ describe('chain errors', function () {
       } catch (err) {
         expect(err).to.be.a(RuntimeError);
         expect(err.cause).to.be(null);
-        expect(err.message).to.contain("CommandBuffer cannot classify entry for chain 'value'");
+        expect(err.message).to.contain('CommandBuffer cannot classify entry for chain \'value\'');
       }
     });
 

@@ -198,8 +198,8 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       });
 
       expect(() => compiler.analysis.run(ast)).to.throwException((err) => {
-        expect(err.message).to.contain("Analysis fact 'boundaryLinkedChains' is no longer supported");
-        expect(err.message).to.contain("'observes', 'mutates', or 'declares'");
+        expect(err.message).to.contain('Analysis fact \'boundaryLinkedChains\' is no longer supported');
+        expect(err.message).to.contain('\'observes\', \'mutates\', or \'declares\'');
       });
     });
 
@@ -214,8 +214,8 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       compiler.postAnalyzeIf = () => ({ linkedChains: ['x'] });
 
       expect(() => compiler.analysis.run(ast)).to.throwException((err) => {
-        expect(err.message).to.contain("Analysis fact 'linkedChains' is no longer supported");
-        expect(err.message).to.contain("'boundaryLinkedChains'");
+        expect(err.message).to.contain('Analysis fact \'linkedChains\' is no longer supported');
+        expect(err.message).to.contain('\'boundaryLinkedChains\'');
       });
     });
 
@@ -230,8 +230,8 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       compiler.postAnalyzeIf = () => ({ uses: ['x'] });
 
       expect(() => compiler.analysis.run(ast)).to.throwException((err) => {
-        expect(err.message).to.contain("Analysis fact 'uses' is no longer supported");
-        expect(err.message).to.contain("'observes', 'mutates', or 'declares'");
+        expect(err.message).to.contain('Analysis fact \'uses\' is no longer supported');
+        expect(err.message).to.contain('\'observes\', \'mutates\', or \'declares\'');
       });
     });
 

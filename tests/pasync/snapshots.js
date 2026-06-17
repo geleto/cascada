@@ -321,7 +321,7 @@ describe('chain.finalSnapshot', function () {
         errorContext: TEST_EC
       }), 'text');
       expect(() => parent.addBuffer(child, 'text')).to.throwError((err) => {
-        expect(err.message).to.contain("CommandBuffer own facts for lane 'text' do not match BufferLaneEntry phase shape");
+        expect(err.message).to.contain('CommandBuffer own facts for lane \'text\' do not match BufferLaneEntry phase shape');
       });
       child.finish();
       parent.finish();
@@ -339,7 +339,7 @@ describe('chain.finalSnapshot', function () {
         chainName: 'text',
         errorContext: TEST_EC
       }), 'text')).to.throwError((err) => {
-        expect(err.message).to.contain("CommandBuffer own facts for lane 'text' do not match SnapshotCommand phase shape");
+        expect(err.message).to.contain('CommandBuffer own facts for lane \'text\' do not match SnapshotCommand phase shape');
       });
     });
 
@@ -348,7 +348,7 @@ describe('chain.finalSnapshot', function () {
       declareBufferChain(parent, 'text', 'text', context, null);
       delete parent._chains.text;
 
-      expect(() => new CommandBuffer(context, null, [["text"]], null, parent, TEST_DIAGNOSTIC_CONTEXT)).to.throwError((err) => {
+      expect(() => new CommandBuffer(context, null, [['text']], null, parent, TEST_DIAGNOSTIC_CONTEXT)).to.throwError((err) => {
         expect(err.message).to.contain('Cannot link chain \'text\' without a registered chain object');
       });
       expect(parent.arrays.text).to.have.length(0);
@@ -373,7 +373,7 @@ describe('chain.finalSnapshot', function () {
       const parent = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       declareBufferChain(parent, 'text', 'text', context, null);
 
-      const constructedChild = new CommandBuffer(context, null, [["text"], ["text"]], null, parent, TEST_DIAGNOSTIC_CONTEXT);
+      const constructedChild = new CommandBuffer(context, null, [['text'], ['text']], null, parent, TEST_DIAGNOSTIC_CONTEXT);
       expect(constructedChild.isBoundaryLinkedMutatedChain('text')).to.be(true);
     });
 

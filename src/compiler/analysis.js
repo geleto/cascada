@@ -550,26 +550,26 @@ class CompileAnalysis {
       this._failUnsupportedAnalysisFact(
         analysis,
         'uses',
-        "'observes', 'mutates', or 'declares'"
+        '\'observes\', \'mutates\', or \'declares\''
       );
     }
     if (Object.prototype.hasOwnProperty.call(analysis, 'linkedChains')) {
-      this._failUnsupportedAnalysisFact(analysis, 'linkedChains', "'boundaryLinkedChains'");
+      this._failUnsupportedAnalysisFact(analysis, 'linkedChains', '\'boundaryLinkedChains\'');
     }
     if (Object.prototype.hasOwnProperty.call(analysis, 'linkedMutatedChains')) {
-      this._failUnsupportedAnalysisFact(analysis, 'linkedMutatedChains', "'boundaryLinkedMutatedChains'");
+      this._failUnsupportedAnalysisFact(analysis, 'linkedMutatedChains', '\'boundaryLinkedMutatedChains\'');
     }
   }
 
   _validateReturnedAnalysisFacts(analysis, facts) {
     if (Object.prototype.hasOwnProperty.call(facts, 'boundaryLinkedChains')) {
-      this._failUnsupportedAnalysisFact(analysis, 'boundaryLinkedChains', "'observes', 'mutates', or 'declares'");
+      this._failUnsupportedAnalysisFact(analysis, 'boundaryLinkedChains', '\'observes\', \'mutates\', or \'declares\'');
     }
     if (Object.prototype.hasOwnProperty.call(facts, 'boundaryLinkedObservedChains')) {
-      this._failUnsupportedAnalysisFact(analysis, 'boundaryLinkedObservedChains', "'observes'");
+      this._failUnsupportedAnalysisFact(analysis, 'boundaryLinkedObservedChains', '\'observes\'');
     }
     if (Object.prototype.hasOwnProperty.call(facts, 'boundaryLinkedMutatedChains')) {
-      this._failUnsupportedAnalysisFact(analysis, 'boundaryLinkedMutatedChains', "'mutates'");
+      this._failUnsupportedAnalysisFact(analysis, 'boundaryLinkedMutatedChains', '\'mutates\'');
     }
   }
 

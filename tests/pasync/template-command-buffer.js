@@ -610,8 +610,8 @@ class FailingObservation extends runtime.Command {
       // Observe-only child buffers are observable entries in Stage 1, so an
       // empty earlier sibling in the same shared lane must not block a later
       // invocation snapshot.
-      const sharedLaneSibling = new runtime.CommandBuffer(null, null, [["theme"]], [["theme"]], blockedRoot, TEST_DIAGNOSTIC_CONTEXT);
-      const invocationBuffer = new runtime.CommandBuffer(null, null, [["theme"]], [["theme"]], blockedRoot, TEST_DIAGNOSTIC_CONTEXT);
+      const sharedLaneSibling = new runtime.CommandBuffer(null, null, [['theme']], [['theme']], blockedRoot, TEST_DIAGNOSTIC_CONTEXT);
+      const invocationBuffer = new runtime.CommandBuffer(null, null, [['theme']], [['theme']], blockedRoot, TEST_DIAGNOSTIC_CONTEXT);
       const blockedRead = invocationBuffer.addCommand(new runtime.SnapshotCommand({
         chainName: 'theme',
         errorContext: TEST_EC
@@ -629,8 +629,8 @@ class FailingObservation extends runtime.Command {
       expect(await blockedRead).to.be('dark');
 
       const textRoot = createRootBuffer();
-      const textPlacementBoundary = new runtime.CommandBuffer(null, null, [["__text__"]], null, textRoot, TEST_DIAGNOSTIC_CONTEXT);
-      const admittedInvocation = new runtime.CommandBuffer(null, null, [["theme"]], [["theme"]], textRoot, TEST_DIAGNOSTIC_CONTEXT);
+      const textPlacementBoundary = new runtime.CommandBuffer(null, null, [['__text__']], null, textRoot, TEST_DIAGNOSTIC_CONTEXT);
+      const admittedInvocation = new runtime.CommandBuffer(null, null, [['theme']], [['theme']], textRoot, TEST_DIAGNOSTIC_CONTEXT);
       const admittedRead = admittedInvocation.addCommand(new runtime.SnapshotCommand({
         chainName: 'theme',
         errorContext: TEST_EC
