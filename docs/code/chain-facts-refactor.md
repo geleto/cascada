@@ -30,6 +30,7 @@ observedChainsFromParent: null,
 usedChainsFromParent: null,
 mutatedChainsFromParent: null,
 boundaryLinkedChains: null,
+boundaryLinkedObservedChains: null,
 boundaryLinkedMutatedChains: null
 ```
 
@@ -67,7 +68,13 @@ observedChainsFromParent
 mutatedChainsFromParent
 usedChainsFromParent
 boundaryLinkedChains
+boundaryLinkedObservedChains
+boundaryLinkedMutatedChains
 ```
+
+Compiler-emitted commands use the same `observes` and `mutates` facts as source-level commands. If a compiler helper emits a local buffer command, record the lane it actually observes or mutates. Scope ownership decides whether those lanes are local to the buffer or linked from a parent.
+
+Shape lexical scopes and scope buffers so `boundaryLinked*` can always be derived from parent-visible facts. Do not return explicit `boundaryLinkedChains`, `boundaryLinkedObservedChains`, or `boundaryLinkedMutatedChains` from analyzers; record ordinary `observes`, `mutates`, and `declares`, then let finalization derive the linked projection.
 
 `usedChains` is maintained as broad compatibility metadata during finalization, with this semantic meaning:
 
@@ -83,8 +90,9 @@ Use three distinct layers:
 
 ```text
 owned classification: observedChains / mutatedChains
-parent classification: observedChainsFromParent / mutatedChainsFromParent
+parent-visible facts: observedChainsFromParent / mutatedChainsFromParent
 parent placement: boundaryLinkedChains
+runtime linked classification: boundaryLinkedObservedChains / boundaryLinkedMutatedChains
 ```
 
 `observedChainsFromParent` and `mutatedChainsFromParent` are the shadowing-safe facts a parent lane runner should use when deciding whether a child buffer lane is observable, mutable, or mixed. They are the owned facts minus locally declared chain names:
@@ -103,15 +111,9 @@ This matters because a child can declare local `x` while the parent also has a l
 boundaryLinkedChains = parent-visible projection of usedChainsFromParent
 ```
 
-Do not add `linkedObservedChains` as a phase-classification input. Parent phase classification uses `observedChainsFromParent` / `mutatedChainsFromParent`; parent placement uses `boundaryLinkedChains`. If existing code still needs `boundaryLinkedMutatedChains` during migration, keep it as a temporary compatibility field derived from `mutatedChainsFromParent`, then remove or rename it when the command-buffer lane runner consumes the new facts directly.
+`boundaryLinkedObservedChains` and `boundaryLinkedMutatedChains` are the compact runtime projection of parent-visible phase facts. They are derived from `observedChainsFromParent` and `mutatedChainsFromParent` for linkable child buffers. `boundaryLinkedChains` remains the broad placement union derived from `usedChainsFromParent`.
 
-The current implementation carries placement to runtime through `boundaryLinkedChains`
-and the temporary `boundaryLinkedMutatedChains` compatibility bridge inside the same
-`chainFacts` object as `observedChains`, `mutatedChains`, `observedChainsFromParent`,
-and `mutatedChainsFromParent`. It does not emit a runtime `linkedObservedChains`;
-phase-dispatch work that needs read-only classification should consume
-`observedChainsFromParent` from analysis, with `boundaryLinkedChains` remaining
-only the placement set.
+Runtime construction receives `linkedFacts = [boundaryLinkedObservedChains, boundaryLinkedMutatedChains]`. Parent placement uses the union of those two groups; parent-facing lane-entry method shape uses the groups separately.
 
 ## Producer Classification
 
@@ -191,9 +193,11 @@ Do not use broad `usedChains` for phase classification.
 4. Keep `declares`, `declaresInParent`, and finalized `declaredChains` unchanged.
 5. Preserve `usedChains` / `usedChainsFromParent` as broad compatibility footprints with semantics equivalent to observed + mutated + declared names.
 6. Derive `boundaryLinkedChains` from `usedChainsFromParent`.
-7. Keep `boundaryLinkedMutatedChains` only as a compatibility bridge if current emit/runtime paths still need it; do not introduce `linkedObservedChains`.
-8. Serialize boundary placement and lane classification together as compact `observedFacts` and `mutatedFacts` vectors; do not keep separate boundary-link constructor or runtime-helper arguments.
-9. Future lane-runner work should consume placement via `boundaryLinkedChains` and phase classification from `observedChainsFromParent` / `mutatedChainsFromParent` (or owned `observedChains` / `mutatedChains` for local starts). Runtime construction receives those fields as `[linked, owned, parentVisible]` vectors split by observation and mutation.
+7. Derive `boundaryLinkedObservedChains` and `boundaryLinkedMutatedChains` from the corresponding parent-visible phase facts.
+8. Serialize boundary placement and lane classification as compact `linkedFacts` and `ownFacts` vectors.
+9. Lane-runner work should consume linked classification from `linkedFacts = [boundaryLinkedObservedChains, boundaryLinkedMutatedChains]` and owned classification from `ownFacts = [observedChains, mutatedChains]`.
+10. Compiler-emitted commands should author ordinary `observes` / `mutates`; do not add a parallel fact channel.
+11. Keep `boundaryLinked*` facts derived-only; fix scope ownership or ordinary chain facts instead of returning explicit linked facts.
 
 ## Focused Tests
 
@@ -202,9 +206,11 @@ Do not use broad `usedChains` for phase classification.
 - snapshot/error/sequence-read commands appear in `observedChains` without `mutatedChains`
 - lanes that both observe and mutate appear in both sets
 - local declarations are removed from `observedChainsFromParent`, `mutatedChainsFromParent`, and `usedChainsFromParent`
-- parent phase dispatch classifies child lanes from `observedChainsFromParent` / `mutatedChainsFromParent`, not raw child facts
+- parent phase dispatch places child lanes from the linked observed/mutated union and classifies them from the same linked facts
 - local-name shadowing does not make a child-local lane visible as a parent lane
-- `boundaryLinkedChains` controls placement only and is derived from `usedChainsFromParent`
+- `boundaryLinkedChains` remains the broad placement union and is derived from `usedChainsFromParent`
 - owned `start(chainName)` classification sees local observed/mutated facts even when the chain is not parent-visible
+- compiler-generated command facts appear in ordinary owned `observedChains` / `mutatedChains`
+- guard body and recovery locals stay out of `boundaryLinked*` facts through scope-buffer ownership
 - derived `usedChains` equals the old `usedChains` footprint on a representative script/template corpus
 - derived `usedChainsFromParent` equals the old `usedChainsFromParent` footprint on the same corpus

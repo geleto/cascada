@@ -171,6 +171,7 @@ class CompileCall {
     // invocation ordering uses the macro-local __caller__ lane, so any
     // nested child boundary containing caller() must link that lane.
     mutates.push(CALLER_CHAIN_NAME);
+    compiler.macro.recordCallerCall(node);
     return { mutates, directCallerCall: true };
   }
 

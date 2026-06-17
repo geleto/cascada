@@ -47,6 +47,7 @@ function compiledComponentMethod(name, options = {}) {
     superErrorContextIndex: null,
     inheritedMethodDependencies: {},
     ownLinkedChains: [],
+    ownObservedChains: [],
     ownMutatedChains: []
   };
 }

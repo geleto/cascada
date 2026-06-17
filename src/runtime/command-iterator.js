@@ -10,6 +10,9 @@ class CommandIterator {
   }
 
   next() {
+    if (this._disposed) {
+      return null;
+    }
     const entry = this._nextReadyEntry();
     if (entry) {
       return entry;
@@ -21,6 +24,13 @@ class CommandIterator {
   }
 
   onAnyChange() {
+    this._wake();
+  }
+
+  abort(err) {
+    if (this.observerState && typeof this.observerState.abort === 'function') {
+      this.observerState.abort(err);
+    }
     this._wake();
   }
 

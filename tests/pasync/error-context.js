@@ -1473,7 +1473,7 @@ describe('error context tracing runtime foundation', () => {
       expect(source).to.match(/\[6,7,\d+\]/);
       expect(source).to.match(/\[\d+,\d+,"[^"]+"\]/);
       expect(source).to.match(/\[\d+,\d+,\d+,\{"entryName":"root"\}\]/);
-      expect(source).to.match(/new runtime\.CommandBuffer\(context, null, (?:null|\[[^\n;]+\]), null, __ec\[\d+\], null, renderState\);/);
+      expect(source).to.match(/new runtime\.CommandBuffer\(context, null, (?:null|\[[^\n;]*\]), (?:null|\[[^\n;]*\]), null, (?:__ec|renderState\.errorContextTable)\[\d+\], null, renderState\);/);
     });
 
     it('uses parent-provided semantic labels in generated diagnostics', () => {

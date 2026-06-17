@@ -246,23 +246,6 @@ class CompileInheritance {
     }
   }
 
-  _collectCallableBoundaryLinkFacts(node) {
-    // Blocks contribute template text output; script methods contribute return output.
-    const footprint = this._getCallableSharedFootprint(node);
-    return {
-      boundaryLinkedChains: footprint.sharedDependencies,
-      boundaryLinkedMutatedChains: footprint.mutationDependencies
-    };
-  }
-
-  postAnalyzeBlock(node) {
-    return this._collectCallableBoundaryLinkFacts(node);
-  }
-
-  postAnalyzeMethodDefinition(node) {
-    return this._collectCallableBoundaryLinkFacts(node);
-  }
-
   collectRootAnalysis(node) {
     const rootAnalysis = {
       inheritanceCallableDefinitions: [],
@@ -543,7 +526,7 @@ class CompileInheritance {
       );
     }
     const signature = this._getCallableSignature(node);
-    const declares = [];
+    const bodyDeclares = [];
     const seenBlockArgNames = new Set();
     signature.argNameNodes.forEach((nameNode, index) => {
       nameNode.addAnalysis({ skipDeclarationOwner: node._analysis });
@@ -558,7 +541,7 @@ class CompileInheritance {
         );
       }
       seenBlockArgNames.add(canonicalName);
-      declares.push({
+      bodyDeclares.push({
         name: canonicalName,
         type: 'var',
         initializer: null,
@@ -566,21 +549,30 @@ class CompileInheritance {
         blockArg: true
       });
     });
-    if (declares.length > 0 && node.body) {
+    if (bodyDeclares.length > 0 && node.body) {
       const bodyAnalysis = node.body._analysis || {};
-      const bodyDeclares = bodyAnalysis.declares
-        ? bodyAnalysis.declares.concat(declares)
-        : declares;
+      const declares = bodyAnalysis.declares
+        ? bodyAnalysis.declares.concat(bodyDeclares)
+        : bodyDeclares;
       node.body.addAnalysis({
-        declares: bodyDeclares
+        declares
       });
     }
     const textChain = !compiler.scriptMode
       ? compiler.analysis.getCurrentTextChain(node._analysis)
       : null;
+    const declares = [];
+    if (textChain) {
+      declares.push({
+        name: textChain,
+        type: 'text',
+        initializer: null
+      });
+    }
     return {
       createScope: true,
       scopeBoundary: true,
+      declares,
       mutates: textChain ? [textChain] : [],
       wantsLinkedChildBuffer: true
     };
@@ -591,7 +583,7 @@ class CompileInheritance {
       this._recordCallableDefinition(node);
     }
     const analysis = this.analyzeBlock(node);
-    analysis.declares = [this.compiler.return.createChainDeclaration()];
+    analysis.declares.push(this.compiler.return.createChainDeclaration());
     return analysis;
   }
 
@@ -632,21 +624,6 @@ class CompileInheritance {
       callableNode.addAnalysis({ callableSignatureFacts: signatureFacts });
     }
     return signatureFacts;
-  }
-
-  _getCallableSharedFootprint(ownerNode) {
-    // Naming path: shared/mutation dependencies become generic
-    // boundaryLinkedChains/boundaryLinkedMutatedChains in analysis, then ownLinkedChains/
-    // ownMutatedChains in the emitted inheritance ABI.
-    const bodyNode = ownerNode.body || ownerNode;
-    const usedChains = this.compiler.analysis.getChainsUsedFromParent(bodyNode);
-    const mutatedChains = this.compiler.analysis.getChainsMutatedFromParent(bodyNode);
-    const rootNode = this.compiler.analysis.getRootNode(ownerNode._analysis);
-    const sharedStorageNames = new Set(this._getSharedDeclarations(rootNode).map((declaration) => declaration.name));
-    return {
-      sharedDependencies: usedChains.filter((name) => sharedStorageNames.has(name)),
-      mutationDependencies: mutatedChains.filter((name) => sharedStorageNames.has(name))
-    };
   }
 
 }

@@ -237,26 +237,36 @@ describe('chain.finalSnapshot', function () {
       expect(buffer.isChainFinished('unused')).to.be(true);
     });
 
-    it('exposes only phase methods needed by compiled lane facts', function () {
-      const observeOnly = new CommandBuffer(context, null, [null, ['text']], null, null, TEST_DIAGNOSTIC_CONTEXT);
+    it('creates lane entries with specialized phase methods from compiled lane facts', function () {
+      const observeOnly = new CommandBuffer(context, null, null, [['text']], null, TEST_DIAGNOSTIC_CONTEXT);
       const mutateOnly = new CommandBuffer(context, null, null, [null, ['text']], null, TEST_DIAGNOSTIC_CONTEXT);
-      const linkedObserveOnly = new CommandBuffer(context, null, [['text']], null, null, TEST_DIAGNOSTIC_CONTEXT);
-      const linkedMutateOnly = new CommandBuffer(context, null, [['text']], [['text']], null, TEST_DIAGNOSTIC_CONTEXT);
-      const mixed = new CommandBuffer(context, null, [null, ['text']], [null, ['text']], null, TEST_DIAGNOSTIC_CONTEXT);
+      const linkedObserveOnly = new CommandBuffer(context, null, [['text']], [['text']], null, TEST_DIAGNOSTIC_CONTEXT);
+      const linkedMutateOnly = new CommandBuffer(context, null, [['text'], ['text']], [null, ['text']], null, TEST_DIAGNOSTIC_CONTEXT);
+      const mixed = new CommandBuffer(context, null, null, [['text'], ['text']], null, TEST_DIAGNOSTIC_CONTEXT);
       const unknown = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+      const laneEntry = (buffer) => {
+        buffer._ensureLane('text');
+        return buffer._createLaneEntry('text');
+      };
 
-      expect(typeof observeOnly.observe).to.be('function');
-      expect(observeOnly.mutate).to.be(null);
-      expect(mutateOnly.observe).to.be(null);
-      expect(typeof mutateOnly.mutate).to.be('function');
-      expect(typeof linkedObserveOnly.observe).to.be('function');
-      expect(linkedObserveOnly.mutate).to.be(null);
-      expect(linkedMutateOnly.observe).to.be(null);
-      expect(typeof linkedMutateOnly.mutate).to.be('function');
-      expect(mixed.observe).to.be(null);
-      expect(mixed.mutate).to.be(null);
-      expect(unknown.observe).to.be(null);
-      expect(unknown.mutate).to.be(null);
+      expect(typeof laneEntry(observeOnly).observe).to.be('function');
+      expect(laneEntry(observeOnly).mutate).to.be(undefined);
+      expect(typeof laneEntry(observeOnly).iterate).to.be('function');
+      expect(laneEntry(mutateOnly).observe).to.be(undefined);
+      expect(typeof laneEntry(mutateOnly).mutate).to.be('function');
+      expect(typeof laneEntry(mutateOnly).iterate).to.be('function');
+      expect(typeof laneEntry(linkedObserveOnly).observe).to.be('function');
+      expect(laneEntry(linkedObserveOnly).mutate).to.be(undefined);
+      expect(typeof laneEntry(linkedObserveOnly).iterate).to.be('function');
+      expect(laneEntry(linkedMutateOnly).observe).to.be(undefined);
+      expect(typeof laneEntry(linkedMutateOnly).mutate).to.be('function');
+      expect(typeof laneEntry(linkedMutateOnly).iterate).to.be('function');
+      expect(laneEntry(mixed).observe).to.be(undefined);
+      expect(laneEntry(mixed).mutate).to.be(undefined);
+      expect(typeof laneEntry(mixed).iterate).to.be('function');
+      expect(laneEntry(unknown).observe).to.be(undefined);
+      expect(laneEntry(unknown).mutate).to.be(undefined);
+      expect(typeof laneEntry(unknown).iterate).to.be('function');
     });
 
     it('tracks each pending observation independently', async function () {
@@ -288,34 +298,49 @@ describe('chain.finalSnapshot', function () {
       expect(drained).to.be(true);
     });
 
-    it('does not change command methods when linking a chain object after construction', function () {
+    it('keeps buffer capability on lane entries when linking a chain object after construction', function () {
       const parent = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       const chain = declareBufferChain(parent, 'text', 'text', context, null);
       const child = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
 
-      expect(child.observe).to.be(null);
-      expect(child.mutate).to.be(null);
       child._installLinkedChain('text', chain);
-      expect(child.observe).to.be(null);
-      expect(child.mutate).to.be(null);
+      const childEntry = child._createLaneEntry('text');
+      expect(childEntry.observe).to.be(undefined);
+      expect(childEntry.mutate).to.be(undefined);
+      expect(typeof childEntry.iterate).to.be('function');
     });
 
-    it('runs an observe-only child as a barrier inside a mutating parent lane', async function () {
+    it('rejects an observe-only child inside a mutating parent lane', async function () {
       const parent = new CommandBuffer(context, null, null, [null, ['text']], null, TEST_DIAGNOSTIC_CONTEXT);
       const chain = declareBufferChain(parent, 'text', 'text', context, null);
-      const child = new CommandBuffer(context, null, [['text']], null, null, TEST_DIAGNOSTIC_CONTEXT);
+      const child = new CommandBuffer(context, null, [['text']], [['text']], null, TEST_DIAGNOSTIC_CONTEXT);
 
-      expect(child.mutate).to.be(null);
-      parent.addBuffer(child, 'text');
+      child._installLinkedChain('text', chain);
       const snapshot = child.addCommand(new SnapshotCommand({
         chainName: 'text',
         errorContext: TEST_EC
       }), 'text');
+      expect(() => parent.addBuffer(child, 'text')).to.throwError((err) => {
+        expect(err.message).to.contain("CommandBuffer own facts for lane 'text' do not match BufferLaneEntry phase shape");
+      });
       child.finish();
       parent.finish();
 
-      expect(await snapshot).to.be('');
       expect(await chain.finalSnapshot()).to.be('');
+      expect(parent.arrays.text).to.be(null);
+      expect(snapshot).to.be.a(Promise);
+    });
+
+    it('rejects command insertion when explicit own facts under-declare the command phase', function () {
+      const buffer = new CommandBuffer(context, null, null, [null, ['text']], null, TEST_DIAGNOSTIC_CONTEXT);
+      declareBufferChain(buffer, 'text', 'text', context, null);
+
+      expect(() => buffer.addCommand(new SnapshotCommand({
+        chainName: 'text',
+        errorContext: TEST_EC
+      }), 'text')).to.throwError((err) => {
+        expect(err.message).to.contain("CommandBuffer own facts for lane 'text' do not match SnapshotCommand phase shape");
+      });
     });
 
     it('fails when a linked parent chain has no registered chain object', function () {
@@ -348,7 +373,7 @@ describe('chain.finalSnapshot', function () {
       const parent = new CommandBuffer(context, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
       declareBufferChain(parent, 'text', 'text', context, null);
 
-      const constructedChild = new CommandBuffer(context, null, [["text"]], [["text"]], parent, TEST_DIAGNOSTIC_CONTEXT);
+      const constructedChild = new CommandBuffer(context, null, [["text"], ["text"]], null, parent, TEST_DIAGNOSTIC_CONTEXT);
       expect(constructedChild.isBoundaryLinkedMutatedChain('text')).to.be(true);
     });
 

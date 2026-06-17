@@ -228,13 +228,13 @@ class CompileLoop {
 
     const shouldAwaitLoopBody = sequentialLoopBody || hasConcurrencyLimit;
     const parentBufferArg = this.compiler.buffer.currentBuffer;
-    const { observedFactsArg, mutatedFactsArg } = this.compiler.chain.getCommandBufferFactsArgs(node);
+    const { linkedFactsArg, ownFactsArg } = this.compiler.buffer.getCommandBufferFactsArgs(node);
     // The iteration boundary owns its label slot; loop metadata stays in added
     // context so nested commands can inherit it without changing source labels.
     const loopAddedContextVar = this.compiler.createInheritedAddedContextVar(`{ loop: ${loopMetaVar} }`);
     const iterationBoundaryContextArg = `runtime.setContextLabel(runtime.cloneWithAddedContext(${this.compiler._emitStaticErrorContext(node)}, ${loopAddedContextVar}), "Iteration")`;
     this.compiler.emit(
-      `return runtime.runControlFlowBoundary(${parentBufferArg}, ${observedFactsArg}, ${mutatedFactsArg}, context, renderState, (currentBuffer) => {`
+      `return runtime.runControlFlowBoundary(${parentBufferArg}, ${linkedFactsArg}, ${ownFactsArg}, context, renderState, (currentBuffer) => {`
     );
 
     this.compiler.buffer.withBufferState({
@@ -242,9 +242,8 @@ class CompileLoop {
       currentTextChainVar: null
     }, () => {
       this.compiler.withInheritedAddedContext(loopAddedContextVar, () => {
-        const usesWaitedChain = hasConcurrencyLimit || sequentialLoopBody;
-        if (usesWaitedChain) {
-          this.compiler.emit.line(`runtime.declareBufferChain(${this.compiler.buffer.currentBuffer}, "${WAITED_CHAIN_NAME}", "var", context, null);`);
+        if (shouldAwaitLoopBody) {
+          this.compiler.buffer.emitDeclareWaitedChain();
         }
 
         const emitBodyAndCompletion = () => {
@@ -293,7 +292,7 @@ class CompileLoop {
           emitBodyAndCompletion();
         };
 
-        if (!usesWaitedChain) {
+        if (!shouldAwaitLoopBody) {
           this.compiler.withCurrentLoopVar(loopMetaVar, compileIterationBody);
         } else {
           const waitedOwnerBufferId = this.compiler._tmpid();

@@ -2,13 +2,9 @@ import {isPoison, isPoisonError, PoisonError, RuntimeError, rethrowPoisonOrRepor
 import {ObservableCommand, MutatingResultCommand, requireCommandErrorContext} from './base.js';
 
 class SequentialPathReadCommand extends ObservableCommand {
-  constructor({ chainName, pathKey, operation, repair = false, errorContext }) {
+  constructor(spec = {}) {
     super();
-    this.chainName = chainName;
-    this.pathKey = pathKey || this.chainName;
-    this.operation = operation;
-    this.repair = !!repair;
-    this.errorContext = requireCommandErrorContext(errorContext, this.constructor.name);
+    initializeSequentialPathCommand(this, spec);
   }
 
   apply(chain) {
@@ -16,23 +12,21 @@ class SequentialPathReadCommand extends ObservableCommand {
   }
 }
 
-class RepairReadCommand extends SequentialPathReadCommand {
+class RepairReadCommand extends MutatingResultCommand {
   constructor(spec = {}) {
-    super({
-      ...spec,
-      repair: true
-    });
+    super();
+    initializeSequentialPathCommand(this, spec, true);
+  }
+
+  apply(chain) {
+    return runSequentialPathOperation(this, chain, false);
   }
 }
 
 class SequentialPathWriteCommand extends MutatingResultCommand {
-  constructor({ chainName, pathKey, operation, repair = false, errorContext }) {
+  constructor(spec = {}) {
     super();
-    this.chainName = chainName;
-    this.pathKey = pathKey || this.chainName;
-    this.operation = operation;
-    this.repair = !!repair;
-    this.errorContext = requireCommandErrorContext(errorContext, this.constructor.name);
+    initializeSequentialPathCommand(this, spec);
   }
 
   apply(chain) {
@@ -47,6 +41,14 @@ class RepairWriteCommand extends SequentialPathWriteCommand {
       repair: true
     });
   }
+}
+
+function initializeSequentialPathCommand(command, spec, repair = spec.repair) {
+  command.chainName = spec.chainName;
+  command.pathKey = spec.pathKey || command.chainName;
+  command.operation = spec.operation;
+  command.repair = !!repair;
+  command.errorContext = requireCommandErrorContext(spec.errorContext, command.constructor.name);
 }
 
 function runSequentialPathOperation(cmd, chain, isWrite) {

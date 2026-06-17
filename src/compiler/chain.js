@@ -4,51 +4,78 @@ import {CHAIN_TYPE_FACTS} from '../chain-types.js';
 import {validateChainDeclarationNode} from './validation.js';
 import {getSharedSourceName, renameSharedName} from '../inheritance/shared-names.js';
 
+const OWN_FACTS_OBSERVED_CHAINS = 0;
+const OWN_FACTS_MUTATED_CHAINS = 1;
+
 class CompileChain {
   constructor(compiler) {
     this.compiler = compiler;
   }
 
-  getCommandBufferObservedFacts(node) {
+  getCommandBufferLinkedFacts(node) {
     const analysis = node._analysis;
-    // CommandBuffer fact vectors are [linked, owned, parentVisible].
     return compactChainFactGroups([
-      chainSetToArray(analysis.boundaryLinkedChains),
-      chainSetToArray(analysis.observedChains),
-      chainSetToArray(analysis.observedChainsFromParent)
+      chainSetToArray(analysis.boundaryLinkedObservedChains),
+      chainSetToArray(analysis.boundaryLinkedMutatedChains)
     ]);
   }
 
-  getCommandBufferMutatedFacts(node) {
+  getCommandBufferOwnFacts(node, extraMutatedChains = null, extraObservedChains = null) {
     const analysis = node._analysis;
-    // CommandBuffer fact vectors are [linked, owned, parentVisible].
-    return compactChainFactGroups([
-      chainSetToArray(analysis.boundaryLinkedMutatedChains),
-      chainSetToArray(analysis.mutatedChains),
-      chainSetToArray(analysis.mutatedChainsFromParent)
+    const observedChains = new Set(analysis.observedChains || []);
+    const mutatedChains = new Set(analysis.mutatedChains || []);
+    this._addInlineChildCommandFacts(analysis, observedChains, mutatedChains);
+    let facts = compactChainFactGroups([
+      Array.from(observedChains),
+      Array.from(mutatedChains)
     ]);
+    facts = addChainFactGroupNames(facts, OWN_FACTS_OBSERVED_CHAINS, extraObservedChains);
+    return addChainFactGroupNames(facts, OWN_FACTS_MUTATED_CHAINS, extraMutatedChains);
   }
 
-  getCommandBufferFacts(node) {
+  _addInlineChildCommandFacts(analysis, observedChains, mutatedChains) {
+    analysis.node.fields.forEach((field) => {
+      this._addInlineCommandFactsFromValue(
+        analysis.node[field],
+        observedChains,
+        mutatedChains
+      );
+    });
+  }
+
+  _addInlineCommandFactsFromValue(value, observedChains, mutatedChains) {
+    if (Array.isArray(value)) {
+      value.forEach((child) => this._addInlineCommandFactsFromValue(
+        child,
+        observedChains,
+        mutatedChains
+      ));
+      return;
+    }
+    if (!(value instanceof nodes.Node)) {
+      return;
+    }
+    const analysis = value._analysis;
+    if (analysis.createsLinkedChildBuffer) {
+      return;
+    }
+    addSetNames(observedChains, analysis.observedChains);
+    addSetNames(mutatedChains, analysis.mutatedChains);
+    this._addInlineChildCommandFacts(analysis, observedChains, mutatedChains);
+  }
+
+  getCommandBufferFacts(node, extraOwnMutatedChains = null, extraOwnObservedChains = null) {
     return {
-      observedFacts: this.getCommandBufferObservedFacts(node),
-      mutatedFacts: this.getCommandBufferMutatedFacts(node)
+      linkedFacts: this.getCommandBufferLinkedFacts(node) || [],
+      ownFacts: this.getCommandBufferOwnFacts(node, extraOwnMutatedChains, extraOwnObservedChains) || []
     };
   }
 
-  getCommandBufferFactsArgs(node) {
-    const facts = this.getCommandBufferFacts(node);
+  getCommandBufferFactsArgs(node, extraOwnMutatedChains = null, extraOwnObservedChains = null) {
+    const facts = this.getCommandBufferFacts(node, extraOwnMutatedChains, extraOwnObservedChains);
     return {
-      observedFactsArg: JSON.stringify(facts.observedFacts),
-      mutatedFactsArg: JSON.stringify(facts.mutatedFacts)
-    };
-  }
-
-  getCommandBufferFactsArgsWithLinked(node, observedLinkedArg, mutatedLinkedArg) {
-    const facts = this.getCommandBufferFacts(node);
-    return {
-      observedFactsArg: chainFactGroupsArgWithLinked(facts.observedFacts, observedLinkedArg),
-      mutatedFactsArg: chainFactGroupsArgWithLinked(facts.mutatedFacts, mutatedLinkedArg)
+      linkedFactsArg: JSON.stringify(facts.linkedFacts),
+      ownFactsArg: JSON.stringify(facts.ownFacts)
     };
   }
 
@@ -657,17 +684,25 @@ function chainSetToArray(chains) {
   return chains ? Array.from(chains) : null;
 }
 
-function chainFactGroupsArgWithLinked(facts, linkedArg) {
-  const groups = [
-    linkedArg,
-    JSON.stringify((facts && facts[1]) || null),
-    JSON.stringify((facts && facts[2]) || null)
-  ];
-  let end = groups.length;
-  while (end > 1 && groups[end - 1] === 'null') {
-    end--;
+function addSetNames(target, names) {
+  if (!names) {
+    return;
   }
-  return `[${groups.slice(0, end).join(', ')}]`;
+  names.forEach((name) => target.add(name));
+}
+
+function addChainFactGroupNames(groups, index, names) {
+  if (!names || names.length === 0) {
+    return groups;
+  }
+  const nextGroups = groups ? groups.slice() : [];
+  while (nextGroups.length <= index) {
+    nextGroups.push(null);
+  }
+  const group = new Set(nextGroups[index] || []);
+  names.forEach((name) => group.add(name));
+  nextGroups[index] = Array.from(group);
+  return compactChainFactGroups(nextGroups);
 }
 
 export {CompileChain};

@@ -46,7 +46,7 @@ Prevents race conditions and ensures sequential equivalence when concurrent bloc
 -   **Compile-time analysis** (`src/compiler/analysis.js`): Annotates AST nodes with declaration/use/mutation metadata. Important fields include `declaredChains`, `usedChains`, `mutatedChains`, `usedChainsFromParent`, `mutatedChainsFromParent`, and `sequenceLocks`.
 -   **Buffer code generation** (`src/compiler/buffer.js`, `src/compiler/emit.js`): Emits command creation, linked-chain metadata, child buffer creation, and async boundary wiring.
 -   **Implicit Variable Synchronization**: Chain observations and `resolveAll`/`resolveSingle` await pending values only when consumed. Data dependencies serialize naturally without explicit locks.
--   **Linked chains**: `analysis.js` derives `boundaryLinkedChains` and `boundaryLinkedMutatedChains` from the boundary's chain footprint (see Chain Scope And Visibility). Analyzers set `wantsLinkedChildBuffer` as intent; finalization computes `createsLinkedChildBuffer` as the outcome. `createsLinkedChildBuffer` means the node creates a child `CommandBuffer`; it can be true even when the finalized link sets are empty. `emit.js`/`buffer.js` pass finalized links to `new CommandBuffer(...)` and boundary functions so child buffers route commands to the correct parent lanes. Pure-observation expression boundaries keep the intent but compute `createsLinkedChildBuffer = false` and drop both link sets. If a chain is not linked, fix analysis/emit rather than adding runtime fallbacks.
+-   **Linked chains**: `analysis.js` derives `boundaryLinkedChains`, `boundaryLinkedObservedChains`, and `boundaryLinkedMutatedChains` from the boundary's chain footprint (see Chain Scope And Visibility). Analyzers set `wantsLinkedChildBuffer` as intent; finalization computes `createsLinkedChildBuffer` as the outcome. `createsLinkedChildBuffer` means the node creates a child `CommandBuffer`; it can be true even when the finalized link sets are empty. `emit.js`/`buffer.js` pass finalized links to `new CommandBuffer(...)` and boundary functions so child buffers route commands to the correct parent lanes. Pure-observation expression boundaries keep the intent but compute `createsLinkedChildBuffer = false` and drop both link sets. If a chain is not linked, fix analysis/emit rather than adding runtime fallbacks.
 
 ---
 
@@ -57,10 +57,11 @@ A chain is visible in a scope only if it is declared there or linked from a pare
 -   `declaredChains` — chains introduced at this scope level; not linked to the parent even if the parent has the same name.
 -   `usedChains` / `mutatedChains` — full aggregate read and write footprint, including chains declared by this node.
 -   `usedChainsFromParent` / `mutatedChainsFromParent` — parent-visible read and write footprint, derived from the aggregate footprint minus local declarations. Compiler consumers that need outer dependencies should use the `analysis.getChainsUsedFromParent(...)` / `analysis.getChainsMutatedFromParent(...)` helpers.
--   `boundaryLinkedChains` — parent-visible chains the child can observe, derived from `usedChainsFromParent` unless custom node analysis narrows it.
--   `boundaryLinkedMutatedChains` — parent-visible chains the child can mutate, derived from `mutatedChainsFromParent` unless custom node analysis narrows it.
+-   `boundaryLinkedChains` — parent-visible chains the child can observe or mutate, derived from `usedChainsFromParent`.
+-   `boundaryLinkedObservedChains` — parent-visible chains the child can observe, derived from `observedChainsFromParent`.
+-   `boundaryLinkedMutatedChains` — parent-visible chains the child can mutate, derived from `mutatedChainsFromParent`.
 
-If a child cannot see a chain, fix `usedChainsFromParent`/`mutatedChainsFromParent` in `analysis.js` or the `boundaryLinkedChainNames`/`boundaryLinkedMutatedChainNames` emit path. Do not add runtime lookup fallbacks.
+If a child cannot see a chain, fix `observedChainsFromParent`/`mutatedChainsFromParent` in `analysis.js` or the linked fact emit path. Do not add runtime lookup fallbacks.
 
 Function, macro, and method bodies create scope boundaries where outer chains are not automatically visible; their linked sets must cover every chain the body touches.
 

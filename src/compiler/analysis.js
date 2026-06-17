@@ -143,7 +143,14 @@ class CompileAnalysis {
     // footprint is derived.
     node._analysis = {
       node,
+      // `createScope` marks a lexical scope whose async commands are backed by
+      // a child CommandBuffer: either the owner node's control-flow boundary or
+      // an explicit `withScopeCommandBuffer`. Do not reintroduce a parallel
+      // "creates scope buffer" flag.
       createScope: false,
+      // Clean scopes, such as macros, do not implicitly link parent lanes.
+      // Non-clean scope buffers may still derive parent links from ordinary
+      // observed/mutated facts.
       scopeBoundary: false,
       // Meaningful only on scope owners: read-only mutation checks hop from
       // scope owner to scope owner and do not inspect intermediate nodes.
@@ -164,12 +171,12 @@ class CompileAnalysis {
       usedChainsFromParent: null,
       mutatedChainsFromParent: null,
       boundaryLinkedChains: null,
+      boundaryLinkedObservedChains: null,
       // Parent-owned linked chains this boundary may mutate. Future command-buffer
       // command-buffer lane runners can use this to distinguish read-only child buffers.
       boundaryLinkedMutatedChains: null,
       wantsLinkedChildBuffer: false,
       createsLinkedChildBuffer: false,
-      createsScopeBuffer: false,
       expressionControlFlowBoundary: false,
       ...(node._analysis ?? {}),
       parent: parentAnalysis,
@@ -190,6 +197,7 @@ class CompileAnalysis {
         ? this.callCompilerMethod(handler, node, this)
         : analyzer.call(this.compiler, node, this);
       if (returned && typeof returned === 'object' && returned !== node._analysis) {
+        this._validateReturnedAnalysisFacts(node._analysis, returned);
         node.addAnalysis(returned);
       }
     }
@@ -201,12 +209,8 @@ class CompileAnalysis {
     const analyzer = handler ? null : this.compiler[analyzerName];
     if (handler || typeof analyzer === 'function') {
       // Post-analyzers run after immediate children are finalized. They may
-      // return node-owned custom facts and, narrowly, custom linked-chain
-      // iterables. Custom linked-chain facts are return-only: finalization
-      // checks the returned object for own linked fields before deriving
-      // defaults. Writing them through node.addAnalysis() will be overwritten.
-      // Finalization below normalizes linked-chain facts before codegen
-      // observes them; ordinary observes/mutates belong to the first pass.
+      // return node-owned custom facts. Boundary-linked facts are derived
+      // during finalization from ordinary observes/mutates/declares.
       const returned = handler
         ? this.callCompilerMethod(handler, node, this)
         : analyzer.call(this.compiler, node, this);
@@ -557,6 +561,50 @@ class CompileAnalysis {
     }
   }
 
+  _validateReturnedAnalysisFacts(analysis, facts) {
+    if (Object.prototype.hasOwnProperty.call(facts, 'boundaryLinkedChains')) {
+      this._failUnsupportedAnalysisFact(analysis, 'boundaryLinkedChains', "'observes', 'mutates', or 'declares'");
+    }
+    if (Object.prototype.hasOwnProperty.call(facts, 'boundaryLinkedObservedChains')) {
+      this._failUnsupportedAnalysisFact(analysis, 'boundaryLinkedObservedChains', "'observes'");
+    }
+    if (Object.prototype.hasOwnProperty.call(facts, 'boundaryLinkedMutatedChains')) {
+      this._failUnsupportedAnalysisFact(analysis, 'boundaryLinkedMutatedChains', "'mutates'");
+    }
+  }
+
+  addCommandFacts(node, { observed = null, mutated = null } = {}) {
+    const facts = {};
+    if (observed) {
+      facts.observes = this._mergeChainNameLists(
+        node._analysis?.observes,
+        observed
+      );
+    }
+    if (mutated) {
+      facts.mutates = this._mergeChainNameLists(
+        node._analysis?.mutates,
+        mutated
+      );
+    }
+    node.addAnalysis(facts);
+  }
+
+  _mergeChainNameLists(...groups) {
+    const names = new Set();
+    groups.forEach((group) => {
+      if (!group) {
+        return;
+      }
+      group.forEach((name) => {
+        if (name) {
+          names.add(name);
+        }
+      });
+    });
+    return names.size > 0 ? Array.from(names) : null;
+  }
+
   _failUnsupportedAnalysisFact(analysis, field, replacement) {
     const originNode = analysis.node || null;
     const lineno = originNode && originNode.lineno;
@@ -703,6 +751,7 @@ class CompileAnalysis {
 
     const postAnalysisFacts = this._postAnalyzeNode(node);
     if (postAnalysisFacts) {
+      this._validateReturnedAnalysisFacts(analysis, postAnalysisFacts);
       node.addAnalysis(postAnalysisFacts);
       this._validateAnalysisFacts(analysis);
     }
@@ -729,24 +778,14 @@ class CompileAnalysis {
     analysis.usedChains = usage.usedChains.size > 0 ? usage.usedChains : null;
     analysis.mutatedChains = usage.mutatedChains.size > 0 ? usage.mutatedChains : null;
     const scopeChainsFromParent = this._deriveChainsFromParent(usage, declaredHere);
-    const hasCustomBoundaryLinkedChains = !!(
-      postAnalysisFacts &&
-      Object.prototype.hasOwnProperty.call(postAnalysisFacts, 'boundaryLinkedChains')
-    );
-    const hasCustomBoundaryLinkedMutatedChains = !!(
-      postAnalysisFacts &&
-      Object.prototype.hasOwnProperty.call(postAnalysisFacts, 'boundaryLinkedMutatedChains')
-    );
     analysis.observedChainsFromParent = scopeChainsFromParent.observedChains.size > 0 ? scopeChainsFromParent.observedChains : null;
     analysis.usedChainsFromParent = scopeChainsFromParent.usedChains.size > 0 ? scopeChainsFromParent.usedChains : null;
     analysis.mutatedChainsFromParent = scopeChainsFromParent.mutatedChains.size > 0 ? scopeChainsFromParent.mutatedChains : null;
-    if (!hasCustomBoundaryLinkedChains) {
-      analysis.boundaryLinkedChains = this._deriveBoundaryLinkedChains(analysis, scopeChainsFromParent.usedChains);
-    }
-    if (!hasCustomBoundaryLinkedMutatedChains) {
-      analysis.boundaryLinkedMutatedChains = this._deriveBoundaryLinkedChains(analysis, scopeChainsFromParent.mutatedChains);
-    }
+    analysis.boundaryLinkedChains = this._deriveBoundaryLinkedChains(analysis, scopeChainsFromParent.usedChains);
+    analysis.boundaryLinkedObservedChains = this._deriveBoundaryLinkedChains(analysis, scopeChainsFromParent.observedChains);
+    analysis.boundaryLinkedMutatedChains = this._deriveBoundaryLinkedChains(analysis, scopeChainsFromParent.mutatedChains);
     analysis.boundaryLinkedChains = this._normalizeChainSet(analysis.boundaryLinkedChains, 'boundaryLinkedChains', analysis);
+    analysis.boundaryLinkedObservedChains = this._normalizeChainSet(analysis.boundaryLinkedObservedChains, 'boundaryLinkedObservedChains', analysis);
     analysis.boundaryLinkedMutatedChains = this._normalizeChainSet(analysis.boundaryLinkedMutatedChains, 'boundaryLinkedMutatedChains', analysis);
     this._finalizeBufferCreation(analysis);
     return this._getPropagatedChainUsage(
@@ -813,7 +852,7 @@ class CompileAnalysis {
       const nodeType = analysis.node && analysis.node.typename;
       const isMethodOrBlockBoundary = nodeType === 'Block' || nodeType === 'MethodDefinition';
       if (!isMethodOrBlockBoundary) {
-        return this._createChainUsageAggregate();
+        return this._getParentOwnedDeclarationUsage(analysis, localMutates);
       }
       const parentUsage = this._createChainUsageAggregate();
       localObserves.forEach((name) => {
@@ -824,7 +863,53 @@ class CompileAnalysis {
       });
       return this._deriveChainsFromParent(parentUsage, analysis.declaredChains);
     }
+    if (this._propagatesBoundaryLinkedUsage(analysis)) {
+      return this._getBoundaryLinkedUsage(analysis);
+    }
     return scopeChainsFromParent;
+  }
+
+  _propagatesBoundaryLinkedUsage(analysis) {
+    if (!this._wantsLinkableChildBuffer(analysis)) {
+      return false;
+    }
+    if (analysis.expressionControlFlowBoundary) {
+      return analysis.boundaryLinkedMutatedChains !== null;
+    }
+    return true;
+  }
+
+  _getBoundaryLinkedUsage(analysis) {
+    const parentUsage = this._createChainUsageAggregate();
+    if (analysis.boundaryLinkedChains) {
+      analysis.boundaryLinkedChains.forEach((name) => this._addBroadChainUse(parentUsage, name));
+    }
+    if (analysis.boundaryLinkedObservedChains) {
+      analysis.boundaryLinkedObservedChains.forEach((name) => this._addChainObservation(parentUsage, name));
+    }
+    if (analysis.boundaryLinkedMutatedChains) {
+      analysis.boundaryLinkedMutatedChains.forEach((name) => this._addChainMutation(parentUsage, name));
+    }
+    return parentUsage;
+  }
+
+  _getParentOwnedDeclarationUsage(analysis, localMutates) {
+    const parentUsage = this._createChainUsageAggregate();
+    if (analysis.declaresInParent.length === 0 || localMutates.length === 0) {
+      return parentUsage;
+    }
+    const parentOwnedNames = new Set();
+    analysis.declaresInParent.forEach((decl) => {
+      if (decl && decl.parentOwned && decl.name) {
+        parentOwnedNames.add(decl.name);
+      }
+    });
+    localMutates.forEach((name) => {
+      if (parentOwnedNames.has(name)) {
+        this._addChainMutation(parentUsage, name);
+      }
+    });
+    return parentUsage;
   }
 
   _deriveBoundaryLinkedChains(analysis, chainsFromParent) {
@@ -899,13 +984,10 @@ class CompileAnalysis {
   }
 
   _wantsLinkableChildBuffer(analysis) {
-    // Broader than `wantsLinkedChildBuffer`: guard recovery scope buffers also
-    // need derived parent links even though they are not ordinary child-buffer
-    // intent sites.
     return !!(
       analysis &&
       analysis.parent &&
-      (analysis.wantsLinkedChildBuffer || analysis.createsScopeBuffer)
+      (analysis.wantsLinkedChildBuffer || (analysis.createScope && !analysis.scopeBoundary))
     );
   }
 
@@ -913,6 +995,7 @@ class CompileAnalysis {
     analysis.createsLinkedChildBuffer = this._shouldCreateLinkedChildBuffer(analysis);
     if (!this._createsLinkableChildBuffer(analysis)) {
       analysis.boundaryLinkedChains = null;
+      analysis.boundaryLinkedObservedChains = null;
       analysis.boundaryLinkedMutatedChains = null;
     }
   }
@@ -928,9 +1011,10 @@ class CompileAnalysis {
   }
 
   _createsLinkableChildBuffer(analysis) {
-    // Broader than `createsLinkedChildBuffer`: guard recovery scope buffers are
-    // linkable even though the ordinary linked-child-buffer outcome is false.
-    return !!(analysis && (analysis.createsLinkedChildBuffer || analysis.createsScopeBuffer));
+    return !!(analysis && (
+      analysis.createsLinkedChildBuffer ||
+      (analysis.parent && analysis.createScope && !analysis.scopeBoundary)
+    ));
   }
 
   getCurrentTextChain(analysis) {

@@ -38,6 +38,7 @@ function bindInheritanceRuntimeState(runtimeState) {
       isConstructor: methodData.isConstructor,
       ownerEntry: methodData.ownerEntry,
       mergedLinkedChains: methodData.mergedLinkedChains,
+      mergedObservedChains: methodData.mergedObservedChains,
       mergedMutatedChains: methodData.mergedMutatedChains,
       errorContextTable: ownerTable,
       super: null

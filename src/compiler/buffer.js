@@ -36,10 +36,10 @@ class CompileBuffer {
     bufferId,
     parentBufferId = null,
     textChainVar = null,
-    observedFacts = null,
-    mutatedFacts = null,
-    observedFactsArg = observedFacts ? JSON.stringify(observedFacts) : 'null',
-    mutatedFactsArg = mutatedFacts ? JSON.stringify(mutatedFacts) : 'null',
+    linkedFacts = null,
+    ownFacts = null,
+    linkedFactsArg = linkedFacts ? JSON.stringify(linkedFacts) : 'null',
+    ownFactsArg = ownFacts ? JSON.stringify(ownFacts) : 'null',
     bufferStackErrorContextArg = 'null',
     traceParentArg = 'null',
     declareTextChain = true
@@ -47,7 +47,7 @@ class CompileBuffer {
     if (this.compiler.asyncMode) {
       const textId = textChainVar || `${bufferId}_textChainVar`;
       const parentArg = parentBufferId || 'null';
-      this.compiler.emit.line(`let ${bufferId} = new runtime.CommandBuffer(context, ${parentArg}, ${observedFactsArg}, ${mutatedFactsArg}, ${parentArg}, ${bufferStackErrorContextArg}, ${traceParentArg}, renderState);`);
+      this.compiler.emit.line(`let ${bufferId} = new runtime.CommandBuffer(context, ${parentArg}, ${linkedFactsArg}, ${ownFactsArg}, ${parentArg}, ${bufferStackErrorContextArg}, ${traceParentArg}, renderState);`);
       if (declareTextChain && !this.compiler.scriptMode) {
         this.compiler.emit.line(`let ${textId} = runtime.declareBufferChain(${bufferId}, "${this.currentTextChainName}", "text", context, null);`);
       }
@@ -94,6 +94,14 @@ class CompileBuffer {
       currentWaitedChainName: null,
       currentWaitedOwnerBuffer: null
     }, emitFunc);
+  }
+
+  getCommandBufferFactsArgs(node, { extraOwnMutatedChains = null, extraOwnObservedChains = null } = {}) {
+    return this.compiler.chain.getCommandBufferFactsArgs(node, extraOwnMutatedChains, extraOwnObservedChains);
+  }
+
+  emitDeclareWaitedChain(bufferId = this.currentBuffer) {
+    this.compiler.emit.line(`runtime.declareBufferChain(${bufferId}, "${WAITED_CHAIN_NAME}", "var", context, null);`);
   }
 
   _getBufferAccess() {

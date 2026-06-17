@@ -124,9 +124,8 @@ end.
 ## 2. Lock Down Analysis Fact Invariants
 
 **Status: implemented.** Finalized chain-set facts are asserted as `Set | null`
-with string chain names after chain-usage finalization. Custom linked-chain
-facts returned by post-analyzers are normalized through `_normalizeChainSet`;
-invalid shapes fail during analysis instead of leaking to codegen.
+with string chain names after chain-usage finalization. Boundary-linked facts are
+derived-only; post-analyzers must express effects through ordinary node facts.
 
 **Why second:** cheap guardrails before broader refactors. This combines the
 chain-set typing issue and lifecycle rules.
@@ -134,9 +133,8 @@ chain-set typing issue and lifecycle rules.
 ### Problem
 
 Finalized analysis chain-set fields should have one internal shape:
-`Set | null`. Emit/helper boundaries can convert to arrays, and post-analyzers
-may return narrow custom iterables, but finalized facts must be normalized before
-codegen consumes them.
+`Set | null`. Emit/helper boundaries can convert to arrays, but finalized facts
+must be normalized before codegen consumes them.
 
 Current relevant fields include:
 
@@ -147,10 +145,8 @@ Current relevant fields include:
 - `boundaryLinkedChains`
 - `boundaryLinkedMutatedChains`
 
-`_normalizeChainSet` now coerces custom post-analysis linked-chain iterables back
-to a `Set` ([analysis.js](../../src/compiler/analysis.js)). This is a useful
-normalization boundary, not merely a temporary shim, as long as the invariant is
-documented and tested.
+`_normalizeChainSet` keeps derived linked facts at the same finalized shape as
+ordinary aggregate chain facts.
 
 There is also an implicit lifecycle contract:
 
@@ -167,8 +163,7 @@ There is also an implicit lifecycle contract:
 Adopt and enforce:
 
 - finalized analysis chain-set facts are `Set | null`;
-- arrays are allowed only at emit/helper boundaries or as pre-normalized
-  post-analysis iterables;
+- arrays are allowed only at emit/helper boundaries;
 - `_normalizeChainSet` remains the single normalization boundary unless the
   codebase later chooses a stricter "producers must return Sets" rule.
 
@@ -178,10 +173,9 @@ a comment on `getChainsUsedFromParent` / `getChainsMutatedFromParent` noting the
 read finalized facts (valid from post-analyzers and codegen, null in first-pass
 analyzers).
 
-For the invariant, keep `_normalizeChainSet` as the boundary for untrusted
-custom post-analysis linked facts. Compiler-owned usage aggregates are built as
-sets directly, so a second finalized-field shape assertion would only repeat the
-same invariant before codegen observes it.
+For the invariant, compiler-owned usage aggregates are built as sets directly,
+so a second finalized-field shape assertion would only repeat the same invariant
+before codegen observes it.
 
 **Risk:** low. The suite already pins `boundaryLinkedChains instanceof Set`.
 
@@ -395,9 +389,8 @@ that sometimes travel through generic `usedChains` / `mutatedChains`.
 
 Some of this is load-bearing:
 
-- `hasCallerSupport` detection relies on `__caller__` surfacing in the body's
-  used-from-parent set; `CompileMacro.bodyUsesCallerScheduling(...)` owns that
-  internal-lane check.
+- `hasCallerSupport` is recorded when first-pass call analysis sees `caller()`;
+  `CompileMacro.recordCallerCall(...)` owns the internal-lane bookkeeping.
 - Sequential loop return checks rely on `__return__` being present in body chain
   facts; `CompileReturn.hasReturnStateObservation(...)` owns that check.
 - `__waited__*` is a timing lane; the dedicated `currentWaitedChainName` /

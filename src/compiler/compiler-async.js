@@ -9,6 +9,7 @@ import {
 
 import {CompilerBaseAsync} from './compiler-base-async.js';
 import {CompileBuffer} from './buffer.js';
+import {WAITED_CHAIN_NAME} from './reserved.js';
 
 class CompilerAsync extends CompilerBaseAsync {
   init(sourcePath, options) {
@@ -157,27 +158,49 @@ class CompilerAsync extends CompilerBaseAsync {
       declares.push({ name, type: 'var', initializer: null });
     });
     if (declarationsInBody) {
-      node.body.addAnalysis({ createScope: true, loopOwner: node, declares });
+      node.body.addAnalysis({
+        createScope: true,
+        loopOwner: node,
+        declares
+      });
+      analysisPass.addCommandFacts(node.body, { mutated: declaredNames });
       if (node.else_) {
         node.else_.addAnalysis({ createScope: true });
       }
-      return { wantsLinkedChildBuffer: true };
+      return { createScope: true, wantsLinkedChildBuffer: true };
     }
     return { createScope: true, declares, wantsLinkedChildBuffer: true };
   }
 
+  _createWaitedChainFacts() {
+    return {
+      declares: [{ name: WAITED_CHAIN_NAME, type: 'var', initializer: null, internal: true }],
+      mutates: [WAITED_CHAIN_NAME]
+    };
+  }
+
   analyzeWhile(node) {
-    node.body.addAnalysis({ createScope: true });
+    node.body.addAnalysis({
+      createScope: true,
+      declares: [{ name: 'iterationCount', type: 'var', initializer: null, internal: true }]
+    });
+    this.analysis.addCommandFacts(node.body, { mutated: ['iterationCount'] });
     node.cond.addAnalysis({ errorContextLabel: 'While.Condition' });
-    return { wantsLinkedChildBuffer: true };
+    return {
+      ...this._createWaitedChainFacts(),
+      createScope: true,
+      wantsLinkedChildBuffer: true
+    };
   }
 
   analyzeFor(node, analysisPass) {
     node.arr.addAnalysis({ errorContextLabel: 'For.Iterator' });
+    const facts = this._collectLoopDeclarationFacts(node, analysisPass, true);
     if (node.concurrentLimit) {
       node.concurrentLimit.addAnalysis({ errorContextLabel: 'For.Limit' });
+      Object.assign(facts, this._createWaitedChainFacts());
     }
-    return this._collectLoopDeclarationFacts(node, analysisPass, true);
+    return facts;
   }
 
   analyzeAsyncEach(node, analysisPass) {
@@ -186,15 +209,20 @@ class CompilerAsync extends CompilerBaseAsync {
       node.concurrentLimit.addAnalysis({ errorContextLabel: 'For.Limit' });
     }
     const result = this._collectLoopDeclarationFacts(node, analysisPass, true);
-    return result;
+    return {
+      ...result,
+      ...this._createWaitedChainFacts()
+    };
   }
 
   analyzeAsyncAll(node, analysisPass) {
     node.arr.addAnalysis({ errorContextLabel: 'For.Iterator' });
+    const facts = this._collectLoopDeclarationFacts(node, analysisPass, true);
     if (node.concurrentLimit) {
       node.concurrentLimit.addAnalysis({ errorContextLabel: 'For.Limit' });
+      Object.assign(facts, this._createWaitedChainFacts());
     }
-    return this._collectLoopDeclarationFacts(node, analysisPass, true);
+    return facts;
   }
 
   analyzeSwitch(node) {
@@ -426,6 +454,7 @@ class CompilerAsync extends CompilerBaseAsync {
       this.fail('Capture blocks are only supported in template mode', node.lineno, node.colno, node);
     }
     const textOutput = `${CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHAIN}${this._tmpid()}`;
+    this.analysis.addCommandFacts(node, { observed: [textOutput] });
     return {
       createScope: true,
       scopeBoundary: false,
@@ -526,25 +555,29 @@ class CompilerAsync extends CompilerBaseAsync {
     node.target.addAnalysis({ declarationTarget: true });
     this.importedBindings.add(node.target.value);
     return {
-      declares: [{ name: node.target.value, type: 'var', initializer: null, imported: true }]
+      declares: [{ name: node.target.value, type: 'var', initializer: null, imported: true }],
+      mutates: [node.target.value]
     };
   }
 
   analyzeFromImport(node) {
     node.template.addAnalysis({ errorContextLabel: this.scriptMode ? 'FromImport.Script' : 'FromImport.Template' });
     const declares = [];
+    const mutates = [];
     node.names.children.forEach((nameNode) => {
       if (nameNode instanceof nodes.Pair && nameNode.value instanceof nodes.Symbol) {
         nameNode.value.addAnalysis({ declarationTarget: true });
         this.importedBindings.add(nameNode.value.value);
         declares.push({ name: nameNode.value.value, type: 'var', initializer: null, imported: true });
+        mutates.push(nameNode.value.value);
       } else if (nameNode instanceof nodes.Symbol) {
         nameNode.addAnalysis({ declarationTarget: true });
         this.importedBindings.add(nameNode.value);
         declares.push({ name: nameNode.value, type: 'var', initializer: null, imported: true });
+        mutates.push(nameNode.value);
       }
     });
-    return { declares };
+    return { declares, mutates };
   }
 
   analyzeInclude(node) {
@@ -643,13 +676,28 @@ class CompilerAsync extends CompilerBaseAsync {
 
   _compileAsyncRoot(node) {
     const inheritanceParticipates = node._analysis.inheritance.participates;
+    let rootFactsArgs = {};
+    if (inheritanceParticipates) {
+      const sharedChains = this.inheritance
+        ._getSharedDeclarations(node)
+        .map((declaration) => declaration.name);
+      rootFactsArgs = this.chain.getCommandBufferFactsArgs(
+        node,
+        sharedChains,
+        sharedChains
+      );
+    }
+    const rootOptions = {
+      noReturn: true,
+      ...rootFactsArgs
+    };
     this.emit.entryFunction(node, 'root', () => {
       if (inheritanceParticipates) {
         this._compileParticipantAsyncRootBody(node);
       } else {
         this._compilePlainAsyncRootBody(node);
       }
-    }, { noReturn: true });
+    }, rootOptions);
     if (!inheritanceParticipates) {
       return { blocks: [], constructorEntry: null };
     }

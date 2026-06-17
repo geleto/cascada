@@ -3,23 +3,23 @@ import {assertChainLaneAvailable, checkFinishedBuffer} from './checks.js';
 import {isObservableCommand} from './commands/base.js';
 import {getRenderState, isCompactErrorContext} from './error-context.js';
 import {markPromiseHandled, RuntimeError} from './errors.js';
-import {CommandIterator} from './command-iterator.js';
+import {BufferLaneEntry, ObserverState} from './buffer-lane-entry.js';
 
-const CHAIN_FACTS_LINKED = 0;
-const CHAIN_FACTS_OWN = 1;
-const CHAIN_FACTS_PARENT = 2;
-const NO_ITERATOR_ITEM = Symbol('NO_ITERATOR_ITEM');
+const LINKED_FACTS_OBSERVED_CHAINS = 0;
+const LINKED_FACTS_MUTATED_CHAINS = 1;
+const OWN_FACTS_OBSERVED_CHAINS = 0;
+const OWN_FACTS_MUTATED_CHAINS = 1;
 
 class CommandBuffer {
-  constructor(context, parent = null, observedFacts = null, mutatedFacts = null, linkTarget = null, bufferStackErrorContext, traceParent = null, renderState = null) {
+  constructor(context, parent = null, linkedFacts = null, ownFacts = null, linkTarget = null, bufferStackErrorContext, traceParent = null, renderState = null) {
     if (!isCompactErrorContext(bufferStackErrorContext)) {
       throw new TypeError('CommandBuffer requires compact bufferStackErrorContext');
     }
-    if (observedFacts != null && !Array.isArray(observedFacts)) {
-      RuntimeError.reportAndThrow('CommandBuffer observedFacts must be an array when provided', bufferStackErrorContext);
+    if (linkedFacts != null && !Array.isArray(linkedFacts)) {
+      RuntimeError.reportAndThrow('CommandBuffer linkedFacts must be an array when provided', bufferStackErrorContext);
     }
-    if (mutatedFacts != null && !Array.isArray(mutatedFacts)) {
-      RuntimeError.reportAndThrow('CommandBuffer mutatedFacts must be an array when provided', bufferStackErrorContext);
+    if (ownFacts != null && !Array.isArray(ownFacts)) {
+      RuntimeError.reportAndThrow('CommandBuffer ownFacts must be an array when provided', bufferStackErrorContext);
     }
 
     this._context = context;
@@ -37,19 +37,22 @@ class CommandBuffer {
     // Per-lane command arrays. Local chain declarations and linked parent
     // chains are the lane sources.
     this.arrays = Object.create(null);
-    this._boundaryLinkedChains = new Set(observedFacts?.[CHAIN_FACTS_LINKED] ?? []);
-    this._boundaryLinkedMutatedChains = new Set(mutatedFacts?.[CHAIN_FACTS_LINKED] ?? []);
-    this._observedChains = new Set(observedFacts?.[CHAIN_FACTS_OWN] ?? []);
-    this._mutatedChains = new Set(mutatedFacts?.[CHAIN_FACTS_OWN] ?? []);
-    this._observedChainsFromParent = new Set(observedFacts?.[CHAIN_FACTS_PARENT] ?? []);
-    this._mutatedChainsFromParent = new Set(mutatedFacts?.[CHAIN_FACTS_PARENT] ?? []);
+    // Explicit facts enable strict add-time shape validation. Null facts are
+    // the permissive manual/test-buffer mode; compiler-created buffers pass
+    // explicit vectors, including [] for "no known lanes".
+    this._hasExplicitLinkedFacts = linkedFacts !== null;
+    this._hasExplicitOwnFacts = ownFacts !== null;
+    this._boundaryLinkedObservedChains = new Set(linkedFacts?.[LINKED_FACTS_OBSERVED_CHAINS] ?? []);
+    this._boundaryLinkedMutatedChains = new Set(linkedFacts?.[LINKED_FACTS_MUTATED_CHAINS] ?? []);
+    this._observedChains = new Set(ownFacts?.[OWN_FACTS_OBSERVED_CHAINS] ?? []);
+    this._mutatedChains = new Set(ownFacts?.[OWN_FACTS_MUTATED_CHAINS] ?? []);
     this._startedChains = new Set();
     this._finishedPromise = null;
     this._finishedResolver = null;
 
     // Active lane runners keyed by chain name. A buffer lane is started once.
     this._activeIterators = new Map();
-    this._configureCommandMethod();
+    this._fatalAbortBroadcasted = false;
     if (parent && parent._chainAliases) {
       // Propagate explicit chain-binding aliases down the buffer tree so
       // nested child buffers can continue routing formal names to the same
@@ -58,23 +61,15 @@ class CommandBuffer {
     }
 
     const effectiveLinkTarget = linkTarget || parent;
-    if (effectiveLinkTarget && this._boundaryLinkedChains.size > 0) {
-      for (const chainName of this._boundaryLinkedChains) {
+    const boundaryLinkedChains = new Set([
+      ...this._boundaryLinkedObservedChains,
+      ...this._boundaryLinkedMutatedChains
+    ]);
+    if (effectiveLinkTarget && boundaryLinkedChains.size > 0) {
+      for (const chainName of boundaryLinkedChains) {
         effectiveLinkTarget.addBuffer(this, chainName);
       }
     }
-  }
-
-  _configureCommandMethod() {
-    const needsObserve = hasObserveOnlyLinkedChain(this._boundaryLinkedChains, this._boundaryLinkedMutatedChains) ||
-      this._observedChains.size > 0 ||
-      this._observedChainsFromParent.size > 0;
-    const needsMutate = this._boundaryLinkedMutatedChains.size > 0 ||
-      this._mutatedChains.size > 0 ||
-      this._mutatedChainsFromParent.size > 0;
-
-    this.observe = needsObserve && !needsMutate ? this._observe : null;
-    this.mutate = needsMutate && !needsObserve ? this._mutate : null;
   }
 
   _createLane(chainName) {
@@ -103,6 +98,36 @@ class CommandBuffer {
       this.arrays[resolvedChainName] = [];
     }
     return resolvedChainName;
+  }
+
+  _createLaneEntry(chainName) {
+    const resolvedChainName = this._resolveAliasedChainName(chainName);
+    assertChainLaneAvailable(this, resolvedChainName);
+    return this._createLaneEntryWithFacts(
+      resolvedChainName,
+      this._observedChains.has(resolvedChainName),
+      this._mutatedChains.has(resolvedChainName)
+    );
+  }
+
+  _createLinkedLaneEntry(chainName) {
+    const resolvedChainName = this._resolveAliasedChainName(chainName);
+    assertChainLaneAvailable(this, resolvedChainName);
+    const mutates = this._boundaryLinkedMutatedChains.has(resolvedChainName);
+    return this._createLaneEntryWithFacts(
+      resolvedChainName,
+      this._boundaryLinkedObservedChains.has(resolvedChainName),
+      mutates
+    );
+  }
+
+  _createLaneEntryWithFacts(resolvedChainName, observes, mutates) {
+    return new BufferLaneEntry(
+      this,
+      resolvedChainName,
+      observes,
+      mutates
+    );
   }
 
   _registerChain(chainName, chain) {
@@ -197,30 +222,24 @@ class CommandBuffer {
     const resolvedChainName = this._resolveAliasedChainName(chainName);
     checkFinishedBuffer(this, resolvedChainName);
     assertChainLaneAvailable(this, resolvedChainName);
+    if (value instanceof CommandBuffer) {
+      RuntimeError.reportAndThrow(
+        'Use addBuffer(...) to add child CommandBuffer lanes',
+        this.bufferStackErrorContext
+      );
+    }
     // Normalize command chain/path keys at ingress so all downstream runtime
     // lookups operate on the resolved runtime chain name. This is why the
     // alias layer lives in CommandBuffer: once a command enters the buffer tree,
     // the rest of the runtime should not need to care whether it came from a
     // formal alias such as a by-reference macro parameter.
-    if (!(value instanceof CommandBuffer) && value && typeof value === 'object') {
+    if (value && typeof value === 'object') {
       if ('chainName' in value) {
         value.chainName = resolvedChainName;
       }
       if ('pathKey' in value) {
         value.pathKey = resolvedChainName;
       }
-    }
-    if (value instanceof CommandBuffer) {
-      const chain = this.getChainIfExists(resolvedChainName);
-      value._assertCanInstallLinkedChain(resolvedChainName, chain);
-      value.parent = this;
-      if (this._chainAliases) {
-        // Nested child buffers must preserve the same explicit alias bindings,
-        // otherwise async control-flow inside a macro could stop routing formal
-        // names to the caller-owned runtime chains they were bound to.
-        value._inheritChainAliases(this._chainAliases);
-      }
-      value._installLinkedChainResolved(resolvedChainName, chain);
     }
 
     const target = this.arrays[resolvedChainName];
@@ -233,6 +252,7 @@ class CommandBuffer {
   addCommand(cmd, chainName = null) {
     chainName = chainName || (cmd && cmd.chainName);
     if (!this.isChainFinished(chainName)) {
+      this._assertLaneEntryMatchesOwnFacts(cmd, chainName);
       this._add(cmd, chainName);
       return cmd.promise;
     }
@@ -262,7 +282,70 @@ class CommandBuffer {
   }
 
   addBuffer(buffer, chainName) {
-    return this._add(buffer, chainName);
+    const resolvedChainName = this._resolveAliasedChainName(chainName);
+    checkFinishedBuffer(this, resolvedChainName);
+    assertChainLaneAvailable(this, resolvedChainName);
+    const chain = this.getChainIfExists(resolvedChainName);
+    buffer._assertCanInstallLinkedChain(resolvedChainName, chain);
+    buffer.parent = this;
+    if (this._chainAliases) {
+      // Nested child buffers must preserve the same explicit alias bindings,
+      // otherwise async control-flow inside a macro could stop routing formal
+      // names to the caller-owned runtime chains they were bound to.
+      buffer._inheritChainAliases(this._chainAliases);
+    }
+    buffer._installLinkedChainResolved(resolvedChainName, chain);
+    buffer._assertLinkedLaneFacts(resolvedChainName);
+    const entry = buffer._createLinkedLaneEntry(resolvedChainName);
+    this._assertLaneEntryMatchesOwnFacts(entry, resolvedChainName);
+    return this._add(entry, resolvedChainName);
+  }
+
+  _assertLaneEntryMatchesOwnFacts(entry, chainName) {
+    if (!this._hasExplicitOwnFacts) {
+      return;
+    }
+    const resolvedChainName = this._resolveAliasedChainName(chainName);
+    const observes = this._observedChains.has(resolvedChainName);
+    const mutates = this._mutatedChains.has(resolvedChainName);
+    this._assertEntryShapeMatchesFacts(entry, resolvedChainName, observes, mutates, 'own');
+  }
+
+  _assertLinkedLaneFacts(chainName) {
+    if (!this._hasExplicitLinkedFacts) {
+      return;
+    }
+    const resolvedChainName = this._resolveAliasedChainName(chainName);
+    const observes = this._boundaryLinkedObservedChains.has(resolvedChainName);
+    const mutates = this._boundaryLinkedMutatedChains.has(resolvedChainName);
+    if (observes || mutates) {
+      return;
+    }
+    RuntimeError.reportAndThrow(
+      `CommandBuffer linked facts do not declare lane '${resolvedChainName}'`,
+      this.bufferStackErrorContext
+    );
+  }
+
+  _assertEntryShapeMatchesFacts(entry, chainName, observes, mutates, factKind) {
+    const needsObservation = !!(entry && entry.observe);
+    const needsMutation = !!(entry && entry.mutate);
+    const needsMixedIteration = !!(entry && !entry.observe && !entry.mutate && entry.iterate);
+    const hasPhaseMethod = needsObservation || needsMutation || needsMixedIteration;
+    const shapeMatches =
+      hasPhaseMethod &&
+      (!needsObservation || observes) &&
+      (!needsMutation || mutates) &&
+      (!needsMixedIteration || (observes && mutates));
+    if (shapeMatches) {
+      return;
+    }
+
+    const entryName = entry && entry.constructor ? entry.constructor.name : 'unknown';
+    RuntimeError.reportAndThrow(
+      `CommandBuffer ${factKind} facts for lane '${chainName}' do not match ${entryName} phase shape`,
+      entry?.errorContext || this.bufferStackErrorContext
+    );
   }
 
   start(chainName) {
@@ -276,15 +359,18 @@ class CommandBuffer {
     }
     this._startedChains.add(resolvedChainName);
     const chain = this.getChain(resolvedChainName);
+    const entry = this._createLaneEntry(resolvedChainName);
     let observeDone;
     let mutateDone;
 
-    if (this.observe) {
-      observeDone = this.observe(chain);
-    } else if (this.mutate) {
-      mutateDone = this.mutate(chain);
+    if (entry.observe) {
+      observeDone = entry.observe(chain);
+    } else if (entry.mutate) {
+      mutateDone = entry.mutate(chain);
     } else {
-      const completion = this.iterate(chain, new ObserverState());
+      const completion = entry.iterate(chain, new ObserverState((err) => {
+        this._handleLaneFailure(err, chain.name);
+      }));
       observeDone = completion.observeDone;
       mutateDone = completion.mutateDone;
     }
@@ -311,174 +397,6 @@ class CommandBuffer {
     ));
   }
 
-  _observe(chain) {
-    const observations = [];
-    const iterator = new CommandIterator(this, chain.name);
-    return this._runLaneEntries(
-      iterator,
-      chain.name,
-      (entry) => {
-        let observeDone;
-        if (entry.observe) {
-          observeDone = entry.observe(chain);
-        } else if (entry.mutate) {
-          // Transitional until command-buffer methods are assigned per lane:
-          // whole-buffer projections can still contain differently-shaped entries.
-          observeDone = entry.mutate(chain);
-        } else if (entry.iterate) {
-          const completion = entry.iterate(chain, new ObserverState());
-          observeDone = runAfter(completion.mutateDone, () => completion.observeDone);
-        } else {
-          RuntimeError.reportAndThrow(
-            `CommandBuffer cannot process entry for chain '${chain.name}' in observe phase`,
-            this.bufferStackErrorContext
-          );
-        }
-        if (observeDone && typeof observeDone.then === 'function') {
-          observations.push(observeDone);
-        }
-      },
-      () => {
-        if (observations.length > 0) {
-          return Promise.allSettled(observations).then((results) => {
-            const rejected = results.find((result) => result.status === 'rejected');
-            if (rejected) {
-              throw rejected.reason;
-            }
-          });
-        }
-        return undefined;
-      },
-      () => undefined
-    );
-  }
-
-  _mutate(chain) {
-    const iterator = new CommandIterator(this, chain.name);
-    return this._runLaneEntries(
-      iterator,
-      chain.name,
-      (entry) => {
-        if (entry.mutate) {
-          return entry.mutate(chain);
-        }
-        if (entry.observe) {
-          // Transitional until command-buffer methods are assigned per lane:
-          // whole-buffer projections can still contain differently-shaped entries.
-          return entry.observe(chain);
-        }
-        if (entry.iterate) {
-          const completion = entry.iterate(chain, new ObserverState());
-          return runAfter(completion.mutateDone, () => completion.observeDone);
-        }
-        RuntimeError.reportAndThrow(
-          `CommandBuffer cannot process entry for chain '${chain.name}' in mutate phase`,
-          this.bufferStackErrorContext
-        );
-      },
-      null,
-      () => undefined
-    );
-  }
-
-  iterate(chain, observerState) {
-    const completion = createIterationCompletion();
-    const iterator = new CommandIterator(this, chain.name);
-    if (!observerState.attachObserveOwner(
-      () => iterator.isClosedAndConsumed(),
-      completion.resolveObserveDone
-    )) {
-      completion.observeDone = undefined;
-    }
-    const laneRun = this._runLaneEntries(
-      iterator,
-      chain.name,
-      (entry) => this._processMixedEntry(entry, chain, observerState),
-      () => {
-        completion.resolveMutateDone();
-        observerState.checkObserveDone();
-      },
-      (err) => {
-        completion.reject(err);
-        return undefined;
-      }
-    );
-    if (laneRun && typeof laneRun.then === 'function') {
-      markPromiseHandled(laneRun.catch((err) => {
-        this._handleLaneFailure(err, chain.name);
-        completion.reject(err);
-      }));
-    }
-    return completion;
-  }
-
-  _runLaneEntries(iterator, chainName, processEntry, finishLane = null, handleSyncError = null) {
-    const advance = (readyItem = NO_ITERATOR_ITEM) => {
-      try {
-        while (true) {
-          this._throwIfFatalLaneAbandoned(chainName);
-          const item = readyItem === NO_ITERATOR_ITEM ? iterator.next() : readyItem;
-          readyItem = NO_ITERATOR_ITEM;
-          if (item === null) {
-            iterator.releaseFinishedLane();
-            iterator.dispose();
-            return finishLane ? finishLane() : undefined;
-          }
-          if (item && typeof item.then === 'function') {
-            return item.then(advance);
-          }
-          const entry = item.value;
-          if (!entry) {
-            item.release();
-            continue;
-          }
-          const done = processEntry(entry);
-          if (done && typeof done.then === 'function') {
-            return done.then(
-              () => {
-                item.release();
-                return advance();
-              },
-              (err) => {
-                item.release();
-                throw err;
-              }
-            );
-          }
-          item.release();
-        }
-      } catch (err) {
-        iterator.dispose();
-        this._handleLaneFailure(err, chainName);
-        if (handleSyncError) {
-          return handleSyncError(err);
-        }
-        throw err;
-      }
-    };
-    return advance();
-  }
-
-  _processMixedEntry(entry, chain, observerState) {
-    if (entry.observe) {
-      const observeDone = entry.observe(chain);
-      observerState.track(observeDone);
-      return;
-    }
-    if (entry.mutate) {
-      return runAfter(observerState.drain(), () => entry.mutate(chain));
-    }
-    if (entry.iterate) {
-      const childCompletion = entry.iterate(chain, observerState);
-      return childCompletion.mutateDone;
-    }
-
-    RuntimeError.reportAndThrow(
-      `CommandBuffer cannot classify entry for chain '${chain.name}'`,
-      this.bufferStackErrorContext
-    );
-  }
-
   _handleLaneFailure(err, chainName) {
     if (!err) {
       return;
@@ -487,11 +405,23 @@ class CommandBuffer {
     if (chain && !chain._fatalError) {
       chain._setFatalError(err, { errorContext: this.bufferStackErrorContext });
     }
-    if (this.renderState && this.renderState.isFatalErrorReported()) {
-      this._rejectPendingCommandResultsAfterFatal(chainName, this.renderState.error || err);
-    }
     if (this.renderState && !this.renderState.isFatalErrorReported()) {
       this.renderState.reportFatalError(err, this.bufferStackErrorContext, this);
+    }
+    if (this.renderState && this.renderState.isFatalErrorReported()) {
+      const fatalError = this.renderState.error || err;
+      this._rejectPendingCommandResultsAfterFatal(chainName, fatalError);
+      this._abortActiveLaneRuns(fatalError);
+    }
+  }
+
+  _abortActiveLaneRuns(err) {
+    if (this._fatalAbortBroadcasted) {
+      return;
+    }
+    this._fatalAbortBroadcasted = true;
+    for (const iterator of Array.from(this._activeIterators.values())) {
+      iterator.abort(err);
     }
   }
 
@@ -517,8 +447,8 @@ class CommandBuffer {
       if (!entry) {
         continue;
       }
-      if (entry && entry.iterate) {
-        entry._rejectPendingCommandResultsAfterFatal(resolvedChainName, err);
+      if (entry && entry._rejectPendingCommandResultsAfterFatal) {
+        entry._rejectPendingCommandResultsAfterFatal(err);
         continue;
       }
       if (typeof entry.rejectResult === 'function' && entry.reject) {
@@ -665,118 +595,6 @@ class CommandBuffer {
     return resolvedChainName;
   }
 
-}
-
-class ObserverState {
-  constructor() {
-    this.pendingObservers = new Set();
-    this.pendingObserversEmpty = null;
-    this.resolvePendingObserversEmpty = null;
-    this.observeOwner = null;
-  }
-
-  attachObserveOwner(isInputConsumed, resolveObserveDone) {
-    if (this.observeOwner) {
-      return false;
-    }
-    this.observeOwner = {
-      done: false,
-      isInputConsumed,
-      resolveObserveDone
-    };
-    this.checkObserveDone();
-    return true;
-  }
-
-  track(observeDone) {
-    if (!observeDone || typeof observeDone.then !== 'function') {
-      return;
-    }
-    const observerToken = {};
-    if (!this.pendingObserversEmpty) {
-      this.pendingObserversEmpty = new Promise((resolve) => {
-        this.resolvePendingObserversEmpty = resolve;
-      });
-    }
-    this.pendingObservers.add(observerToken);
-    markPromiseHandled(observeDone.finally(() => {
-      this.pendingObservers.delete(observerToken);
-      if (this.pendingObservers.size === 0 && this.resolvePendingObserversEmpty) {
-        const resolve = this.resolvePendingObserversEmpty;
-        this.pendingObserversEmpty = null;
-        this.resolvePendingObserversEmpty = null;
-        resolve();
-      }
-      this.checkObserveDone();
-    }));
-  }
-
-  checkObserveDone() {
-    const owner = this.observeOwner;
-    if (!owner || owner.done) {
-      return;
-    }
-    if (owner.isInputConsumed() && this.pendingObservers.size === 0) {
-      owner.done = true;
-      owner.resolveObserveDone();
-    }
-  }
-
-  drain() {
-    if (this.pendingObservers.size === 0) {
-      return undefined;
-    }
-    return this._drainAsync();
-  }
-
-  async _drainAsync() {
-    while (this.pendingObservers.size > 0) {
-      await this.pendingObserversEmpty;
-    }
-  }
-}
-
-function createIterationCompletion() {
-  let resolveMutateDone;
-  let rejectMutateDone;
-  let resolveObserveDone;
-  let rejectObserveDone;
-  const mutateDone = new Promise((resolve, reject) => {
-    resolveMutateDone = resolve;
-    rejectMutateDone = reject;
-  });
-  const observeDone = new Promise((resolve, reject) => {
-    resolveObserveDone = resolve;
-    rejectObserveDone = reject;
-  });
-  markPromiseHandled(mutateDone);
-  markPromiseHandled(observeDone);
-  return {
-    mutateDone,
-    observeDone,
-    resolveMutateDone,
-    resolveObserveDone,
-    reject(err) {
-      rejectMutateDone(err);
-      rejectObserveDone(err);
-    }
-  };
-}
-
-function runAfter(value, next) {
-  if (value && typeof value.then === 'function') {
-    return value.then(next);
-  }
-  return next();
-}
-
-function hasObserveOnlyLinkedChain(linkedChains, linkedMutatedChains) {
-  for (const chainName of linkedChains) {
-    if (!linkedMutatedChains.has(chainName)) {
-      return true;
-    }
-  }
-  return false;
 }
 
 export { CommandBuffer, ObserverState };

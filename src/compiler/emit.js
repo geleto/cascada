@@ -64,8 +64,8 @@ class CompileEmit {
   entryFunction(node, name, emitFunc, {
     extraParams = [],
     noReturn = false,
-    observedFactsArg = null,
-    mutatedFactsArg = null
+    linkedFactsArg = null,
+    ownFactsArg = null
   } = {}) {
     const rootTextChainName = (!this.compiler.scriptMode && node && node._analysis && node._analysis.textOutput)
       ? node._analysis.textOutput
@@ -79,8 +79,8 @@ class CompileEmit {
     }, () => {
       this._beginEntryFunction(node, name, {
         extraParams,
-        observedFactsArg,
-        mutatedFactsArg
+        linkedFactsArg,
+        ownFactsArg
       });
       emitFunc.call(this.compiler);
       this._endEntryFunction(node, noReturn);
@@ -89,8 +89,8 @@ class CompileEmit {
 
   _beginEntryFunction(node, name, {
     extraParams = [],
-    observedFactsArg = null,
-    mutatedFactsArg = null
+    linkedFactsArg = null,
+    ownFactsArg = null
   } = {}) {
     this.scopeClosers = '';
     if (this.compiler.asyncMode) {
@@ -117,11 +117,14 @@ class CompileEmit {
     // this.Line(`let ${this.compiler.buffer.currentBuffer} = "";`);
     if (this.compiler.asyncMode && name === 'root') {
       const rootBufferStackErrorContext = this.compiler.emitErrorContext(node, { entryName: name });
+      const rootFacts = linkedFactsArg || ownFactsArg
+        ? { linkedFactsArg: linkedFactsArg || 'null', ownFactsArg: ownFactsArg || 'null' }
+        : this.compiler.chain.getCommandBufferFacts(node);
       this.compiler.buffer.emitScopeCommandBuffer({
         bufferId: this.compiler.buffer.currentBuffer,
         textChainVar: this.compiler.buffer.currentTextChainVar,
         bufferStackErrorContextArg: rootBufferStackErrorContext,
-        ...this.compiler.chain.getCommandBufferFacts(node)
+        ...rootFacts
       });
     } else {
       const scopeBufferStackErrorContext = this.compiler.asyncMode
@@ -134,8 +137,8 @@ class CompileEmit {
         bufferStackErrorContextArg: scopeBufferStackErrorContext,
         traceParentArg: this.compiler.asyncMode ? 'parentBuffer' : 'null',
         ...(this.compiler.asyncMode
-          ? (observedFactsArg || mutatedFactsArg
-            ? { observedFactsArg: observedFactsArg || 'null', mutatedFactsArg: mutatedFactsArg || 'null' }
+          ? (linkedFactsArg || ownFactsArg
+            ? { linkedFactsArg: linkedFactsArg || 'null', ownFactsArg: ownFactsArg || 'null' }
             : this.compiler.chain.getCommandBufferFacts(node))
           : {})
       });

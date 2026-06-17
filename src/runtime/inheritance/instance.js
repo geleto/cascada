@@ -119,8 +119,8 @@ class InheritanceInstance {
     const invocationBuffer = new this.ownerState.runtime.CommandBuffer(
       context,
       parentBuffer,
-      [methodData.mergedLinkedChains],
-      [methodData.mergedMutatedChains],
+      [methodData.mergedObservedChains, methodData.mergedMutatedChains],
+      [methodData.mergedObservedChains, methodData.mergedMutatedChains],
       parentBuffer,
       this.ownerState.runtime.cloneWithAddedContext(errorContext, {
         methodName: methodData.name,

@@ -1157,6 +1157,7 @@ describe('Inheritance rebuild', function () {
         __testSuperErrorContext: compactTestErrorContext(options.superErrorContext),
         inheritedMethodDependencies: compactDependencies(options.inheritedMethodDependencies || {}),
         ownLinkedChains: options.ownLinkedChains || [],
+        ownObservedChains: options.ownObservedChains || [],
         ownMutatedChains: options.ownMutatedChains || []
       };
     }
@@ -1557,6 +1558,7 @@ describe('Inheritance rebuild', function () {
           methodEntries: {
             build: compiledMethod('build', {
               ownLinkedChains: ['childRead'],
+              ownObservedChains: ['childRead'],
               ownMutatedChains: ['childWrite']
             })
           }
@@ -1566,6 +1568,7 @@ describe('Inheritance rebuild', function () {
           methodEntries: {
             build: compiledMethod('build', {
               ownLinkedChains: ['rootRead'],
+              ownObservedChains: ['rootRead'],
               ownMutatedChains: ['rootWrite']
             })
           }
@@ -1573,6 +1576,7 @@ describe('Inheritance rebuild', function () {
       ]);
 
       expect(state.methods.build.mergedLinkedChains.slice().sort()).to.eql(['childRead', 'rootRead']);
+      expect(state.methods.build.mergedObservedChains.slice().sort()).to.eql(['childRead', 'rootRead']);
       expect(state.methods.build.mergedMutatedChains.slice().sort()).to.eql(['childWrite', 'rootWrite']);
     });
 
@@ -1583,6 +1587,7 @@ describe('Inheritance rebuild', function () {
             body: compiledMethod('body', {
               inheritedMethodDependencies: {},
               ownLinkedChains: ['theme'],
+              ownObservedChains: ['theme'],
               ownMutatedChains: ['theme']
             })
           }
@@ -1593,6 +1598,7 @@ describe('Inheritance rebuild', function () {
       expect(entry.inheritedMethodDependencies).to.be(undefined);
       expect(entry.superErrorContext).to.be(undefined);
       expect(entry.ownLinkedChains).to.be(undefined);
+      expect(entry.ownObservedChains).to.be(undefined);
       expect(entry.ownMutatedChains).to.be(undefined);
       expect(entry.name).to.be('body');
       expect(entry.fn).to.be.a(Function);
@@ -2543,6 +2549,7 @@ describe('Inheritance rebuild', function () {
 
       expect(props.inheritanceSpec.sharedSchema.$theme.type).to.be('var');
       expect(props.inheritanceSpec.methodEntries.outer.ownLinkedChains).to.eql(['$theme']);
+      expect(props.inheritanceSpec.methodEntries.outer.ownObservedChains).to.eql(['$theme']);
     });
 
     it('uses only ordered argument names for block signatures', function () {

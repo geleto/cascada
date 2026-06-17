@@ -42,7 +42,7 @@ class CompileMacro {
     const invocationBufferId = compiler._tmpid();
     const invocationFinishedId = compiler._tmpid();
     const invocationResultId = compiler._tmpid();
-    compiler.emit.line(`let ${invocationBufferId} = new runtime.CommandBuffer(context, ${activeContext.allCallersBufferId}, ${activeContext.rawCallerVar}.__callerObservedFacts || null, ${activeContext.rawCallerVar}.__callerMutatedFacts || null, null, ${callerBufferStackErrorContext}, null, renderState);`);
+    compiler.emit.line(`let ${invocationBufferId} = new runtime.CommandBuffer(context, ${activeContext.allCallersBufferId}, ${activeContext.rawCallerVar}.__callerLinkedFacts || null, ${activeContext.rawCallerVar}.__callerOwnFacts || null, null, ${callerBufferStackErrorContext}, null, renderState);`);
     compiler.emit.line(`let ${invocationFinishedId} = ${invocationBufferId}.getFinishedPromise();`);
     compiler.emit.line(`${bufferId}.addCommand(new runtime.WaitResolveCommand({ chainName: "${CALLER_CHAIN_NAME}", args: [${invocationFinishedId}], errorContext: ${compiler.emitErrorContext(node)} }), "${CALLER_CHAIN_NAME}");`);
     compiler.emit.line(`let ${invocationResultId} = runtime.finallyValue(runtime.invokeMacro(${activeContext.rawCallerVar}, context, ${argsId}, ${invocationBufferId}), () => ${invocationBufferId}.finish());`);
@@ -74,6 +74,11 @@ class CompileMacro {
         declares.push({ name: arg.value, type: 'var', initializer: null, macroParam: true });
       }
     });
+    const { callableSignature } = this._parseMacroSignature(node);
+    this.compiler.analysis.addCommandFacts(node, {
+      observed: this._getMacroBindingObservationNames(callableSignature, false),
+      mutated: this._getMacroBindingMutationNames(callableSignature, false)
+    });
     return {
       createScope: true,
       scopeBoundary: false,
@@ -94,8 +99,8 @@ class CompileMacro {
   _compileAsyncCaller(node) {
     const funcId = this._compileAsyncMacro(node);
     const callerFacts = this.compiler.chain.getCommandBufferFacts(node);
-    this.compiler.emit.line(`${funcId}.__callerObservedFacts = ${JSON.stringify(callerFacts.observedFacts)};`);
-    this.compiler.emit.line(`${funcId}.__callerMutatedFacts = ${JSON.stringify(callerFacts.mutatedFacts)};`);
+    this.compiler.emit.line(`${funcId}.__callerLinkedFacts = ${JSON.stringify(callerFacts.linkedFacts)};`);
+    this.compiler.emit.line(`${funcId}.__callerOwnFacts = ${JSON.stringify(callerFacts.ownFacts)};`);
     return funcId;
   }
 
@@ -135,14 +140,36 @@ class CompileMacro {
     declares.push(macroDecl);
     declaresInParent.push(parentMacroDecl);
     declares.push({ name: CALLER_CHAIN_NAME, type: 'var', initializer: null, internal: true });
+    const { callableSignature } = this._parseMacroSignature(node);
+    this.compiler.analysis.addCommandFacts(node.body, {
+      observed: this._getMacroBindingObservationNames(callableSignature, false),
+      mutated: this._getMacroBindingMutationNames(callableSignature, false)
+    });
     return {
       createScope: true,
       scopeBoundary: true,
       declares,
       declaresInParent,
+      mutates: [node.name.value],
       hasCallerSupport: false,
       compiledMacroFuncId
     };
+  }
+
+  recordCallerCall(node) {
+    let current = node._analysis.parent;
+    while (current) {
+      const owner = current.node;
+      if (owner instanceof nodes.Macro) {
+        owner.addAnalysis({ hasCallerSupport: true });
+        this.compiler.analysis.addCommandFacts(owner.body, {
+          observed: [CALLER_CHAIN_NAME],
+          mutated: [CALLER_CHAIN_NAME]
+        });
+        return;
+      }
+      current = current.parent;
+    }
   }
 
   _validateParameterDeclaration(name, nameNode, seenParamNames, ownerNode) {
@@ -156,19 +183,6 @@ class CompileMacro {
       );
     }
     seenParamNames.add(name);
-  }
-
-  bodyMutatesCallerLane(bodyNode) {
-    // __caller__ intentionally remains in generic mutation facts so nested
-    // caller() boundaries can link it, but macro support checks should go
-    // through this helper instead of open-coding the internal lane name.
-    return this.compiler.analysis.getChainsMutatedFromParent(bodyNode).includes(CALLER_CHAIN_NAME);
-  }
-
-  postAnalyzeMacro(node) {
-    return {
-      hasCallerSupport: this.bodyMutatesCallerLane(node.body)
-    };
   }
 
   compileMacro(node) {
@@ -206,6 +220,24 @@ class CompileMacro {
     };
   }
 
+  _getMacroBindingMutationNames(callableSignature, hasCallerSupport = false) {
+    const names = ['caller']
+      .concat(callableSignature.positionalNames)
+      .concat(callableSignature.keywordNames);
+    if (hasCallerSupport) {
+      names.push(CALLER_CHAIN_NAME);
+    }
+    return names;
+  }
+
+  _getMacroBindingObservationNames(callableSignature, hasCallerSupport = false) {
+    const names = this._getMacroBindingMutationNames(callableSignature, false);
+    if (hasCallerSupport) {
+      names.push(CALLER_CHAIN_NAME);
+    }
+    return names;
+  }
+
   _emitCallerBindingValue({ bufferId, rawCallerVar, allCallersBufferId, positionNode }) {
     const compiler = this.compiler;
     const invocationBufferId = compiler._tmpid();
@@ -226,7 +258,7 @@ class CompileMacro {
     // all-callers buffer so multiple invocations can run independently.
     compiler.emit(`(${rawCallerVar} && ${rawCallerVar}.isMacro ? function() {`);
     compiler.emit(`let ${invocationArgsId} = Array.prototype.slice.call(arguments);`);
-    compiler.emit(`let ${invocationBufferId} = new runtime.CommandBuffer(context, ${allCallersBufferId}, ${rawCallerVar}.__callerObservedFacts || null, ${rawCallerVar}.__callerMutatedFacts || null, null, ${callerBufferStackErrorContext}, null, renderState);`);
+    compiler.emit(`let ${invocationBufferId} = new runtime.CommandBuffer(context, ${allCallersBufferId}, ${rawCallerVar}.__callerLinkedFacts || null, ${rawCallerVar}.__callerOwnFacts || null, null, ${callerBufferStackErrorContext}, null, renderState);`);
     compiler.emit(`let ${invocationFinishedId} = ${invocationBufferId}.getFinishedPromise();`);
     compiler.emit(`${bufferId}.addCommand(new runtime.WaitResolveCommand({ chainName: "${CALLER_CHAIN_NAME}", args: [${invocationFinishedId}], errorContext: ${compiler.emitErrorContext(positionNode)} }), "${CALLER_CHAIN_NAME}");`);
     // __caller__ timing is owned only by caller invocation code. Track both:
@@ -255,7 +287,7 @@ class CompileMacro {
     compiler.emit.line(`if (${rawCallerVar} && ${rawCallerVar}.isMacro) {`);
     // The all-callers buffer is parent-linked because caller() may emit
     // parent-visible observable commands, unlike the isolated macro buffer.
-    compiler.emit.line(`  ${allCallersBufferId} = new runtime.CommandBuffer(context, macroParentBuffer, ${rawCallerVar}.__callerObservedFacts || null, ${rawCallerVar}.__callerMutatedFacts || null, macroParentBuffer, ${callerBufferStackErrorContext}, macroParentBuffer, renderState);`);
+    compiler.emit.line(`  ${allCallersBufferId} = new runtime.CommandBuffer(context, macroParentBuffer, ${rawCallerVar}.__callerLinkedFacts || null, ${rawCallerVar}.__callerOwnFacts || null, macroParentBuffer, ${callerBufferStackErrorContext}, macroParentBuffer, renderState);`);
     compiler.emit.line('}');
   }
 

@@ -83,6 +83,7 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       'observedChainsFromParent',
       'mutatedChainsFromParent',
       'boundaryLinkedChains',
+      'boundaryLinkedObservedChains',
       'boundaryLinkedMutatedChains'
     ];
     const supersetPairs = [
@@ -90,6 +91,7 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       ['mutatedChains', 'usedChains'],
       ['observedChainsFromParent', 'usedChainsFromParent'],
       ['mutatedChainsFromParent', 'usedChainsFromParent'],
+      ['boundaryLinkedObservedChains', 'boundaryLinkedChains'],
       ['boundaryLinkedMutatedChains', 'boundaryLinkedChains']
     ];
     collectAllNodes(ast).forEach((node) => {
@@ -164,7 +166,9 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       expect(rootTextDeclares[0].type).to.be('text');
       expect(rootTextDeclares[0].shared).to.not.be(true);
       expect(blockNode._analysis.boundaryLinkedChains instanceof Set).to.be(true);
-      expect(blockNode._analysis.boundaryLinkedMutatedChains instanceof Set).to.be(true);
+      expect(Array.from(blockNode._analysis.boundaryLinkedChains || [])).to.eql(['$theme']);
+      expect(Array.from(blockNode._analysis.boundaryLinkedObservedChains || [])).to.eql(['$theme']);
+      expect(blockNode._analysis.boundaryLinkedMutatedChains).to.be(null);
     });
 
     it('should finalize analysis chain-set facts as Set or null', function () {
@@ -179,7 +183,7 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       expectFinalizedChainSetFacts(ast);
     });
 
-    it('should reject invalid custom boundary-linked chain fact shapes during finalization', function () {
+    it('should reject custom boundary-linked chain facts', function () {
       const opts = {
         asyncMode: true,
         scriptMode: false,
@@ -187,44 +191,15 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       };
       const compiler = new CompilerAsync('invalid-linked-chain-facts.njk', opts);
       const ast = transform(parse('{% if flag %}{{ x }}{% endif %}', [], opts), [], 'invalid-linked-chain-facts.njk', opts);
-      compiler.postAnalyzeIf = () => ({ boundaryLinkedChains: 'x' });
-
-      expect(() => compiler.analysis.run(ast)).to.throwException((err) => {
-        expect(err.message).to.contain('Analysis fact \'boundaryLinkedChains\'');
-        expect(err.message).to.contain('must be a Set, array, or iterable collection of chain names');
+      compiler.postAnalyzeIf = () => ({
+        boundaryLinkedChains: ['x'],
+        boundaryLinkedObservedChains: ['x'],
+        boundaryLinkedMutatedChains: ['x']
       });
-    });
-
-    it('should reject Map custom boundary-linked chain facts as invalid shapes', function () {
-      const opts = {
-        asyncMode: true,
-        scriptMode: false,
-        idPool: createIdPool()
-      };
-      const compiler = new CompilerAsync('invalid-linked-chain-map-facts.njk', opts);
-      const ast = transform(parse('{% if flag %}{{ x }}{% endif %}', [], opts), [], 'invalid-linked-chain-map-facts.njk', opts);
-      compiler.postAnalyzeIf = () => ({ boundaryLinkedChains: new Map([['x', { name: 'x' }]]) });
 
       expect(() => compiler.analysis.run(ast)).to.throwException((err) => {
-        expect(err.message).to.contain('Analysis fact \'boundaryLinkedChains\'');
-        expect(err.message).to.contain('must be a Set, array, or iterable collection of chain names');
-        expect(err.message).to.contain('got Map');
-      });
-    });
-
-    it('should reject invalid custom boundary-linked chain names during finalization', function () {
-      const opts = {
-        asyncMode: true,
-        scriptMode: false,
-        idPool: createIdPool()
-      };
-      const compiler = new CompilerAsync('invalid-linked-chain-names.njk', opts);
-      const ast = transform(parse('{% if flag %}{{ x }}{% endif %}', [], opts), [], 'invalid-linked-chain-names.njk', opts);
-      compiler.postAnalyzeIf = () => ({ boundaryLinkedChains: [''] });
-
-      expect(() => compiler.analysis.run(ast)).to.throwException((err) => {
-        expect(err.message).to.contain('Analysis fact \'boundaryLinkedChains\'');
-        expect(err.message).to.contain('contains an invalid chain name');
+        expect(err.message).to.contain("Analysis fact 'boundaryLinkedChains' is no longer supported");
+        expect(err.message).to.contain("'observes', 'mutates', or 'declares'");
       });
     });
 
@@ -432,10 +407,10 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       const outer = captures[0]._analysis;
       const inner = captures[1]._analysis;
 
-      expect(Array.from(outer.observedChains || [])).to.eql(['x']);
+      expect(sortedChainNames(outer.observedChains)).to.eql(sortedChainNames(['x', outer.textOutput]));
       expect(Array.from(outer.usedChains || [])).to.eql([outer.textOutput, 'x', 'inner']);
       expect(Array.from(outer.mutatedChains || [])).to.eql([outer.textOutput, 'inner']);
-      expect(Array.from(inner.observedChains || [])).to.eql(['x']);
+      expect(sortedChainNames(inner.observedChains)).to.eql(sortedChainNames(['x', inner.textOutput]));
       expect(Array.from(inner.usedChains || [])).to.eql([inner.textOutput, 'x']);
       expect(Array.from(inner.mutatedChains || [])).to.eql([inner.textOutput]);
       expect(Array.from(outer.observedChainsFromParent || [])).to.eql(['x']);
@@ -448,6 +423,18 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       expect(outer.mutatedChains.has(inner.textOutput)).to.be(false);
     });
 
+    it('should record capture snapshots as ordinary owned observations', function () {
+      const ast = analyzeTemplateSource(
+        '{% set x = "v" %}{% set captured %}A{{ x }}B{% endset %}{{ captured }}',
+        'capture-owned-observation-analysis.njk'
+      );
+      const capture = collectNodesByType(ast, 'Capture')[0]._analysis;
+
+      expect(Array.from(capture.observedChains || [])).to.contain(capture.textOutput);
+      expect(Array.from(capture.boundaryLinkedChains || [])).to.eql(['x']);
+      expect((capture.boundaryLinkedObservedChains || new Set()).has(capture.textOutput)).to.be(false);
+    });
+
     it('should preserve parent-owned mutations in stored capture chain facts', function () {
       const ast = analyzeTemplateSource(
         '{% set x = "v" %}' +
@@ -458,10 +445,10 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       const outer = captures[0]._analysis;
       const inner = captures[1]._analysis;
 
-      expect(Array.from(outer.observedChains || [])).to.eql(['x']);
-      expect(Array.from(outer.usedChains || [])).to.eql(['x', 'inner', outer.textOutput]);
+      expect(sortedChainNames(outer.observedChains)).to.eql(sortedChainNames(['x', outer.textOutput]));
+      expect(sortedChainNames(outer.usedChains)).to.eql(sortedChainNames(['x', 'inner', outer.textOutput]));
       expect(Array.from(outer.mutatedChains || [])).to.eql(['x', 'inner']);
-      expect(Array.from(inner.observedChains || [])).to.eql(['x']);
+      expect(sortedChainNames(inner.observedChains)).to.eql(sortedChainNames(['x', inner.textOutput]));
       expect(Array.from(inner.usedChains || [])).to.eql([inner.textOutput, 'x']);
       expect(Array.from(inner.mutatedChains || [])).to.eql([inner.textOutput, 'x']);
       expect(Array.from(outer.observedChainsFromParent || [])).to.eql(['x']);
@@ -623,7 +610,24 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       expect(Array.from(callerNode._analysis.declaredChains.keys())).to.eql(['caller', '__return__', '__text__']);
     });
 
-    it('should mark recovery scopes as scope buffers without marking guard body scopes', function () {
+    it('should keep macro binding command facts owned by the macro body', function () {
+      const ast = analyzeTemplateSource(
+        '{% macro adjust(a, b=a) %}{% set b = b ~ "!" %}{{ a }}:{{ b }}{% endmacro %}{{ adjust("x") }}',
+        'macro-binding-command-facts.njk'
+      );
+      const macro = collectNodesByType(ast, 'Macro')[0];
+      const bodyFacts = macro.body._analysis;
+
+      expect(Array.from(bodyFacts.observedChains || [])).to.contain('caller');
+      expect(Array.from(bodyFacts.observedChains || [])).to.contain('a');
+      expect(Array.from(bodyFacts.observedChains || [])).to.contain('b');
+      expect(Array.from(bodyFacts.mutatedChains || [])).to.contain('caller');
+      expect(Array.from(bodyFacts.mutatedChains || [])).to.contain('a');
+      expect(Array.from(bodyFacts.mutatedChains || [])).to.contain('b');
+      expect(Array.from(macro._analysis.boundaryLinkedChains || [])).to.eql([]);
+    });
+
+    it('should mark guard body and recovery as buffer-backed scopes', function () {
       const ast = analyzeScriptSource([
         'data result',
         'guard result',
@@ -637,13 +641,42 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       const recoveryNode = collectNodesByType(ast, 'Guard.Recover')[0];
 
       expect(guardNode.body._analysis.createScope).to.be(true);
-      expect(guardNode.body._analysis.createsScopeBuffer).to.be(false);
+      expect(guardNode.body._analysis.wantsLinkedChildBuffer).to.be(true);
+      expect(guardNode.body._analysis.createsLinkedChildBuffer).to.be(true);
+      expect(Object.prototype.hasOwnProperty.call(guardNode.body._analysis, 'createsScopeBuffer')).to.be(false);
       expect(recoveryNode._analysis.createScope).to.be(true);
-      expect(recoveryNode._analysis.wantsLinkedChildBuffer).to.be(false);
-      expect(recoveryNode._analysis.createsScopeBuffer).to.be(true);
-      expect(recoveryNode._analysis.createsLinkedChildBuffer).to.be(false);
+      expect(recoveryNode._analysis.wantsLinkedChildBuffer).to.be(true);
+      expect(Object.prototype.hasOwnProperty.call(recoveryNode._analysis, 'createsScopeBuffer')).to.be(false);
+      expect(recoveryNode._analysis.createsLinkedChildBuffer).to.be(true);
       expect(Array.from(recoveryNode._analysis.boundaryLinkedChains || [])).to.eql(['result']);
       expect(Array.from(recoveryNode._analysis.boundaryLinkedMutatedChains || [])).to.eql(['result']);
+    });
+
+    it('should keep guard-local command facts out of parent-linked facts', function () {
+      const ast = analyzeScriptSource([
+        'data result',
+        'guard result',
+        '  var local = "guard"',
+        '  result.before = local',
+        '  var failed = fail()',
+        'recover err',
+        '  result.error = err.message',
+        'endguard',
+        'return result.snapshot()'
+      ].join('\n'), 'guard-local-command-facts.casc');
+      const guardNode = collectNodesByType(ast, 'Guard')[0]._analysis;
+      const bodyNode = collectNodesByType(ast, 'Guard')[0].body._analysis;
+      const recoveryNode = collectNodesByType(ast, 'Guard.Recover')[0]._analysis;
+
+      expect((bodyNode.observedChains || new Set()).has('local')).to.be(true);
+      expect((bodyNode.mutatedChains || new Set()).has('local')).to.be(true);
+      expect((guardNode.observedChains || new Set()).has('local')).to.be(false);
+      expect((guardNode.mutatedChains || new Set()).has('local')).to.be(false);
+      expect(guardNode.guardFacts.bodyErrorChains).to.contain('local');
+      expect(guardNode.guardFacts.bodyErrorChains).to.contain('failed');
+      expect((guardNode.boundaryLinkedChains || new Set()).has('local')).to.be(false);
+      expect((recoveryNode.mutatedChains || new Set()).has('err')).to.be(true);
+      expect((recoveryNode.boundaryLinkedChains || new Set()).has('err')).to.be(false);
     });
 
     it('should keep loop and include-owned facts local inside captures', function () {

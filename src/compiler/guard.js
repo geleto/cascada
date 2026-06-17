@@ -9,17 +9,22 @@ class CompileGuard {
 
   analyzeGuard(node) {
     const compiler = this.compiler;
-    node.body.addAnalysis({ createScope: true });
+    node.body.addAnalysis({
+      createScope: true,
+      wantsLinkedChildBuffer: true
+    });
     if (node.recoveryBody) {
       const recoveryAnalysis = {
         createScope: true,
-        createsScopeBuffer: true
+        wantsLinkedChildBuffer: true
       };
       if (typeof node.errorVar === 'string' && node.errorVar) {
         recoveryAnalysis.declares = [{ name: node.errorVar, type: 'var', initializer: null }];
+        compiler.analysis.addCommandFacts(node.recoveryBody, { mutated: [node.errorVar] });
       } else if (node.errorVar instanceof nodes.Symbol) {
         node.errorVar.addAnalysis({ declarationTarget: true });
         recoveryAnalysis.declares = [{ name: node.errorVar.value, type: 'var', initializer: null }];
+        compiler.analysis.addCommandFacts(node.recoveryBody, { mutated: [node.errorVar.value] });
       }
       node.recoveryBody.addAnalysis(recoveryAnalysis);
     }
@@ -52,13 +57,34 @@ class CompileGuard {
       resolvedSequenceTargets
     );
     const hasSequenceTargets = guardTargets.sequenceTargets;
+    const recoveryObservedChains = node.recoveryBody
+      ? compiler.analysis.getChainsObservedFromParent(node.recoveryBody)
+      : [];
+    const recoveryMutatedChains = node.recoveryBody
+      ? compiler.analysis.getChainsMutatedFromParent(node.recoveryBody)
+      : [];
+    const bodyObservedChains = compiler.analysis.getChainsObservedFromParent(node.body);
+    const bodyMutatedChainsFromParent = compiler.analysis.getChainsMutatedFromParent(node.body);
+    const ownedObservedChains = Array.from(new Set([
+      ...bodyObservedChains,
+      ...guardChains,
+      ...recoveryObservedChains
+    ]));
+    const ownedMutatedChains = Array.from(new Set([
+      ...bodyMutatedChainsFromParent,
+      ...guardChains,
+      ...recoveryMutatedChains
+    ]));
 
     return {
+      observes: ownedObservedChains,
+      mutates: ownedMutatedChains,
       guardFacts: {
         targets: guardTargets,
         needsGuardState: guardTargets.variableTargetsAll || hasSequenceTargets,
         resolvedSequenceTargets,
-        guardChains
+        guardChains,
+        bodyErrorChains: this._getGuardBodyErrorChainNames(node)
       }
     };
   }
@@ -84,7 +110,15 @@ class CompileGuard {
       guardRepairLinePos = compiler.codebuf.length;
       this.emit.line('');
 
-      compiler.compile(node.body, null);
+      const { bufferId: bodyBufferId } = compiler.emit.withScopeCommandBuffer({
+        analysisNode: node.body,
+        errorContextNode: node.body,
+        declareTextChain: false,
+        autoFinish: true,
+        emitFunc: () => {
+          compiler.compile(node.body, null);
+        }
+      });
 
       const resolvedSequenceTargets = guardFacts.resolvedSequenceTargets;
       const guardChains = guardFacts.guardChains;
@@ -105,7 +139,7 @@ class CompileGuard {
 
       const guardErrorsVar = compiler._tmpid();
       this.emit.line(
-        `return runtime.thenValue(runtime.guard.finalizeGuard(${guardStateVar || 'null'}, ${compiler.buffer.currentBuffer}, ${JSON.stringify(guardChains)}, ${chainGuardStateVar || 'null'}, ${guardErrorContext}), (${guardErrorsVar}) => {`
+        `return runtime.thenValue(runtime.guard.finalizeGuard(${guardStateVar || 'null'}, ${compiler.buffer.currentBuffer}, ${JSON.stringify(guardChains)}, ${chainGuardStateVar || 'null'}, ${guardErrorContext}, ${bodyBufferId}, ${JSON.stringify(guardFacts.bodyErrorChains)}), (${guardErrorsVar}) => {`
       );
       this.emit.line(`if (${guardErrorsVar}.length > 0) {`);
 
@@ -117,7 +151,7 @@ class CompileGuard {
       this.emit.line('}');
       this.emit.line('});');
       compiler.guardDepth = previousGuardDepth;
-    }, node, {});
+    }, node);
   }
 
   _compileRecoveryScope(node, guardErrorsVar) {
@@ -203,13 +237,15 @@ class CompileGuard {
     for (const lockName of resolvedSequenceTargets) {
       merged.add(lockName);
     }
-    const bodyDeclaredChains = node.body._analysis.declaredChains;
-    if (bodyDeclaredChains) {
-      for (const name of bodyDeclaredChains.keys()) {
-        merged.add(name);
-      }
-    }
     return compiler.return.excludeGuardCaptureChains(merged);
+  }
+
+  _getGuardBodyErrorChainNames(node) {
+    const declaredChains = node.body._analysis.declaredChains;
+    if (!declaredChains) {
+      return [];
+    }
+    return this.compiler.return.excludeGuardCaptureChains(declaredChains.keys());
   }
 
   _getGuardedChainNames(usedChains, guardTargets, analysis) {

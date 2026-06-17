@@ -8,10 +8,12 @@ const TEST_DIAGNOSTIC_CONTEXT = runtime.cloneWithAddedContext(TEST_EC, { branch:
 
 function createDeferred() {
   let resolve;
-  const promise = new Promise((settle) => {
+  let reject;
+  const promise = new Promise((settle, fail) => {
     resolve = settle;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 function flushAsync() {
@@ -51,6 +53,25 @@ class RecordingMutation extends runtime.Command {
   mutate(chain) {
     this.events.push(`mutate:${this.label}`);
     chain._setTarget(this.value);
+  }
+}
+
+class FailingObservation extends runtime.Command {
+  constructor(label, deferred, events) {
+    super();
+    this._createResultPromise();
+    this.chainName = 'value';
+    this.errorContext = TEST_EC;
+    this.label = label;
+    this.deferred = deferred;
+    this.events = events;
+  }
+
+  observe() {
+    this.events.push(`observe:${this.label}`);
+    return this.deferred.promise.then(() => {
+      throw runtime.RuntimeError.create(`failed:${this.label}`, TEST_EC);
+    });
   }
 }
 
@@ -277,6 +298,29 @@ class RecordingMutation extends runtime.Command {
       ]);
     });
 
+    it('should stop a later mutation when a tracked observation rejects', async function () {
+      const events = [];
+      const failure = createDeferred();
+
+      const parent = new runtime.CommandBuffer(null, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+      const chain = runtime.declareBufferChain(parent, 'value', 'var', null, 'initial');
+      parent.addCommand(new FailingObservation('bad', failure, events), 'value');
+      parent.addCommand(new RecordingMutation('after-failure', 'mutated', events), 'value');
+
+      expect(events).to.eql(['observe:bad']);
+      failure.resolve();
+      parent.finish();
+
+      try {
+        await chain.finalSnapshot();
+        expect().fail('expected observation failure to reject final snapshot');
+      } catch (err) {
+        expect(err.message).to.contain('failed:bad');
+      }
+      expect(events).to.eql(['observe:bad']);
+      expect(parent._activeIterators.size).to.be(0);
+    });
+
     it('should preserve loop/conditional output parity', async function () {
       const env = new AsyncEnvironment();
       const result = await env.renderTemplateString(
@@ -313,6 +357,42 @@ class RecordingMutation extends runtime.Command {
       expect(result.replace(/\s+/g, ' ').trim()).to.equal('B[<i>V</i> Hi U]');
     });
 
+    it('should keep waited loop, guard, and recovery compiler lanes aligned', async function () {
+      const env = new AsyncEnvironment();
+      const script = [
+        'data result',
+        'var i = 0',
+        'guard result',
+        '  while i < 2',
+        '    for n in [1, 2]',
+        '      if n == 99',
+        '        break',
+        '      endif',
+        '      result.items.push(i ~ ":" ~ n)',
+        '    endfor',
+        '    if i == 1',
+        '      result.failed = boom()',
+        '    endif',
+        '    i = i + 1',
+        '  endwhile',
+        'recover err',
+        '  result.recovered = err.message',
+        '  result.after = "recover"',
+        'endguard',
+        'return result.snapshot()'
+      ].join('\n');
+
+      const result = await env.renderScriptString(script, {
+        boom() {
+          return runtime.createPoison(runtime.PoisonError.create('loop stopped', TEST_EC, 'UserCallThrew'));
+        }
+      });
+
+      expect(result.recovered).to.contain('loop stopped');
+      expect(result.after).to.be('recover');
+      expect(result.items).to.be(undefined);
+    });
+
     it('should keep canonical include input keys for duplicated branch-local vars', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
@@ -330,6 +410,38 @@ class RecordingMutation extends runtime.Command {
 
       expect((await tmpl.render({ flag: true })).trim()).to.be('[A]');
       expect((await tmpl.render({ flag: false })).trim()).to.be('[B]');
+    });
+
+    it('should preserve branch-local set, import, and from-import facts through if and switch buffers', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('macros.njk', '{% macro show(value) %}[{{ value }}]{% endmacro %}');
+      loader.addTemplate('part.njk', '{{ label }}{{ show(label) }}');
+
+      const tmpl = new AsyncTemplate(`
+        {% if flag %}
+          {% set label = "A" %}
+          {% from "macros.njk" import show %}
+          {% include "part.njk" with label, show %}
+        {% else %}
+          {% set label = "B" %}
+          {% from "macros.njk" import show %}
+          {% include "part.njk" with label, show %}
+        {% endif %}
+        {% switch mode %}
+        {% case "one" %}
+          {% var item = "I" %}
+          {% import "macros.njk" as m %}
+          {{ m.show(item) }}
+        {% default %}
+          {% var item = "D" %}
+          {% import "macros.njk" as m %}
+          {{ m.show(item) }}
+        {% endswitch %}
+      `, env, 'branch-local-command-facts.njk');
+
+      expect((await tmpl.render({ flag: true, mode: 'one' })).replace(/\s+/g, '')).to.be('A[A][I]');
+      expect((await tmpl.render({ flag: false, mode: 'other' })).replace(/\s+/g, '')).to.be('B[B][D]');
     });
 
     it('should render async import with context and explicit inputs', async function () {
@@ -364,6 +476,70 @@ class RecordingMutation extends runtime.Command {
 
       expect((await tmpl.render({ usePrimary: true })).trim()).to.be('Hi');
       expect((await tmpl.render({ usePrimary: false })).trim()).to.be('Hi');
+    });
+
+    it('should keep macro caller bindings with keyword defaults on compiler-emitted lanes', async function () {
+      const env = new AsyncEnvironment();
+      const template = `
+        {%- macro wrap(items, prefix=items[0]) -%}
+          [{{ caller(prefix) }}]
+          {%- for item in items -%}
+            [{{ caller(item) }}]
+          {%- endfor -%}
+        {%- endmacro -%}
+        {%- call(value) wrap(items=asyncItems) -%}
+          {{ asyncRender(value) }}
+        {%- endcall -%}
+      `;
+
+      const result = await env.renderTemplateString(template, {
+        asyncItems: Promise.resolve(['a', 'b']),
+        async asyncRender(value) {
+          return value.toUpperCase();
+        }
+      });
+
+      expect(result.replace(/\s+/g, '')).to.be('[A][A][B]');
+    });
+
+    it('should keep nested capture outputs local while including from loop bodies', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('capture-child.njk', '({{ item }}={{ captured }})');
+
+      const result = await env.renderTemplateString(`
+        {%- for item in items -%}
+          {%- set captured -%}{{ asyncValue(item) }}{%- endset -%}
+          {%- include "capture-child.njk" with item, captured -%}
+        {%- endfor -%}
+      `, {
+        items: ['a', 'b'],
+        async asyncValue(value) {
+          return value.toUpperCase();
+        }
+      });
+
+      expect(result).to.be('(a=A)(b=B)');
+    });
+
+    it('should let super constructors observe shared default lanes', async function () {
+      const loader = new StringLoader();
+      const env = new AsyncEnvironment(loader);
+      loader.addTemplate('base.script', [
+        'extends none',
+        'shared var marker',
+        'data result',
+        'result.seen = this.marker',
+        'return result.snapshot()'
+      ].join('\n'));
+      loader.addTemplate('child.script', [
+        'shared var marker = "initial"',
+        'extends "base.script"',
+        'return super()'
+      ].join('\n'));
+
+      const result = await env.renderScript('child.script', {});
+      expect(result).to.eql({ seen: 'initial' });
     });
 
     it('should resolve deferred exports through the normal render path', async function () {
@@ -434,8 +610,8 @@ class RecordingMutation extends runtime.Command {
       // Observe-only child buffers are observable entries in Stage 1, so an
       // empty earlier sibling in the same shared lane must not block a later
       // invocation snapshot.
-      const sharedLaneSibling = new runtime.CommandBuffer(null, null, [["theme"]], null, blockedRoot, TEST_DIAGNOSTIC_CONTEXT);
-      const invocationBuffer = new runtime.CommandBuffer(null, null, [["theme"]], null, blockedRoot, TEST_DIAGNOSTIC_CONTEXT);
+      const sharedLaneSibling = new runtime.CommandBuffer(null, null, [["theme"]], [["theme"]], blockedRoot, TEST_DIAGNOSTIC_CONTEXT);
+      const invocationBuffer = new runtime.CommandBuffer(null, null, [["theme"]], [["theme"]], blockedRoot, TEST_DIAGNOSTIC_CONTEXT);
       const blockedRead = invocationBuffer.addCommand(new runtime.SnapshotCommand({
         chainName: 'theme',
         errorContext: TEST_EC
@@ -454,7 +630,7 @@ class RecordingMutation extends runtime.Command {
 
       const textRoot = createRootBuffer();
       const textPlacementBoundary = new runtime.CommandBuffer(null, null, [["__text__"]], null, textRoot, TEST_DIAGNOSTIC_CONTEXT);
-      const admittedInvocation = new runtime.CommandBuffer(null, null, [["theme"]], null, textRoot, TEST_DIAGNOSTIC_CONTEXT);
+      const admittedInvocation = new runtime.CommandBuffer(null, null, [["theme"]], [["theme"]], textRoot, TEST_DIAGNOSTIC_CONTEXT);
       const admittedRead = admittedInvocation.addCommand(new runtime.SnapshotCommand({
         chainName: 'theme',
         errorContext: TEST_EC

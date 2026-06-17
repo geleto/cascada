@@ -26,10 +26,6 @@ class CompileInheritanceEmit {
     return this.inheritance._getCallableSignature(...args);
   }
 
-  _getCallableSharedFootprint(...args) {
-    return this.inheritance._getCallableSharedFootprint(...args);
-  }
-
   sharedChainObservation(chainName, node, mode = 'snapshot', implicitVarRead = false) {
     const compiler = this.compiler;
     compiler.emit(
@@ -240,14 +236,18 @@ class CompileInheritanceEmit {
   }
 
   inheritedCallableFunction(callableNode, functionName, emitBody) {
+    const callableSignature = this._getCallableSignature(callableNode);
+    const staticFacts = this.compiler.chain.getCommandBufferFacts(
+      callableNode,
+      callableSignature.argNames
+    );
+    const staticObservedChains = JSON.stringify(staticFacts.ownFacts?.[0] ?? []);
+    const staticMutatedChains = JSON.stringify(staticFacts.ownFacts?.[1] ?? []);
     this.emit.entryFunction(callableNode, functionName, emitBody, {
       extraParams: INHERITED_CALLABLE_EXTRA_PARAMS,
       noReturn: true,
-      ...this.compiler.chain.getCommandBufferFactsArgsWithLinked(
-        callableNode,
-        'methodData.mergedLinkedChains',
-        'methodData.mergedMutatedChains'
-      )
+      linkedFactsArg: '[methodData.mergedObservedChains, methodData.mergedMutatedChains]',
+      ownFactsArg: `[methodData.mergedObservedChains.concat(${staticObservedChains}), methodData.mergedMutatedChains.concat(${staticMutatedChains})]`
     });
   }
 
@@ -318,16 +318,18 @@ class CompileInheritanceEmit {
   }
 
   methodEntryObject(entry) {
-    const callableFootprint = this._getCallableSharedFootprint(entry.ownerNode);
     // The emitted ABI calls these "own" chains because they are the callable
     // entry's own parent-visible shared dependencies.
-    const ownLinkedChainNames = callableFootprint.sharedDependencies;
-    const ownMutatedChainNames = callableFootprint.mutationDependencies;
+    const ownerAnalysis = entry.ownerNode._analysis;
+    const ownLinkedChainNames = Array.from(ownerAnalysis.boundaryLinkedChains || []);
+    const ownObservedChainNames = Array.from(ownerAnalysis.boundaryLinkedObservedChains || []);
+    const ownMutatedChainNames = Array.from(ownerAnalysis.boundaryLinkedMutatedChains || []);
     const ownLinkedChains = JSON.stringify(ownLinkedChainNames);
+    const ownObservedChains = JSON.stringify(ownObservedChainNames);
     const ownMutatedChains = JSON.stringify(ownMutatedChainNames);
     const errorContextIndex = this.compiler.getErrorContextIndex(entry.errorContextNode);
     const name = JSON.stringify(entry.name);
-    return `${name}: { name: ${name}, fn: ${entry.fnExpr}, signature: ${JSON.stringify(entry.signature)}, errorContextIndex: ${errorContextIndex}, isConstructor: ${entry.isConstructor ? 'true' : 'false'}, super: ${entry.usesSuper ? 'true' : 'false'}, superErrorContextIndex: ${entry.superErrorContextIndexLiteral ?? 'null'}, inheritedMethodDependencies: ${entry.inheritedMethodDependencies || '{}'}, ownLinkedChains: ${ownLinkedChains}, ownMutatedChains: ${ownMutatedChains} }`;
+    return `${name}: { name: ${name}, fn: ${entry.fnExpr}, signature: ${JSON.stringify(entry.signature)}, errorContextIndex: ${errorContextIndex}, isConstructor: ${entry.isConstructor ? 'true' : 'false'}, super: ${entry.usesSuper ? 'true' : 'false'}, superErrorContextIndex: ${entry.superErrorContextIndexLiteral ?? 'null'}, inheritedMethodDependencies: ${entry.inheritedMethodDependencies || '{}'}, ownLinkedChains: ${ownLinkedChains}, ownObservedChains: ${ownObservedChains}, ownMutatedChains: ${ownMutatedChains} }`;
   }
 
   inheritedMethodDependenciesObject(methodDependencies) {

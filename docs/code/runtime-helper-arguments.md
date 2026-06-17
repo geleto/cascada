@@ -118,13 +118,13 @@ Pick the shape by family, not by field count.
 
 ### CommandBuffer construction
 
-Positional constructor (`new CommandBuffer(context, parent, observedFacts, mutatedFacts, linkTarget, bufferStackErrorContext, traceParent, renderState)`, [`command-buffer.js`](../../src/runtime/command-buffer.js)). The long, nullable, same-typed list is unreadable at call sites, so an object-form `CommandBuffer.fromSpec({ ... })` factory for runtime-owned construction is warranted; compiler-emitted `new runtime.CommandBuffer(...)` stays positional. Tracked in [runtime-helper-arguments-cleanup.md](runtime-helper-arguments-cleanup.md).
+Positional constructor (`new CommandBuffer(context, parent, linkedFacts, ownFacts, linkTarget, bufferStackErrorContext, traceParent, renderState)`, [`command-buffer.js`](../../src/runtime/command-buffer.js)). The long, nullable, same-typed list is unreadable at call sites, so an object-form `CommandBuffer.fromSpec({ ... })` factory for runtime-owned construction is warranted; compiler-emitted `new runtime.CommandBuffer(...)` stays positional. Tracked in [runtime-helper-arguments-cleanup.md](runtime-helper-arguments-cleanup.md).
 
 ---
 
 ## Objects To Avoid
 
-**UniversalRuntimeContext** -- bundling `env, context, runtime, renderState, currentBuffer, errorContext, parentBuffer, observedFacts, mutatedFacts` into one object. Too broad: it blurs user context vs runtime module, current buffer vs parent/link target, static vs owned error context, fatal reporting vs value poisoning, and structural setup vs expression evaluation -- and tempts helpers to take more authority than they need.
+**UniversalRuntimeContext** -- bundling `env, context, runtime, renderState, currentBuffer, errorContext, parentBuffer, linkedFacts, ownFacts` into one object. Too broad: it blurs user context vs runtime module, current buffer vs parent/link target, static vs owned error context, fatal reporting vs value poisoning, and structural setup vs expression evaluation -- and tempts helpers to take more authority than they need.
 
 **Generic `options` for required state** -- `helper(value, { context, currentBuffer, errorContext })` when those fields are required for correctness. `options` should mean *optional behavior*; required state is positional or a named domain record.
 

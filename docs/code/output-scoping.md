@@ -39,13 +39,10 @@ Most lexical scopes do not need renamed runtime chain names. A duplicate local
 name can keep its source name when it executes in a different `CommandBuffer`
 or when the duplicated scopes are mutually exclusive control-flow paths.
 
-The async transformer only renames user variables for a real same-buffer
-collision. The current case is `guard` / `recover`: the guarded body and
-recovery body execute in the same guard buffer, and recovery can run after the
-guarded body has already declared local chains. If the recovery body declares a
-name already declared in the guarded body, or if `recover err` collides with a
-guard-body local named `err`, the recovery-side binding is renamed and all
-recovery-scope uses are rewritten to that runtime name.
+The async transformer should only rename user variables for a real same-buffer
+collision. Guard bodies and recovery bodies execute in separate scope buffers,
+so a recovery local may share a source name with a guard-body local without
+runtime-name rewriting.
 
 Do not add broad lexical duplicate-name renaming for cases such as `if` /
 `else`, `switch` cases, loop bodies, set-block captures, or assigned call

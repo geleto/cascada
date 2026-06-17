@@ -44,6 +44,7 @@ function createRootNoopConstructorEntry(ownerEntry) {
     ownerEntry,
     super: null,
     mergedLinkedChains: [],
+    mergedObservedChains: [],
     mergedMutatedChains: []
   });
 }
@@ -65,14 +66,9 @@ function createRuntimeMethodEntry(compiledEntry, ownerEntry, parentEntry) {
   const superEntry = parentEntry || (compiledEntry.super && compiledEntry.isConstructor
     ? createRootNoopConstructorEntry(ownerEntry)
     : null);
-  const mergedLinkedChains = mergeChainFootprintNames(
-    compiledEntry.ownLinkedChains,
-    superEntry ? superEntry.mergedLinkedChains : []
-  );
-  const mergedMutatedChains = mergeChainFootprintNames(
-    compiledEntry.ownMutatedChains,
-    superEntry ? superEntry.mergedMutatedChains : []
-  );
+  const mergedLinkedChains = mergeChainFootprintNames(compiledEntry.ownLinkedChains);
+  const mergedObservedChains = mergeChainFootprintNames(compiledEntry.ownObservedChains);
+  const mergedMutatedChains = mergeChainFootprintNames(compiledEntry.ownMutatedChains);
 
   return {
     name: compiledEntry.name,
@@ -84,6 +80,7 @@ function createRuntimeMethodEntry(compiledEntry, ownerEntry, parentEntry) {
     ownerEntry,
     super: superEntry,
     mergedLinkedChains,
+    mergedObservedChains,
     mergedMutatedChains
   };
 }
@@ -165,6 +162,9 @@ function expandAllMethodDependencyFootprints(runtimeEntries, runtimeMethodsByNam
   const dependencyEntriesByEntry = new Map();
   runtimeEntries.forEach((entry) => {
     const dependencyEntries = dependencyNamesByEntry.get(entry).map((name) => runtimeMethodsByName[name]);
+    if (entry.super) {
+      dependencyEntries.push(entry.super);
+    }
     dependencyEntriesByEntry.set(entry, dependencyEntries);
   });
 
@@ -182,6 +182,7 @@ function expandAllMethodDependencyFootprints(runtimeEntries, runtimeMethodsByNam
 
   runtimeEntries.forEach((entry) => {
     entry.mergedLinkedChains = Object.freeze(entry.mergedLinkedChains.slice());
+    entry.mergedObservedChains = Object.freeze(entry.mergedObservedChains.slice());
     entry.mergedMutatedChains = Object.freeze(entry.mergedMutatedChains.slice());
     Object.freeze(entry);
   });
@@ -189,14 +190,14 @@ function expandAllMethodDependencyFootprints(runtimeEntries, runtimeMethodsByNam
 
 // Propagate chain footprints through inherited callable dependencies. Direct
 // calls recorded as `this.method(...)` become dependency edges, and each method's
-// `super` entry already carries the parent implementation footprint.
+// `super` entry is a dependency edge to the parent implementation.
 function expandMethodDependencyFootprint(entry, dependencyEntriesByEntry, visiting) {
   if (visiting.has(entry)) {
     return false;
   }
   visiting.add(entry);
 
-  const dependencyEntries = dependencyEntriesByEntry.get(entry);
+  const dependencyEntries = dependencyEntriesByEntry.get(entry) || [];
   let changed = false;
   dependencyEntries.forEach((dependency) => {
     if (expandMethodDependencyFootprint(dependency, dependencyEntriesByEntry, visiting)) {
@@ -213,11 +214,17 @@ function expandMethodDependencyFootprint(entry, dependencyEntriesByEntry, visiti
       entry.mergedMutatedChains,
       ...dependencyEntries.map((dependency) => dependency.mergedMutatedChains)
     );
+    const nextObservedChains = mergeChainFootprintNames(
+      entry.mergedObservedChains,
+      ...dependencyEntries.map((dependency) => dependency.mergedObservedChains)
+    );
     if (
       nextLinkedChains.length !== entry.mergedLinkedChains.length ||
+      nextObservedChains.length !== entry.mergedObservedChains.length ||
       nextMutatedChains.length !== entry.mergedMutatedChains.length
     ) {
       entry.mergedLinkedChains = nextLinkedChains;
+      entry.mergedObservedChains = nextObservedChains;
       entry.mergedMutatedChains = nextMutatedChains;
       changed = true;
     }
