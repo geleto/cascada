@@ -35,8 +35,6 @@ Complete source and documentation file reference. The most critical files for da
 -   `src/runtime/markers.js` — `RESOLVE_MARKER` and related value-shape markers.
 -   `src/runtime/guard.js` — Guard snapshot/restore for conditional error-recovery blocks.
 -   `src/runtime/loop.js` — Loop runtime helpers: `asyncAll` (parallel `for`) and `asyncEach` (sequential `each`).
--   `docs/code/runtime-helper-arguments.md` — Positional-first guidelines for runtime helper arguments: the decision rule, standard argument order, and the named records already in use.
--   `docs/code/runtime-helper-arguments-cleanup.md` — Two concrete do-now cleanups: structural-boundary body consolidation and a readable `CommandBuffer.fromSpec` factory.
 
 ### Runtime Chains
 -   `src/runtime/chains/data-chain.js` — Data chain state and custom data-method dispatch.
@@ -107,18 +105,32 @@ Complete source and documentation file reference. The most critical files for da
 
 ### Implementation Guides (`docs/code/`)
 
-May not be fully up-to-date. Treat as design context, not authority over live behavior.
+Documentation of current architecture and runtime behavior. May not be fully up-to-date; treat as design context, not authority over live behavior.
 
 -   `implementation-architecture.md` — Full compiler/runtime architecture reference: async execution model, chain system, buffer mechanics, value resolution, error propagation, sequential operations.
 -   `sync-first.md` — Sync-first runtime/compiler pattern for new async-aware helpers and generated callbacks.
 -   `testing-guide.md` — Test assertion examples, advanced testing techniques, development scenario walkthroughs.
+-   `Tests.md` — General testing guidelines and philosophy.
 -   `file-map.md` — This file.
--   `Error Handling Guide.md` — Overview of the Poison error system.
+-   `Error Handling Guide.md` — Authoritative reference for the runtime error model.
 -   `Error Handling Patterns In Script.md` — Common error-handling patterns in scripts.
 -   `Poisoning - Implementation Principles.md` — Detailed mechanics of error propagation.
--   `sequence.md` — Notes on `!` sequence behavior.
--   `output.md`, `output-scoping.md` — Output chain and scoping notes.
--   `chains-refactor.md`, `command-buffer-refactor.md`, `expression-chains.md` — Chain and command-buffer implementation notes.
--   `waited-loops.md` — Loop/wait behavior notes.
--   `return.md`, `return-transpile.md` — Return semantics and script transpilation notes.
--   `Tests.md` — General testing guidelines and philosophy.
+-   `deferred-rejection-handling.md` — Where to attach rejection handlers and avoid unhandled rejections.
+-   `sequence.md` — Current `sequence` chain implementation and `!` behavior.
+-   `output.md`, `output-scoping.md` — Chain runtime and chain-scoping model.
+-   `expression-chains.md` — Async expression model for value-producing, command-enqueuing expressions.
+-   `caller.md` — `caller()` structural-attachment architecture.
+-   `composition.md` — Current payload-based composition architecture.
+-   `waited-loops.md` — Sequential/bounded loop `__waited__` chain behavior.
+-   `return.md` — Script return architecture.
+
+### Plans & Design Notes (`docs/plans/`)
+
+Audits, refactor/migration plans, reviews, and future design proposals. These describe *intended* or *in-progress* work, not necessarily current behavior — always verify against source. Once a plan lands and is documented under `docs/code/`, its note here is historical.
+
+-   Analysis & chains: `analysis-audit.md`, `analysis-audit-2.md`, `analysis-audit-3.md`, `analysis-chains-refactor.md`, `chain-facts-refactor.md`, `chains-refactor.md`.
+-   Command buffer: `command-buffer-refactor.md`, `command-buffer-refactor-2.md`.
+-   Error handling: `error-context-refactor.md`, `error-context-refactor-2.md`, `error-handling-analysis.md`, `error-handling-implementation.md`.
+-   Composition & inheritance: `composition-review.md`, `composition-update.md`, `extends-refactor.md`, `extends-architecture.md`, `extends-metadata-architecture.md`, `block-extends.md`, `async-locals-composition.md`.
+-   Language & runtime proposals: `this.shared.md`, `macro-aliasing.md`, `return-transpile.md`, `Lazy Deep Resolve.md`, `sync-first-conversion-plan.md`.
+-   Migration & docs tracking: `esm.md`, `doc-review.md`, `undocumented.md`, `script-doc-notes.md`.

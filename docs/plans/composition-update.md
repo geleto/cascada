@@ -2,7 +2,7 @@
 
 This note replaces the old extern-era composition update plan. The current
 composition architecture is payload-based and is documented in
-[composition.md](composition.md).
+[composition.md](../code/composition.md).
 
 Current state:
 

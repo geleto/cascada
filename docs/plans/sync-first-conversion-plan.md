@@ -2,7 +2,7 @@
 
 Plan for converting remaining accidental async/runtime microtask paths to
 sync-first hybrids, following the pattern in
-[`sync-first.md`](sync-first.md).
+[`sync-first.md`](../code/sync-first.md).
 
 This list was derived by grepping for `async` functions and generated callbacks
 that contain no `await` (or only a single awaited value), cross-checked against
@@ -41,7 +41,7 @@ sync-shape test as a benchmark result.
 **Landing.** Each pass is independently landable: one commit, full suite green,
 no behavior change. Do not batch passes into a single change.
 
-**Testing.** Reuse the Test Checklist in [`sync-first.md`](sync-first.md#test-checklist)
+**Testing.** Reuse the Test Checklist in [`sync-first.md`](../code/sync-first.md#test-checklist)
 (concrete-value / promise / existing-poison / rejected-promise-poison /
 non-poison-fatal / generated-source-shape / multi-value error collection). Each
 pass below lists only pass-specific test deltas.

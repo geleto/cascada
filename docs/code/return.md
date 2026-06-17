@@ -1213,7 +1213,7 @@ Add guard injection after `return` and cascade it outward through enclosing
 blocks until a function boundary is reached.
 
 This is implemented as one stateful stack pass in the script transpiler. See
-`docs/code/return-transpile.md` for the current minimal design.
+`docs/plans/return-transpile.md` for the current minimal design.
 
 The pass avoids a separate return-analysis phase. Each frame tracks boolean
 state only:
