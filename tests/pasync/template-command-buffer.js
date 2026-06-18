@@ -321,6 +321,118 @@ class FailingObservation extends runtime.Command {
       expect(parent._activeIterators.size).to.be(0);
     });
 
+    it('should report the first observe-only projection failure as fatal', async function () {
+      const events = [];
+      const first = createDeferred();
+      const second = createDeferred();
+      const buffer = new runtime.CommandBuffer(null, null, null, [['value'], null], null, TEST_DIAGNOSTIC_CONTEXT);
+      buffer._ensureLane('value');
+      buffer.addCommand(new FailingObservation('first', first, events), 'value');
+      buffer.addCommand(new FailingObservation('second', second, events), 'value');
+      buffer.finishChain('value');
+
+      const entry = buffer._createLaneEntry('value');
+      const done = entry.observe({ name: 'value' });
+      expect(events).to.eql(['observe:first', 'observe:second']);
+
+      first.resolve();
+      try {
+        await done;
+        expect().fail('expected observe-only projection failure');
+      } catch (err) {
+        expect(err.message).to.contain('failed:first');
+      }
+
+      second.resolve();
+      await flushAsync();
+    });
+
+    it('should report late owned mixed observation failure after sync mutation completion', async function () {
+      const events = [];
+      const failure = createDeferred();
+      const buffer = new runtime.CommandBuffer(
+        null,
+        null,
+        null,
+        [['value'], ['value']],
+        null,
+        TEST_DIAGNOSTIC_CONTEXT
+      );
+      const chain = runtime.declareBufferChain(buffer, 'value', 'var', null, 'initial');
+      buffer.addCommand(new FailingObservation('late', failure, events), 'value');
+      buffer.finish();
+
+      expect(events).to.eql(['observe:late']);
+      failure.resolve();
+      await flushAsync();
+
+      try {
+        await chain.finalSnapshot();
+        expect().fail('expected late owned observation failure');
+      } catch (err) {
+        expect(err.message).to.contain('failed:late');
+      }
+    });
+
+    it('should return non-thenable completion fields for sync mixed iteration', function () {
+      const events = [];
+      const buffer = new runtime.CommandBuffer(null, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+      buffer._ensureLane('value');
+      buffer.addCommand(new RecordingMutation('sync', 'done', events), 'value');
+      buffer.finishChain('value');
+
+      const entry = buffer._createLaneEntry('value');
+      const completion = entry.iterate({ name: 'value', _setTarget() {} }, new runtime.ObserverState());
+
+      expect(completion.mutateDone).to.be(undefined);
+      expect(completion.observeDone).to.be(undefined);
+      expect(events).to.eql(['mutate:sync']);
+    });
+
+    it('should allocate observe completion only when owned observations remain pending', function () {
+      const events = [];
+      const pending = createDeferred();
+      const buffer = new runtime.CommandBuffer(null, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+      buffer._ensureLane('value');
+      buffer.addCommand(new DeferredObservation('pending', pending, events), 'value');
+      buffer.finishChain('value');
+
+      const entry = buffer._createLaneEntry('value');
+      const completion = entry.iterate({
+        name: 'value',
+        _getCurrentResult() {
+          return 'current';
+        }
+      }, new runtime.ObserverState());
+
+      expect(completion.mutateDone).to.be(undefined);
+      expect(completion.observeDone && typeof completion.observeDone.then).to.be('function');
+      expect(events).to.eql(['observe:pending']);
+    });
+
+    it('should not allocate inherited observe completion for mixed children', function () {
+      const events = [];
+      const pending = createDeferred();
+      const buffer = new runtime.CommandBuffer(null, null, null, null, null, TEST_DIAGNOSTIC_CONTEXT);
+      buffer._ensureLane('value');
+      buffer.addCommand(new DeferredObservation('pending', pending, events), 'value');
+      buffer.finishChain('value');
+
+      const observerState = new runtime.ObserverState();
+      observerState.attachObserveOwner(() => false, () => {}, () => {});
+      const entry = buffer._createLaneEntry('value');
+      const completion = entry.iterate({
+        name: 'value',
+        _getCurrentResult() {
+          return 'current';
+        }
+      }, observerState);
+
+      expect(completion.mutateDone).to.be(undefined);
+      expect(completion.observeDone).to.be(undefined);
+      expect(events).to.eql(['observe:pending']);
+    });
+
     it('should preserve loop/conditional output parity', async function () {
       const env = new AsyncEnvironment();
       const result = await env.renderTemplateString(

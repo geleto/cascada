@@ -44,6 +44,9 @@ class BufferLaneEntry {
       },
       () => {
         if (observations.length > 0) {
+          // Observation rejections at this layer are fatal scheduler failures,
+          // not dataflow poison aggregation. First failure wins; the Promise.all
+          // input handlers still keep every started observation handled.
           return Promise.all(observations).catch(handleObservationFailure);
         }
         return undefined;
@@ -72,16 +75,17 @@ class BufferLaneEntry {
   }
 
   iterate(chain, observerState) {
-    const completion = createIterationCompletion();
+    const completion = new IterationCompletion();
     const iterator = new CommandIterator(this.buffer, this.chainName);
     iterator.observerState = observerState;
-    if (!observerState.attachObserveOwner(
+    // Owned run (fresh ObserverState) computes its own observeDone via this owner.
+    // An inherited Stage 2 run shares the ancestor's owner, so attach fails here:
+    // the parent ignores this child's observeDone and drains the shared set instead.
+    const ownsObserveCompletion = observerState.attachObserveOwner(
       () => iterator.isClosedAndConsumed(),
-      completion.resolveObserveDone,
-      completion.rejectObserveDone
-    )) {
-      completion.observeDone = undefined;
-    }
+      () => completion.resolveObserveDone(),
+      (err) => completion.rejectObserveDone(err)
+    );
     const laneRun = this._runLaneEntries(
       iterator,
       this.chainName,
@@ -96,10 +100,19 @@ class BufferLaneEntry {
       }
     );
     if (laneRun && typeof laneRun.then === 'function') {
+      completion.ensureMutateDone();
+      if (ownsObserveCompletion) {
+        completion.ensureObserveDone();
+      }
       markPromiseHandled(laneRun.catch((err) => {
         this.buffer._handleLaneFailure(err, this.chainName);
         completion.reject(err);
       }));
+    } else if (ownsObserveCompletion && (observerState.pendingObservers.size > 0 || observerState.failure)) {
+      // The lane input was consumed synchronously, but observations may still
+      // settle later. Materialize observeDone now so owners that read it once
+      // can observe completion/failure of the residual observation work.
+      completion.ensureObserveDone();
     }
     return completion;
   }
@@ -172,6 +185,8 @@ class BufferLaneEntry {
     }
     if (entry.mutate) {
       return runAfter(observerState.drain(), () => {
+        // drain() may have awaited pending observations; a fatal could have been
+        // reported while we waited, so re-check before mutating into a dead render.
         this.buffer._throwIfFatalLaneAbandoned(this.chainName);
         return entry.mutate(chain);
       });
@@ -210,6 +225,9 @@ class ObserverState {
     this.failure = null;
     this.observeOwner = null;
     this.aborted = false;
+    // Root starts read completion.observeDone only once. If observeDone is
+    // materialized after that read, this callback is the fatal-reporting
+    // backstop for late observation failures.
     this.handleFailure = handleFailure;
   }
 
@@ -273,6 +291,9 @@ class ObserverState {
   }
 
   checkObserveDone() {
+    // Owned observeDone settles only once no more entries can arrive
+    // (isInputConsumed) and every tracked observation has finished. A failure
+    // rejects it immediately; an abort leaves it for the fatal path to settle.
     const owner = this.observeOwner;
     if (!owner || owner.done) {
       return;
@@ -328,34 +349,119 @@ class ObserverState {
   }
 }
 
-function createIterationCompletion() {
-  let resolveMutateDone;
-  let rejectMutateDone;
-  let resolveObserveDone;
-  let rejectObserveDone;
-  const mutateDone = new Promise((resolve, reject) => {
-    resolveMutateDone = resolve;
-    rejectMutateDone = reject;
-  });
-  const observeDone = new Promise((resolve, reject) => {
-    resolveObserveDone = resolve;
-    rejectObserveDone = reject;
-  });
-  markPromiseHandled(mutateDone);
-  markPromiseHandled(observeDone);
-  return {
-    mutateDone,
-    observeDone,
-    resolveMutateDone,
-    resolveObserveDone,
-    rejectObserveDone,
-    reject(err) {
-      rejectMutateDone(err);
-      rejectObserveDone(err);
+const PHASE_PENDING = 0;
+const PHASE_RESOLVED = 1;
+const PHASE_REJECTED = 2;
+
+// One phase's completion, sync-first: a phase that settles synchronously
+// allocates no promise (`value` stays undefined). ensure() materializes the
+// thenable only when an async consumer needs one, replaying a pending rejection.
+class LazyPhaseCompletion {
+  constructor() {
+    this.promise = null;
+    this.resolvePromise = null;
+    this.rejectPromise = null;
+    this.state = PHASE_PENDING;
+    this.error = null;
+  }
+
+  get value() {
+    return this.promise || undefined;
+  }
+
+  ensure() {
+    // Resolved synchronously: nothing to await, so keep value undefined.
+    if (this.state === PHASE_RESOLVED) {
+      return undefined;
     }
-  };
+    if (!this.promise) {
+      this.promise = new Promise((resolve, reject) => {
+        this.resolvePromise = resolve;
+        this.rejectPromise = reject;
+      });
+      markPromiseHandled(this.promise);
+      if (this.state === PHASE_REJECTED) {
+        this.rejectPromise(this.error);
+      }
+    }
+    return this.promise;
+  }
+
+  resolve() {
+    if (this.state !== PHASE_PENDING) {
+      return;
+    }
+    this.state = PHASE_RESOLVED;
+    if (this.resolvePromise) {
+      this.resolvePromise();
+    }
+  }
+
+  reject(err) {
+    if (this.state !== PHASE_PENDING) {
+      return;
+    }
+    this.state = PHASE_REJECTED;
+    this.error = err;
+    if (this.rejectPromise) {
+      this.rejectPromise(err);
+    }
+  }
 }
 
+// Completion record returned by iterate(...). Phase work starts immediately;
+// only the completion promises are lazy. Fully synchronous phases never need a
+// promise, so undefined means "resolved synchronously" for completion fields.
+// Call ensure* only when a phase really needs an externally visible thenable.
+class IterationCompletion {
+  constructor() {
+    this.mutateCompletion = new LazyPhaseCompletion();
+    this.observeCompletion = new LazyPhaseCompletion();
+  }
+
+  get mutateDone() {
+    return this.mutateCompletion.value;
+  }
+
+  get observeDone() {
+    return this.observeCompletion.value;
+  }
+
+  ensureMutateDone() {
+    return this.mutateCompletion.ensure();
+  }
+
+  ensureObserveDone() {
+    return this.observeCompletion.ensure();
+  }
+
+  resolveMutateDone() {
+    this.mutateCompletion.resolve();
+  }
+
+  resolveObserveDone() {
+    this.observeCompletion.resolve();
+  }
+
+  rejectObserveDone(err) {
+    // Failed phases must materialize a thenable; otherwise a later read of
+    // observeDone would look like a synchronous success.
+    this.observeCompletion.ensure();
+    this.observeCompletion.reject(err);
+  }
+
+  reject(err) {
+    // Failed phases must materialize thenables; otherwise later reads of
+    // completion fields would look like synchronous success.
+    this.mutateCompletion.ensure();
+    this.observeCompletion.ensure();
+    this.mutateCompletion.reject(err);
+    this.observeCompletion.reject(err);
+  }
+}
+
+// Sync-first sequencing: run next() immediately unless value is a real thenable,
+// so synchronous phases never pay a microtask hop.
 function runAfter(value, next) {
   if (value && typeof value.then === 'function') {
     return value.then(next);

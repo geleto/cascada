@@ -369,6 +369,9 @@ class CommandBuffer {
       mutateDone = entry.mutate(chain);
     } else {
       const completion = entry.iterate(chain, new ObserverState((err) => {
+        // start() captures completion fields by value below. A late owned
+        // observation failure may materialize observeDone after that capture,
+        // so ObserverState reports fatal errors through this backstop too.
         this._handleLaneFailure(err, chain.name);
       }));
       observeDone = completion.observeDone;

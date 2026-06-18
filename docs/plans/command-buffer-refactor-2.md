@@ -217,7 +217,7 @@ iterate(chain, observerState) {
 }
 ```
 
-This is the clear semantic shape. The implementation uses a sync-first lane loop rather than `for await`, but the behavior is the same: observe-only starts every available observation as soon as its entry is available, then waits for all thenable observations while preserving the runtime's collect-all-errors discipline; mutate-only runs in source order.
+This is the clear semantic shape. The implementation uses a sync-first lane loop rather than `for await`, but the behavior is the same: observe-only starts every available observation as soon as its entry is available, then waits for thenable observations with first-fatal scheduler error handling; mutate-only runs in source order.
 
 The caller-facing lane shape comes from facts, but an executable lane may still contain internal setup entries with a different command method, such as a local declaration initializer inside an otherwise caller-observable lane. The lane entry dispatches actual child entries by method presence while preserving its own caller-facing method shape.
 
@@ -612,9 +612,9 @@ function advanceMixed(iterator, chainName, observerState, completion) {
 
 The same pattern applies to observe-only and mutate-only buffer projections. Observe-only starts every available observation before waiting; mutate-only waits after each mutation. Stage 3 is a performance stage, not a semantic change.
 
-Remaining Stage 3 work is mainly allocation cleanup: `iterate(...)` returns its completion record immediately, but its `mutateDone` and `observeDone` fields are still promise-backed even when they could be represented as non-thenable resolved values. Inherited Stage 2 execution should also avoid allocating an owned `observeDone` promise when `attachObserveOwner(...)` fails.
+Stage 3 also removes the remaining completion allocation pressure: `iterate(...)` returns its completion record immediately, while `mutateDone` and `observeDone` stay non-thenable on resolved synchronous paths. Inherited Stage 2 execution also avoids allocating an owned `observeDone` promise when `attachObserveOwner(...)` fails.
 
-Observe-only projections record only thenable observation completions. If no observation returns a thenable, the projection returns `undefined` without calling the all-settled helper. If there are thenables, the helper must use all-settled/collect-all-errors behavior rather than fail-fast `Promise.all(...)`.
+Observe-only projections record only thenable observation completions. If no observation returns a thenable, the projection returns `undefined` without calling a promise helper. If there are thenables, the helper must keep all started observation promises handled, but observation-command rejection is a scheduler failure: the first rejected observation is reported as fatal.
 
 `handleStartedLane(observeDone, mutateDone)` follows the same rule. It resolves chain completion synchronously when `mutateDone` is absent or non-thenable, waits only when `mutateDone` is a thenable, and treats `observeDone` as cleanup/error-reporting work rather than the final-snapshot gate unless a root cleanup path explicitly needs full observation completion.
 
@@ -909,11 +909,11 @@ Stage 3:
 1. Done: `CommandIterator.next()` is the non-`async` iterator fast path.
 2. Done: hot lane loops use sync-first outer loops.
 3. Done: command-buffer `observe(...)` and `mutate(...)` return non-thenable resolved values on synchronous paths.
-4. Remaining: allow `iterate(...)` completion fields to be non-thenable resolved values.
-5. Mostly done: replace every hot `await` on possibly non-thenable phase completion with an explicit thenable check.
+4. Done: allow `iterate(...)` completion fields to be non-thenable resolved values.
+5. Done: replace every hot `await` on possibly non-thenable phase completion with an explicit thenable check.
 6. Done: remove the async iterator adapter; hot code uses `CommandIterator.next()` directly.
 7. Done: in observe-only projection loops, collect only thenable observation completions and return synchronously when the collection is empty.
-8. Done: preserve collect-all-errors behavior when observe-only projection loops do have thenable completions.
+8. Done: preserve first-fatal scheduler behavior when observe-only projection loops do have thenable completions.
 9. Done: apply the same thenable checks in `handleStartedLane(observeDone, mutateDone)`.
 10. Done: preserve fire-and-forget rejection reporting for detached iteration tasks.
 
