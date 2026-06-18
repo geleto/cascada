@@ -1,0 +1,15 @@
+const DECLARATION_ORIGIN = Object.freeze({
+  USER: 1,
+  INTERNAL: 2,
+  IMPLICIT: 3
+});
+
+const DECLARATION_ROLE = Object.freeze({
+  MACRO_ARGUMENT: 1,
+  MACRO_CALLER: 2
+});
+
+export {
+  DECLARATION_ORIGIN,
+  DECLARATION_ROLE
+};

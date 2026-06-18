@@ -7,6 +7,7 @@ import {
   isReservedDeclaration,
   isReservedDeclarationName,
 } from './reserved.js';
+import {DECLARATION_ROLE} from './declarations.js';
 import {CompileSequential} from './sequential.js';
 import {CompileEmit} from './emit.js';
 import {CompileInheritance} from './inheritance.js';
@@ -685,7 +686,7 @@ class CompilerCommon extends Obj {
 
 
   _failNonContextSequenceRoot(node, declaration = null) {
-    if (declaration && declaration.macroParam) {
+    if (declaration && declaration.role === DECLARATION_ROLE.MACRO_ARGUMENT) {
       this.fail('Sequence marker (!) is not allowed inside macros', node.lineno, node.colno, node);
     }
     this.fail('Sequence marker (!) is not allowed in non-context variable paths', node.lineno, node.colno, node);

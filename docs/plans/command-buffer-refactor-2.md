@@ -919,10 +919,13 @@ Stage 3:
 
 Stage 4:
 
-1. Tighten conservative owned facts that were intentionally kept broad for correctness.
-2. Derive exact macro binding observations from default expressions instead of observing all bindings.
-3. Split inherited participant root shared facts into precise observed and mutated groups instead of treating all shared chains as both.
-4. Re-check inheritance callable static facts for argument/default precision after the strict dispatch architecture is stable.
+1. Done: prefer universal chain facts over custom per-node fact channels. New precision is expressed as ordinary declarations, observations, and mutations; implicit setup facts are derived from declarations plus the initializer/default AST.
+2. Done: replace broad macro/callable argument observation facts with precise argument-initializer facts. Argument var chains are declared normally and mutated by setup; observations come only from emitted initializer/default expressions when they actually read a value.
+3. Done: reuse existing expression analysis for macro and inherited-callable defaults. No macro-only or inheritance-only fact walker was added.
+4. Done: add analysis tests proving default-free arguments are mutated but not observed, and that only defaults which read chains contribute observations.
+5. Done: treat remaining conservative owned-fact tightening as opportunistic cleanup only. No extra broad facts were removed without a specific test.
+6. Done: revert/avoid simplification experiments that do not actually simplify the model or improve correctness/concurrency.
+7. Postponed: participant-root shared observed/mutated splitting still needs a concrete inheritance test showing meaningful lost concurrency or incorrect strict lane shape.
 
 Stage 5:
 

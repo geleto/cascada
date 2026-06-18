@@ -4,6 +4,10 @@ import {
   CALLER_CHAIN_NAME,
   RETURN_CHAIN_NAME,
 } from './reserved.js';
+import {
+  DECLARATION_ORIGIN,
+  DECLARATION_ROLE
+} from './declarations.js';
 
 class CompileMacro {
   constructor(compiler) {
@@ -57,7 +61,7 @@ class CompileMacro {
     const compiledMacroFuncId = `macro_${this.compiler._tmpid()}`;
     node.name.addAnalysis({ declarationTarget: true });
     const declares = [
-      { name: 'caller', type: 'var', initializer: null, internal: true },
+      this._createMacroCallerDeclaration(),
       this.compiler.return.createChainDeclaration()
     ];
     const textChainName = !this.compiler.scriptMode
@@ -71,13 +75,8 @@ class CompileMacro {
       if (arg instanceof nodes.Symbol) {
         arg.addAnalysis({ declarationTarget: true });
         this._validateParameterDeclaration(arg.value, arg, seenParamNames, node);
-        declares.push({ name: arg.value, type: 'var', initializer: null, macroParam: true });
+        declares.push(this._createMacroArgumentDeclaration(arg.value));
       }
-    });
-    const { callableSignature } = this._parseMacroSignature(node);
-    this.compiler.analysis.addCommandFacts(node, {
-      observed: this._getMacroBindingObservationNames(callableSignature, false),
-      mutated: this._getMacroBindingMutationNames(callableSignature, false)
     });
     return {
       createScope: true,
@@ -121,17 +120,17 @@ class CompileMacro {
     const compiledMacroFuncId = `macro_${this.compiler._tmpid()}`;
     node.name.addAnalysis({ declarationTarget: true });
     declares.push(this.compiler.return.createChainDeclaration());
-    declares.push({ name: 'caller', type: 'var', initializer: null, internal: true });
+    declares.push(this._createMacroCallerDeclaration());
     const seenParamNames = new Set();
     node.args.children.forEach((arg) => {
       if (arg instanceof nodes.Symbol) {
         arg.addAnalysis({ declarationTarget: true });
         this._validateParameterDeclaration(arg.value, arg, seenParamNames, node);
-        declares.push({ name: arg.value, type: 'var', initializer: null, macroParam: true });
+        declares.push(this._createMacroArgumentDeclaration(arg.value));
       } else if (arg instanceof nodes.Dict) {
         arg.children.forEach((pair) => {
           this._validateParameterDeclaration(pair.key.value, pair.key, seenParamNames, node);
-          declares.push({ name: pair.key.value, type: 'var', initializer: null, macroParam: true });
+          declares.push(this._createMacroArgumentDeclaration(pair.key.value));
         });
       }
     }, undefined, node);
@@ -140,11 +139,7 @@ class CompileMacro {
     declares.push(macroDecl);
     declaresInParent.push(parentMacroDecl);
     declares.push({ name: CALLER_CHAIN_NAME, type: 'var', initializer: null, internal: true });
-    const { callableSignature } = this._parseMacroSignature(node);
-    this.compiler.analysis.addCommandFacts(node.body, {
-      observed: this._getMacroBindingObservationNames(callableSignature, false),
-      mutated: this._getMacroBindingMutationNames(callableSignature, false)
-    });
+    node.body.addAnalysis({ macroSetupOwner: node });
     return {
       createScope: true,
       scopeBoundary: true,
@@ -220,22 +215,75 @@ class CompileMacro {
     };
   }
 
-  _getMacroBindingMutationNames(callableSignature, hasCallerSupport = false) {
-    const names = ['caller']
-      .concat(callableSignature.positionalNames)
-      .concat(callableSignature.keywordNames);
-    if (hasCallerSupport) {
-      names.push(CALLER_CHAIN_NAME);
-    }
-    return names;
+  _createMacroArgumentDeclaration(name) {
+    return {
+      name,
+      type: 'var',
+      initializer: null,
+      origin: DECLARATION_ORIGIN.IMPLICIT,
+      role: DECLARATION_ROLE.MACRO_ARGUMENT
+    };
   }
 
-  _getMacroBindingObservationNames(callableSignature, hasCallerSupport = false) {
-    const names = this._getMacroBindingMutationNames(callableSignature, false);
-    if (hasCallerSupport) {
-      names.push(CALLER_CHAIN_NAME);
+  postAnalyzeCaller(node) {
+    return this._getSetupFacts(node, node._analysis, node._analysis);
+  }
+
+  postAnalyzeNodeList(node) {
+    const owner = node._analysis.macroSetupOwner || null;
+    if (!owner) {
+      return {};
     }
-    return names;
+    return this._getSetupFacts(owner, owner._analysis, node._analysis);
+  }
+
+  _getSetupFacts(node, setupAnalysis, targetAnalysis) {
+    const observed = new Set(targetAnalysis.observes || []);
+    const mutated = new Set(targetAnalysis.mutates || []);
+    const defaultNodesByName = this._getCallableDefaultNodesByName(node);
+    setupAnalysis.declares.forEach((decl) => {
+      if (
+        decl.role !== DECLARATION_ROLE.MACRO_ARGUMENT &&
+        decl.role !== DECLARATION_ROLE.MACRO_CALLER
+      ) {
+        return;
+      }
+      mutated.add(decl.name);
+      const defaultNode = defaultNodesByName.get(decl.name);
+      if (defaultNode) {
+        addSetNames(observed, defaultNode._analysis.observedChains);
+        addSetNames(mutated, defaultNode._analysis.mutatedChains);
+      }
+    });
+    const facts = {};
+    if (observed.size > 0) {
+      facts.observes = Array.from(observed);
+    }
+    if (mutated.size > 0) {
+      facts.mutates = Array.from(mutated);
+    }
+    return facts;
+  }
+
+  _getCallableDefaultNodesByName(node) {
+    const signature = this.compiler.getCallableSignatureFacts(node.args, {
+      allowKeywordArgs: true,
+      symbolsOnly: true,
+      label: 'macro signature',
+      ownerNode: node
+    });
+    return new Map(signature.keywordDefaults.map((entry) => [entry.name, entry.valueNode]));
+  }
+
+  _createMacroCallerDeclaration() {
+    return {
+      name: 'caller',
+      type: 'var',
+      initializer: null,
+      internal: true,
+      origin: DECLARATION_ORIGIN.INTERNAL,
+      role: DECLARATION_ROLE.MACRO_CALLER
+    };
   }
 
   _emitCallerBindingValue({ bufferId, rawCallerVar, allCallersBufferId, positionNode }) {
@@ -628,6 +676,12 @@ class CompileMacro {
     if (name.charAt(0) !== '_') {
       this.compiler.emit.line(`context.addResolvedExport("${name}", ${funcId});`);
     }
+  }
+}
+
+function addSetNames(target, names) {
+  if (names) {
+    names.forEach((name) => target.add(name));
   }
 }
 

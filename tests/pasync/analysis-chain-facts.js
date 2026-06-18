@@ -610,21 +610,35 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       expect(Array.from(callerNode._analysis.declaredChains.keys())).to.eql(['caller', '__return__', '__text__']);
     });
 
-    it('should keep macro binding command facts owned by the macro body', function () {
+    it('should keep precise macro argument var-chain facts owned by the macro body', function () {
       const ast = analyzeTemplateSource(
-        '{% macro adjust(a, b=a) %}{% set b = b ~ "!" %}{{ a }}:{{ b }}{% endmacro %}{{ adjust("x") }}',
-        'macro-binding-command-facts.njk'
+        '{% macro adjust(a, b=a) %}{% set b = b ~ "!" %}{{ b }}{% endmacro %}{{ adjust("x") }}',
+        'macro-argument-var-chain-facts.njk'
       );
       const macro = collectNodesByType(ast, 'Macro')[0];
       const bodyFacts = macro.body._analysis;
 
-      expect(Array.from(bodyFacts.observedChains || [])).to.contain('caller');
+      expect(Array.from(bodyFacts.observedChains || [])).to.not.contain('caller');
       expect(Array.from(bodyFacts.observedChains || [])).to.contain('a');
       expect(Array.from(bodyFacts.observedChains || [])).to.contain('b');
       expect(Array.from(bodyFacts.mutatedChains || [])).to.contain('caller');
       expect(Array.from(bodyFacts.mutatedChains || [])).to.contain('a');
       expect(Array.from(bodyFacts.mutatedChains || [])).to.contain('b');
       expect(Array.from(macro._analysis.boundaryLinkedChains || [])).to.eql([]);
+    });
+
+    it('should not observe macro arguments that have no default reads', function () {
+      const ast = analyzeTemplateSource(
+        '{% macro plain(a, b) %}ok{% endmacro %}{{ plain("x", "y") }}',
+        'macro-default-free-argument-facts.njk'
+      );
+      const macro = collectNodesByType(ast, 'Macro')[0];
+      const bodyFacts = macro.body._analysis;
+
+      expect(Array.from(bodyFacts.observedChains || [])).to.not.contain('a');
+      expect(Array.from(bodyFacts.observedChains || [])).to.not.contain('b');
+      expect(Array.from(bodyFacts.mutatedChains || [])).to.contain('a');
+      expect(Array.from(bodyFacts.mutatedChains || [])).to.contain('b');
     });
 
     it('should mark guard body and recovery as buffer-backed scopes', function () {

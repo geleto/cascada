@@ -437,7 +437,7 @@ split and after boundary/callable shape is clearer.
 
 ### Problem
 
-`declares` / `declaresInParent` / `parentOwned` / `shared` / `macroParam` /
+`declares` / `declaresInParent` / `parentOwned` / `shared` / declaration roles /
 `imported` / `internal` / `declarationOrigin` encode several orthogonal
 questions in one bag:
 
@@ -463,7 +463,7 @@ The current model has four separate axes sharing one declaration object:
 | --- | --- | --- |
 | Placement and lifecycle | `declares`, `declaresInParent`, `sourceVisibleDeclarations`, `declaredChains` | Where a declaration is first registered during the source-order walk, and where it is finally owned after declaration finalization. |
 | Conflict policy | `explicit`, `parentOwned`, producer node type (`Macro`, `Set`, `ChainDeclaration`) | Whether the declaration should conflict with same-scope or ancestor declarations during first-pass validation. |
-| Storage/access behavior | `type`, `shared`, `imported`, `componentBinding`, `isMacro`, `macroParam`, `internal`, `implicitTemplateShared` | How later compiler features interpret a visible declaration: chain type, shared-state access, imported callable boundary, component binding, direct macro call, macro argument, reserved-name bypass, or inferred template shared state. |
+| Storage/access behavior | `type`, `shared`, `imported`, `componentBinding`, `isMacro`, declaration `role`, `internal`, `implicitTemplateShared` | How later compiler features interpret a visible declaration: chain type, shared-state access, imported callable boundary, component binding, direct macro call, macro argument/caller setup, reserved-name bypass, or inferred template shared state. |
 | Origin and codegen context | `declarationOrigin`, `initializer` | Which analysis node introduced the declaration and which source node/context should be used by later codegen or diagnostics. |
 
 This means `{ declaredAt, visibleAt, writeOwner }` would not be expressive
@@ -484,7 +484,7 @@ conflict-policy axis.
 | `imported` | Marks import/from-import bindings so member calls can create imported callable boundaries and link the imported namespace/text output correctly. | Keep. Narrow feature tag. |
 | `componentBinding` | Marks script component bindings so `component.x` accesses route through component shared-state/method dispatch. | Keep. Narrow feature tag. |
 | `isMacro` | Marks macro declarations so direct macro calls can bind to the compiled macro function. | Keep. Narrow feature tag. |
-| `macroParam` | Marks macro parameters so sequence-marker misuse inside macros can produce the macro-specific error. | Keep. Narrow feature tag. |
+| declaration `role` | Distinguishes narrow compiler-owned declaration behavior such as macro argument and macro caller setup. | Keep. Narrow feature tag. |
 | `internal` | Allows compiler-owned declarations such as `__return__`, `__caller__`, and private text lanes to bypass reserved-name validation. | Keep. Narrow feature tag. |
 | `explicit` | Distinguishes explicit declarations from implicit template `set` declarations for conflict validation. | Keep. It belongs to conflict policy; future cleanup should name that policy directly. |
 

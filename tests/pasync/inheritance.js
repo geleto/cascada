@@ -2579,6 +2579,20 @@ describe('Inheritance rebuild', function () {
       expect(props.inheritanceSpec.methodEntries.label.signature).to.eql({ argNames: ['user', 'fallback'] });
     });
 
+    it('keeps inherited callable argument facts precise around defaults', function () {
+      const props = compileProps([
+        'shared var theme',
+        'method label(user, fallback = this.theme)',
+        '  return fallback',
+        'endmethod',
+        'return this.label("Ada")'
+      ].join('\n'), { scriptMode: true });
+      const entry = props.inheritanceSpec.methodEntries.label;
+
+      expect(entry.ownObservedChains).to.eql(['$theme']);
+      expect(entry.ownMutatedChains).to.eql([]);
+    });
+
     it('requires script this shared access to target a shared declaration', function () {
       [
         'return this.theme',
@@ -2856,4 +2870,3 @@ describe('Inheritance rebuild', function () {
     });
   });
 });
-
