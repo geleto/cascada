@@ -874,7 +874,7 @@ const runtime = typeof window !== 'undefined'
       });
     });
 
-    describe('Macro binding value semantics', () => {
+    describe('Macro argument variable semantics', () => {
       it('should allow reassignment of macro argument in async template mode', async () => {
         const template = `
           {%- macro bump(x) -%}

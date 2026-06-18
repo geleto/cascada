@@ -610,7 +610,7 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       expect(Array.from(callerNode._analysis.declaredChains.keys())).to.eql(['caller', '__return__', '__text__']);
     });
 
-    it('should keep precise macro argument var-chain facts owned by the macro body', function () {
+    it('should keep precise macro argument variable facts owned by the macro body', function () {
       const ast = analyzeTemplateSource(
         '{% macro adjust(a, b=a) %}{% set b = b ~ "!" %}{{ b }}{% endmacro %}{{ adjust("x") }}',
         'macro-argument-var-chain-facts.njk'
