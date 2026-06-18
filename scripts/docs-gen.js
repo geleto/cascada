@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import {fileURLToPath} from 'url';
 import he from 'he';
-import marked from 'marked';
+import {marked, Renderer} from 'marked';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -53,7 +53,7 @@ function slugifyHeading(value, slugCounts) {
 }
 
 function createMarkdownRenderer(headings) {
-  const renderer = new marked.Renderer();
+  const renderer = new Renderer();
   const slugCounts = new Map();
 
   renderer.heading = (text, level, raw) => {
