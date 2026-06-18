@@ -2,7 +2,7 @@ import http from 'http';
 import net from 'net';
 import path from 'path';
 import {promises as fs} from 'fs';
-import babel from '@babel/core';
+import {transformAsync} from '@babel/core';
 import {fileURLToPath} from 'url';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -75,7 +75,7 @@ async function getStaticServer(prt) {
 
           if (shouldInstrument) {
             const code = await fs.readFile(filePath, 'utf8');
-            const result = await babel.transformAsync(code, {
+            const result = await transformAsync(code, {
               filename: filePath,
               sourceMaps: 'inline',
               babelrc: false,

@@ -56,21 +56,22 @@ function createMarkdownRenderer(headings) {
   const renderer = new Renderer();
   const slugCounts = new Map();
 
-  renderer.heading = (text, level, raw) => {
-    const slug = slugifyHeading(raw || text, slugCounts);
+  renderer.heading = function ({ tokens, depth, text }) {
+    const renderedText = this.parser.parseInline(tokens);
+    const slug = slugifyHeading(text, slugCounts);
     headings.push({
-      level,
-      text: plainText(text),
+      level: depth,
+      text: plainText(renderedText),
       slug
     });
-    return `<h${level} id="${slug}"><a href="#${slug}" class="anchor"><span>${text}</span></a></h${level}>\n`;
+    return `<h${depth} id="${slug}"><a href="#${slug}" class="anchor"><span>${renderedText}</span></a></h${depth}>\n`;
   };
 
-  renderer.code = (code, language) => {
+  renderer.code = ({ text, lang: language }) => {
     const lang = language ? String(language).trim() : '';
     const languageClass = lang ? ` class="language-${escapeHtml(lang)}"` : '';
     const dataLang = lang ? ` data-lang="${escapeHtml(lang)}"` : '';
-    return `<pre${dataLang}><code${languageClass}>${escapeHtml(code)}</code></pre>\n`;
+    return `<pre${dataLang}><code${languageClass}>${escapeHtml(text)}</code></pre>\n`;
   };
 
   return renderer;

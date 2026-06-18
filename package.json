@@ -27,31 +27,30 @@
   ],
   "homepage": "https://github.com/geleto/cascada",
   "dependencies": {
-    "cascada-engine": "^0.6.0",
     "chokidar": "^5.0.0",
-    "commander": "^14.0.3"
+    "commander": "^15.0.0"
   },
   "devDependencies": {
-    "@babel/core": "^7.29.0",
+    "@babel/core": "^8.0.1",
     "@eslint/js": "^10.0.1",
     "babel-plugin-istanbul": "^8.0.0",
     "c8": "^11.0.0",
     "cross-env": "^10.1.0",
     "dummy-pkg": "file:tests/test-node-pkgs/dummy-pkg",
-    "eslint": "^10.2.1",
-    "eslint-plugin-mocha": "^11.1.0",
+    "eslint": "^10.5.0",
+    "eslint-plugin-mocha": "^11.3.0",
     "expect.js": "*",
     "express": "5.x",
     "gh-pages": "^6.3.0",
-    "globals": "^17.5.0",
+    "globals": "^17.6.0",
     "he": "^1.2.0",
     "istanbul-lib-coverage": "^3.2.2",
     "istanbul-lib-report": "^3.0.1",
-    "istanbul-reports": "^3.1.7",
+    "istanbul-reports": "^3.2.0",
     "madge": "^8.0.0",
-    "marked": "^4.3.0",
-    "mocha": "^11.1.0",
-    "playwright": "^1.59.1",
+    "marked": "^18.0.5",
+    "mocha": "^11.7.6",
+    "playwright": "^1.61.0",
     "supertest": "*"
   },
   "resolutions": {
@@ -63,7 +62,7 @@
     "serialize-javascript": "^7.0.5"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18.0"
   },
   "scripts": {
     "postinstall": "node scripts/dev-install.js",
