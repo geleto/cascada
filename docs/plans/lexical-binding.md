@@ -44,13 +44,19 @@ A declaration is eligible for `storage: DECLARATION_STORAGE.LEXICAL` when:
 - it is source-visible by name
 - its value is available as a JS expression or generated JS variable
 - it is not reassigned after initialization
-- it is not used through chain operations such as `snapshot`, `is error`, or `getError`
+- it is not a non-var lane used through explicit chain operations such as `snapshot()`
 - it is not path-assigned or otherwise mutated indirectly
 - it does not need command-buffer producer/consumer ordering as a lane
 - it does not need parent/child linked-chain visibility
 - it is not exported through deferred chain state
 
 Keep `storage: DECLARATION_STORAGE.CHAIN` when any of those conditions fail.
+
+Ordinary `var` reads have implicit snapshot semantics when the `var` is chain-backed. Lexical `var` and argument bindings do not need that machinery: the symbol read should emit the JS value directly. Do not add or preserve explicit `.snapshot()` support for `var` declarations; `snapshot()` is an explicit operation for output/shared lanes, not the source-level API for plain vars.
+
+If current compiler paths allow `x.snapshot()` to fall through as an ordinary method call when `x` is a declared `var`, close that gap as part of this work. Declared `var` names should reject explicit `.snapshot()` at compile time so chain-backed and lexical vars have the same source-level surface. This restriction applies to declared Cascada vars, not arbitrary ambient/context objects; `contextObj.snapshot()` can still be an ordinary method call when `contextObj` is not a Cascada declaration.
+
+Error inspection is not by itself a reason to keep a value chain-backed. `value is error` and `value#` / `getError(value)` should work with lexical bindings by passing the emitted JS value directly to the runtime value-level helpers such as `isError` and `peekError` / `getError`. This matters for function and macro arguments: an argument can itself be an error value, and checking or peeking that error should not route the argument through the normal command-buffer observation path.
 
 This rule should be derived from finalized universal facts wherever possible: declarations, reads, observations, mutations, chain-command facts, path-assignment facts, and boundary-link facts. Avoid one-off per-node exceptions.
 
@@ -347,7 +353,7 @@ Do not use lexical bindings for:
 - shared chains
 - `__return__`, `__waited__`, `__caller__`
 - values that are reassigned
-- values used with chain operations
+- non-var lanes used with explicit chain operations such as `snapshot()`
 - values that must be visible to child command buffers through linked lanes
 - values whose export is currently deferred through chain finalization
 
@@ -397,10 +403,15 @@ Then add derived read-only binding tests:
 - read-only macro argument compiles without a var-chain setup command
 - mutated macro argument remains chain-backed
 - ordinary value reads do not force a read-only declaration to stay chain-backed
-- explicit chain operations do force the declaration to stay chain-backed
+- implicit var reads do not require chain-backed storage
+- explicit `snapshot()` is not supported as a var operation
+- `var x = obj; x.snapshot()` is rejected for declared Cascada vars even when `obj.snapshot` exists
+- ambient/context `obj.snapshot()` remains an ordinary method call when `obj` is not a Cascada declaration
+- explicit `snapshot()` on non-var lanes keeps those lanes chain-backed
+- value-level error checks on read-only arguments do not force the declaration to stay chain-backed
 - read-only loop local behaves correctly across async child boundaries
 - read-only ordinary var preserves promise and poison behavior
-- a var used with `snapshot` or path assignment remains chain-backed
+- a var used with path assignment remains chain-backed
 
 ## Success Criteria
 
