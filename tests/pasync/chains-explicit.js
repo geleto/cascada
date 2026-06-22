@@ -2,6 +2,7 @@
 import expect from 'expect.js';
 import {AsyncEnvironment} from '../../src/environment/environment.js';
 import {createPoison, isPoisonError, PoisonError} from '../../src/runtime/runtime.js';
+import {StringLoader} from '../util.js';
 
 const TEST_POISON_EC = [1, 1, 'ChainsExplicit.TestPoison', 'chains-explicit.casc', null, null];
 const testPoison = (message) => createPoison(PoisonError.create(message, TEST_POISON_EC, 'UserCallThrew'));
@@ -1994,6 +1995,89 @@ describe('Cascada Script: Explicit Chain Declarations', function () {
         })
       });
       expect(result).to.be(1);
+    });
+
+    it('should call member methods on chain-backed and direct var-like declarations', async () => {
+      const loader = new StringLoader();
+      loader.addTemplate(
+        'lib.njk',
+        '{% set exported = makeObj("direct-from") %}{% set ns = { exported: makeObj("direct-ns") } %}'
+      );
+      env = new AsyncEnvironment(loader);
+      const calls = [];
+      env.addGlobal('makeObj', (name) => ({
+        snapshot() {
+          calls.push(`${name}:snapshot`);
+          return `${name}:snapshot`;
+        },
+        anything() {
+          calls.push(`${name}:anything`);
+          return `${name}:anything`;
+        }
+      }));
+
+      const body = (name) =>
+        `{{ ${name}.snapshot() }}|` +
+        `{% set observed = ${name}.anything() %}{{ observed }}|` +
+        `{% do ${name}.snapshot() %}{% do ${name}.anything() %}` +
+        `{% command ${name}.snapshot() %}{% command ${name}.anything() %}`;
+
+      const assertMethodCalls = async (name, source) => {
+        calls.length = 0;
+        const result = await env.renderTemplateString(source);
+        expect(result).to.be(`${name}:snapshot|${name}:anything|`);
+        expect(calls).to.eql([
+          `${name}:snapshot`,
+          `${name}:anything`,
+          `${name}:snapshot`,
+          `${name}:anything`,
+          `${name}:snapshot`,
+          `${name}:anything`
+        ]);
+      };
+
+      const chainBackedCases = [
+        ['var', `{% var x = makeObj("var") %}${body('x')}`],
+        ['set', `{% set x = makeObj("set") %}${body('x')}`],
+        ['arg', `{% macro m(x) %}${body('x')}{% endmacro %}{{ m(makeObj("arg")) }}`],
+        ['caller', `{% macro wrap() %}{{ caller(makeObj("caller")) }}{% endmacro %}{% call(x) wrap() %}${body('x')}{% endcall %}`],
+        ['loop', `{% for x in [makeObj("loop")] %}${body('x')}{% endfor %}`]
+      ];
+      const directCases = [
+        ['direct-from', `{% from "lib.njk" import exported %}${body('exported')}`],
+        ['direct-ns', `{% import "lib.njk" as lib %}${body('lib.ns.exported')}`]
+      ];
+
+      for (const [name, source] of chainBackedCases) {
+        await assertMethodCalls(name, source);
+      }
+      for (const [name, source] of directCases) {
+        await assertMethodCalls(name, source);
+      }
+
+      calls.length = 0;
+      const scriptResult = await env.renderScriptString(`
+        function useArg(x)
+          var observed = x.snapshot()
+          x.anything()
+          return observed
+        endfunction
+        var local = makeObj("script-var")
+        var localObserved = local.snapshot()
+        local.anything()
+        var argObserved = useArg(makeObj("function"))
+        return { local: localObserved, arg: argObserved }
+      `);
+      expect(scriptResult).to.eql({
+        local: 'script-var:snapshot',
+        arg: 'function:snapshot'
+      });
+      expect(calls.slice().sort()).to.eql([
+        'function:anything',
+        'function:snapshot',
+        'script-var:anything',
+        'script-var:snapshot'
+      ]);
     });
 
     it('should allow var chains with initializers', async () => {

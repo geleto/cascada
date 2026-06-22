@@ -3,6 +3,7 @@ import * as nodes from '../language/nodes.js';
 import {CHAIN_TYPE_FACTS} from '../chain-types.js';
 import {validateChainDeclarationNode} from './validation.js';
 import {getSharedSourceName, renameSharedName} from '../inheritance/shared-names.js';
+import {isStoredDirectly} from './declarations.js';
 
 const OWN_FACTS_OBSERVED_CHAINS = 0;
 const OWN_FACTS_MUTATED_CHAINS = 1;
@@ -443,11 +444,14 @@ class CompileChain {
     if (!path || path.length === 0) {
       return {};
     }
-    this.markOperationOwnedPath(node.call);
     const chainName = path[0];
     const chainDecl = chainName ? compiler.analysis.recordSourceLookupDeclaration(node, chainName) : null;
     const chainType = node.chainType || (chainDecl ? chainDecl.type : null);
     const command = path.length >= 2 ? path[path.length - 1] : null;
+    if (callNode && path.length >= 2 && chainDecl && (chainDecl.type === 'var' || isStoredDirectly(chainDecl))) {
+      return { varLikeMemberCall: true };
+    }
+    this.markOperationOwnedPath(node.call);
     const isSequenceGet = !callNode && chainDecl && chainDecl.type === 'sequence';
     const isObservation = isSequenceGet ||
       (callNode && path.length === 2 &&
@@ -557,6 +561,12 @@ class CompileChain {
   }
 
   compileChainCommand(node) {
+    if (node._analysis.varLikeMemberCall) {
+      this.compiler.emit('runtime.observeDiscardedExpression(');
+      this.compiler.compileExpression(node.call, null, node.call);
+      this.compiler.emit.line(`, ${this.compiler.emitErrorContext(node.call)});`);
+      return;
+    }
     this.compiler.buffer.compileChainCommand(node);
   }
 
