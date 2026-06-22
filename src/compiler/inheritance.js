@@ -225,13 +225,16 @@ class CompileInheritance {
 
     declaration.shared = true;
     declaration.declarationOrigin = this.compiler.analysis.getTopmostChildAnalysis(sourceAnalysis);
-    rootOwner.sourceVisibleDeclarations = rootOwner.sourceVisibleDeclarations || new Map();
-    if (!rootOwner.sourceVisibleDeclarations.has(declaration.name)) {
-      rootOwner.sourceVisibleDeclarations.set(declaration.name, declaration);
+    declaration.declarationOwner = rootOwner;
+    const visibleDeclarations = rootOwner.activeVisibleDeclarations;
+    if (visibleDeclarations && !visibleDeclarations.has(declaration.name)) {
+      visibleDeclarations.set(declaration.name, declaration);
     }
     // The declaration table is rebuilt during finalization, so keep implicit
     // shared declarations in the root declaration list as their source of truth.
-    rootOwner.declares.push(declaration);
+    if (!rootOwner.declareOnEnter.includes(declaration)) {
+      rootOwner.declareOnEnter.push(declaration);
+    }
     this.recordRootSharedDeclaration(rootOwner, declaration);
     return declaration;
   }
@@ -529,7 +532,7 @@ class CompileInheritance {
     const bodyDeclares = [];
     const seenBlockArgNames = new Set();
     signature.argNameNodes.forEach((nameNode, index) => {
-      nameNode.addAnalysis({ skipDeclarationOwner: node._analysis });
+      nameNode.addAnalysis({ isSymbolTarget: true });
       const canonicalName = signature.argNames[index];
       if (seenBlockArgNames.has(canonicalName)) {
         compiler.fail(
@@ -551,19 +554,19 @@ class CompileInheritance {
     });
     if (bodyDeclares.length > 0 && node.body) {
       const bodyAnalysis = node.body._analysis || {};
-      const declares = bodyAnalysis.declares
-        ? bodyAnalysis.declares.concat(bodyDeclares)
+      const declareOnEnter = bodyAnalysis.declareOnEnter
+        ? bodyAnalysis.declareOnEnter.concat(bodyDeclares)
         : bodyDeclares;
       node.body.addAnalysis({
-        declares
+        declareOnEnter
       });
     }
     const textChain = !compiler.scriptMode
       ? compiler.analysis.getCurrentTextChain(node._analysis)
       : null;
-    const declares = [];
+    const declareOnEnter = [];
     if (textChain) {
-      declares.push({
+      declareOnEnter.push({
         name: textChain,
         type: 'text',
         initializer: null
@@ -572,7 +575,7 @@ class CompileInheritance {
     return {
       createScope: true,
       scopeBoundary: true,
-      declares,
+      declareOnEnter,
       mutates: textChain ? [textChain] : [],
       wantsLinkedChildBuffer: true
     };
@@ -583,7 +586,7 @@ class CompileInheritance {
       this._recordCallableDefinition(node);
     }
     const analysis = this.analyzeBlock(node);
-    analysis.declares.push(this.compiler.return.createChainDeclaration());
+    analysis.declareOnEnter.push(this.compiler.return.createChainDeclaration());
     return analysis;
   }
 

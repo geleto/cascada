@@ -1,5 +1,5 @@
 import expect from 'expect.js';
-import {AsyncEnvironment, Environment} from '../../src/environment/environment.js';
+import {AsyncEnvironment, AsyncTemplate, Environment} from '../../src/environment/environment.js';
 import {StringLoader} from '../util.js';
 import * as runtime from '../../src/runtime/runtime.js';
 
@@ -441,6 +441,47 @@ async function expectRejects(promise) {
       env = new AsyncEnvironment(loader);
       const result = await env.renderTemplate('main.njk', {});
       expect(result).to.equal('1');
+    });
+
+    it('should compile import bindings as direct storage', () => {
+      env = new AsyncEnvironment(loader);
+      const namespaceSource = new AsyncTemplate(
+        '{% import "lib.njk" as lib %}{{ lib.x }}',
+        env,
+        'direct-import-namespace.njk'
+      ).compileSource();
+      const fromImportSource = new AsyncTemplate(
+        '{% from "lib.njk" import x %}{{ x }}',
+        env,
+        'direct-from-import.njk'
+      ).compileSource();
+
+      expect(namespaceSource).to.not.contain('declareBufferChain(currentBuffer, "lib", "var"');
+      expect(namespaceSource).to.not.contain('chainName: \'lib\'');
+      expect(namespaceSource).to.contain('context.addResolvedExport("lib"');
+      expect(namespaceSource).to.not.contain('context.addDeferredExport("lib"');
+
+      expect(fromImportSource).to.not.contain('declareBufferChain(currentBuffer, "x", "var"');
+      expect(fromImportSource).to.not.contain('chainName: \'x\'');
+      expect(fromImportSource).to.contain('context.addResolvedExport("x"');
+      expect(fromImportSource).to.not.contain('context.addDeferredExport("x"');
+    });
+
+    it('should reject reassignment of import bindings', async () => {
+      loader.addTemplate('lib.njk', '{% set x = 1 %}');
+
+      env = new AsyncEnvironment(loader);
+      const namespaceError = await expectRejects(
+        env.renderTemplateString('{% import "lib.njk" as lib %}{% set lib = 2 %}', {})
+      );
+      expect(namespaceError.message).to.contain('Cannot assign to import binding');
+      expect(namespaceError.message).to.contain('lib');
+
+      const fromImportError = await expectRejects(
+        env.renderTemplateString('{% from "lib.njk" import x %}{% set x = 2 %}', {})
+      );
+      expect(fromImportError.message).to.contain('Cannot assign to import binding');
+      expect(fromImportError.message).to.contain('x');
     });
 
     describe('Load-failure policy', function () {

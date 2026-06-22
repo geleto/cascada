@@ -8,6 +8,15 @@ const runtime = typeof window !== 'undefined'
   ? window.nunjucks.runtime
   : await import('../../src/runtime/runtime.js');
 
+async function expectRejects(promise) {
+  try {
+    await promise;
+    expect().fail('Expected promise to reject');
+  } catch (err) {
+    return err;
+  }
+}
+
 (function () {
 
   //var unescape;
@@ -34,8 +43,14 @@ const runtime = typeof window !== 'undefined'
 
         expect(templateSource).to.contain('(() => {');
         expect(templateSource).to.not.contain('async () =>');
+        expect(templateSource).to.not.contain('declareBufferChain(currentBuffer, "greet", "var"');
+        expect(templateSource).to.not.contain('chainName: \'greet\'');
+        expect(templateSource).to.contain('context.addResolvedExport("greet"');
+        expect(templateSource).to.not.contain('context.addDeferredExport("greet"');
         expect(scriptSource).to.contain('(() => {');
         expect(scriptSource).to.not.contain('async () =>');
+        expect(scriptSource).to.not.contain('declareBufferChain(currentBuffer, "greet", "var"');
+        expect(scriptSource).to.not.contain('chainName: \'greet\'');
       });
 
       it('keeps the async return path for caller-capable macros', () => {
@@ -885,6 +900,64 @@ const runtime = typeof window !== 'undefined'
         `;
         const rendered = await env.renderTemplateString(template, {});
         expect(rendered.trim()).to.equal('3');
+      });
+
+      it('should reject reassignment of macro/function names', async () => {
+        const template = '{% macro greet() %}hi{% endmacro %}{% set greet = 1 %}';
+        const script = [
+          'function greet()',
+          '  return "hi"',
+          'endfunction',
+          'greet = 1',
+          'return greet'
+        ].join('\n');
+
+        const templateError = await expectRejects(env.renderTemplateString(template, {}));
+        expect(templateError.message).to.contain('Cannot assign to macro/function declaration');
+        expect(templateError.message).to.contain('greet');
+
+        const scriptError = await expectRejects(env.renderScriptString(script, {}));
+        expect(scriptError.message).to.contain('Cannot assign to macro/function declaration');
+        expect(scriptError.message).to.contain('greet');
+      });
+
+      it('should reject macro parameters that reuse the macro/function name', async () => {
+        const template = '{% macro echo(echo) %}{{ echo }}{% endmacro %}{{ echo("x") }}';
+        const script = [
+          'function echo(echo)',
+          '  return echo',
+          'endfunction',
+          'return echo("x")'
+        ].join('\n');
+
+        const templateError = await expectRejects(env.renderTemplateString(template, {}));
+        expect(templateError.message).to.contain('conflicts with the macro/function name');
+        expect(templateError.message).to.contain('echo');
+
+        const scriptError = await expectRejects(env.renderScriptString(script, {}));
+        expect(scriptError.message).to.contain('conflicts with the macro/function name');
+        expect(scriptError.message).to.contain('echo');
+      });
+
+      it('should let macro bodies call private sibling macros', async () => {
+        const template = `
+          {%- macro _inner() -%}I{%- endmacro -%}
+          {%- macro outer() -%}{{ _inner() }}{%- endmacro -%}
+          {{ outer() }}
+        `;
+        const rendered = await env.renderTemplateString(template, {});
+        expect(rendered.trim()).to.equal('I');
+      });
+
+      it('should let macro bodies recursively call themselves', async () => {
+        const template = `
+          {%- macro count(n) -%}
+            {%- if n <= 0 -%}done{%- else -%}{{ n }}:{{ count(n - 1) }}{%- endif -%}
+          {%- endmacro -%}
+          {{ count(3) }}
+        `;
+        const rendered = await env.renderTemplateString(template, {});
+        expect(rendered.trim()).to.equal('3:2:1:done');
       });
 
       it('should allow reassignment of macro argument in async script mode', async () => {

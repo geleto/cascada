@@ -85,6 +85,18 @@ describe('Async declaration conflict visibility', function () {
     );
   });
 
+  it('rejects duplicate template from-import bindings in the same import list before loading the target', async function () {
+    const template = `
+      {% from "missing.njk" import first as value, second as value %}
+      {{ value }}
+    `;
+
+    await expectRejects(
+      () => env.renderTemplateString(template),
+      'Identifier \'value\' has already been declared.'
+    );
+  });
+
   it('rejects template imports that reuse an outer visible name inside a non-clean block', async function () {
     const template = `
       {% set lib = "outer" %}

@@ -10,9 +10,9 @@ class CompileComponent {
   analyzeComponent(node) {
     node.template.addAnalysis({ errorContextLabel: 'Component.Script' });
     this.compiler.inheritance.recordComponentOperation(node);
-    node.target.addAnalysis({ declarationTarget: true });
+    node.target.addAnalysis({ isSymbolTarget: true });
     return {
-      declares: [{
+      declareOnExit: [{
         name: node.target.value,
         type: 'var',
         initializer: null,
@@ -109,7 +109,7 @@ class CompileComponent {
     }
 
     const bindingName = staticPath[0];
-    const bindingDecl = this.compiler.analysis.findDeclaration(node._analysis, bindingName);
+    const bindingDecl = this.compiler.analysis.findSourceDeclaration(node._analysis, bindingName);
     if (!bindingDecl || !bindingDecl.componentBinding) {
       return null;
     }

@@ -1,4 +1,5 @@
 import {CHAIN_TYPES} from '../chain-types.js';
+import {isChainDeclaration, isVarChainDeclaration} from './declarations.js';
 
 const RETURN_CHAIN_NAME = '__return__';
 const RETURN_IS_UNSET_FUNCTION_NAME = '__return_is_unset__';
@@ -48,7 +49,7 @@ function isReservedDeclaration(decl, { asyncMode = false, scriptMode = false } =
     return false;
   }
   return isStrictReservedDeclarationName(decl.name) ||
-    decl.type !== 'var' ||
+    (isChainDeclaration(decl) && !isVarChainDeclaration(decl)) ||
     scriptMode;
 }
 

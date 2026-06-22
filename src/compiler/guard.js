@@ -19,11 +19,11 @@ class CompileGuard {
         wantsLinkedChildBuffer: true
       };
       if (typeof node.errorVar === 'string' && node.errorVar) {
-        recoveryAnalysis.declares = [{ name: node.errorVar, type: 'var', initializer: null }];
+        recoveryAnalysis.declareOnEnter = [{ name: node.errorVar, type: 'var', initializer: null }];
         compiler.analysis.addCommandFacts(node.recoveryBody, { mutated: [node.errorVar] });
       } else if (node.errorVar instanceof nodes.Symbol) {
-        node.errorVar.addAnalysis({ declarationTarget: true });
-        recoveryAnalysis.declares = [{ name: node.errorVar.value, type: 'var', initializer: null }];
+        node.errorVar.addAnalysis({ isSymbolTarget: true });
+        recoveryAnalysis.declareOnEnter = [{ name: node.errorVar.value, type: 'var', initializer: null }];
         compiler.analysis.addCommandFacts(node.recoveryBody, { mutated: [node.errorVar.value] });
       }
       node.recoveryBody.addAnalysis(recoveryAnalysis);
@@ -275,7 +275,7 @@ class CompileGuard {
         if (guardedTypes.size === 0) {
           return false;
         }
-        const chainDecl = compiler.analysis.findDeclaration(analysis, name);
+        const chainDecl = compiler.analysis.findSourceDeclaration(analysis, name);
         if (chainDecl) {
           return guardedTypes.has(chainDecl.type);
         }
@@ -291,7 +291,7 @@ class CompileGuard {
         if (name && name.charAt(0) === '!') {
           return false;
         }
-        const chainDecl = compiler.analysis.findDeclaration(analysis, name);
+        const chainDecl = compiler.analysis.findSourceDeclaration(analysis, name);
         return chainDecl && chainDecl.type === 'var';
       });
     }
@@ -329,7 +329,7 @@ class CompileGuard {
       const resolvedChains = new Set(Array.isArray(chainSelector) ? chainSelector : []);
 
       for (const name of variableTargetsRaw) {
-        const chainDecl = compiler.analysis.findDeclaration(guardNode._analysis, name);
+        const chainDecl = compiler.analysis.findSourceDeclaration(guardNode._analysis, name);
         const isDeclaredVar = chainDecl && chainDecl.type === 'var';
 
         if (isDeclaredVar) {

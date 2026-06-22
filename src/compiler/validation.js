@@ -10,7 +10,7 @@ import {CHAIN_TYPE_FACTS} from '../chain-types.js';
 function validateGuardVariablesDeclared(variableTargets, compiler, node) {
   if (variableTargets && variableTargets !== '*') {
     for (const varName of variableTargets) {
-      const decl = compiler.analysis.findDeclaration(node._analysis, varName);
+      const decl = compiler.analysis.findSourceDeclaration(node._analysis, varName);
       if (!(decl && decl.type === 'var')) {
         compiler.fail(`guard variable "${varName}" is not declared`, node.lineno, node.colno, node);
       }

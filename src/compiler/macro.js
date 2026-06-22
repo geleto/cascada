@@ -5,8 +5,8 @@ import {
   RETURN_CHAIN_NAME,
 } from './reserved.js';
 import {
-  DECLARATION_ORIGIN,
-  DECLARATION_ROLE
+  DECLARATION_ROLE,
+  DECLARATION_STORAGE
 } from './declarations.js';
 
 class CompileMacro {
@@ -59,8 +59,8 @@ class CompileMacro {
 
   analyzeCaller(node) {
     const compiledMacroFuncId = `macro_${this.compiler._tmpid()}`;
-    node.name.addAnalysis({ declarationTarget: true });
-    const declares = [
+    node.name.addAnalysis({ isSymbolTarget: true });
+    const declareOnEnter = [
       this._createMacroCallerDeclaration(),
       this.compiler.return.createChainDeclaration()
     ];
@@ -68,21 +68,21 @@ class CompileMacro {
       ? this.compiler.analysis.getCurrentTextChain(node._analysis)
       : null;
     if (textChainName) {
-      declares.push({ name: textChainName, type: 'text', initializer: null, internal: true });
+      declareOnEnter.push({ name: textChainName, type: 'text', initializer: null, internal: true });
     }
     const seenParamNames = new Set();
     node.args.children.forEach((arg) => {
       if (arg instanceof nodes.Symbol) {
-        arg.addAnalysis({ declarationTarget: true });
+        arg.addAnalysis({ isSymbolTarget: true });
         this._validateParameterDeclaration(arg.value, arg, seenParamNames, node);
-        declares.push(this._createMacroArgumentDeclaration(arg.value));
+        declareOnEnter.push(this._createMacroArgumentDeclaration(arg.value));
       }
     });
     return {
       createScope: true,
       scopeBoundary: false,
       parentReadOnly: true,
-      declares,
+      declareOnEnter,
       compiledMacroFuncId,
       wantsLinkedChildBuffer: true
     };
@@ -115,37 +115,40 @@ class CompileMacro {
   }
 
   analyzeMacro(node) {
-    const declares = [];
-    const declaresInParent = [];
+    const declareOnEnter = [];
+    const declareInParentOnExit = [];
     const compiledMacroFuncId = `macro_${this.compiler._tmpid()}`;
-    node.name.addAnalysis({ declarationTarget: true });
-    declares.push(this.compiler.return.createChainDeclaration());
-    declares.push(this._createMacroCallerDeclaration());
+    node.name.addAnalysis({ isSymbolTarget: true });
+    declareOnEnter.push(this.compiler.return.createChainDeclaration());
+    declareOnEnter.push(this._createMacroCallerDeclaration());
     const seenParamNames = new Set();
     node.args.children.forEach((arg) => {
       if (arg instanceof nodes.Symbol) {
-        arg.addAnalysis({ declarationTarget: true });
+        arg.addAnalysis({ isSymbolTarget: true });
         this._validateParameterDeclaration(arg.value, arg, seenParamNames, node);
-        declares.push(this._createMacroArgumentDeclaration(arg.value));
+        declareOnEnter.push(this._createMacroArgumentDeclaration(arg.value));
       } else if (arg instanceof nodes.Dict) {
         arg.children.forEach((pair) => {
           this._validateParameterDeclaration(pair.key.value, pair.key, seenParamNames, node);
-          declares.push(this._createMacroArgumentDeclaration(pair.key.value));
+          declareOnEnter.push(this._createMacroArgumentDeclaration(pair.key.value));
         });
       }
     }, undefined, node);
-    const macroDecl = { name: node.name.value, type: 'var', initializer: null, isMacro: true };
-    const parentMacroDecl = { name: node.name.value, type: 'var', initializer: null, parentOwned: true, isMacro: true };
-    declares.push(macroDecl);
-    declaresInParent.push(parentMacroDecl);
-    declares.push({ name: CALLER_CHAIN_NAME, type: 'var', initializer: null, internal: true });
+    const macroDecl = {
+      name: node.name.value,
+      parentOwned: true,
+      isMacro: true,
+      storage: DECLARATION_STORAGE.DIRECT,
+      jsVar: compiledMacroFuncId
+    };
+    declareInParentOnExit.push(macroDecl);
+    declareOnEnter.push({ name: CALLER_CHAIN_NAME, type: 'var', initializer: null, internal: true });
     node.body.addAnalysis({ macroSetupOwner: node });
     return {
       createScope: true,
       scopeBoundary: true,
-      declares,
-      declaresInParent,
-      mutates: [node.name.value],
+      declareOnEnter,
+      declareInParentOnExit,
       hasCallerSupport: false,
       compiledMacroFuncId
     };
@@ -168,6 +171,15 @@ class CompileMacro {
   }
 
   _validateParameterDeclaration(name, nameNode, seenParamNames, ownerNode) {
+    if (ownerNode.name?.value === name) {
+      this.compiler.fail(
+        `Identifier '${name}' conflicts with the macro/function name.`,
+        nameNode.lineno,
+        nameNode.colno,
+        ownerNode,
+        nameNode
+      );
+    }
     if (seenParamNames.has(name)) {
       this.compiler.fail(
         `Identifier '${name}' has already been declared.`,
@@ -184,18 +196,8 @@ class CompileMacro {
     const compiler = this.compiler;
     const funcId = this._compileAsyncMacro(node);
     const name = node.name.value;
-    compiler.emit.line(`runtime.declareBufferChain(${compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
-    compiler.buffer.asyncAddValueToBuffer((resultVar) => {
-      compiler.emit(
-        `${resultVar} = new runtime.VarCommand({ chainName: '${name}', args: [${funcId}], errorContext: ${compiler.emitErrorContext(node)} })`
-      );
-    }, node, name);
     if (name.charAt(0) !== '_' && compiler.analysis.isParentOwnedDeclarationRootOwned(node._analysis, name)) {
-      if (compiler.scriptMode) {
-        compiler.emit.line(`context.addResolvedExport("${name}", ${funcId});`);
-      } else {
-        compiler.emit.line(`context.addDeferredExport("${name}", "${name}", ${compiler.buffer.currentBuffer});`);
-      }
+      compiler.emit.line(`context.addResolvedExport("${name}", ${funcId});`);
     }
   }
 
@@ -220,7 +222,6 @@ class CompileMacro {
       name,
       type: 'var',
       initializer: null,
-      origin: DECLARATION_ORIGIN.IMPLICIT,
       role: DECLARATION_ROLE.MACRO_ARGUMENT
     };
   }
@@ -241,7 +242,7 @@ class CompileMacro {
     const observed = new Set(targetAnalysis.observes || []);
     const mutated = new Set(targetAnalysis.mutates || []);
     const defaultNodesByName = this._getCallableDefaultNodesByName(node);
-    setupAnalysis.declares.forEach((decl) => {
+    setupAnalysis.declareOnEnter.forEach((decl) => {
       if (
         decl.role !== DECLARATION_ROLE.MACRO_ARGUMENT &&
         decl.role !== DECLARATION_ROLE.MACRO_CALLER
@@ -281,7 +282,6 @@ class CompileMacro {
       type: 'var',
       initializer: null,
       internal: true,
-      origin: DECLARATION_ORIGIN.INTERNAL,
       role: DECLARATION_ROLE.MACRO_CALLER
     };
   }

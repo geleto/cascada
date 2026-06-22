@@ -69,7 +69,7 @@ class CompileReturn {
   emitIsUnsetCall(node) {
     const compiler = this.compiler;
     this._validateIsUnsetCall(node);
-    if (!compiler.analysis.findDeclaration(node._analysis, RETURN_CHAIN_NAME)) {
+    if (!compiler.analysis.findSourceDeclaration(node._analysis, RETURN_CHAIN_NAME)) {
       compiler.fail(
         'Return-state guard is only valid inside a callable or script body that declares a return chain',
         node.lineno,

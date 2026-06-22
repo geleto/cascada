@@ -1,6 +1,7 @@
 
 import * as nodes from '../language/nodes.js';
 import {CHAIN_TYPES} from '../chain-types.js';
+import {isChainDeclaration, isImmutableDeclaration, isVarChainDeclaration} from './declarations.js';
 
 /**
  * Chain analysis pass.
@@ -14,7 +15,6 @@ import {CHAIN_TYPES} from '../chain-types.js';
 class CompileAnalysis {
   constructor(compiler) {
     this.compiler = compiler;
-    this._declarationsFinalized = false;
     this._compilerHandlers = {
       analyze: new Map(),
       postAnalyze: new Map(),
@@ -84,27 +84,70 @@ class CompileAnalysis {
   run(rootNode) {
     // Analysis is single-shot per AST. Rerunning would merge stale per-node
     // `_analysis` maps from the prior pass into the fresh traversal.
-    this._declarationsFinalized = false;
     if (!rootNode) {
       return;
     }
 
-    this._walk(rootNode, null, null);
+    this._walk(rootNode);
     this._finalizeDeclarations(rootNode);
-    this._declarationsFinalized = true;
     this._finalizeChainUsage(rootNode);
   }
 
-  _walk(node, parentNode, parentField) {
-    this._forEachNode(node, (currentNode, currentParentNode, currentParentField) => {
-      const analysis = this._initializeAnalysis(currentNode, currentParentNode, currentParentField);
-      this._analyzeNode(currentNode);
-      this._validateAnalysisFacts(analysis);
-      this.compiler._generateErrorContext(currentNode);
-      this._recordDeclarations(analysis);
-      this._validateObservations(analysis);
-      this._validateMutations(analysis);
-    }, parentNode, parentField);
+  _walk(node, parentNode = null, parentField = null, visibleDeclarations = new Map(), scopeOwner = null) {
+    if (!node) {
+      return;
+    }
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length; i++) {
+        this._walk(node[i], parentNode, parentField, visibleDeclarations, scopeOwner);
+      }
+      return;
+    }
+    if (!(node instanceof nodes.Node)) {
+      return;
+    }
+
+    const analysis = this._initializeAnalysis(node, parentNode, parentField);
+    analysis.visibleDeclarations = new Map(visibleDeclarations);
+    this._analyzeNode(node);
+    this._validateAnalysisFacts(analysis);
+    this.compiler._generateErrorContext(node);
+
+    const ownsScope = !!analysis.createScope;
+    const currentScopeOwner = ownsScope ? analysis : scopeOwner;
+    const childVisibleDeclarations = ownsScope
+      ? this._createScopeVisibleDeclarations(visibleDeclarations, analysis)
+      : visibleDeclarations;
+    if (ownsScope) {
+      analysis.activeVisibleDeclarations = childVisibleDeclarations;
+    }
+
+    this._validateDeclarations(analysis, analysis.declareOnEnter, currentScopeOwner, childVisibleDeclarations);
+    this._publishDeclarations(analysis, analysis.declareOnEnter, currentScopeOwner, childVisibleDeclarations);
+    this._validateDeclarations(analysis, analysis.declareOnExit, currentScopeOwner, childVisibleDeclarations);
+    if (analysis.declareInParentOnExit.length > 0 && scopeOwner) {
+      this._validateDeclarations(analysis, analysis.declareInParentOnExit, scopeOwner, visibleDeclarations);
+      // Parent-owned declarations, such as macro/function names, are visible
+      // inside the declaring node for self-reference, but only become visible
+      // to later parent-scope source after the node exits.
+      this._publishDeclarations(analysis, analysis.declareInParentOnExit, scopeOwner, childVisibleDeclarations);
+    }
+    analysis.visibleDeclarations = new Map(childVisibleDeclarations);
+
+    this._validateObservations(analysis);
+    this._validateMutations(analysis);
+
+    node.fields.forEach((field) => {
+      this._walk(node[field], node, field, childVisibleDeclarations, currentScopeOwner);
+    });
+
+    this._publishDeclarations(analysis, analysis.declareOnExit, currentScopeOwner, childVisibleDeclarations);
+    if (analysis.declareInParentOnExit.length > 0 && scopeOwner) {
+      this._publishDeclarations(analysis, analysis.declareInParentOnExit, scopeOwner, visibleDeclarations);
+    }
+    if (ownsScope) {
+      analysis.activeVisibleDeclarations = null;
+    }
   }
 
   _forEachNode(node, visit, parentNode = null, parentField = null) {
@@ -129,6 +172,7 @@ class CompileAnalysis {
 
   _initializeAnalysis(node, parentNode, parentField) {
     const parentAnalysis = parentNode?._analysis ?? null;
+    const previousAnalysis = node._analysis ?? {};
 
     // Keep this base shape limited to cross-cutting analysis facts that this
     // pass owns or derives for many node types: scope/declaration ownership,
@@ -156,13 +200,16 @@ class CompileAnalysis {
       // scope owner to scope owner and do not inspect intermediate nodes.
       parentReadOnly: false,
       textOutput: null,
-      declares: [],
-      declaresInParent: [],
+      declareOnEnter: [],
+      declareOnExit: [],
+      declareInParentOnExit: [],
       observes: [],
       mutates: [],
-      // First-pass source-order lookup table. This is intentionally separate
-      // from finalized scope ownership in `declaredChains`.
-      sourceVisibleDeclarations: null,
+      // Finalized declarations owned by this scope. This is for aggregation,
+      // export/ownership, and parent-chain derivation only. It is not a
+      // source lookup table; it may include declarations that were not visible
+      // at a given source point. Use `visibleDeclarations` through
+      // `findSourceDeclaration` for source meaning.
       declaredChains: null,
       observedChains: null,
       usedChains: null,
@@ -178,10 +225,14 @@ class CompileAnalysis {
       wantsLinkedChildBuffer: false,
       createsLinkedChildBuffer: false,
       expressionControlFlowBoundary: false,
-      ...(node._analysis ?? {}),
+      ...previousAnalysis,
+      // Immutable snapshot of declarations visible at this exact source point.
+      // Ordinary identifier resolution should use this, not `declaredChains`.
+      visibleDeclarations: null,
+      activeVisibleDeclarations: null,
       parent: parentAnalysis,
       inheritedSequenceFunCallLockKey:
-        node._analysis?.inheritedSequenceFunCallLockKey ??
+        previousAnalysis.inheritedSequenceFunCallLockKey ??
         parentAnalysis?.inheritedSequenceFunCallLockKey ??
         null
     };
@@ -210,7 +261,7 @@ class CompileAnalysis {
     if (handler || typeof analyzer === 'function') {
       // Post-analyzers run after immediate children are finalized. They may
       // return node-owned custom facts. Boundary-linked facts are derived
-      // during finalization from ordinary observes/mutates/declares.
+      // during finalization from ordinary observes/mutates/declaration facts.
       const returned = handler
         ? this.callCompilerMethod(handler, node, this)
         : analyzer.call(this.compiler, node, this);
@@ -266,28 +317,30 @@ class CompileAnalysis {
     return [];
   }
 
-  findDeclaration(analysis, name) {
-    const owner = this.findDeclarationOwner(analysis, name);
-    const declarations = owner ? this._getDeclarationMap(owner) : null;
-    if (!declarations) {
-      return null;
-    }
-    return declarations.get(name) || null;
+  // Source meaning lookup. This intentionally reads the source-point visibility
+  // snapshot rather than finalized scope-owned declarations.
+  findSourceDeclaration(analysis, name) {
+    return analysis.visibleDeclarations?.get(name) || null;
   }
 
-  recordLookupDeclaration(node, name, analysis = node._analysis) {
-    const declaration = this.findDeclaration(analysis, name);
+  recordSourceLookupDeclaration(node, name, analysis = node._analysis) {
+    const declaration = this.findSourceDeclaration(analysis, name);
     node.addAnalysis({ lookupDeclaration: declaration });
     return declaration;
   }
 
-  findRootDeclaration(analysis, name) {
-    const owner = this.getRootScopeOwner(analysis);
-    const declarations = owner ? this._getDeclarationMap(owner) : null;
-    if (!declarations) {
+  findLocalUsageDeclaration(analysis, name) {
+    if (!name) {
       return null;
     }
-    return declarations.get(name) || null;
+    const sourceDeclaration = this.findSourceDeclaration(analysis, name);
+    if (sourceDeclaration) {
+      return sourceDeclaration;
+    }
+    // On-exit declarations are intentionally not source-visible to their own
+    // initializer/body children, but the declaration statement itself may carry
+    // usage facts for its target, such as `var x = ...` or `set x = ...`.
+    return analysis.declareOnExit.find((decl) => decl.name === name) || null;
   }
 
   getRootNode(analysis) {
@@ -300,6 +353,7 @@ class CompileAnalysis {
 
   _installDeclaration(owner, decl, declarationOrigin, field = 'declaredChains') {
     const declarations = this._ensureDeclarationMap(owner, field);
+    decl.declarationOwner = owner;
     if (decl.shared) {
       if (!decl.declarationOrigin) {
         decl.declarationOrigin = this.getTopmostChildAnalysis(declarationOrigin);
@@ -308,18 +362,13 @@ class CompileAnalysis {
       this.compiler.inheritance.recordRootSharedDeclaration(owner, decl);
       return;
     }
-    declarations.set(decl.name, { ...decl, declarationOrigin });
+    decl.declarationOrigin = declarationOrigin;
+    declarations.set(decl.name, decl);
   }
 
   _ensureDeclarationMap(analysis, field) {
     analysis[field] = analysis[field] || new Map();
     return analysis[field];
-  }
-
-  _getDeclarationMap(analysis) {
-    return this._declarationsFinalized
-      ? analysis.declaredChains || null
-      : analysis.sourceVisibleDeclarations || null;
   }
 
   getRootScopeOwner(analysis) {
@@ -338,20 +387,20 @@ class CompileAnalysis {
     return current;
   }
 
-  findDeclarationOwner(analysis, name) {
-    const skipDeclarationOwner = analysis.skipDeclarationOwner || null;
-    let current = analysis;
-    while (current) {
-      const declarations = this._getDeclarationMap(current);
-      if (declarations && declarations.has(name) && current !== skipDeclarationOwner) {
-        return current;
-      }
-      if (current.scopeBoundary) {
-        break;
-      }
-      current = current.parent;
+  _createScopeVisibleDeclarations(parentVisibleDeclarations, analysis) {
+    if (!analysis.scopeBoundary) {
+      return new Map(parentVisibleDeclarations);
     }
-    return null;
+    if (!(analysis.node instanceof nodes.Macro)) {
+      return new Map();
+    }
+    const visibleDeclarations = new Map();
+    parentVisibleDeclarations.forEach((declaration, name) => {
+      if (declaration.isMacro) {
+        visibleDeclarations.set(name, declaration);
+      }
+    });
+    return visibleDeclarations;
   }
 
   _getScopeOwner(analysis) {
@@ -367,7 +416,7 @@ class CompileAnalysis {
   }
 
   isParentOwnedDeclarationRootOwned(analysis, name) {
-    const hasParentOwnedDecl = analysis.declaresInParent.some((decl) => decl && decl.parentOwned && decl.name === name);
+    const hasParentOwnedDecl = analysis.declareInParentOnExit.some((decl) => decl.parentOwned && decl.name === name);
     if (!hasParentOwnedDecl) {
       return false;
     }
@@ -395,86 +444,77 @@ class CompileAnalysis {
   }
 
   _finalizeDeclarations(rootNode) {
-    // `declaredChains` is built only here; the walk populates the separate
-    // `sourceVisibleDeclarations` table, so there is no stale finalized table
-    // to reset before this pass.
     this._forEachNode(rootNode, (node) => {
       const analysis = node._analysis;
       const owner = this._getScopeOwner(analysis);
-
-      // Most declarations are owned by the current scope owner. For example,
-      // set/var statements and macro parameters become visible in the scope
-      // introduced by the current node.
-      const localDeclares = analysis.declares;
-      for (let j = 0; j < localDeclares.length; j++) {
-        const decl = localDeclares[j];
-        if (!decl || !decl.name) {
-          continue;
-        }
-        const declarations = this._ensureDeclarationMap(owner, 'declaredChains');
-        if (!declarations.has(decl.name)) {
-          this._installDeclaration(owner, decl, analysis);
-        }
-      }
-
-      // Some nodes introduce a declaration that is owned by the parent scope
-      // instead of the current one. Macros are the main case: the macro name
-      // is visible where the macro is declared, even though the macro body
-      // itself gets its own scope owner.
-      const parentDeclares = analysis.declaresInParent;
-      if (parentDeclares.length > 0) {
+      this._recordOwnedDeclarations(analysis, analysis.declareOnEnter, owner);
+      this._recordOwnedDeclarations(analysis, analysis.declareOnExit, owner);
+      if (analysis.declareInParentOnExit.length > 0) {
         const parentOwner = analysis.parent ? this._getScopeOwner(analysis.parent) : null;
-        if (parentOwner) {
-          for (let j = 0; j < parentDeclares.length; j++) {
-            const decl = parentDeclares[j];
-            if (!decl || !decl.name) {
-              continue;
-            }
-            const declarations = this._ensureDeclarationMap(parentOwner, 'declaredChains');
-            if (!declarations.has(decl.name)) {
-              this._installDeclaration(parentOwner, decl, analysis);
-            }
-          }
-        }
+        this._recordOwnedDeclarations(analysis, analysis.declareInParentOnExit, parentOwner);
       }
     });
   }
 
-  _recordDeclarations(analysis) {
-    this._recordSourceDeclarations(analysis, analysis.declares, this._getScopeOwner(analysis), analysis);
-
-    if (analysis.declaresInParent.length > 0) {
-      const parentOwner = analysis.parent ? this._getScopeOwner(analysis.parent) : null;
-      this._recordSourceDeclarations(analysis, analysis.declaresInParent, parentOwner, analysis);
-    }
-  }
-
-  _recordSourceDeclarations(analysis, declares, owner, declarationOrigin) {
-    if (declares.length === 0 || !owner) {
+  _recordOwnedDeclarations(analysis, declarationsToRecord, owner) {
+    if (declarationsToRecord.length === 0 || !owner) {
       return;
     }
-    const declarations = this._ensureDeclarationMap(owner, 'sourceVisibleDeclarations');
-    for (let i = 0; i < declares.length; i++) {
-      const decl = declares[i];
-      if (!decl || !decl.name) {
-        continue;
-      }
-      this._validateReservedDeclarationName(analysis, decl);
-      const currentScopeDecl = declarations.get(decl.name) || null;
-      this._validateSourceDeclarationConflict(analysis, owner, decl, currentScopeDecl);
-      if (!declarations.has(decl.name)) {
-        this._installDeclaration(owner, decl, declarationOrigin, 'sourceVisibleDeclarations');
+    // Build the finalized owner inventory only after source-point validation.
+    // Do not use this map to resolve source occurrences.
+    const declarations = this._ensureDeclarationMap(owner, 'declaredChains');
+    for (let i = 0; i < declarationsToRecord.length; i++) {
+      const declaration = declarationsToRecord[i];
+      if (!declarations.has(declaration.name)) {
+        this._installDeclaration(owner, declaration, analysis);
       }
     }
   }
 
-  _validateSourceDeclarationConflict(analysis, owner, decl, currentScopeDecl) {
+  _validateDeclarations(analysis, declarationsToValidate, owner, visibleDeclarations) {
+    if (declarationsToValidate.length === 0 || !owner) {
+      return;
+    }
+    const declaredInBatch = new Map();
+    for (let i = 0; i < declarationsToValidate.length; i++) {
+      const decl = declarationsToValidate[i];
+      decl.declarationOwner = owner;
+      if (!decl.declarationOrigin) {
+        decl.declarationOrigin = decl.shared
+          ? this.getTopmostChildAnalysis(analysis)
+          : analysis;
+      }
+      this._validateReservedDeclarationName(analysis, decl);
+      const visibleDeclaration = declaredInBatch.get(decl.name) ||
+        visibleDeclarations.get(decl.name) ||
+        null;
+      this._validateSourceDeclarationConflict(analysis, owner, decl, visibleDeclaration);
+      declaredInBatch.set(decl.name, decl);
+    }
+  }
+
+  _publishDeclarations(analysis, declarationsToPublish, owner, visibleDeclarations) {
+    if (declarationsToPublish.length === 0 || !owner) {
+      return;
+    }
+    for (let i = 0; i < declarationsToPublish.length; i++) {
+      const declaration = declarationsToPublish[i];
+      declaration.declarationOrigin = declaration.declarationOrigin || analysis;
+      declaration.declarationOwner = owner;
+      visibleDeclarations.set(declaration.name, declaration);
+      if (declaration.shared) {
+        this.compiler.inheritance.recordRootSharedDeclaration(owner, declaration);
+      }
+    }
+  }
+
+  _validateSourceDeclarationConflict(analysis, owner, decl, visibleDeclaration) {
     if (decl.internal || decl.explicit === false) {
       return;
     }
 
-    if (currentScopeDecl) {
-      this._validateDeclarationConflict(analysis, decl, currentScopeDecl);
+    if (visibleDeclaration?.declarationOwner === owner) {
+      this._validateDeclarationConflict(analysis, decl, visibleDeclaration);
       return;
     }
 
@@ -482,21 +522,8 @@ class CompileAnalysis {
       return;
     }
 
-    this._validateAncestorDeclarationConflicts(analysis, owner, decl);
-  }
-
-  _validateAncestorDeclarationConflicts(analysis, owner, decl) {
-    let current = owner.parent;
-    while (current) {
-      const visibleDeclarations = current.sourceVisibleDeclarations;
-      const conflictingDecl = visibleDeclarations ? visibleDeclarations.get(decl.name) : null;
-      if (conflictingDecl && !conflictingDecl.internal) {
-        this._validateDeclarationConflict(analysis, decl, conflictingDecl);
-      }
-      if (current.scopeBoundary) {
-        break;
-      }
-      current = current.parent;
+    if (visibleDeclaration && !visibleDeclaration.internal) {
+      this._validateDeclarationConflict(analysis, decl, visibleDeclaration);
     }
   }
 
@@ -505,8 +532,8 @@ class CompileAnalysis {
     const lineno = originNode && originNode.lineno;
     const colno = originNode && originNode.colno;
 
-    if (decl.type !== 'var') {
-      if (conflictingDecl && conflictingDecl.type === 'var') {
+    if (isChainDeclaration(decl) && !isVarChainDeclaration(decl)) {
+      if (isVarChainDeclaration(conflictingDecl)) {
         this.compiler.fail(
           `Cannot declare chain '${decl.name}' because a variable with the same name is already declared`,
           lineno,
@@ -546,29 +573,39 @@ class CompileAnalysis {
   }
 
   _validateAnalysisFacts(analysis) {
-    if (Object.prototype.hasOwnProperty.call(analysis, 'uses')) {
+    if (analysis.uses) {
       this._failUnsupportedAnalysisFact(
         analysis,
         'uses',
-        '\'observes\', \'mutates\', or \'declares\''
+        '\'observes\', \'mutates\', \'declareOnEnter\', or \'declareOnExit\''
       );
     }
-    if (Object.prototype.hasOwnProperty.call(analysis, 'linkedChains')) {
+    if (analysis.declares) {
+      this._failUnsupportedAnalysisFact(analysis, 'declares', '\'declareOnEnter\' or \'declareOnExit\'');
+    }
+    if (analysis.declaresInParent) {
+      this._failUnsupportedAnalysisFact(analysis, 'declaresInParent', '\'declareInParentOnExit\'');
+    }
+    if (analysis.linkedChains) {
       this._failUnsupportedAnalysisFact(analysis, 'linkedChains', '\'boundaryLinkedChains\'');
     }
-    if (Object.prototype.hasOwnProperty.call(analysis, 'linkedMutatedChains')) {
+    if (analysis.linkedMutatedChains) {
       this._failUnsupportedAnalysisFact(analysis, 'linkedMutatedChains', '\'boundaryLinkedMutatedChains\'');
     }
   }
 
   _validateReturnedAnalysisFacts(analysis, facts) {
-    if (Object.prototype.hasOwnProperty.call(facts, 'boundaryLinkedChains')) {
-      this._failUnsupportedAnalysisFact(analysis, 'boundaryLinkedChains', '\'observes\', \'mutates\', or \'declares\'');
+    if (facts.boundaryLinkedChains) {
+      this._failUnsupportedAnalysisFact(
+        analysis,
+        'boundaryLinkedChains',
+        '\'observes\', \'mutates\', \'declareOnEnter\', or \'declareOnExit\''
+      );
     }
-    if (Object.prototype.hasOwnProperty.call(facts, 'boundaryLinkedObservedChains')) {
+    if (facts.boundaryLinkedObservedChains) {
       this._failUnsupportedAnalysisFact(analysis, 'boundaryLinkedObservedChains', '\'observes\'');
     }
-    if (Object.prototype.hasOwnProperty.call(facts, 'boundaryLinkedMutatedChains')) {
+    if (facts.boundaryLinkedMutatedChains) {
       this._failUnsupportedAnalysisFact(analysis, 'boundaryLinkedMutatedChains', '\'mutates\'');
     }
   }
@@ -619,6 +656,7 @@ class CompileAnalysis {
 
   _validateMutations(analysis) {
     const scopeOwner = this._getScopeOwner(analysis);
+    const rootDeclarations = this.getRootScopeOwner(analysis).activeVisibleDeclarations;
     const currentTextChain = this.getCurrentTextChain(analysis);
     const localMutates = analysis.mutates;
     for (let i = 0; i < localMutates.length; i++) {
@@ -626,12 +664,9 @@ class CompileAnalysis {
       if (this._shouldSkipChainAccessValidation(name, currentTextChain)) {
         continue;
       }
-      const declarationOwner = this.findDeclarationOwner(analysis, name);
-      const declaration = declarationOwner
-        ? this._getDeclarationMap(declarationOwner).get(name)
-        : null;
+      const declaration = this.findLocalUsageDeclaration(analysis, name);
       if (!declaration) {
-        const rootDeclaration = this.findRootDeclaration(analysis, name);
+        const rootDeclaration = rootDeclarations ? rootDeclarations.get(name) : null;
         if (rootDeclaration && rootDeclaration.shared) {
           continue;
         }
@@ -641,6 +676,11 @@ class CompileAnalysis {
       if (declaration.shared) {
         continue;
       }
+      if (isImmutableDeclaration(declaration)) {
+        this._failImmutableMutation(analysis, name, declaration);
+        continue;
+      }
+      const declarationOwner = declaration.declarationOwner;
       if (!this._passesReadOnlyBoundary(scopeOwner, declarationOwner)) {
         continue;
       }
@@ -649,6 +689,7 @@ class CompileAnalysis {
   }
 
   _validateObservations(analysis) {
+    const rootDeclarations = this.getRootScopeOwner(analysis).activeVisibleDeclarations;
     const currentTextChain = this.getCurrentTextChain(analysis);
     const localObserves = analysis.observes;
     for (let i = 0; i < localObserves.length; i++) {
@@ -656,8 +697,8 @@ class CompileAnalysis {
       if (this._shouldSkipChainAccessValidation(name, currentTextChain)) {
         continue;
       }
-      if (!this.findDeclaration(analysis, name)) {
-        const rootDeclaration = this.findRootDeclaration(analysis, name);
+      if (!this.findSourceDeclaration(analysis, name)) {
+        const rootDeclaration = rootDeclarations ? rootDeclarations.get(name) : null;
         if (rootDeclaration && rootDeclaration.shared) {
           continue;
         }
@@ -708,7 +749,7 @@ class CompileAnalysis {
     const lineno = originNode && originNode.lineno;
     const colno = originNode && originNode.colno;
 
-    if (declaration.type === 'var') {
+    if (isVarChainDeclaration(declaration)) {
       this.compiler.fail(
         `Cannot assign to outer-scope variable '${name}' from a read-only scope. Call blocks can read from parent scope but cannot mutate it.`,
         lineno,
@@ -718,6 +759,19 @@ class CompileAnalysis {
     }
     this.compiler.fail(
       `Chain '${name}' is read-only in this scope.`,
+      lineno,
+      colno,
+      originNode || undefined
+    );
+  }
+
+  _failImmutableMutation(analysis, name, declaration) {
+    const originNode = analysis.node || null;
+    const lineno = originNode && originNode.lineno;
+    const colno = originNode && originNode.colno;
+    const category = declaration.imported ? 'import binding' : 'macro/function declaration';
+    this.compiler.fail(
+      `Cannot assign to ${category} '${name}'.`,
       lineno,
       colno,
       originNode || undefined
@@ -760,17 +814,35 @@ class CompileAnalysis {
     const localMutates = analysis.mutates;
     const usage = this._createChainUsageAggregate();
 
+    // Derived direct storage is not decided yet: this fold is still assembling
+    // the mutation facts that later storage derivation will use. At this point
+    // only intrinsic immutable declarations (macros/imports) are known to have
+    // no lane, so this pre-derivation filter intentionally uses
+    // isImmutableDeclaration rather than isStoredDirectly. Phase 3 will derive
+    // read-only var storage after mutation aggregation, then purge/update the
+    // aggregate chain facts with the final storage predicate.
     localObserves.forEach((name) => {
-      this._addChainObservation(usage, name);
+      const declaration = this.findLocalUsageDeclaration(analysis, name);
+      if (!isImmutableDeclaration(declaration)) {
+        this._addChainObservation(usage, name);
+      }
     });
     localMutates.forEach((name) => {
+      const declaration = this.findLocalUsageDeclaration(analysis, name);
+      if (isImmutableDeclaration(declaration)) {
+        // First-walk validation catches ordinary source mutations. Keep this
+        // final guard for mutation facts added by post-analyzers after that pass.
+        this._failImmutableMutation(analysis, name, declaration);
+      }
       this._addChainMutation(usage, name);
     });
     this._mergeChainUsage(usage, childUsage);
     const declaredHere = analysis.declaredChains;
     if (declaredHere) {
-      declaredHere.forEach((_decl, name) => {
-        this._addBroadChainUse(usage, name);
+      declaredHere.forEach((decl, name) => {
+        if (!isImmutableDeclaration(decl)) {
+          this._addBroadChainUse(usage, name);
+        }
       });
     }
 
@@ -851,10 +923,10 @@ class CompileAnalysis {
     if (analysis.scopeBoundary) {
       const nodeType = analysis.node && analysis.node.typename;
       const isMethodOrBlockBoundary = nodeType === 'Block' || nodeType === 'MethodDefinition';
-      if (!isMethodOrBlockBoundary) {
-        return this._getParentOwnedDeclarationUsage(analysis, localMutates);
-      }
       const parentUsage = this._createChainUsageAggregate();
+      if (!isMethodOrBlockBoundary) {
+        return parentUsage;
+      }
       localObserves.forEach((name) => {
         this._addChainObservation(parentUsage, name);
       });
@@ -890,25 +962,6 @@ class CompileAnalysis {
     if (analysis.boundaryLinkedMutatedChains) {
       analysis.boundaryLinkedMutatedChains.forEach((name) => this._addChainMutation(parentUsage, name));
     }
-    return parentUsage;
-  }
-
-  _getParentOwnedDeclarationUsage(analysis, localMutates) {
-    const parentUsage = this._createChainUsageAggregate();
-    if (analysis.declaresInParent.length === 0 || localMutates.length === 0) {
-      return parentUsage;
-    }
-    const parentOwnedNames = new Set();
-    analysis.declaresInParent.forEach((decl) => {
-      if (decl && decl.parentOwned && decl.name) {
-        parentOwnedNames.add(decl.name);
-      }
-    });
-    localMutates.forEach((name) => {
-      if (parentOwnedNames.has(name)) {
-        this._addChainMutation(parentUsage, name);
-      }
-    });
     return parentUsage;
   }
 

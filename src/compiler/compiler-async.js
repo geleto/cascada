@@ -10,6 +10,7 @@ import {
 import {CompilerBaseAsync} from './compiler-base-async.js';
 import {CompileBuffer} from './buffer.js';
 import {WAITED_CHAIN_NAME} from './reserved.js';
+import {DECLARATION_STORAGE} from './declarations.js';
 
 class CompilerAsync extends CompilerBaseAsync {
   init(sourcePath, options) {
@@ -146,22 +147,22 @@ class CompilerAsync extends CompilerBaseAsync {
 
   _collectLoopDeclarationFacts(node, analysisPass, declarationsInBody = false) {
     if (node.name instanceof nodes.Symbol) {
-      node.name.addAnalysis({ declarationTarget: true });
+      node.name.addAnalysis({ isSymbolTarget: true });
     } else if (node.name instanceof nodes.Array || node.name instanceof nodes.NodeList) {
       node.name.children.forEach((child) => {
-        child.addAnalysis({ declarationTarget: true });
+        child.addAnalysis({ isSymbolTarget: true });
       });
     }
-    const declares = [];
+    const declareOnEnter = [];
     const declaredNames = analysisPass.extractSymbols(node.name);
     declaredNames.forEach((name) => {
-      declares.push({ name, type: 'var', initializer: null });
+      declareOnEnter.push({ name, type: 'var', initializer: null });
     });
     if (declarationsInBody) {
       node.body.addAnalysis({
         createScope: true,
         loopOwner: node,
-        declares
+        declareOnEnter
       });
       analysisPass.addCommandFacts(node.body, { mutated: declaredNames });
       if (node.else_) {
@@ -169,12 +170,12 @@ class CompilerAsync extends CompilerBaseAsync {
       }
       return { createScope: true, wantsLinkedChildBuffer: true };
     }
-    return { createScope: true, declares, wantsLinkedChildBuffer: true };
+    return { createScope: true, declareOnEnter, wantsLinkedChildBuffer: true };
   }
 
   _createWaitedChainFacts() {
     return {
-      declares: [{ name: WAITED_CHAIN_NAME, type: 'var', initializer: null, internal: true }],
+      declareOnEnter: [{ name: WAITED_CHAIN_NAME, type: 'var', initializer: null, internal: true }],
       mutates: [WAITED_CHAIN_NAME]
     };
   }
@@ -182,7 +183,7 @@ class CompilerAsync extends CompilerBaseAsync {
   analyzeWhile(node) {
     node.body.addAnalysis({
       createScope: true,
-      declares: [{ name: 'iterationCount', type: 'var', initializer: null, internal: true }]
+      declareOnEnter: [{ name: 'iterationCount', type: 'var', initializer: null, internal: true }]
     });
     this.analysis.addCommandFacts(node.body, { mutated: ['iterationCount'] });
     node.cond.addAnalysis({ errorContextLabel: 'While.Condition' });
@@ -458,7 +459,7 @@ class CompilerAsync extends CompilerBaseAsync {
     return {
       createScope: true,
       scopeBoundary: false,
-      declares: [{ name: textOutput, type: 'text', initializer: null, internal: true }],
+      declareOnEnter: [{ name: textOutput, type: 'text', initializer: null, internal: true }],
       textOutput,
       wantsLinkedChildBuffer: true
     };
@@ -552,32 +553,49 @@ class CompilerAsync extends CompilerBaseAsync {
 
   analyzeImport(node) {
     node.template.addAnalysis({ errorContextLabel: this.scriptMode ? 'Import.Script' : 'Import.Template' });
-    node.target.addAnalysis({ declarationTarget: true });
-    this.importedBindings.add(node.target.value);
+    node.target.addAnalysis({ isSymbolTarget: true });
+    const name = node.target.value;
+    const importedExportId = this._tmpid();
+    this.importedBindings.add(name);
     return {
-      declares: [{ name: node.target.value, type: 'var', initializer: null, imported: true }],
-      mutates: [node.target.value]
+      declareOnExit: [{
+        name,
+        imported: true,
+        storage: DECLARATION_STORAGE.DIRECT,
+        jsVar: importedExportId
+      }],
+      importedExportId
     };
   }
 
   analyzeFromImport(node) {
     node.template.addAnalysis({ errorContextLabel: this.scriptMode ? 'FromImport.Script' : 'FromImport.Template' });
-    const declares = [];
-    const mutates = [];
+    const declareOnExit = [];
+    const importedExportId = this._tmpid();
+    const importBindingIds = new Map();
     node.names.children.forEach((nameNode) => {
+      let name = null;
       if (nameNode instanceof nodes.Pair && nameNode.value instanceof nodes.Symbol) {
-        nameNode.value.addAnalysis({ declarationTarget: true });
-        this.importedBindings.add(nameNode.value.value);
-        declares.push({ name: nameNode.value.value, type: 'var', initializer: null, imported: true });
-        mutates.push(nameNode.value.value);
+        nameNode.value.addAnalysis({ isSymbolTarget: true });
+        name = nameNode.value.value;
       } else if (nameNode instanceof nodes.Symbol) {
-        nameNode.addAnalysis({ declarationTarget: true });
-        this.importedBindings.add(nameNode.value);
-        declares.push({ name: nameNode.value, type: 'var', initializer: null, imported: true });
-        mutates.push(nameNode.value);
+        nameNode.addAnalysis({ isSymbolTarget: true });
+        name = nameNode.value;
       }
+      if (!name) {
+        return;
+      }
+      const bindingId = this._tmpid();
+      this.importedBindings.add(name);
+      importBindingIds.set(name, bindingId);
+      declareOnExit.push({
+        name,
+        imported: true,
+        storage: DECLARATION_STORAGE.DIRECT,
+        jsVar: bindingId
+      });
     });
-    return { declares, mutates };
+    return { declareOnExit, importedExportId, importBindingIds };
   }
 
   analyzeInclude(node) {
@@ -594,11 +612,11 @@ class CompilerAsync extends CompilerBaseAsync {
 
   analyzeRoot(node) {
     const inheritanceAnalysis = this.inheritance.collectRootAnalysis(node);
-    const declares = this._getRootDeclarations(node);
+    const declareOnEnter = this._getRootDeclarations(node);
     return {
       createScope: true,
       scopeBoundary: true,
-      declares,
+      declareOnEnter,
       textOutput: this._getRootTextOutput(),
       sequenceLocks: [],
       sequenceLockUsages: [],
@@ -629,13 +647,13 @@ class CompilerAsync extends CompilerBaseAsync {
   }
 
   _getRootDeclarations(node) {
-    const declares = [];
+    const declareOnEnter = [];
     if (this.scriptMode) {
-      declares.push(this.return.createChainDeclaration());
+      declareOnEnter.push(this.return.createChainDeclaration());
     } else {
-      declares.push({ name: CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHAIN, type: 'text', initializer: null });
+      declareOnEnter.push({ name: CompileBuffer.DEFAULT_TEMPLATE_TEXT_CHAIN, type: 'text', initializer: null });
     }
-    return declares;
+    return declareOnEnter;
   }
 
   _getRootTextOutput() {

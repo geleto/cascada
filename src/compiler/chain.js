@@ -336,11 +336,11 @@ class CompileChain {
   }
 
   analyzeChainDeclaration(node) {
-    node.name.addAnalysis({ declarationTarget: true });
+    node.name.addAnalysis({ isSymbolTarget: true });
     validateChainDeclarationNode(this.compiler, node);
     const name = node.name.value;
     const result = {
-      declares: [{
+      declareOnExit: [{
         name,
         type: node.chainType,
         initializer: node.initializer || null,
@@ -445,7 +445,7 @@ class CompileChain {
     }
     this.markOperationOwnedPath(node.call);
     const chainName = path[0];
-    const chainDecl = chainName ? compiler.analysis.recordLookupDeclaration(node, chainName) : null;
+    const chainDecl = chainName ? compiler.analysis.recordSourceLookupDeclaration(node, chainName) : null;
     const chainType = node.chainType || (chainDecl ? chainDecl.type : null);
     const command = path.length >= 2 ? path[path.length - 1] : null;
     const isSequenceGet = !callNode && chainDecl && chainDecl.type === 'sequence';

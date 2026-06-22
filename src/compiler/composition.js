@@ -7,12 +7,9 @@ class CompileComposition {
   }
 
   _emitValueImportBinding(name, sourceVar, node) {
-    this.emit.line(`runtime.declareBufferChain(${this.compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
-    this.emit.line(
-      `${this.compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ chainName: '${name}', args: [${sourceVar}], errorContext: ${this.compiler.emitErrorContext(node)} }), '${name}');`
-    );
+    this.emit.line(`runtime.markPromiseHandled(${sourceVar});`);
     if (this.compiler.analysis.isRootScopeOwner(node._analysis)) {
-      this.emit.line(`context.addDeferredExport("${name}", "${name}", ${this.compiler.buffer.currentBuffer});`);
+      this.emit.line(`context.addResolvedExport("${name}", ${sourceVar});`);
     }
   }
 
@@ -78,7 +75,7 @@ class CompileComposition {
     if (!node.withContext && withVars.length === 0 && !node.withValue) {
       const target = node.target.value;
       const id = this.compileAsyncResolveTargetFile(node, false, false, false, 'import');
-      const exportedId = this.compiler._tmpid();
+      const exportedId = node._analysis.importedExportId;
       const errorContext = this.compiler.emitErrorContext(node);
       this.emit.line(`let ${exportedId} = runtime.valueWithOrigin(runtime.resolveThen(${id}, (resolvedTemplate) => {`);
       this.emit.line('  resolvedTemplate.compile();');
@@ -92,7 +89,7 @@ class CompileComposition {
 
     const target = node.target.value;
     const id = this.compileAsyncResolveTargetFile(node, false, false, false, 'import');
-    const exportedId = this.compiler._tmpid();
+    const exportedId = node._analysis.importedExportId;
     const importVarsVar = this.compiler._tmpid();
     const importContextVar = this.compiler._tmpid();
     const errorContext = this.compiler.emitErrorContext(node);
@@ -143,7 +140,7 @@ class CompileComposition {
 
   _compileAsyncFromImportWithoutPayload(node) {
     const importedId = this.compileAsyncResolveTargetFile(node, false, false, false, 'import');
-    const exportedId = this.compiler._tmpid();
+    const exportedId = node._analysis.importedExportId;
     const bindingIds = [];
     const errorContext = this.compiler.emitErrorContext(node);
     this.emit.line(`let ${exportedId} = runtime.valueWithOrigin(runtime.resolveThen(${importedId}, (resolvedTemplate) => {`);
@@ -157,7 +154,7 @@ class CompileComposition {
 
   _compileAsyncFromImportWithPayload(node) {
     const importedId = this.compileAsyncResolveTargetFile(node, false, false, false, 'import');
-    const exportedId = this.compiler._tmpid();
+    const exportedId = node._analysis.importedExportId;
     const bindingIds = [];
     const importVarsVar = this.compiler._tmpid();
     const importContextVar = this.compiler._tmpid();
@@ -182,7 +179,7 @@ class CompileComposition {
       const alias = nameNode instanceof nodes.Pair
         ? nameNode.value.value
         : nameNode.value;
-      const id = this.compiler._tmpid();
+      const id = node._analysis.importBindingIds.get(alias);
       const failMsg = `cannot import '${importedName}'`.replace(/"/g, '\\"');
       const errorContext = this.compiler.emitErrorContext(nameNode);
 

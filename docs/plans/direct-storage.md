@@ -237,6 +237,13 @@ Eventually rename fields such as `declaredChains` to `declarations` if the mixed
 
 Do not replace ordinary chain declarations with derived direct storage during the first walk. Eligibility depends on finalized usage facts.
 
+Before derived storage exists, raw chain-use folding must only skip intrinsic
+direct declarations (`isMacro` / `imported`). At that point the fold is still
+building the mutation facts that derived storage needs, so `isStoredDirectly`
+is not a valid general predicate for ordinary vars yet. Phase 3 derives storage
+from completed `mutatedChains`, then purges/updates the aggregate
+observed/used facts with the final storage predicate.
+
 ## Eligibility Derivation
 
 The simplest safe implementation is staged, following the two categories above:

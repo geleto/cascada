@@ -139,7 +139,7 @@ class CompileLookup {
     }
 
     const chainName = sequencePath[0];
-    const chainDecl = analysisPass.recordLookupDeclaration(node, chainName);
+    const chainDecl = analysisPass.recordSourceLookupDeclaration(node, chainName);
     const path = sequencePath.slice(1);
     if (!chainDecl || chainDecl.shared || chainDecl.type !== 'sequence' || path[path.length - 1] === 'snapshot') {
       return null;

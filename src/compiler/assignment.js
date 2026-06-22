@@ -20,7 +20,7 @@ class CompileAssignment {
 
   analyzeSet(node, analysisPass) {
     const compiler = this.compiler;
-    const declares = [];
+    const declareOnExit = [];
     const observes = [];
     const mutates = [];
     const isDeclaration = node.varType === 'declaration';
@@ -53,7 +53,7 @@ class CompileAssignment {
       }
       mutates.push(thisSharedPath.name);
       return {
-        declares,
+        declareOnExit,
         observes,
         mutates,
         thisSharedSetPath: thisSharedPath
@@ -62,9 +62,9 @@ class CompileAssignment {
     const assignsValue = !!(node.value || node.body) && !node.declarationOnly;
     targets.forEach((target) => {
       if (target instanceof nodes.Symbol) {
-        target.addAnalysis({ declarationTarget: true });
+        target.addAnalysis({ isSymbolTarget: true });
         const name = target.value;
-        const declaration = analysisPass.findDeclaration(node._analysis, name);
+        const declaration = analysisPass.findSourceDeclaration(node._analysis, name);
         if (compiler.scriptMode && !isDeclaration && declaration && declaration.shared) {
           compiler.fail(
             `Bare shared assignment to '${name}' is not supported. Use this.${name} = ... instead.`,
@@ -78,7 +78,7 @@ class CompileAssignment {
           !isDeclaration &&
           !declaration;
         if (isDeclaration || shouldDeclareImplicitTemplateVar) {
-          declares.push({ name, type: 'var', initializer: null, explicit: !!isDeclaration });
+          declareOnExit.push({ name, type: 'var', initializer: null, explicit: !!isDeclaration });
           if (assignsValue) {
             mutates.push(name);
           }
@@ -91,7 +91,7 @@ class CompileAssignment {
       }
     });
     return {
-      declares,
+      declareOnExit,
       observes,
       mutates
     };
@@ -111,7 +111,8 @@ class CompileAssignment {
         return;
       }
       const name = target.value;
-      const visibleDeclaration = compiler.analysis.findDeclaration(node._analysis, name);
+      const visibleDeclaration = compiler.analysis.findSourceDeclaration(node._analysis, name) ||
+        node._analysis.declareOnExit.find((decl) => decl.name === name);
       targetFacts.push({
         name,
         isOwnDeclaration: visibleDeclaration && visibleDeclaration.declarationOrigin === node._analysis,

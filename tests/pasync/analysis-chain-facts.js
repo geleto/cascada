@@ -4,6 +4,7 @@ import {transform} from '../../src/language/transformer.js';
 import {CompilerAsync} from '../../src/compiler/compiler.js';
 import * as nodes from '../../src/language/nodes.js';
 import {transpiler as scriptTranspiler} from '../../src/language/script-transpiler.js';
+import {DECLARATION_STORAGE, isStoredDirectly} from '../../src/compiler/declarations.js';
 
 (function () {
   function createIdPool() {
@@ -130,7 +131,11 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
 
   function addDeclaredChainNames(target, declarations) {
     if (declarations) {
-      declarations.forEach((_declaration, name) => target.add(name));
+      declarations.forEach((declaration, name) => {
+        if (!isStoredDirectly(declaration)) {
+          target.add(name);
+        }
+      });
     }
   }
 
@@ -155,7 +160,8 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
     it('should infer this.__text__ as the template text chain', function () {
       const ast = analyzeTemplateSource('{% block body %}{{ this.__text__.snapshot() }}{{ this.theme }}{% endblock %}');
       const inferred = ast._analysis.inheritanceSharedDeclarations;
-      const rootTextDeclares = ast._analysis.declares.filter((declaration) => declaration.name === '__text__' && !declaration.shared);
+      const rootTextDeclares = ast._analysis.declareOnEnter
+        .filter((declaration) => declaration.name === '__text__' && !declaration.shared);
       const blockNode = collectNodesByType(ast, 'Block')[0];
 
       expect(inferred.map((declaration) => [declaration.name, declaration.type])).to.eql([
@@ -199,7 +205,7 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
 
       expect(() => compiler.analysis.run(ast)).to.throwException((err) => {
         expect(err.message).to.contain('Analysis fact \'boundaryLinkedChains\' is no longer supported');
-        expect(err.message).to.contain('\'observes\', \'mutates\', or \'declares\'');
+        expect(err.message).to.contain('\'observes\', \'mutates\', \'declareOnEnter\', or \'declareOnExit\'');
       });
     });
 
@@ -231,11 +237,11 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
 
       expect(() => compiler.analysis.run(ast)).to.throwException((err) => {
         expect(err.message).to.contain('Analysis fact \'uses\' is no longer supported');
-        expect(err.message).to.contain('\'observes\', \'mutates\', or \'declares\'');
+        expect(err.message).to.contain('\'observes\', \'mutates\', \'declareOnEnter\', or \'declareOnExit\'');
       });
     });
 
-    it('should keep source-order declarations separate from finalized declarations', function () {
+    it('should use source-order declarations for lookup', function () {
       const ast = analyzeScriptSource(
         'var before = someVar\n' +
         'var someVar = "local"\n' +
@@ -244,14 +250,14 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       );
       const rootAnalysis = ast._analysis;
       const someVarUses = collectNodesByType(ast, 'Symbol')
-        .filter((node) => node.value === 'someVar' && !node._analysis.declarationTarget)
+        .filter((node) => node.value === 'someVar' && !node._analysis.isSymbolTarget)
         .sort((left, right) => left.lineno - right.lineno || left.colno - right.colno);
 
       expect(someVarUses).to.have.length(2);
       expect(someVarUses[0]._analysis.lookupDeclaration).to.be(null);
       expect(someVarUses[1]._analysis.lookupDeclaration.name).to.be('someVar');
-      expect(rootAnalysis.sourceVisibleDeclarations).to.not.be(rootAnalysis.declaredChains);
-      expect(rootAnalysis.sourceVisibleDeclarations.has('someVar')).to.be(true);
+      expect(rootAnalysis.visibleDeclarations instanceof Map).to.be(true);
+      expect(rootAnalysis.visibleDeclarations.has('someVar')).to.be(false);
       expect(rootAnalysis.declaredChains.has('someVar')).to.be(true);
     });
 
@@ -726,6 +732,32 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       expect(macroNode._analysis.boundaryLinkedChains).to.be(null);
     });
 
+    it('should keep direct macro names out of chain usage facts', function () {
+      const ast = analyzeTemplateSource(
+        '{% macro greet() %}{{ greet() }}{% endmacro %}{{ greet() }}',
+        'direct-macro-chain-facts.njk'
+      );
+      const macroNode = collectNodesByType(ast, 'Macro')[0];
+      const rootDecl = ast._analysis.declaredChains.get('greet');
+      const macroLookups = collectNodesByType(ast, 'Symbol')
+        .filter((node) => node.value === 'greet' && !node._analysis.isSymbolTarget)
+        .map((node) => node._analysis.lookupDeclaration);
+
+      expect(rootDecl.storage).to.be(DECLARATION_STORAGE.DIRECT);
+      expect(rootDecl.type).to.be(undefined);
+      expect(macroNode._analysis.declaredChains.has('greet')).to.be(false);
+      expect(macroLookups).to.have.length(2);
+      macroLookups.forEach((declaration) => {
+        expect(declaration).to.be(rootDecl);
+      });
+      expect((ast._analysis.usedChains || new Set()).has('greet')).to.be(false);
+      expect((ast._analysis.observedChains || new Set()).has('greet')).to.be(false);
+      expect((ast._analysis.mutatedChains || new Set()).has('greet')).to.be(false);
+      expect((macroNode._analysis.usedChains || new Set()).has('greet')).to.be(false);
+      expect((macroNode._analysis.observedChains || new Set()).has('greet')).to.be(false);
+      expect((macroNode._analysis.mutatedChains || new Set()).has('greet')).to.be(false);
+    });
+
     it('should derive short-circuit expression links only when command effects are present', function () {
       const valueOnlyAst = analyzeTemplateSource(
         '{% set x = "a" %}{{ x and "b" }}{{ x or "c" }}{{ "a" if x else "b" }}',
@@ -774,8 +806,14 @@ import {transpiler as scriptTranspiler} from '../../src/language/script-transpil
       );
       const importedCall = collectNodesByType(ast, 'FunCall')
         .find((node) => node._analysis.importedCallable);
+      const importDecl = ast._analysis.declaredChains.get('m');
 
+      expect(importDecl.storage).to.be(DECLARATION_STORAGE.DIRECT);
+      expect(importDecl.type).to.be(undefined);
       expect(importedCall._analysis.wantsLinkedChildBuffer).to.be(true);
+      expect((ast._analysis.usedChains || new Set()).has('m')).to.be(false);
+      expect((ast._analysis.observedChains || new Set()).has('m')).to.be(false);
+      expect((ast._analysis.mutatedChains || new Set()).has('m')).to.be(false);
     });
 
   });

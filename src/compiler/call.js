@@ -1,5 +1,6 @@
 import * as nodes from '../language/nodes.js';
 import {CALLER_CHAIN_NAME} from './reserved.js';
+import {isStoredDirectly} from './declarations.js';
 
 class CompileCall {
   constructor(compiler) {
@@ -188,12 +189,12 @@ class CompileCall {
   }
 
   _collectDirectMacroCallFacts(node, analysisPass) {
-    if (!(node.name instanceof nodes.Symbol) || !analysisPass.findDeclaration) {
+    if (!(node.name instanceof nodes.Symbol) || !analysisPass.findSourceDeclaration) {
       return null;
     }
-    const macroDecl = analysisPass.recordLookupDeclaration(node.name, node.name.value, node._analysis);
+    const macroDecl = analysisPass.recordSourceLookupDeclaration(node.name, node.name.value, node._analysis);
     return macroDecl && macroDecl.isMacro
-      ? { binding: macroDecl.declarationOrigin?.compiledMacroFuncId ?? null }
+      ? { binding: macroDecl.jsVar ?? null }
       : null;
   }
 
@@ -219,12 +220,12 @@ class CompileCall {
 
   _collectImportedCallableUsage(node, analysisPass, observes) {
     const compiler = this.compiler;
-    if (!node.name || !analysisPass.findDeclaration) {
+    if (!node.name || !analysisPass.findSourceDeclaration) {
       return null;
     }
 
     const importedRoot = compiler.sequential.extractStaticPathRoot(node.name);
-    const importedDecl = importedRoot ? analysisPass.recordLookupDeclaration(node.name, importedRoot, node._analysis) : null;
+    const importedDecl = importedRoot ? analysisPass.recordSourceLookupDeclaration(node.name, importedRoot, node._analysis) : null;
     const isImportedCallable =
       (importedDecl && importedDecl.imported) ||
       (!importedDecl && importedRoot && compiler.importedBindings && compiler.importedBindings.has(importedRoot));
@@ -233,7 +234,7 @@ class CompileCall {
     }
 
     const importedChainName = importedDecl && (importedDecl.runtimeName || importedRoot);
-    if (importedChainName) {
+    if (importedChainName && !isStoredDirectly(importedDecl)) {
       observes.push(importedChainName);
     }
     const textChain = analysisPass.getCurrentTextChain(node._analysis);
@@ -324,8 +325,11 @@ class CompileCall {
     }
 
     const chainName = sequencePath[0];
-    const chainDecl = analysisPass.recordLookupDeclaration(node.name, chainName, node._analysis);
+    const chainDecl = analysisPass.recordSourceLookupDeclaration(node.name, chainName, node._analysis);
     if (!chainDecl || chainDecl.shared) {
+      return null;
+    }
+    if (isStoredDirectly(chainDecl)) {
       return null;
     }
 

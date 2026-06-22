@@ -7,6 +7,7 @@ import {CompileLookup} from './lookup.js';
 import {CompileGuard} from './guard.js';
 import {CompileAssignment} from './assignment.js';
 import {renameSharedName} from '../inheritance/shared-names.js';
+import {isImmutableDeclaration, isStoredDirectly} from './declarations.js';
 
 const compareOps = {
   '==': '==',
@@ -58,7 +59,9 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   analyzeSymbol(node, analysisPass) {
-    if (node._analysis?.declarationTarget || node._analysis?.operationOwnedPath || node.isCompilerInternal) {
+    // Symbol targets introduce or update a name; they are not expression reads
+    // and should not perform source/context lookup.
+    if (node._analysis?.isSymbolTarget || node._analysis?.operationOwnedPath || node.isCompilerInternal) {
       return {};
     }
     const name = node.value;
@@ -82,8 +85,10 @@ class CompilerBaseAsync extends CompilerCommon {
       target.push(sequenceLockLookup.key);
     }
 
-    const declaration = analysisPass.recordLookupDeclaration(node, name);
-    if (declaration && !(this.scriptMode && declaration.shared)) {
+    const declaration = analysisPass.recordSourceLookupDeclaration(node, name);
+    // Skip intrinsic direct names at the source-read producer. Final folding
+    // repeats this because observes can also come from custom/post analyzers.
+    if (declaration && !(this.scriptMode && declaration.shared) && !isImmutableDeclaration(declaration)) {
       observes.push(name);
     }
 
@@ -92,7 +97,7 @@ class CompilerBaseAsync extends CompilerCommon {
 
   postAnalyzeSymbol(node, analysisPass) {
     const facts = this.chain.collectDataPathSegmentFacts(node);
-    if (!node._analysis?.declarationTarget && !node._analysis?.operationOwnedPath && !node.isCompilerInternal) {
+    if (!node._analysis?.isSymbolTarget && !node._analysis?.operationOwnedPath && !node.isCompilerInternal) {
       const sequenceLockLookup = this.sequential.recordBareSequenceLockLookup(node, analysisPass);
       if (sequenceLockLookup) {
         facts.sequenceLockLookup = sequenceLockLookup;
@@ -108,6 +113,10 @@ class CompilerBaseAsync extends CompilerCommon {
       return;
     }
     const declaredChain = node._analysis.lookupDeclaration || null;
+    if (isStoredDirectly(declaredChain)) {
+      this._compileDirectDeclarationLookup(node, name, declaredChain);
+      return;
+    }
     if (name === 'loop' && this.currentLoopVar && !declaredChain) {
       this.emit(this.currentLoopVar);
       return;
@@ -121,6 +130,21 @@ class CompilerBaseAsync extends CompilerCommon {
       return;
     }
     this._compileAmbientSymbolLookup(node, name);
+  }
+
+  _compileDirectDeclarationLookup(node, name, declaration) {
+    if (node.sequential || node.sequentialRepair) {
+      this._failNonContextSequenceRoot(node, declaration);
+    }
+    if (!declaration.jsVar) {
+      this.fail(
+        `Compiler error: direct declaration '${name}' has no generated binding.`,
+        node.lineno,
+        node.colno,
+        node
+      );
+    }
+    this.emit(declaration.jsVar);
   }
 
   _compileDeclaredSymbolLookup(node, name, declaredChain) {
@@ -173,7 +197,7 @@ class CompilerBaseAsync extends CompilerCommon {
     }
     const keyRootChain = Object.prototype.hasOwnProperty.call(node._analysis, 'lookupDeclaration')
       ? node._analysis.lookupDeclaration
-      : analysisPass.findDeclaration(node._analysis, keyRoot);
+      : analysisPass.findSourceDeclaration(node._analysis, keyRoot);
     if (keyRootChain) {
       this._failNonContextSequenceRoot(node, keyRootChain);
     }
@@ -681,10 +705,7 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   _getObservedChainName(targetNode) {
-    if (!this.scriptMode || !targetNode) {
-      return null;
-    }
-    if (targetNode.sequential) {
+    if (!this.scriptMode || !targetNode || targetNode.sequential) {
       return null;
     }
 
@@ -697,7 +718,7 @@ class CompilerBaseAsync extends CompilerCommon {
       const name = targetNode.value;
       const chainDecl = targetNode._analysis.lookupDeclaration || null;
       if (chainDecl) {
-        if (this.scriptMode && chainDecl.shared) {
+        if (isStoredDirectly(chainDecl) || (this.scriptMode && chainDecl.shared)) {
           return null;
         }
         return name;
@@ -710,7 +731,7 @@ class CompilerBaseAsync extends CompilerCommon {
       if (candidate) {
         const chainDecl = targetNode.name?._analysis?.lookupDeclaration || null;
         if (chainDecl) {
-          if (this.scriptMode && chainDecl.shared) {
+          if (isStoredDirectly(chainDecl) || (this.scriptMode && chainDecl.shared)) {
             return null;
           }
           return candidate;
