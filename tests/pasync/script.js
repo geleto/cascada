@@ -71,7 +71,6 @@ describe('Cascada Script: Variables', function () {
     it('should reject reserved keywords as variable names', async function () {
       const scripts = [
         'var data = 1',
-        'var value = 2',
         'var context = 4'
       ];
 
@@ -83,6 +82,21 @@ describe('Cascada Script: Variables', function () {
           expect(error.message).to.contain('is reserved');
         }
       }
+    });
+
+    it('should allow value as a script variable and function parameter name', async function () {
+      const script = `
+        var value = 2
+
+        function echo(value)
+          return value + 1
+        endfunction
+
+        return { outer: value, inner: echo(4) }
+      `;
+
+      const result = await env.renderScriptString(script, {});
+      expect(result).to.eql({ outer: 2, inner: 5 });
     });
 
     it('should reject dollar signs in Cascada identifiers', async function () {
@@ -475,11 +489,6 @@ describe('Cascada Script: Variables', function () {
           endfor
           return 1`,
         `
-          var items = [1]
-          each value in items
-          endeach
-          return 1`,
-        `
           var n = 0
           while n < 1
             var context = n
@@ -496,6 +505,19 @@ describe('Cascada Script: Variables', function () {
           expect(error.message).to.contain('is reserved');
         }
       }
+    });
+
+    it('should allow value as a loop variable name', async function () {
+      const script = `
+        var values = []
+        each value in [1, 2]
+          values.push(value)
+        endeach
+        return values
+      `;
+
+      const result = await env.renderScriptString(script, {});
+      expect(result).to.eql([1, 2]);
     });
 
     it('should allow outer assignment updated inside branch', async function () {

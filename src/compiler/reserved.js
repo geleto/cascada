@@ -18,7 +18,6 @@ const INTERNAL_DECLARATION_NAMES = [
 const RESERVED_DECLARATION_NAMES = new Set([
   ...CHAIN_TYPES,
   ...INTERNAL_DECLARATION_NAMES,
-  'value',
   'component',
   'this',
   '__constructor__',

@@ -1594,6 +1594,18 @@ describe('Cascada Script: Explicit Chain Declarations', function () {
       }
     });
 
+    it('should allow value as a macro parameter name', async () => {
+      const script = `
+        function echo(value)
+          return { value: value }
+        endfunction
+        return echo(7)
+      `;
+
+      const result = await render(script);
+      expect(result).to.eql({ value: 7 });
+    });
+
     it('should reject duplicate macro parameter names', async () => {
       const script = `
         function bad(x, x=1)
