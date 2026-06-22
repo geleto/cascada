@@ -28,6 +28,10 @@ const scriptArithmeticOps = {
   '%': '%'
 };
 
+const ERROR_OBSERVATION_COMPONENT = 'component';
+const ERROR_OBSERVATION_SHARED_CHAIN = 'shared-chain';
+const ERROR_OBSERVATION_CHAIN = 'chain';
+
 class CompilerBaseAsync extends CompilerCommon {
   init(options) {
     super.init({ ...options, asyncMode: true });
@@ -655,7 +659,7 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   _emitErrorObservation(observationFacts, targetNode, mode) {
-    if (observationFacts.kind === 'component') {
+    if (observationFacts.kind === ERROR_OBSERVATION_COMPONENT) {
       this.component.emitChainObservation({
         bindingName: observationFacts.bindingName,
         chainName: observationFacts.chainName,
@@ -664,7 +668,7 @@ class CompilerBaseAsync extends CompilerCommon {
       }, targetNode);
       return;
     }
-    if (observationFacts.kind === 'shared-chain') {
+    if (observationFacts.kind === ERROR_OBSERVATION_SHARED_CHAIN) {
       this.inheritance.emitSharedChainObservation(observationFacts.chainName, targetNode, mode);
       return;
     }
@@ -690,7 +694,7 @@ class CompilerBaseAsync extends CompilerCommon {
     const componentBindingRoot = this.component.findBindingRoot(targetNode);
     if (componentBindingRoot && componentBindingRoot.staticPath.length === 2) {
       return {
-        kind: 'component',
+        kind: ERROR_OBSERVATION_COMPONENT,
         bindingName: componentBindingRoot.bindingName,
         chainName: renameSharedName(componentBindingRoot.staticPath[1])
       };
@@ -702,7 +706,7 @@ class CompilerBaseAsync extends CompilerCommon {
     }
     const chainDecl = targetNode._analysis.lookupDeclaration || null;
     return {
-      kind: chainDecl && chainDecl.shared ? 'shared-chain' : 'chain',
+      kind: chainDecl && chainDecl.shared ? ERROR_OBSERVATION_SHARED_CHAIN : ERROR_OBSERVATION_CHAIN,
       chainName
     };
   }
