@@ -33,7 +33,7 @@ class CompileInheritance {
 
   compileParticipantRootExport(node, rootCompileResult) {
     this.compiler.macro.emitInheritanceDirectMacroBindingsFactory(node);
-    const methodEntries = this.codegen.callableEntriesObject(node, rootCompileResult);
+    const methodEntries = this.codegen.callableEntriesObject(rootCompileResult.callableEntries);
     const sharedSchema = this.codegen.sharedSchemaLiteral(node);
     this.codegen.participantRootExport(node, methodEntries, sharedSchema);
   }
@@ -74,16 +74,6 @@ class CompileInheritance {
     this.codegen.rootSharedDeclarations(node);
   }
 
-  compileConstructorEntry(node) {
-    const constructorDefinition = this._getConstructorDefinition(node);
-    if (!constructorDefinition) {
-      return null;
-    }
-
-    this._compileCallableEntry(constructorDefinition, 'b___constructor__', true);
-    return constructorDefinition;
-  }
-
   _getOwnerContextPath() {
     return this.compiler.sourcePath ?? INLINE_SOURCE_OWNER_PATH;
   }
@@ -100,9 +90,23 @@ class CompileInheritance {
     this.currentCallableNode = savedCallableNode;
   }
 
-  _compileCallableEntry(callableNode, functionName = `b_${callableNode.name.value}`, isConstructorEntry = false) {
+  isConstructorCallableNode(callableNode) {
+    return callableNode.isCompilerInternal && callableNode.name.value === '__constructor__';
+  }
+
+  callableEntryUsesSuper(callableNode) {
+    if (!this.isConstructorCallableNode(callableNode)) {
+      return !!callableNode._analysis.callableUsesSuper;
+    }
+    const rootNode = this.compiler.analysis.getRootNode(callableNode._analysis);
+    return (!this.compiler.scriptMode && rootNode._analysis.inheritance.hasExtends) ||
+      (this.compiler.scriptMode && callableNode.isSharedDefaultOnlyConstructor && rootNode._analysis.inheritance.hasExtends) ||
+      !!callableNode._analysis.callableUsesSuper;
+  }
+
+  _compileCallableEntry(callableNode) {
     const isScriptMethod = this.compiler.scriptMode;
-    const constructorRootNode = isConstructorEntry
+    const constructorRootNode = this.isConstructorCallableNode(callableNode)
       ? this.compiler.analysis.getRootNode(callableNode._analysis)
       : null;
     const invocationPath = isScriptMethod
@@ -115,7 +119,7 @@ class CompileInheritance {
     // invocation buffer. Caller-side inherited invocation linking is resolved
     // separately from helper-resolved method metadata at runtime.
     this._withCallableEntryCompile(callableNode, () => {
-      this.codegen.inheritedCallableFunction(callableNode, functionName, () => {
+      this.codegen.inheritedCallableFunction(callableNode, () => {
         this.codegen.callableEntrySetup(callableNode, isScriptMethod, invocationPath, callableSignature);
         if (constructorRootNode) {
           this.emitRootSharedDeclarations(constructorRootNode);
@@ -126,7 +130,12 @@ class CompileInheritance {
     });
   }
 
-  compileInheritedCallableEntries(node) {
+  compileCallableEntries(node) {
+    const constructorDefinition = this._getConstructorDefinition(node);
+    if (constructorDefinition) {
+      this._compileCallableEntry(constructorDefinition);
+    }
+
     const callableNames = new Set();
     const callableKind = this.compiler.scriptMode ? 'method' : 'block';
     const callables = this._getCallableDefinitions(node);
@@ -141,7 +150,9 @@ class CompileInheritance {
       this._compileCallableEntry(callableNode);
     });
 
-    return callables;
+    // Compile the constructor first for lifecycle setup, but keep it last in
+    // the emitted method table to preserve the existing ABI shape.
+    return constructorDefinition ? callables.concat(constructorDefinition) : callables;
   }
 
   compileExtends() {

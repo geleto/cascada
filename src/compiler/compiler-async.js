@@ -717,12 +717,12 @@ class CompilerAsync extends CompilerBaseAsync {
       }
     }, rootOptions);
     if (!inheritanceParticipates) {
-      return { blocks: [], constructorEntry: null };
+      return { callableEntries: [] };
     }
     this.inBlock = true;
-    const constructorEntry = this.inheritance.compileConstructorEntry(node);
-    const blocks = this.inheritance.compileInheritedCallableEntries(node);
-    return { blocks, constructorEntry };
+    return {
+      callableEntries: this.inheritance.compileCallableEntries(node)
+    };
   }
 
   _compileExpressionToString(node) {

@@ -237,7 +237,7 @@ class CompileInheritanceEmit {
     this.callableArgumentChains(callableNode, callableSignature, payloadOriginalArgsVar);
   }
 
-  inheritedCallableFunction(callableNode, functionName, emitBody) {
+  inheritedCallableFunction(callableNode, emitBody) {
     const callableSignature = this._getCallableSignature(callableNode);
     const staticFacts = this.compiler.chain.getCommandBufferFacts(
       callableNode,
@@ -245,7 +245,7 @@ class CompileInheritanceEmit {
     );
     const staticObservedChains = JSON.stringify(staticFacts.ownFacts?.[0] ?? []);
     const staticMutatedChains = JSON.stringify(staticFacts.ownFacts?.[1] ?? []);
-    this.emit.entryFunction(callableNode, functionName, emitBody, {
+    this.emit.entryFunction(callableNode, `b_${callableNode.name.value}`, emitBody, {
       extraParams: INHERITED_CALLABLE_EXTRA_PARAMS,
       noReturn: true,
       linkedFactsArg: '[methodData.mergedObservedChains, methodData.mergedMutatedChains]',
@@ -279,41 +279,25 @@ class CompileInheritanceEmit {
     }
   }
 
-  callableEntriesObject(node, rootCompileResult) {
-    const callables = rootCompileResult.blocks;
-    const constructorEntry = rootCompileResult.constructorEntry;
-    const methodEntries = callables.map((callableNode) =>
+  callableEntriesObject(callableEntries) {
+    const methodEntries = callableEntries.map((callableNode) =>
       this.methodEntryObject(this.methodEntryDescriptor(callableNode))
     );
-
-    if (constructorEntry) {
-      const constructorUsesSuper = (!this.compiler.scriptMode && node._analysis.inheritance.hasExtends) ||
-        (this.compiler.scriptMode && constructorEntry.isSharedDefaultOnlyConstructor && node._analysis.inheritance.hasExtends) ||
-        constructorEntry._analysis.callableUsesSuper;
-      methodEntries.push(this.methodEntryObject(this.methodEntryDescriptor(constructorEntry, {
-        name: '__constructor__',
-        fnExpr: 'b___constructor__',
-        isConstructor: true,
-        usesSuper: constructorUsesSuper,
-        signature: { argNames: [] }
-      })));
-    }
-
     return `{ ${methodEntries.join(', ')} }`;
   }
 
-  methodEntryDescriptor(callableNode, overrides = {}) {
-    const name = overrides.name ?? callableNode.name.value;
+  methodEntryDescriptor(callableNode) {
+    const name = callableNode.name.value;
     return {
       name,
-      fnExpr: overrides.fnExpr ?? `b_${name}`,
+      fnExpr: `b_${name}`,
       ownerNode: callableNode,
-      errorContextNode: overrides.errorContextNode ?? callableNode,
-      isConstructor: !!overrides.isConstructor,
-      usesSuper: overrides.usesSuper ?? !!callableNode._analysis.callableUsesSuper,
+      errorContextNode: callableNode,
+      isConstructor: this.inheritance.isConstructorCallableNode(callableNode),
+      usesSuper: this.inheritance.callableEntryUsesSuper(callableNode),
       superErrorContextIndexLiteral: this.callableSuperErrorContextIndexLiteral(callableNode),
       inheritedMethodDependencies: this.inheritedMethodDependenciesObject(callableNode._analysis.callableInheritedMethodDependencies),
-      signature: overrides.signature ?? {
+      signature: {
         argNames: this._getCallableSignature(callableNode).argNames
       }
     };
