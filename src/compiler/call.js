@@ -1,6 +1,7 @@
 import * as nodes from '../language/nodes.js';
 import {CALLER_CHAIN_NAME} from './reserved.js';
 import {isStoredDirectly} from './declarations.js';
+import {COMPONENT_BINDING_METHOD_CALL} from './component.js';
 
 class CompileCall {
   constructor(compiler) {
@@ -356,7 +357,7 @@ class CompileCall {
       compiler.component.findBindingFacts(node.name, { forCall: true });
 
     if (componentBindingFacts) {
-      if (componentBindingFacts.kind === 'method-call') {
+      if (componentBindingFacts.kind === COMPONENT_BINDING_METHOD_CALL) {
         compiler.component.compileMethodCall(componentBindingFacts, node);
         return true;
       }

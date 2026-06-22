@@ -1,5 +1,6 @@
 import * as nodes from '../language/nodes.js';
 import {getSharedSourceName} from '../inheritance/shared-names.js';
+import {COMPONENT_BINDING_SHARED_READ} from './component.js';
 
 class CompileLookup {
   constructor(compiler) {
@@ -206,7 +207,7 @@ class CompileLookup {
     const componentBindingFacts =
       node._analysis.componentBindingFacts ||
       compiler.component.findBindingFacts(node);
-    if (componentBindingFacts && componentBindingFacts.kind === 'shared-read') {
+    if (componentBindingFacts && componentBindingFacts.kind === COMPONENT_BINDING_SHARED_READ) {
       compiler.component.emitChainObservation(componentBindingFacts, node);
       return true;
     }

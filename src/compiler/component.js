@@ -1,6 +1,10 @@
 
 import {renameSharedName} from '../inheritance/shared-names.js';
 
+const COMPONENT_BINDING_SHARED_READ = 'shared-read';
+const COMPONENT_BINDING_SHARED_OBSERVE = 'shared-observe';
+const COMPONENT_BINDING_METHOD_CALL = 'method-call';
+
 class CompileComponent {
   constructor(compiler) {
     this.compiler = compiler;
@@ -67,7 +71,7 @@ class CompileComponent {
     if (!forCall && staticPath.length === 2) {
       return {
         bindingName,
-        kind: 'shared-read',
+        kind: COMPONENT_BINDING_SHARED_READ,
         chainName: renameSharedName(staticPath[1]),
         implicitVarRead: true
       };
@@ -80,7 +84,7 @@ class CompileComponent {
     ) {
       return {
         bindingName,
-        kind: 'shared-observe',
+        kind: COMPONENT_BINDING_SHARED_OBSERVE,
         chainName: renameSharedName(staticPath[1]),
         mode: staticPath[2],
         implicitVarRead: false
@@ -90,7 +94,7 @@ class CompileComponent {
     if (forCall && staticPath.length === 2) {
       return {
         bindingName,
-        kind: 'method-call',
+        kind: COMPONENT_BINDING_METHOD_CALL,
         methodName: staticPath[1]
       };
     }
@@ -173,7 +177,7 @@ class CompileComponent {
     });
     this.emitChainObservation({
       bindingName: componentBindingRoot.bindingName,
-      kind: 'shared-read',
+      kind: COMPONENT_BINDING_SHARED_READ,
       chainName: renameSharedName(staticPath[1]),
       implicitVarRead: true
     }, node);
@@ -183,4 +187,8 @@ class CompileComponent {
   }
 }
 
-export {CompileComponent};
+export {
+  COMPONENT_BINDING_METHOD_CALL,
+  COMPONENT_BINDING_SHARED_READ,
+  CompileComponent
+};
