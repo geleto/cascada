@@ -1,8 +1,8 @@
-# Direct Binding Plan
+# Direct Storage Plan
 
-Direct bindings are source-visible names that compile to generated JavaScript variables instead of command-buffer chains.
+Direct declarations are source-visible names that compile to generated JavaScript variables instead of command-buffer chains.
 
-They are not compiler temporaries. They still participate in Cascada scope lookup, shadowing checks, assignment checks, and export rules. The difference is storage: once analysis resolves a source name to a direct binding, codegen emits the binding's `jsVar` directly.
+They are not compiler temporaries. They still participate in Cascada scope lookup, shadowing checks, assignment checks, and export rules. The difference is storage: once analysis resolves a source name to direct storage, codegen emits its `jsVar` directly.
 
 Scope: this plan targets the async compiler. The analysis pass everything here builds on runs only in async mode (`compiler.analysis.run` is gated on `asyncMode`), so sync compilation — frame-backed and Nunjucks-compatible — has no `observes`/`mutates` facts and is untouched by these analysis changes. The only sync contact point is a shared helper or constants file.
 
@@ -27,7 +27,7 @@ Minimal shape:
 }
 ```
 
-Once a symbol resolves to this binding:
+Once a symbol resolves to this declaration:
 
 ```js
 compileSymbol(greet) -> emit("macro_12")
@@ -37,16 +37,16 @@ This has the same codegen shape as `isCompilerInternal`, but keeps source-level 
 
 There are two independent axes:
 
-- **`storage`** — chain vs direct, decided by one rule (see [Eligibility Derivation](#eligibility-derivation)). Everything downstream — reads, export, the chain-usage purge — keys off `storage`, never the use case.
-- **jsVar source** — where a direct binding's value lives in JS, fixed at the declaration site: a macro funcId, an import's resolved-exports variable, a materialized `const`, or a function/loop parameter. A chain-storage declaration has no `jsVar` at all.
+- **`storage`** — chain vs direct, set by flag for intrinsics and derived from `mutatedChains` for var-likes (see [Eligibility Derivation](#the-storage-predicate)). Everything downstream — reads, export, the chain-usage purge — keys off `storage`, never the use case.
+- **jsVar source** — where a direct declaration's value lives in JS, fixed at the declaration site: a macro funcId, an import's resolved-exports variable, a materialized `const`, or a function/loop parameter. A chain-storage declaration has no `jsVar` at all.
 
-These are orthogonal: `storage` says direct-or-chain; for a direct binding the declaration site says what its `jsVar` is. The category (`isMacro` / `imported` / plain var) stays on the existing declaration flags.
+These are orthogonal: `storage` says direct-or-chain; for a direct declaration the site that creates it fixes the `jsVar`. The category (`isMacro` / `imported` / plain var) stays on the existing declaration flags.
 
-## When To Use A Direct Binding
+## When To Use Direct Storage
 
-Use a direct binding when a declaration is value-like and does not need lane behavior: source-visible by name, value available as a JS expression, never reassigned or path-assigned, and not used as a lane (producer/consumer ordering, linked-chain visibility, deferred-export). The single fact-based form of this rule is the predicate in [Eligibility Derivation](#the-storage-predicate); the rest of this section is the *why* behind each conjunct.
+Use direct storage when a declaration is value-like and does not need lane behavior: source-visible by name, value available as a JS expression, never reassigned or path-assigned, and not used as a lane (producer/consumer ordering, linked-chain visibility, deferred-export). The single fact-based form of this rule is the predicate in [Eligibility Derivation](#the-storage-predicate); the rest of this section is the *why* behind each conjunct.
 
-Value reads and error inspection do not force chain storage. A direct binding's symbol read emits the JS value directly, and `value is error` / `value#` pass that value to the runtime value-level helpers (`runtime.isError` / `runtime.peekError`). This matters for macro/function arguments, which can themselves be error values. `.snapshot()` is not a source-level operation on plain `var`s: reject it at compile time on any declared Cascada `var` (chain- or direct-backed) so both have the same surface. This does not affect `obj.snapshot()` where `obj` is an ambient/context value rather than a Cascada declaration. See [Codegen Architecture](#codegen-architecture) for how these lower.
+Value reads and error inspection do not force chain storage. A direct declaration's symbol read emits the JS value directly, and `value is error` / `value#` pass that value to the runtime value-level helpers (`runtime.isError` / `runtime.peekError`). This matters for macro/function arguments, which can themselves be error values. `.snapshot()` is not a source-level operation on plain `var`s: reject it at compile time on any declared Cascada `var` (chain- or direct-backed) so both have the same surface. This does not affect `obj.snapshot()` where `obj` is an ambient/context value rather than a Cascada declaration. See [Codegen Architecture](#codegen-architecture) for how these lower.
 
 This rule should be derived from finalized universal facts wherever possible: declarations, reads, observations, mutations, chain-command facts, path-assignment facts, and boundary-link facts. Avoid one-off per-node exceptions.
 
@@ -54,7 +54,7 @@ Important distinction: ordinary value reads are not the same thing as lane obser
 
 ## Initial Use Cases
 
-Direct bindings fall into two categories, implemented in this order:
+Direct declarations fall into two categories, implemented in this order:
 
 - **Intrinsic** — names that are immutable references by construction; no usage derivation is needed to know they never need a chain, because the value is fixed at the declaration site. Macros, functions, and import namespaces / from-import aliases.
 - **Derived** — ordinary variables and callable arguments *proven* read-only from finalized usage. A callable argument is just a variable whose initial value comes from the call site, so it reuses the variable mechanism.
@@ -97,11 +97,11 @@ context.addResolvedExport("greet", macro_12);
 
 This direct export must be used in template mode too. Current template-mode macro export uses `context.addDeferredExport(name, chainName, buffer)`, which requires a backing chain and will fail once macro names stop allocating `var` chains.
 
-Macro/function bodies also need a body-local self binding for recursion. The source-visible binding in the surrounding scope makes later code able to call `greet(...)`; the body-local binding makes `greet(...)` inside the macro/function body resolve even though the body is a clean `scopeBoundary: true` scope. Both bindings point at the same `jsVar`.
+Macro/function bodies also need a body-local self declaration for recursion. The source-visible declaration in the surrounding scope lets later code call `greet(...)`; the body-local declaration makes `greet(...)` inside the macro/function body resolve even though the body is a clean `scopeBoundary: true` scope. Both declarations point at the same `jsVar`.
 
 ### 2. Import Namespaces And From-Imports (intrinsic)
 
-`import "x" as ns` and `from "x" import a, b` (all from-import aliases, not only callables) bind immutable references, so they are intrinsic direct bindings in kind. They use the same chain shape as macros today — [`_emitValueImportBinding`](../../src/compiler/composition.js) emits `declareBufferChain` + `VarCommand` seeded with the resolved exports — and the `jsVar` would be that existing resolved-exports variable.
+`import "x" as ns` and `from "x" import a, b` (all from-import aliases, not only callables) bind immutable references, so they are intrinsic direct declarations in kind. They use the same chain shape as macros today — [`_emitValueImportBinding`](../../src/compiler/composition.js) emits `declareBufferChain` + `VarCommand` seeded with the resolved exports — and the `jsVar` would be that existing resolved-exports variable.
 
 These are immutable (`imported` flag): reassigning `ns` or a from-import alias becomes a compile error through the central validator. That is a behavior change — today they are var-like declarations that could be reassigned — so add tests for the rejection.
 
@@ -114,7 +114,7 @@ var user = fetchUser()
 return user.name
 ```
 
-If `user` is never reassigned and never used as a chain lane, it may be a direct binding. Promise and poison behavior must remain identical: consumers still receive the same promise/poison value, with errors reported from the same origin.
+If `user` is never reassigned and never used as a chain lane, it may be a direct declaration. Promise and poison behavior must remain identical: consumers still receive the same promise/poison value, with errors reported from the same origin.
 
 **Initialization is not a mutation.** `var user = fetchUser()` writes the value once; that write is the chain's *initialization* (emitted as `declareBufferChain` + `VarCommand`, conceptually before the lane exists), not a lane mutation. Only a later reassignment (`user = ...`) or path assignment counts. Today the initializer is recorded as a mutation — [`assignment.js`](../../src/compiler/assignment.js) pushes the name into `mutates` whenever the declaration assigns a value — so every initialized var looks mutated. Deriving read-only storage requires fixing that so initialization does not enter `mutates`. This is the core refactor behind the entire derived category.
 
@@ -150,11 +150,11 @@ The only loop-specific detail is the value source: a loop variable *is* the per-
 
 ### 6. Internal Setup Values
 
-Most internal declarations — return/wait/caller timing chains, output lanes — are real scheduling lanes and must stay chains (the full list is under [What Not To Convert](#what-not-to-convert)). Convert an internal name to a direct binding only when it is a simple JS value that never participates in scheduling.
+Most internal declarations — return/wait/caller timing chains, output lanes — are real scheduling lanes and must stay chains (the full list is under [What Not To Convert](#what-not-to-convert)). Convert an internal name to a direct declaration only when it is a simple JS value that never participates in scheduling.
 
 ## Scoping And Shadowing
 
-Direct bindings follow the same source visibility rules as declarations because they are declarations with direct storage.
+A direct declaration follows the same source visibility rules as a chain declaration — they differ only in storage.
 
 - A scope has one declaration namespace. Two source-visible names with the same name in the same scope are forbidden regardless of kind or storage: var, data/text/sequence chain, macro/function, import namespace, from-import alias, component binding, internal source-visible binding, etc.
 - A binding is visible only in the scope that owns it and child scopes that can see that scope.
@@ -197,7 +197,7 @@ Invalid leakage:
 
 ## Analysis Architecture
 
-Use the existing declaration maps. Do not add parallel `directBindings` / `sourceVisibleDirectBindings` maps.
+Use the existing declaration maps. Do not add parallel `directDeclarations` / `sourceVisibleDirectDeclarations` maps.
 
 Add a storage discriminator to declaration objects:
 
@@ -222,7 +222,7 @@ The existing declaration flow should continue to own visibility:
 
 For explicit direct declarations such as macro/function names, `lookupDeclaration.storage` can be `DECLARATION_STORAGE.DIRECT` during the existing symbol analysis pass.
 
-For derived direct bindings (read-only vars), storage is decided after the first walk because eligibility depends on finalized usage. Prefer keeping one declaration object and setting its `storage` after derivation, so existing `lookupDeclaration` pointers see the final choice. Declaration installation currently copies objects into `sourceVisibleDeclarations` and then into `declaredChains`; make both maps point at the same object (or rewrite `lookupDeclaration` pointers in the derivation pass) so no pointer keeps a stale pre-derivation declaration.
+For derived direct declarations (read-only vars), storage is decided after the first walk because eligibility depends on finalized usage. Prefer keeping one declaration object and setting its `storage` after derivation, so existing `lookupDeclaration` pointers see the final choice. Declaration installation currently copies objects into `sourceVisibleDeclarations` and then into `declaredChains`; make both maps point at the same object (or rewrite `lookupDeclaration` pointers in the derivation pass) so no pointer keeps a stale pre-derivation declaration.
 
 Conflict validation is reused from the existing declaration map:
 
@@ -247,16 +247,19 @@ The simplest safe implementation is staged, following the two categories above:
 
 ### The storage predicate
 
-One rule decides storage for every declaration. It is **direct** iff all of these hold:
+Storage is set two ways, depending on whether a declaration is direct *by construction* or *by usage*:
+
+- **Intrinsic — direct by flag.** Macros/functions (`isMacro`) and import namespaces / from-import aliases (`imported`) are direct references by construction. Set `storage = DIRECT` at declaration creation; no usage analysis is involved, and they carry no chain `type` (their value lives in `jsVar`). The assignment validator forbids reassigning them, so they never enter `mutatedChains`.
+- **Derived — direct by `mutatedChains`.** A plain var-like declaration — an ordinary `var`, argument, or loop variable: `type === 'var'`, not `shared`, not `internal`, not intrinsic — is direct iff it is never reassigned:
 
 ```js
-declaration.storage =
-  (type === 'var' && !shared && !internal && !mutatedChains.has(name))
-    ? DECLARATION_STORAGE.DIRECT
-    : DECLARATION_STORAGE.CHAIN;
+// for a var-typed, non-shared, non-internal, non-intrinsic declaration:
+declaration.storage = mutatedChains.has(name)
+  ? DECLARATION_STORAGE.CHAIN
+  : DECLARATION_STORAGE.DIRECT;
 ```
 
-`mutatedChains` is the owning scope's accumulated mutations — after the init fix below it holds real source reassignments/path-assignments, anywhere in the scope including nested branches and loops. If any conjunct fails it stays a chain, and [What Not To Convert](#what-not-to-convert) is exactly this negation (non-`var` type, shared, internal, or mutated). `var`s, arguments, and loop variables run through the *same* test; macros and namespaces are direct because the assignment validator forbids mutating them, so they are never in `mutatedChains`.
+`mutatedChains` is the owning scope's accumulated mutations — after the init fix below it holds real source reassignments/path-assignments, anywhere in the scope including nested branches and loops. [What Not To Convert](#what-not-to-convert) is the negation: a non-`var` chain type, shared, internal, or mutated. So `var`s, arguments, and loop variables share one derived test, while macros and namespaces never reach it (they are direct by flag).
 
 Nothing else forces a chain:
 
@@ -267,27 +270,37 @@ Nothing else forces a chain:
 
 ### Initialization is not a mutation
 
-The predicate keys off `mutatedChains`, so it must hold only real reassignments — never a declaration's initial value. One principle: **a declaration's initial value is a declaration property, not a lane mutation.** Three sites violate it today by recording the initial write as a mutation:
+`mutatedChains` must hold only real reassignments — never a declaration's initial value. One principle applies to *every* declaration: **a declaration's initial value is a declaration property, not a lane mutation.** Today five sites violate it by recording the initial write as a mutation. Derived var-likes:
 
 - `var x = value`: [`assignment.js`](../../src/compiler/assignment.js) does `mutates.push(name)` whenever the declaration assigns a value.
 - macro/function arguments: [`_getSetupFacts`](../../src/compiler/macro.js) runs `mutated.add(decl.name)` for every argument and caller declaration.
 - loop variables: [`_collectLoopDeclarationFacts`](../../src/compiler/compiler-async.js) records the per-iteration seed via `addCommandFacts(body, { mutated: loopVars })`.
 
-Fix all three under that one principle — initialization does not enter `mutates`, so `mutatedChains` means "really reassigned." Do not add a `hasPostSetupUserMutation` predicate; just stop conflating init with mutation at the three sites. Initialization is then folded into the command facts only for declarations that stay chain-backed.
+Intrinsics:
+
+- macros/functions: [`analyzeMacro`](../../src/compiler/macro.js) returns `mutates: [name]` for the macro name.
+- imports / from-imports: [`analyzeImport` / `analyzeFromImport`](../../src/compiler/compiler-async.js) return `mutates: [name]` for each bound name.
+
+Fix all five under the one principle — initialization does not enter `mutates`. For derived var-likes that is what makes `mutatedChains` mean "really reassigned." For intrinsics it is also a correctness requirement: the central immutability validator rejects any reassignment of an `isMacro`/`imported` declaration, so if a macro/import's *own* initial binding were still in `mutates`, the validator would reject the declaration itself — this is why "an immutable declaration is never in `mutates`" must actually hold. The intrinsic removals land in the Phase 1 conversion (the same change that sets `storage = DIRECT`); the derived ones in Phase 2/3. Do not add a `hasPostSetupUserMutation` predicate; just stop conflating init with mutation at each site. Initialization is then emitted as command facts only for declarations that stay chain-backed.
 
 The analysis change and the codegen change are coupled and must land together. `mutates` is AST-derived, so the analysis fix does not depend on codegen — but the reverse does. Once a read-only chain-backed `var` has no mutation fact, its command-buffer lane is specialized observe-only ([`_createLaneEntryWithFacts`](../../src/runtime/command-buffer.js) → [`buffer-lane-entry.js`](../../src/runtime/buffer-lane-entry.js): `observes && !mutates` exposes only `observe`). A `VarCommand` is a mutation command, so emitting the initial value as a `VarCommand` into that lane throws `expected an observable entry`. The initial value must therefore be emitted as a **non-command initializer**, not a `VarCommand`, in the same change that removes initialization from `mutates`:
 
 - Today: `declareBufferChain(..., null)` + a `VarCommand` (mutation command) carrying the initial value.
 - Required: `declareBufferChain(buffer, name, "var", context, initialValue)` → `applyChainInitializer` → `setInitialValue`. The value is part of the declaration; no mutation command, so an observe-only lane stays valid.
 
+Mind the initializer argument's semantics: [`declareBufferChain`](../../src/runtime/chains/index.js) applies *any* initializer that is not `undefined`, so today's `null` already seeds the chain with `null` before the `VarCommand` overwrites it — `null` is not "no initializer." The required form passes the real value as the initializer and drops the `VarCommand`; a declaration with no initial value omits the argument (or passes `undefined`) so nothing is seeded. Other `null`-seeded call sites that are not var initial values (internal setup chains, etc.) keep their current behavior.
+
 This reuses initializer plumbing that already exists: `var`'s `applyInitializer` → `setInitialValue` is wired today (used for sentinels like `RETURN_UNSET`). The only new code is factoring `VarCommand`'s value normalization into a shared helper so the initializer behaves like a set. It is also an optimization — read-only chain-backed declarations drop one command each. Do not build a cross-type initializer system now — see [Unified Initialization](#unified-initialization).
 
 ### Deciding storage and purging — folded into `_finalizeChainUsage`, no new pass
 
-Use the existing `mutatedChains` fact (post-init-fix); do not build a new source-mutation accumulation, and do not key the decision off `observedChains`/`usedChains` (those count reads). Fold both the storage decision and the purge into [`_finalizeChainUsage`](../../src/compiler/analysis.js), which already walks per scope, children-first — so each scope's `mutatedChains` is ready when the scope is reached:
+Use the existing `mutatedChains` fact (post-init-fix); do not build a new source-mutation accumulation, and do not key the decision off `observedChains`/`usedChains` (those count reads). Fold both the storage decision and the purge into [`_finalizeChainUsage`](../../src/compiler/analysis.js), which already walks per scope, children-first. Per scope, in order:
 
-1. apply the predicate to that scope's declarations — a flat iteration over the scope's declarations, no per-node recursion — and set `declaration.storage`;
-2. drop direct names while building the scope's observe/use and boundary-linked facts, so a direct declaration never reaches a chain-lane fact. (A direct name has no chain; a lingering observe/use fact would provision a lane for a chain that is never declared.)
+1. assemble the scope's full mutation set — local `mutates` + children's + any post-analysis facts (e.g. `_getSetupFacts`); this *is* `mutatedChains` once complete;
+2. decide storage for the scope's derived declarations from that set — a flat iteration over the scope's declarations, no per-node recursion — and set `declaration.storage`;
+3. build the scope's observe/use and boundary-linked facts, filtering out direct names so a direct declaration never reaches a chain-lane fact. (A direct name has no chain; a lingering observe/use fact would provision a lane for a chain that is never declared.)
+
+Storage must be decided **after** step 1 (the mutation set isn't complete until local, child, and post-analysis mutations are folded in) and **before** step 3 (so the filter sees final storage).
 
 Purge at the **aggregation**, not on raw `observes`. The filter goes where per-node `observes`/uses fold into `observedChains`/`usedChains` (`_addChainObservation` / `_addBroadChainUse`). The raw per-node `observes` array stays untouched: its only other consumer is `_validateObservations`, which just checks the read name is *declared* — a direct var is, so it passes — and it runs during the walk before storage is decided, so raw `observes` couldn't be purged there anyway. So no `observesStrictly` fact is needed: the existing raw-`observes` (= "this name is read", for validation) vs aggregated-`observedChains` (= "this chain lane is observed", consumed by [`chain.js`](../../src/compiler/chain.js) `getCommandBufferFacts` for child-buffer/lane creation) split already separates the two meanings — only the aggregate is filtered. `mutates` needs no purge (a direct var is never mutated, so it is never in `mutatedChains`).
 
@@ -321,7 +334,7 @@ One shared initialization mechanism is the end goal, but only `var` needs it now
 
 **`sequence` — unchanged.** It already resolves its sequenced object lazily via `_ensureSequencedObjectResolved`.
 
-So the analysis change "initialization is not a mutation" is applied to `var` (and var-backed arguments/locals) now; `data` / `text` / `sequence` keep their current behavior. The only shared code built now is `var`'s value-normalization helper — one path for `VarCommand.apply` and the `var` initializer, so init behaves identically to a set. The cross-type dispatch — a `deferredTarget` policy and wiring `applyInitializer` for every type — is *not* built now; it lands when `data` converges (the TODO), so no universal machinery is written speculatively. Direct bindings need none of this — they are plain JS values with no chain.
+So the analysis change "initialization is not a mutation" is applied to `var` (and var-backed arguments/locals) now; `data` / `text` / `sequence` keep their current behavior. The only shared code built now is `var`'s value-normalization helper — one path for `VarCommand.apply` and the `var` initializer, so init behaves identically to a set. The cross-type dispatch — a `deferredTarget` policy and wiring `applyInitializer` for every type — is *not* built now; it lands when `data` converges (the TODO), so no universal machinery is written speculatively. Direct declarations need none of this — they are plain JS values with no chain.
 
 ## Codegen Architecture
 
@@ -372,7 +385,7 @@ No new collision analysis is needed as long as each `jsVar` comes from an alread
 
 This keeps names collision-free regardless of how JS blocks map to Cascada scopes; scope still governs closure capture and lifetime (above), just not uniqueness.
 
-Child async boundaries may read a direct binding only if generated JS closure capture gives the child the same source value that a chain observation would have produced. If the value must be observed later through command-buffer ordering, keep it chain-backed.
+A child async boundary reads a direct declaration by JS closure capture, which always yields the correct value: a direct declaration is immutable and its `jsVar` is assigned at the declaration point, before any child boundary that reads it (source order). So there is no extra "must be observed through command-buffer ordering" case for direct declarations — for a var-like, only mutation (the predicate) forces a chain, and a mutated one is already chain-backed. (Forward references / TDZ are handled separately under recursion.)
 
 Recursion and mutual recursion need explicit codegen support:
 
@@ -391,9 +404,9 @@ All write-rejection rules must collapse into the existing single mutation valida
 
 Derive immutability with a helper over the existing flags — `isImmutable(decl) = decl.isMacro || decl.imported` (macros/functions and import namespaces/aliases are immutable; plain vars are not) — rather than storing a new flag or doing per-feature `role`/storage checks at each call site. No new `kind` field is needed; the flags already carry the category, and the error message is chosen from them.
 
-This composes with the initialization-is-not-a-mutation fix: once initialization is out of `mutates`, every name in `mutates` is a genuine reassignment, so the *same* fact drives both storage derivation and immutability enforcement at the *same* point. An immutable declaration can never legally appear in `mutates`, so it is always direct, and any attempt to mutate it fails here.
+This composes with the initialization-is-not-a-mutation fix: once initialization is out of `mutates`, every name in `mutates` is a genuine reassignment, so the *same* fact drives both derived-storage derivation and immutability enforcement. An immutable declaration (macro/import) is direct **by flag**, and the validator rejects any reassignment of it — so it can never legally appear in `mutates`, and the derived predicate and immutability never disagree.
 
-Invalid (the error should mention that macro/function bindings cannot be reassigned):
+Invalid (the error should mention that macro/function declarations cannot be reassigned):
 
 ```cascada
 function greet()
@@ -417,9 +430,9 @@ storage === DIRECT
 
 So macros, namespaces, and read-only root `var`s all export via `addResolvedExport(name, jsVar)`; only chain-backed values still defer. For a root `var` this replaces the current `addDeferredExport(name, name, buffer)` ([`assignment.js`](../../src/compiler/assignment.js)), which has no chain to resolve once the var is direct. The `jsVar` holds the value (possibly a promise), which resolves the same as the chain's `finalSnapshot` would; if that value can reject and the export may go unconsumed, keep it handled (`markPromiseHandled`), as the deferred path does. A read-only root var that is imported / re-exported needs a test.
 
-Imports continue to work through the existing import/from-import runtime objects. The bound value is already a JS expression at declaration time (`exportedId` is assigned synchronously even though it resolves later), so an import namespace can be a direct binding whose `jsVar` is that value. Promise and poison are not blockers — they resolve at the consumption point regardless of storage.
+Imports continue to work through the existing import/from-import runtime objects. The bound value is already a JS expression at declaration time (`exportedId` is assigned synchronously even though it resolves later), so an import namespace can be a direct declaration whose `jsVar` is that value. Promise and poison are not blockers — they resolve at the consumption point regardless of storage.
 
-The real work is async-load bookkeeping, so treat imported direct bindings as a later optimization with dedicated tests:
+Imports are Phase 1 intrinsic direct declarations (implemented after macros, since the load boundary needs its own tests — not deferred to a later phase). The real work is async-load bookkeeping:
 
 - root-scope export: replace `addDeferredExport` (chain `finalSnapshot`) with `addResolvedExport(name, exportedId)` — the jsValue resolves to the same exports object, so no chain is needed.
 - `exportedId` is already `.catch`-wrapped, so it resolves (to poison) rather than rejecting; confirm an unconsumed import leaks no unhandled rejection (the chain path used `markPromiseHandled`).
@@ -444,7 +457,7 @@ Three phases, lowest-risk first.
 1. Add `DECLARATION_STORAGE` (`CHAIN`, `DIRECT`) constants in `src/compiler/declarations.js`, plus an `isImmutable(decl)` helper over the existing flags (`decl.isMacro || decl.imported`). No new `kind` field.
 2. Add `storage` and `jsVar` to declaration objects without changing the existing declaration maps.
 3. Add the `compileSymbol` direct-storage fast path after `isCompilerInternal`, before `loop` magic and chain/shared lookup handling.
-4. Add the shared chain-usage purge: after storage is finalized, [`_finalizeChainUsage`](../../src/compiler/analysis.js) removes every direct-storage name from the existing `mutates`/`observes`/`used` aggregates, so no lane is provisioned for a chain that doesn't exist. This updates the existing facts — *not* a separate read-vs-observe fact taxonomy — and every later phase reuses it. Verify the during-walk validations (`_validateObservations` / `_validateMutations`) tolerate direct names, since they run before this purge.
+4. Add the shared chain-usage purge: after storage is finalized, [`_finalizeChainUsage`](../../src/compiler/analysis.js) removes every direct-storage name from the existing `observes`/`used` aggregates, so no lane is provisioned for a chain that doesn't exist. (`mutates`/`mutatedChains` needs no purge — a direct declaration is never reassigned, so it is never there.) This updates the existing facts — *not* a separate read-vs-observe fact taxonomy — and every later phase reuses it. Verify the during-walk validations (`_validateObservations` / `_validateMutations`) tolerate direct names, since they run before this purge.
 5. Convert macro/function names to direct-storage declarations in one atomic change:
    - set `storage = DIRECT` and `jsVar = compiledMacroFuncId` on the declaration (the `isMacro` flag already marks the category)
    - remove the macro-name chain declaration and its `mutates: [name]`
@@ -506,12 +519,12 @@ Scope this phase to `var` declarations only. Arguments and loop variables are ha
 - `from "x" import a, b` binds `a`/`b` directly; calling an imported macro works
 - reassigning an import namespace (`ns = …`) or a from-import alias is a compile error
 - an imported name that fails to load still poisons consumers with the original load-failure context
-- root-scope imported name still re-exports correctly
-- an async/deferred import not yet proven safe stays chain-backed
+- root-scope imported name still re-exports correctly via `addResolvedExport`
+- an unconsumed failed import leaks no unhandled rejection
 
 ### Derived: read-only variables and arguments
 
-- read-only `var x = value` compiles to a direct binding with no `var` chain or `VarCommand`
+- read-only `var x = value` compiles to a direct declaration with no `var` chain or `VarCommand`
 - `var x = value` then `x = other` stays chain-backed
 - read-only positional argument compiles without a var-chain setup command; its `jsVar` is the `l_<name>` parameter
 - read-only keyword argument with a default materializes `l_<name>` once (no chain); the default with a side effect evaluates exactly once
