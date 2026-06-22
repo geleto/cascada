@@ -25,11 +25,14 @@ class CompileInheritance {
   }
 
   compileParticipantRootBody(node) {
-    this._compileParticipantRootDeclarations(node);
-    this.codegen.participantRootRender(node);
+    const directMacroBindingsVar = this.compiler._tmpid();
+    this.emit.line(`const ${directMacroBindingsVar} = createDirectMacroBindings(ownerState, context);`);
+    this.compiler.macro.emitInheritanceRootMacroExports(node, directMacroBindingsVar);
+    this.codegen.participantRootRender(node, directMacroBindingsVar);
   }
 
   compileParticipantRootExport(node, rootCompileResult) {
+    this.compiler.macro.emitInheritanceDirectMacroBindingsFactory(node);
     const methodEntries = this.codegen.callableEntriesObject(node, rootCompileResult);
     const sharedSchema = this.codegen.sharedSchemaLiteral(node);
     this.codegen.participantRootExport(node, methodEntries, sharedSchema);
@@ -148,6 +151,14 @@ class CompileInheritance {
   compileMethodDefinition() {
     // Method definitions are compiled through metadata and dedicated callable
     // entries, not by inline root-body emission.
+  }
+
+  emitDirectMacroReference(declaration, node) {
+    if (!this._usesCallableOwnerDirectMacroBinding(declaration)) {
+      return false;
+    }
+    this.emit(`currentInstance.getDirectMacroBinding(methodData, ${JSON.stringify(declaration.name)}, ${this.compiler.emitErrorContext(node)})`);
+    return true;
   }
 
   compileSuper(node) {
@@ -335,17 +346,14 @@ class CompileInheritance {
     return node._analysis.inheritanceSharedDeclarations;
   }
 
-  _getParticipantRootDeclarations(node) {
-    return node.children.filter((child) => child instanceof nodes.Macro);
-  }
-
-  _compileParticipantRootDeclarations(node) {
-    // Macros are root declarations: the transformer keeps them out of
-    // __constructor__, but participant roots bypass normal child compilation.
-    // Runtime bindings such as imports/from-imports stay constructor work.
-    this._getParticipantRootDeclarations(node).forEach((child) => {
-      this.compiler.compile(child, null);
-    });
+  _usesCallableOwnerDirectMacroBinding(declaration) {
+    // Callable entries run outside the root JS function. Root-owned macros need
+    // the loaded owner entry's direct binding instead of their local jsVar.
+    if (!this.currentCallableNode || !declaration.isMacro) {
+      return false;
+    }
+    const rootOwner = this.compiler.analysis.getRootScopeOwner(this.currentCallableNode._analysis);
+    return declaration.declarationOwner === rootOwner;
   }
 
   computeRootInheritanceFacts(node) {

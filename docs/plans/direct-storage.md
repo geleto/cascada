@@ -495,7 +495,8 @@ Scope this phase to `var` declarations only. Arguments and loop variables are ha
     - loop variables: remove the per-iteration seed from [`_collectLoopDeclarationFacts`](../../src/compiler/compiler-async.js) (`addCommandFacts(body, { mutated })`); read-only → direct (the iteration parameter), mutated → chain
     - caller arguments follow the argument rule, but decide their value source (`_emitCallerBindingValue` / `__caller__`) when reached
 15. Export a root direct `var` with `addResolvedExport(name, jsVar)` instead of the deferred chain export (the one storage-keyed export rule).
-16. Tests: derived storage; a nested-branch mutation forces chain; root-var re-export; read-only argument / loop variable; promise/poison parity.
+16. Rename finalized owner maps such as `declaredChains` to `declarations` once ordinary vars/args/loop vars can also be direct. Do this after every consumer is storage-aware; before Phase 3 the old name is still tolerable, but after mixed storage it is misleading.
+17. Tests: derived storage; a nested-branch mutation forces chain; root-var re-export; read-only argument / loop variable; promise/poison parity.
 
 ## Tests
 

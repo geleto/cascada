@@ -149,7 +149,7 @@ describe('Inheritance rebuild', function () {
       });
       const parent = await props.resolveInheritanceParent(ownerState, null, null);
 
-      expect(Object.keys(props).sort()).to.eql(['getErrorContexts', 'inheritanceSpec', 'resolveInheritanceParent', 'root']);
+      expect(Object.keys(props).sort()).to.eql(['createDirectMacroBindings', 'getErrorContexts', 'inheritanceSpec', 'resolveInheritanceParent', 'root']);
       expect(parent).to.eql({ parentTemplateOrScript: null, errorContext: null });
     });
 
@@ -206,7 +206,7 @@ describe('Inheritance rebuild', function () {
         name: 'shape.script'
       });
 
-      expect(Object.keys(props).sort()).to.eql(['getErrorContexts', 'inheritanceSpec', 'resolveInheritanceParent', 'root']);
+      expect(Object.keys(props).sort()).to.eql(['createDirectMacroBindings', 'getErrorContexts', 'inheritanceSpec', 'resolveInheritanceParent', 'root']);
       expect(Object.keys(props.inheritanceSpec).sort()).to.eql(['hasExtends', 'methodEntries', 'sharedSchema']);
       expect(props.inheritanceSpec.setup).to.be(undefined);
       expect(props.inheritanceSpec.inheritedMethodDependencies).to.be(undefined);
@@ -226,7 +226,7 @@ describe('Inheritance rebuild', function () {
         ['method body()\n  return super()\nendmethod\nreturn this.body()', { scriptMode: true }]
       ].forEach(([source, options]) => {
         const props = compileProps(source, options);
-        expect(Object.keys(props).sort()).to.eql(['getErrorContexts', 'inheritanceSpec', 'resolveInheritanceParent', 'root']);
+        expect(Object.keys(props).sort()).to.eql(['createDirectMacroBindings', 'getErrorContexts', 'inheritanceSpec', 'resolveInheritanceParent', 'root']);
       });
     });
 
@@ -379,6 +379,144 @@ describe('Inheritance rebuild', function () {
       );
 
       expect(result).to.be('Lovelace, Ada');
+    });
+
+    it('lets participant constructors and template blocks call outer local macros', async function () {
+      const result = await env.renderTemplateString(
+        '{% macro _label(item) %}[{{ item }}]{% endmacro %}' +
+        '{{ _label("root") }}' +
+        '{% block body %}{{ _label("block") }}{% endblock %}'
+      );
+
+      expect(result).to.be('[root][block]');
+    });
+
+    it('lets script constructors and methods call outer local functions', async function () {
+      const result = await env.renderScriptString([
+        'function _label(item)',
+        '  return "[" + item + "]"',
+        'endfunction',
+        'method body()',
+        '  return _label("method")',
+        'endmethod',
+        'return _label("root") + this.body()'
+      ].join('\n'));
+
+      expect(result).to.be('[root][method]');
+    });
+
+    it('lets inherited parent template blocks call their own outer local macros', async function () {
+      const localEnv = createEnvironment({
+        'base.njk': '{% macro _label(item) %}[base:{{ item }}]{% endmacro %}Base:{% block body %}{{ _label("block") }}{% endblock %}',
+        'child.njk': '{% extends "base.njk" %}'
+      });
+
+      expect(await localEnv.renderTemplate('child.njk', {})).to.be('Base:[base:block]');
+    });
+
+    it('lets inherited parent script methods call their own outer local functions', async function () {
+      const localEnv = createEnvironment({
+        'base.script': [
+          'function _label(item)',
+          '  return "[base:" + item + "]"',
+          'endfunction',
+          'method body()',
+          '  return _label("method")',
+          'endmethod'
+        ].join('\n'),
+        'child.script': [
+          'extends "base.script"',
+          'return this.body()'
+        ].join('\n')
+      });
+
+      expect(await localEnv.renderScript('child.script', {})).to.be('[base:method]');
+    });
+
+    it('lets super template blocks call their own outer local macros', async function () {
+      const localEnv = createEnvironment({
+        'base.njk': '{% macro _label(item) %}[base:{{ item }}]{% endmacro %}Base:{% block body %}{{ _label("super") }}{% endblock %}',
+        'child.njk': '{% extends "base.njk" %}{% block body %}{{ super() }}|child{% endblock %}'
+      });
+
+      expect(await localEnv.renderTemplate('child.njk', {})).to.be('Base:[base:super]|child');
+    });
+
+    it('lets super script methods call their own outer local functions', async function () {
+      const localEnv = createEnvironment({
+        'base.script': [
+          'function _label(item)',
+          '  return "[base:" + item + "]"',
+          'endfunction',
+          'method body()',
+          '  return _label("super")',
+          'endmethod'
+        ].join('\n'),
+        'child.script': [
+          'extends "base.script"',
+          'method body()',
+          '  return super() + "|child"',
+          'endmethod',
+          'return this.body()'
+        ].join('\n')
+      });
+
+      expect(await localEnv.renderScript('child.script', {})).to.be('[base:super]|child');
+    });
+
+    it('lets template block arguments shadow an outer local macro', async function () {
+      const result = await env.renderTemplateString(
+        '{% macro _label() %}outer{% endmacro %}' +
+        '{% block body(_label) %}{{ _label }}{% endblock %}',
+        { _label: 'inner' }
+      );
+
+      expect(result).to.be('inner');
+    });
+
+    it('lets script method arguments shadow an outer local function', async function () {
+      const result = await env.renderScriptString([
+        'function _label()',
+        '  return "outer"',
+        'endfunction',
+        'method body(_label)',
+        '  return _label',
+        'endmethod',
+        'return this.body("inner")'
+      ].join('\n'));
+
+      expect(result).to.be('inner');
+    });
+
+    it('keeps nested template macros out of later block visibility', async function () {
+      try {
+        await env.renderTemplateString(
+          '{% if true %}{% macro _label() %}nested{% endmacro %}{% endif %}' +
+          '{% block body %}{{ _label() }}{% endblock %}'
+        );
+        expect().fail('Expected nested macro call to fail as an unknown callable');
+      } catch (error) {
+        expect(String(error)).to.contain('Unable to call `_label`, which is undefined');
+      }
+    });
+
+    it('keeps nested script functions out of later method visibility', async function () {
+      try {
+        await env.renderScriptString([
+          'if true',
+          '  function _label()',
+          '    return "nested"',
+          '  endfunction',
+          'endif',
+          'method body()',
+          '  return _label()',
+          'endmethod',
+          'return this.body()'
+        ].join('\n'));
+        expect().fail('Expected nested function call to fail as an unknown callable');
+      } catch (error) {
+        expect(String(error)).to.contain('Can not look up unknown variable/function: _label');
+      }
     });
 
     it('renders inherited templates through the selected constructor chain', async function () {

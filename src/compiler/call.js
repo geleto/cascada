@@ -194,7 +194,7 @@ class CompileCall {
     }
     const macroDecl = analysisPass.recordSourceLookupDeclaration(node.name, node.name.value, node._analysis);
     return macroDecl && macroDecl.isMacro
-      ? { binding: macroDecl.jsVar ?? null }
+      ? { declaration: macroDecl }
       : null;
   }
 
@@ -205,10 +205,9 @@ class CompileCall {
     }
 
     const compiler = this.compiler;
-    const directMacroBinding = directMacroCall.binding ?? null;
     compiler.emit('runtime.invokeMacro(');
-    if (directMacroBinding) {
-      compiler.emit(directMacroBinding);
+    if (directMacroCall.declaration) {
+      compiler._compileDirectDeclarationLookup(node.name, node.name.value, directMacroCall.declaration);
     } else {
       compiler.compile(node.name, null);
     }

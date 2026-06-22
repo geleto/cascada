@@ -391,7 +391,7 @@ class CompileAnalysis {
     if (!analysis.scopeBoundary) {
       return new Map(parentVisibleDeclarations);
     }
-    if (!(analysis.node instanceof nodes.Macro)) {
+    if (!this._isCallableNode(analysis.node)) {
       return new Map();
     }
     const visibleDeclarations = new Map();
@@ -401,6 +401,12 @@ class CompileAnalysis {
       }
     });
     return visibleDeclarations;
+  }
+
+  _isCallableNode(node) {
+    return node instanceof nodes.Macro ||
+      node instanceof nodes.Block ||
+      node instanceof nodes.MethodDefinition;
   }
 
   _getScopeOwner(analysis) {

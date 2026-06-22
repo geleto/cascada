@@ -36,6 +36,7 @@ class InheritanceInstance {
         ownerState,
         context,
         errorContext: options.errorContext,
+        directMacroBindings: options.directMacroBindings
       });
       const runtimeState = ownerState.runtime.finalizeInheritanceChain(chain, context);
       const boundRuntimeState = ownerState.runtime.bindInheritanceRuntimeState(runtimeState);
@@ -115,6 +116,17 @@ class InheritanceInstance {
     return methodData;
   }
 
+  getDirectMacroBinding(methodData, name, errorContext) {
+    const bindings = methodData.ownerEntry.directMacroBindings;
+    if (bindings && Object.prototype.hasOwnProperty.call(bindings, name)) {
+      return bindings[name];
+    }
+    RuntimeError.reportAndThrow(
+      `missing direct binding '${name}'`,
+      errorContext
+    );
+  }
+
   _invokeFromMethodData(methodData, args, errorContext, parentBuffer, context, traceParent = null) {
     const invocationBuffer = new this.ownerState.runtime.CommandBuffer(
       context,
@@ -192,13 +204,14 @@ class InheritanceInstance {
   }
 }
 
-async function renderInheritanceParticipantRoot({ ownerState, context, rootBuffer, errorContext }) {
+async function renderInheritanceParticipantRoot({ ownerState, context, rootBuffer, directMacroBindings, errorContext }) {
   ownerState.renderState.throwIfFatalErrorReported();
   const instance = await InheritanceInstance.create({
     entryTemplateOrScript: ownerState.templateOrScript,
     ownerState,
     context,
     rootBuffer,
+    directMacroBindings,
     errorContext
   });
   let entryResult;

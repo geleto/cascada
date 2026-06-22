@@ -35,11 +35,12 @@ class CompileInheritanceEmit {
     );
   }
 
-  participantRootRender(node) {
+  participantRootRender(node, directMacroBindingsExpr = 'null') {
     this.emit.line('return runtime.renderInheritanceParticipantRoot({');
     this.emit.line('    context,');
     this.emit.line('    ownerState,');
     this.emit.line('    rootBuffer: output,');
+    this.emit.line(`    directMacroBindings: ${directMacroBindingsExpr},`);
     this.emit.line(`    errorContext: ${this.compiler.emitErrorContext(node)}`);
     this.emit.line('}).catch((e) => {');
     this.emit.line('  if (!runtime.isPoisonError(e)) {');
@@ -62,6 +63,7 @@ class CompileInheritanceEmit {
     this.emit.line(`  hasExtends: ${node._analysis.inheritance.hasExtends ? 'true' : 'false'}`);
     this.emit.line('},');
     this.emit.line('resolveInheritanceParent,');
+    this.emit.line('createDirectMacroBindings,');
     this.emit.line('getErrorContexts');
     this.emit.line('};');
   }

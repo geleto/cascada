@@ -193,12 +193,61 @@ class CompileMacro {
   }
 
   compileMacro(node) {
+    const funcId = this.compileMacroBinding(node);
+    this.compileMacroExport(node, funcId);
+  }
+
+  compileMacroBinding(node) {
+    return this._compileAsyncMacro(node);
+  }
+
+  compileMacroExport(node, funcId) {
     const compiler = this.compiler;
-    const funcId = this._compileAsyncMacro(node);
     const name = node.name.value;
     if (name.charAt(0) !== '_' && compiler.analysis.isParentOwnedDeclarationRootOwned(node._analysis, name)) {
       compiler.emit.line(`context.addResolvedExport("${name}", ${funcId});`);
     }
+  }
+
+  emitInheritanceDirectMacroBindingsFactory(node) {
+    const declarations = this._getInheritanceRootMacroDeclarations(node);
+    const emit = this.compiler.emit;
+    // Participant roots do not run their source body directly, so root-local
+    // macros are created through an owner-scoped factory and attached to the
+    // loaded inheritance entry.
+    emit.line('function createDirectMacroBindings(ownerState, context) {');
+    this._emitInheritanceRootLikeMacroLocals();
+    declarations.forEach((child) => {
+      this.compileMacroBinding(child);
+    });
+    if (declarations.length === 0) {
+      emit.line('return null;');
+    } else {
+      emit.line('return {');
+      declarations.forEach((child) => {
+        emit.line(`${JSON.stringify(child.name.value)}: ${child._analysis.compiledMacroFuncId},`);
+      });
+      emit.line('};');
+    }
+    emit.line('}');
+  }
+
+  emitInheritanceRootMacroExports(node, directMacroBindingsVar) {
+    this._getInheritanceRootMacroDeclarations(node).forEach((child) => {
+      this.compileMacroExport(
+        child,
+        `${directMacroBindingsVar}[${JSON.stringify(child.name.value)}]`
+      );
+    });
+  }
+
+  _getInheritanceRootMacroDeclarations(node) {
+    return node.children.filter((child) => child instanceof nodes.Macro);
+  }
+
+  _emitInheritanceRootLikeMacroLocals() {
+    // Macro codegen expects these names in its enclosing JS scope.
+    this.compiler.emit.line('const { env, runtime, renderState, errorContextTable: __ec } = ownerState;');
   }
 
   _parseMacroSignature(node) {

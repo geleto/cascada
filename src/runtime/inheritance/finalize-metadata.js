@@ -14,6 +14,7 @@ function createRuntimeOwnerEntry(entry) {
     errorContextTable: entry.errorContextTable,
     errorContext: entry.errorContext,
     ownerState: entry.ownerState,
+    directMacroBindings: entry.directMacroBindings || null,
     isStructuralTemplate: !entry.templateOrScript.scriptMode && !entry.spec.hasExtends
   });
 }
