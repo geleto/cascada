@@ -137,6 +137,7 @@ class CompileAnalysis {
 
     this.validation.validateObservations(analysis);
     this.validation.validateMutations(analysis);
+    this.validation.validateMacroValueUse(analysis);
 
     node.fields.forEach((field) => {
       this._walk(node[field], node, field, childVisibleDeclarations, currentScopeOwner);

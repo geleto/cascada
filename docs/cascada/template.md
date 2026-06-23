@@ -133,6 +133,28 @@ The sequential path repair operator `!!` repairs poisoned `!` paths. In template
 | **From import with inputs** | `from "file" import helper with context, var1`          | `{% from "file" import helper with context, var1 %}`                         |
 | **Guard Block**          | `guard`<br>  `...`<br>  `recover`<br>  `...`<br>`endguard` | `{% guard %}`<br>  `...`<br>  `{% recover %}`<br>  `...`<br>`{% endguard %}` |
 
+## Macros
+
+A template macro renders text where it is called. This differs from CascadaScript functions, which return values:
+
+```nunjucks
+{% macro button(label) %}
+  <button>{{ label }}</button>
+{% endmacro %}
+
+{{ button("Save") }}
+```
+
+Cascada async templates are stricter than classic Nunjucks/sync templates: local macro names are call-only and cannot be used as ordinary values:
+
+```nunjucks
+{{ button }}                 {# error #}
+{{ helper(button) }}         {# error #}
+{% set x = button %}         {# error: button is read as a value #}
+```
+
+This lets Cascada preserve deterministic output ordering and parallel execution without tracing macro values through variables. CascadaScript is not subject to this template call-only rule; script functions return values and can be assigned to local variables and called through them.
+
 ## Call Blocks and `caller()`
 
 In scripts, call blocks must always use assignment form:

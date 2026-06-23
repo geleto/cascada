@@ -194,9 +194,11 @@ class CompileCall {
       return null;
     }
     const macroDecl = analysisPass.recordSourceLookupDeclaration(node.name, node.name.value, node._analysis);
-    return macroDecl && macroDecl.isMacro
-      ? { declaration: macroDecl }
-      : null;
+    if (!macroDecl || !macroDecl.isMacro) {
+      return null;
+    }
+    node.name.addAnalysis({ isMacroCallTarget: true });
+    return { declaration: macroDecl };
   }
 
   _compileDirectMacroCall(node) {

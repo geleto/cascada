@@ -101,7 +101,7 @@ nativeApply(x)           // not caught by compile-time direct validation
 
 This applies to local and imported Cascada macro/function handles. Hard runtime escape boundaries may still reject macro/function handle values if they receive one. This hardening is separate from imported macro support; the required rule for this plan is that template call-only validation must not be applied to script macro/function handles.
 
-In async template mode, compile-time validation should reject statically known macro values in non-call positions. Runtime should also reject any Cascada macro that reaches the generic async-template value or dynamic-call path, because that macro was not part of the call site's channel-fact analysis. Statically classified macro calls use the dedicated macro-call codegen path instead.
+In async template mode, compile-time validation should reject statically known macro values in non-call positions. After imported macro call classification lands, runtime should also reject Cascada macros that reach generic async-template value, ordinary-call argument, or dynamic call-target paths instead of a recognized macro call. Statically recognized macro calls use the dedicated macro-call path instead.
 
 ## Core Semantics
 
@@ -368,7 +368,7 @@ The helper should use `_invoke` as the canonical runtime dispatch marker. `makeM
 
 Type mismatch is fatal, not poison: use `RuntimeError.reportAndThrow` or equivalent, never `PoisonError.create`. Existing import promise wrapping may keep using `handleLoadFailure`, which preserves `RuntimeError`.
 
-Generic async-template value and dynamic-call paths must also reject Cascada macros that were not reached through classified macro-call codegen. This is separate from import validation: import validation proves required exports are macros, while the generic-path guard prevents unanalyzed macro values from being rendered, passed through, or called dynamically. Script mode must not use this guard.
+After imported macro classification exists, generic async-template value, ordinary-call argument, and dynamic call-target paths must reject Cascada macros that were not reached through a recognized macro call. This is separate from import validation: import validation proves required exports are macros, while the generic-path guard prevents macro values from being rendered, passed through, or called without macro-call analysis. Script mode must not use this guard.
 
 ## Codegen Shape
 
@@ -380,7 +380,7 @@ runtime.invokeMacro(requiredMacroValue, context, args, currentBuffer)
 
 Use one macro call emission helper over macro callable registrations. Local macros can emit direct values; imported macros may need a value boundary because the import can be async. The helper must preserve `currentBuffer`, caller/call-block handling, and keyword/default argument adaptation through `runtime.invokeMacro`. Strictness comes from import-time validation for classified imports and from the generic async-template guard for unclassified macro values.
 
-The generic async-template dynamic call path must not auto-dispatch Cascada macros. Statically classified macro calls use the dedicated macro codegen path; if a generic template call target resolves to a macro, report a fatal runtime error. CascadaScript keeps the existing dynamic macro/function call behavior.
+Once imported macro calls are classified, the generic async-template dynamic call path must not auto-dispatch Cascada macros. Statically classified macro calls use the dedicated macro-call path; if a generic template call target resolves to a macro after that phase, report a fatal runtime error. CascadaScript keeps the existing dynamic macro/function call behavior.
 
 ## Clean Scope Transport
 
@@ -481,33 +481,42 @@ Add async tests for:
    - audit the existing tests, fixtures, and in-repo templates for macro-as-value usage before landing the behavior change;
    - add the mode-aware macro value validator for macro uses the compiler already recognizes today;
    - reject non-call use of local macro declarations in async templates;
-   - add a template-only generic-path guard that rejects unclassified macro values and dynamic macro calls;
-   - keep existing direct macro-call behavior otherwise unchanged.
+   - keep existing direct macro-call behavior otherwise unchanged;
+   - update `docs/cascada/template.md` for the landed local macro call-only behavior.
 
 2. Imported macro calls
    - generalize normal macro call registration into shared macro callable registration for local and imported macro paths;
    - classify static imported macro call paths through that shared registration;
+   - move valid-call-target marking into shared macro call classification so local and imported macro calls both skip value-use validation;
    - record required macro exports on import nodes and the owning analysis scope;
    - reject non-call use of classified imported macro paths in async templates;
    - preserve shadowing and source-point visibility;
    - add a small runtime macro predicate/validator;
+   - add template-only generic-path guards for macro values that reach output, discarded expressions, ordinary call arguments, or dynamic call targets without recognized macro-call analysis;
    - pass required macro export lists to import codegen;
    - report fatal runtime errors for non-macro exports;
    - compile imported macro registrations through the shared macro-call emission, using `invokeMacro` after value-boundary resolution when the imported value may be async;
-   - keep ordinary dynamic calls for non-classified non-macro imported values where they are source-visible.
+   - keep ordinary dynamic calls for non-classified non-macro imported values where they are source-visible;
+   - update user-facing template/import documentation for imported macro calls, required macro exports, and non-macro export runtime errors.
 
 3. Clean scope transport
    - extend direct macro bindings so macros/methods/blocks/constructors can use required imported macro paths visible at their declaration point;
-   - keep ordinary imported values out of clean scopes.
+   - keep ordinary imported values out of clean scopes;
+   - update template inheritance/composition documentation for imported macros callable from clean scopes.
 
 4. CascadaScript macro/function handle policy
    - validate direct local and imported script macro/function handle references by syntactic position only, without alias/dataflow tracking;
    - allow direct handle references in assignments, object/array aggregate declarations, non-root function returns, and arguments to statically known Cascada macro/function calls;
-   - reject direct handle references at script root-return/native/global/dynamic-unknown escape points.
+   - reject direct handle references at script root-return/native/global/dynamic-unknown escape points;
+   - update CascadaScript documentation with the allowed handle positions and escape restrictions.
 
 5. Naming cleanup
    - if direct macro bindings now carry local and imported macro bindings, keep the macro-specific name if it remains accurate;
    - defer broader declaration-table renames to the direct-storage cleanup phase.
+
+6. User-facing documentation sweep
+   - implemented for Phase 1: `docs/cascada/template.md` documents local template macro call-only behavior and notes that CascadaScript is not subject to this template-only rule;
+   - after Phases 2-4, review template and script docs together so imported macro calls, clean-scope imported macros, and script callable-handle rules are described without compiler-internal terminology.
 
 ## Architectural Guardrails
 

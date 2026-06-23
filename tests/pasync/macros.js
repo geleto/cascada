@@ -1,5 +1,5 @@
 import expect from 'expect.js';
-import {delay} from '../util.js';
+import {delay, StringLoader} from '../util.js';
 
 const {AsyncEnvironment, AsyncTemplate, Script} = typeof window !== 'undefined'
   ? window.nunjucks
@@ -886,6 +886,98 @@ async function expectRejects(promise) {
           expect(outcome.type).to.be('error');
           expect(outcome.error.message).to.contain('macro caller fatal cleanup');
         });
+      });
+    });
+
+    describe('Template macro call-only semantics', () => {
+      it('keeps local macro calls working in async templates', async () => {
+        const result = await env.renderTemplateString(
+          '{% macro greet(name) %}Hi {{ name }}{% endmacro %}{{ greet("Ada") }}',
+          {}
+        );
+
+        expect(result).to.equal('Hi Ada');
+      });
+
+      it('keeps imported macro calls working in async templates', async () => {
+        const loader = new StringLoader();
+        loader.addTemplate('macros.njk', '{% macro greet(name) %}Hi {{ name }}{% endmacro %}');
+        const importEnv = new AsyncEnvironment(loader);
+
+        const result = await importEnv.renderTemplateString(
+          '{% from "macros.njk" import greet %}{{ greet("Ada") }}',
+          {}
+        );
+
+        expect(result).to.equal('Hi Ada');
+      });
+
+      it('rejects local macro bare reads in async templates', async () => {
+        const error = await expectRejects(env.renderTemplateString(
+          '{% macro greet() %}hi{% endmacro %}{{ greet }}',
+          {}
+        ));
+
+        expect(error.message).to.contain('Macro \'greet\' cannot be used as a value');
+      });
+
+      it('rejects local macros passed as async template values', async () => {
+        env.addGlobal('helper', (value) => value);
+
+        const error = await expectRejects(env.renderTemplateString(
+          '{% macro greet() %}hi{% endmacro %}{{ helper(greet) }}',
+          {}
+        ));
+
+        expect(error.message).to.contain('Macro \'greet\' cannot be used as a value');
+      });
+
+      it('rejects local macros as the base of deeper lookups in async templates', async () => {
+        const error = await expectRejects(env.renderTemplateString(
+          '{% macro greet() %}hi{% endmacro %}{{ greet.foo }}',
+          {}
+        ));
+
+        expect(error.message).to.contain('Macro \'greet\' cannot be used as a value');
+      });
+
+      it('rejects local macros in async template conditionals', async () => {
+        const error = await expectRejects(env.renderTemplateString(
+          '{% macro greet() %}hi{% endmacro %}{% if greet %}yes{% endif %}',
+          {}
+        ));
+
+        expect(error.message).to.contain('Macro \'greet\' cannot be used as a value');
+      });
+
+      it('rejects local macro aliases in async templates', async () => {
+        const error = await expectRejects(env.renderTemplateString(
+          '{% macro greet() %}hi{% endmacro %}{% set alias = greet %}{{ alias() }}',
+          {}
+        ));
+
+        expect(error.message).to.contain('Macro \'greet\' cannot be used as a value');
+      });
+
+      it('does not apply template call-only validation to scripts', async () => {
+        const result = await env.renderScriptString([
+          'function greet(name)',
+          '  return "Hi " + name',
+          'endfunction',
+          'var alias = greet',
+          'return alias("Ada")'
+        ].join('\n'));
+
+        expect(result).to.equal('Hi Ada');
+      });
+
+      it('rejects local macros in discarded template expressions', async () => {
+        const error = await expectRejects(env.renderTemplateString(
+          '{% macro greet() %}hi{% endmacro %}{% do greet %}',
+          {}
+        ));
+
+        expect(error.message).to.contain('Macro \'greet\' cannot be used as a value');
       });
     });
 

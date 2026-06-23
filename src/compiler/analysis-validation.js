@@ -1,4 +1,5 @@
 import {CHAIN_TYPES} from '../chain-types.js';
+import * as nodes from '../language/nodes.js';
 import {isChainDeclaration, isImmutableDeclaration, isVarChainDeclaration} from './declarations.js';
 
 class CompileAnalysisValidation {
@@ -175,6 +176,34 @@ class CompileAnalysisValidation {
       }
       this._validateReadOnlyMutation(analysis, name, declaration);
     }
+  }
+
+  validateMacroValueUse(analysis) {
+    const node = analysis.node;
+    // A valid macro call target is still a symbol read with lookupDeclaration.
+    // Call classification marks it so this validation only rejects value uses.
+    if (
+      this.compiler.scriptMode ||
+      !(node instanceof nodes.Symbol) ||
+      analysis.isSymbolTarget ||
+      analysis.operationOwnedPath ||
+      analysis.isMacroCallTarget ||
+      node.isCompilerInternal
+    ) {
+      return;
+    }
+
+    const declaration = analysis.lookupDeclaration || null;
+    if (!declaration?.isMacro) {
+      return;
+    }
+
+    this.compiler.fail(
+      `Macro '${node.value}' cannot be used as a value in an async template. Call it directly.`,
+      node.lineno,
+      node.colno,
+      node
+    );
   }
 
   validateObservations(analysis) {
