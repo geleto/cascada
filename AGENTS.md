@@ -20,7 +20,7 @@ Assistance guide for developing the Cascada engine — writing, refactoring, and
 
 Cascada is a parallel-first scripting and templating engine. Core model: **Implicitly Parallel, Explicitly Sequential** — code reads like synchronous logic, independent operations run concurrently, and `!` markers or named chains enforce ordering where needed.
 
-Scripts use named chains for output. Templates are Nunjucks-compatible. Script variables use `var x = value` (equivalent to `{% set x = value %}` in templates).
+Scripts use named chains for output. Only sync templates are Nunjucks-compatible; async templates stay close but add features and diverge where needed. Script variables use `var x = value` (equivalent to `{% set x = value %}` in templates).
 
 | Chain | Declaration | Return | Output |
 |---|---|---|---|
