@@ -855,42 +855,32 @@ class FailingObservation extends runtime.Command {
       expect(result).to.be('Hi x');
     });
 
-    it('should not treat a macro parameter shadowing a from-import binding as an imported macro', async function () {
+    it('should reject a macro parameter that reuses a from-import binding name', function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
       loader.addTemplate('macros.njk', '{% macro foo(name) %}Foo {{ name }}{% endmacro %}');
 
-      const tmpl = new AsyncTemplate(
-        '{% from "macros.njk" import foo %}{% macro use(foo) %}{{ foo("x") }}{% endmacro %}{{ use(helper) }}',
-        env,
-        'shadowed-from-import-call.njk'
-      );
-      const result = await tmpl.render({
-        helper(name) {
-          return 'Helper ' + name;
-        }
-      });
-
-      expect(result).to.be('Helper x');
+      expect(function () {
+        new AsyncTemplate(
+          '{% from "macros.njk" import foo %}{% macro use(foo) %}{{ foo("x") }}{% endmacro %}{{ use(helper) }}',
+          env,
+          'shadowed-from-import-call.njk'
+        ).compile();
+      }).to.throwException(/Identifier 'foo' has already been declared/);
     });
 
-    it('should not treat a macro parameter shadowing an imported namespace as an imported macro', async function () {
+    it('should reject a macro parameter that reuses an imported namespace name', function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
       loader.addTemplate('macros.njk', '{% macro hi(name) %}Hi {{ name }}{% endmacro %}');
 
-      const tmpl = new AsyncTemplate(
-        '{% import "macros.njk" as m %}{% macro use(m) %}{{ m("x") }}{% endmacro %}{{ use(helper) }}',
-        env,
-        'shadowed-import-namespace-call.njk'
-      );
-      const result = await tmpl.render({
-        helper(name) {
-          return 'Helper ' + name;
-        }
-      });
-
-      expect(result).to.be('Helper x');
+      expect(function () {
+        new AsyncTemplate(
+          '{% import "macros.njk" as m %}{% macro use(m) %}{{ m("x") }}{% endmacro %}{{ use(helper) }}',
+          env,
+          'shadowed-import-namespace-call.njk'
+        ).compile();
+      }).to.throwException(/Identifier 'm' has already been declared/);
     });
 
   });

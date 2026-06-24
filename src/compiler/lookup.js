@@ -16,7 +16,7 @@ class CompileLookup {
     this.compiler.chain.recordDataPathLookup(node);
 
     this._collectSequenceLockLookup(node, analysisPass, facts);
-    if (this._collectThisSharedLookup(node, analysisPass, facts)) {
+    if (this._collectThisSharedLookup(node, facts)) {
       return facts;
     }
 
@@ -24,23 +24,21 @@ class CompileLookup {
     facts.inheritedMethodCallName =
       compiler.inheritance.findInheritedMethodCallName(node);
     this._collectComponentBindingLookup(node, facts);
-    this._collectScriptSequenceChainLookup(node, analysisPass, facts);
+    this._collectScriptSequenceChainLookup(node, facts);
 
     return facts;
   }
 
-  postAnalyzeLookupVal(node, analysisPass) {
+  postAnalyzeLookupVal(node) {
     if (node._analysis?.operationOwnedPath) {
       return {};
     }
-    const facts = {};
-    const sequenceLockLookup = this.compiler.sequential.recordBareSequenceLockLookup(node, analysisPass);
-    if (sequenceLockLookup) {
-      facts.sequenceLockLookup = sequenceLockLookup;
-    }
-    Object.assign(facts, this.compiler.chain.collectDataPathLookupFacts(node));
+    const sequenceLockFacts = this.compiler.sequential.collectBareSequenceLockLookupFacts(node);
     this.compiler.call.validateCallableValueUse(node._analysis);
-    return facts;
+    return {
+      ...(sequenceLockFacts || {}),
+      ...this.compiler.chain.collectDataPathLookupFacts(node)
+    };
   }
 
   compileLookupVal(node) {
@@ -69,7 +67,6 @@ class CompileLookup {
       observes: [],
       mutates: [],
       sequenceChainLookup: null,
-      thisSharedAccessFacts: null,
       componentBindingRoot: null,
       componentBindingFacts: null,
       inheritedMethodCallName: null
@@ -81,20 +78,22 @@ class CompileLookup {
     const sequenceLockLookup = compiler.sequential.recordSequenceLockLookup(node);
     node.addAnalysis({ sequenceLockLookup });
     if (sequenceLockLookup) {
-      compiler._failIfSequenceRootIsDeclared(node, sequenceLockLookup.key, analysisPass);
+      compiler._failIfSequenceRootIsDeclared(node, sequenceLockLookup.key);
       const target = sequenceLockLookup.repair ? facts.mutates : facts.observes;
       target.push(sequenceLockLookup.key);
     }
   }
 
-  _collectThisSharedLookup(node, analysisPass, facts) {
+  _collectThisSharedLookup(node, facts) {
     const compiler = this.compiler;
-    const thisSharedFacts = compiler.chain.collectThisSharedAccessFacts(node, analysisPass);
+    const thisSharedFacts = compiler.chain.analyzeThisSharedAccess(node);
     if (!thisSharedFacts) {
       return false;
     }
 
-    facts.thisSharedAccessFacts = thisSharedFacts;
+    if (thisSharedFacts.declareInRootOnEnter) {
+      facts.declareInRootOnEnter = thisSharedFacts.declareInRootOnEnter;
+    }
     facts.observes.push(thisSharedFacts.chainName);
     if (
       compiler.scriptMode &&
@@ -120,20 +119,20 @@ class CompileLookup {
     }
   }
 
-  _collectScriptSequenceChainLookup(node, analysisPass, facts) {
+  _collectScriptSequenceChainLookup(node, facts) {
     const compiler = this.compiler;
     if (!compiler.scriptMode) {
       return;
     }
 
-    const lookupFacts = this._collectSequenceChainLookupFacts(node, analysisPass);
+    const lookupFacts = this._collectSequenceChainLookupFacts(node);
     if (lookupFacts) {
       facts.observes.push(lookupFacts.chainName);
       facts.sequenceChainLookup = lookupFacts;
     }
   }
 
-  _collectSequenceChainLookupFacts(node, analysisPass) {
+  _collectSequenceChainLookupFacts(node) {
     const compiler = this.compiler;
     const sequencePath = compiler.sequential.extractStaticPathSegments(node);
     if (!sequencePath || sequencePath.length < 2) {
@@ -141,7 +140,7 @@ class CompileLookup {
     }
 
     const chainName = sequencePath[0];
-    const chainDecl = analysisPass.recordSourceLookupDeclaration(node, chainName);
+    const chainDecl = node._analysis.visibleDeclarations?.get(chainName) || null;
     const path = sequencePath.slice(1);
     if (!chainDecl || chainDecl.shared || chainDecl.type !== 'sequence' || path[path.length - 1] === 'snapshot') {
       return null;
@@ -173,9 +172,7 @@ class CompileLookup {
 
   _compileThisSharedLookup(node) {
     const compiler = this.compiler;
-    const thisSharedFacts =
-      node._analysis.thisSharedAccessFacts ||
-      compiler.chain.probeThisSharedAccessFacts(node, compiler.analysis);
+    const thisSharedFacts = compiler.chain.findThisSharedAccessFacts(node);
     if (!thisSharedFacts) {
       return false;
     }

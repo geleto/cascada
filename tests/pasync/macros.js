@@ -1130,6 +1130,22 @@ async function expectRejects(promise) {
         expect(rendered.trim()).to.equal('I');
       });
 
+      it('should let macro bodies call later sibling macros', async () => {
+        const template = `
+          {%- macro outer() -%}{{ _inner() }}{%- endmacro -%}
+          {%- macro _inner() -%}I{%- endmacro -%}
+          {{ outer() }}
+        `;
+        const rendered = await env.renderTemplateString(template, {});
+        expect(rendered.trim()).to.equal('I');
+      });
+
+      it('should let template output call later root macros', async () => {
+        const template = '{{ later() }}{% macro later() %}L{% endmacro %}';
+        const rendered = await env.renderTemplateString(template, {});
+        expect(rendered).to.equal('L');
+      });
+
       it('should let macro bodies recursively call themselves', async () => {
         const template = `
           {%- macro count(n) -%}

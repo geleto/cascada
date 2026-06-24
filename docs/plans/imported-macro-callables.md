@@ -1,6 +1,6 @@
 # Macro Callable Semantics And Imported Static Callables Plan
 
-Imported values may be used through static calls from clean scopes: ordinary macro bodies, methods, blocks, constructors, and inheritance-compiled root macros. A static imported call may resolve to either a Cascada macro or an ordinary function. The implementation should keep this close to real macro handling where the value is a macro, while preserving source-order visibility and keeping ordinary imported values out of clean scopes.
+Imported values may be used through static calls from clean scopes: ordinary macro bodies, methods, blocks, constructors, and inheritance-compiled root macros. A static imported call may resolve to either a Cascada macro or an ordinary function. The implementation should keep this close to real macro handling where the value is a macro, while preserving source-order value visibility and keeping ordinary imported values out of clean scopes.
 
 This plan covers async-template macro call-only validation, imported static-call classification, and clean-scope transport for imported static calls. CascadaScript macro/function handle value-use policy is documented as a deferrable follow-up because it is separable from imported static-call support.
 
@@ -11,11 +11,11 @@ This is not a from-scratch feature. Imported macro calls already work in code co
 - root-body and ordinary macro-body calls already render;
 - bare reads (`{{ button }}`) and pass-as-value uses (`apply(button)`) also work today by leaking the macro function.
 
-There are two gaps. Ordinary macro-body calls work today but rely on fallback/ambient behavior, so the imported callable analysis phase must make them source-visibility correct. Inheritance callables and inheritance-compiled root macros also run outside the root JS function; there the import `jsVar` is undefined, so calls fail as poison (`Unable to call button, which is undefined`). This plan fixes both and intentionally turns loose non-call macro uses into compile errors in async template mode.
+There are two gaps. Ordinary macro-body calls work today but rely on fallback/ambient behavior, so the imported callable analysis phase must make them declaration-visibility correct. Inheritance callables and inheritance-compiled root macros also run outside the root JS function; there the import `jsVar` is undefined, so calls fail as poison (`Unable to call button, which is undefined`). This plan fixes both and intentionally turns loose non-call macro uses into compile errors in async template mode.
 
 ## Goals
 
-- Make imported static calls source-visibility correct in ordinary macro bodies and executable from inheritance clean scopes.
+- Make imported static calls declaration-visibility correct in ordinary macro bodies and executable from inheritance clean scopes.
 - Let imported static calls target either Cascada macros or ordinary functions. Macros render to strings in expressions; functions return ordinary values.
 - Make template macros call-only. Existing bare-read / pass-as-value behavior is removed deliberately for local and imported macros in async template mode.
 - Put every statically knowable macro/callable-use validation in compiler analysis. Runtime validation is only for missing imports, non-callable call targets, and values that are genuinely dynamic at the point of use.
@@ -154,9 +154,11 @@ Deeper namespace paths are not imported callable declarations. `ui.button.icon()
 {{ ui.button.icon() }} {# ordinary dynamic call only where ui is source-visible #}
 ```
 
-## Source Visibility
+## Declaration Visibility
 
-Imported static callability follows source-point visibility. A clean callable may use only imports visible where that callable is declared.
+Ordinary value lookup uses `visibleDeclarations`, an immutable snapshot of declarations visible at the exact source point. This remains source-order based: `var x = x` reads from context, not from the declaration being created.
+
+Static callable lookup uses `visibleCallableDeclarations`, a separate declaration snapshot for macro/function and imported callable roots. Local macro/function declarations are scope-visible and cross clean callable boundaries, so one macro may call a later sibling macro and methods/blocks may call root macros without making ordinary vars visible. Imported declarations enter this callable fact when their import binding is available to the current scope; root constructor imports moved by inheritance transformation are represented at the root so methods, blocks, constructors, and inheritance root macros can use them through the same static callable path.
 
 ```njk
 {% from "ui.njk" import button %}
@@ -178,7 +180,7 @@ Shadowing still wins:
 
 Name conflicts stay declaration-based, not storage-based. A `var` declaration or implicit template variable declaration must not share a source-visible name with an import, macro/function, or other declaration in the same visible scope; current declaration conflict validation should keep catching declaration conflicts before runtime. A later `set` assignment to an existing import or macro/function is not a redeclaration; it remains an immutable-mutation error. Clean callable scopes may still shadow outer imports with parameters or local declarations, and that shadowing prevents imported callable classification.
 
-Analysis may keep an import catalog for convenience, but not as semantic truth. Static imported-callable classification must use visible declarations and the clean-scope declaration-point fallback; global import-name fallback bypasses shadowing and source-point visibility.
+Analysis may keep an import catalog for convenience, but not as semantic truth. Static callable classification must use the callable visibility fact plus source-visible shadowing; global import-name fallback bypasses shadowing and declaration visibility.
 
 ## Analysis Facts
 
@@ -231,14 +233,13 @@ Namespace imported callable shape:
 }
 ```
 
-The call analyzer should answer two separate questions:
+The call analyzer should classify local macros and imported callables through one static-call path:
 
 ```js
-const macroCall = collectMacroCallFacts(node)
-const importedCallableCall = collectImportedCallableCallFacts(node)
+const staticCallableCall = collectStaticCallableCallFacts(node)
 ```
 
-Both paths mark the target node as a static callable call target so value-use validation can skip the legitimate call target read. Imported callable facts also record the local path on the visible import declaration for non-call validation and clean-scope transport.
+The descriptor distinguishes local macro calls, from-import calls, and namespace-member calls. Every classified path marks the target node as a static callable call target so value-use validation can skip the legitimate call target read. Imported callable facts also record the local path on the visible import declaration for non-call validation and clean-scope transport.
 
 Do not set imported declarations to `isMacro`. Imports become call-only paths only after a visible static call classifies them. For from-import aliases a derived declaration flag such as `requiredCallable` is enough after classification; namespace members should remain path registrations because `ui.button` is not a declaration.
 
@@ -251,7 +252,7 @@ Imported static calls in async templates have one of these static forms:
 - `fromImportAlias(...)`
 - `namespaceName.exportName(...)`
 
-The classifier should extract the static call path from `FunCall.name`, then look up only the call-path head in that call target's source-point `visibleDeclarations`. Do not scan all visible imports. Shadowed call-path heads are not imported calls because the visible declaration for that name is different.
+The classifier should extract the static call path from `FunCall.name`, then look up only the call-path head through `findCallableDeclaration(...)`. Do not scan all visible imports. Shadowed call-path heads are not imported calls because a source-visible ordinary declaration blocks the callable declaration.
 
 For example:
 
@@ -278,7 +279,7 @@ Invalid namespace call:
 - visible declaration is an imported namespace;
 - report a compile error because the namespace object is not callable.
 
-Dynamic paths, deeper paths, and expressions without a source-visible imported call-path head are not static imported calls. When classified:
+Dynamic paths, deeper paths, and expressions without a visible static callable root are not static imported calls. When classified:
 
 - mark the call target expression as a static callable call target;
 - record the local callable path on the visible import declaration;
@@ -287,10 +288,10 @@ Dynamic paths, deeper paths, and expressions without a source-visible imported c
 
 Use these helper boundaries:
 
-- `findStaticCallableDeclaration(node)` finds the declaration for the call-path head. It first checks the call target's own `visibleDeclarations`; if that has no declaration and the call is inside a clean callable, it walks enclosing clean callable declaration points from inner to outer and checks the `visibleDeclarations` captured there. This fallback is only for static callable classification, not ordinary symbol lookup.
-- `classifyImportedCallableCall(node)` uses that declaration plus the static call path to return the imported callable fact, or reports namespace-call / unsupported-path errors.
-
-This clean-scope fallback is needed because a macro, method, or block begins a clean scope: its normal body `visibleDeclarations` intentionally does not include ordinary outer imports. Imports visible at the callable declaration point may still be used as static calls from that callable.
+- `visibleDeclarations` remains ordinary source-point value visibility.
+- `visibleCallableDeclarations` carries static callable declarations across clean callable scopes without carrying ordinary vars.
+- `findCallableDeclaration(node)` first checks source-visible shadowing, then reads the callable declaration snapshot.
+- `collectStaticCallableCallFacts(node)` uses that declaration plus the static call path to return the local macro/from-import/namespace-call descriptor, or reports namespace-call / unsupported-path errors.
 
 ## Non-Call Validation
 
@@ -382,18 +383,18 @@ Target shape:
 
 There are two clean-scope mechanics:
 
-- ordinary macro bodies compiled inside the root JS function already work today without owner-entry transport, but the imported callable analysis phase must make their classification source-visibility based rather than fallback-driven (see [Source Visibility](#source-visibility));
+- ordinary macro bodies compiled inside the root JS function already work today without owner-entry transport, but the imported callable analysis phase must make their classification declaration-visibility based rather than fallback-driven (see [Declaration Visibility](#declaration-visibility));
 - inheritance callables run outside the root JS function, so methods, blocks, constructors, and inheritance-compiled root macros need owner-entry transport.
 
 Crux of this phase: `createDirectMacroBindings` runs synchronously before the entry root executes, so root-local macros can be constructed there but import `jsVar`s do not exist yet.
 
-Clean-scope transport supports only imports whose target and payload can be evaluated safely from the root-like direct macro binding factory context. If the required imported callable depends on source-local execution that the factory cannot reproduce, report a compile-time limitation instead of adding a second import transport path.
+Clean-scope transport supports imports with a static target and no explicit import inputs. `with context` is supported because the factory has the render context; dynamic import targets and explicit payload inputs are rejected for clean-scope callable use instead of adding a second payload/runtime path.
 
-The factory kicks off the template load for supported required modules and stores the resulting callable value or promise in the binding table; the call site keeps its value boundary to await it. This avoids a second inheritance payload path and tolerates unresolved import timing.
+The factory starts the normal export evaluation for supported required modules and stores the export value or promise in the binding table under a compiler-owned import key. From-import aliases also get direct alias entries; namespace imports reuse the namespace export entry and still read the member at the call site. The call site keeps its value boundary to await unresolved imports.
 
-Factory-created imported callable promises must be shared with the normal entry-root import binding. Do not run `getExported(...)` twice for the same import. `env.getTemplate` caches the compiled template object, not export evaluation; re-running export evaluation can duplicate side effects and break payload semantics.
+Constructor import statements reuse the factory-created export value when clean-scope callable transport required it. Do not run `getExported(...)` twice for the same import. `env.getTemplate` caches the compiled template object, not export evaluation; re-running export evaluation can duplicate side effects and break payload semantics.
 
-`with context` is supported when it can be recreated from the factory's `context` and render context. Explicit payload expressions (`with value`, named inputs, object inputs) are supported only when the same payload setup can be compiled in the root-like factory environment. Otherwise clean-scope use of that imported callable is a compile-time error.
+Explicit payload expressions (`with value`, named inputs, object inputs) are a compile-time error when that imported callable is used from a clean scope.
 
 The table can remain `directMacroBindings` while clean-scope support only transports macro-compatible callable paths. Ordinary imported values must not be retrievable through it.
 
@@ -403,9 +404,9 @@ Clean callable compilation uses the same source construct for local and imported
 currentInstance.getDirectMacroBinding(methodData, key, errorContext)
 ```
 
-where `key` may be a local macro name (`"label"`) or imported callable path (`"ui.button"`).
+where `key` may be a local macro name (`"label"`), a from-import alias (`"button"`), a namespace binding (`"ui"`), or the compiler-owned import-export key used to share constructor and factory import evaluation.
 
-The table may contain callable values or promises for callable values. If a binding may be async, keep the value boundary at the call site; do not make `runtime.invokeMacro` promise-aware.
+The table may contain callable values, namespace export values, or promises for either. If a binding may be async, keep the value boundary at the call site; do not make `runtime.invokeMacro` promise-aware.
 
 ## Import Declarations
 
@@ -471,7 +472,7 @@ Add async tests for:
    - mark local macro calls and imported callable calls with the shared valid-call-target fact so both skip value-use validation;
    - record classified imported callable paths on the visible import declaration for validation and future clean-scope transport;
    - reject non-call use of classified imported callable paths in async templates;
-   - preserve shadowing and source-point visibility;
+   - preserve source-visible shadowing and callable declaration visibility;
    - add a small runtime macro predicate;
    - add template-only generic-path guards for macro values that reach dynamic call targets without recognized macro-call analysis;
    - do not add runtime macro-value guards for template output or call/filter/test arguments; they were removed because the limited benefit was not worth the extra runtime code and complexity;
@@ -501,7 +502,7 @@ Add async tests for:
 
 ## Architectural Guardrails
 
-- Source lookup uses `visibleDeclarations`; ownership/aggregation can use finalized declaration maps.
+- Source lookup uses `visibleDeclarations`; static callable lookup uses `visibleCallableDeclarations`; ownership/aggregation can use finalized declaration maps.
 - Declaration conflicts are semantic, not storage-based. Do not treat every `storage: DIRECT` declaration as an immutable macro/import-like binding; direct storage can also be an optimization for ordinary variables.
 - Local macro calls and imported static calls stay as separate analysis facts but share the same static-call-target marker for validation.
 - Clean-scope imported callable access is a classified callable transport, not ordinary variable visibility.

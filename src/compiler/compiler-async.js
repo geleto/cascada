@@ -219,7 +219,10 @@ class CompilerAsync extends CompilerBaseAsync {
     const facts = this._collectLoopDeclarationFacts(node, analysisPass, true);
     if (node.concurrentLimit) {
       node.concurrentLimit.addAnalysis({ errorContextLabel: 'For.Limit' });
-      Object.assign(facts, this._createWaitedChainFacts());
+      return {
+        ...facts,
+        ...this._createWaitedChainFacts()
+      };
     }
     return facts;
   }
@@ -241,7 +244,10 @@ class CompilerAsync extends CompilerBaseAsync {
     const facts = this._collectLoopDeclarationFacts(node, analysisPass, true);
     if (node.concurrentLimit) {
       node.concurrentLimit.addAnalysis({ errorContextLabel: 'For.Limit' });
-      Object.assign(facts, this._createWaitedChainFacts());
+      return {
+        ...facts,
+        ...this._createWaitedChainFacts()
+      };
     }
     return facts;
   }
@@ -558,7 +564,7 @@ class CompilerAsync extends CompilerBaseAsync {
 
   compileDo(node) {
     node.children.forEach((child) => {
-      if (isSharedChainOperationExpression(child)) {
+      if (this._isSharedChainOperationExpression(child)) {
         // Shared text/data calls enqueue commands instead of returning an
         // expression value, so they cannot be wrapped by the discard observer.
         this.compileExpression(child, null, child);
@@ -571,57 +577,135 @@ class CompilerAsync extends CompilerBaseAsync {
     });
   }
 
+  _isSharedChainOperationExpression(node) {
+    const chainOperationCall = node._analysis.chainOperationCall;
+    return !!(
+      chainOperationCall &&
+      this.chain.isSharedChainOperationCall(node, chainOperationCall) &&
+      (chainOperationCall.chainType === 'text' || chainOperationCall.chainType === 'data')
+    );
+  }
+
   analyzeImport(node) {
     node.template.addAnalysis({ errorContextLabel: this.scriptMode ? 'Import.Script' : 'Import.Template' });
     node.target.addAnalysis({ isSymbolTarget: true });
-    const name = node.target.value;
-    const importedExportId = this._tmpid();
-    this.importedBindings.add(name);
+    const declarations = this.prepareImportDeclarations(node);
+    declarations.forEach((declaration) => {
+      this.importedBindings.add(declaration.name);
+    });
+    const isRootConstructorImport = this.inheritance._isInsideCompilerInternalCallable(node);
+    const declarationsKey = isRootConstructorImport
+      ? 'declareInRootOnExit'
+      : 'declareOnExit';
+    this._markScopeVisibleImportDeclarations(declarations, isRootConstructorImport);
     return {
-      declareOnExit: [{
-        name,
-        imported: true,
-        importKind: DECLARATION_IMPORT_KIND.NAMESPACE,
-        storage: DECLARATION_STORAGE.DIRECT,
-        jsVar: importedExportId
-      }],
-      importedExportId
+      [declarationsKey]: declarations,
+      importedExportId: node._analysis.importedExportId
     };
   }
 
   analyzeFromImport(node) {
     node.template.addAnalysis({ errorContextLabel: this.scriptMode ? 'FromImport.Script' : 'FromImport.Template' });
-    const declareOnExit = [];
-    const importedExportId = this._tmpid();
-    const importBindingIds = new Map();
+    const declarations = this.prepareImportDeclarations(node);
+    node.names.children.forEach((nameNode) => {
+      if (nameNode instanceof nodes.Pair && nameNode.value instanceof nodes.Symbol) {
+        nameNode.value.addAnalysis({ isSymbolTarget: true });
+      } else if (nameNode instanceof nodes.Symbol) {
+        nameNode.addAnalysis({ isSymbolTarget: true });
+      }
+    });
+    declarations.forEach((declaration) => {
+      this.importedBindings.add(declaration.name);
+    });
+    const isRootConstructorImport = this.inheritance._isInsideCompilerInternalCallable(node);
+    const declarationsKey = isRootConstructorImport
+      ? 'declareInRootOnExit'
+      : 'declareOnExit';
+    this._markScopeVisibleImportDeclarations(declarations, isRootConstructorImport);
+    return {
+      [declarationsKey]: declarations,
+      importedExportId: node._analysis.importedExportId,
+      importBindingIds: node._analysis.importBindingIds
+    };
+  }
+
+  prepareImportDeclarations(node) {
+    const existingDeclarations = node._analysis?.preseededImportDeclarations || null;
+    if (existingDeclarations) {
+      return existingDeclarations;
+    }
+    if (node instanceof nodes.Import) {
+      return this._prepareNamespaceImportDeclarations(node);
+    }
+    if (node instanceof nodes.FromImport) {
+      return this._prepareFromImportDeclarations(node);
+    }
+    return [];
+  }
+
+  _prepareNamespaceImportDeclarations(node) {
+    const importedExportId = node._analysis?.importedExportId || this._tmpid();
+    const declaration = {
+      name: node.target.value,
+      imported: true,
+      importKind: DECLARATION_IMPORT_KIND.NAMESPACE,
+      sourceImportNode: node,
+      sourceOrderNode: node,
+      storage: DECLARATION_STORAGE.DIRECT,
+      jsVar: importedExportId
+    };
+    node.addAnalysis({
+      importedExportId,
+      preseededImportDeclarations: [declaration]
+    });
+    return [declaration];
+  }
+
+  _prepareFromImportDeclarations(node) {
+    const importedExportId = node._analysis?.importedExportId || this._tmpid();
+    const importBindingIds = node._analysis?.importBindingIds || new Map();
+    const declarations = [];
     node.names.children.forEach((nameNode) => {
       let name = null;
       let importedName = null;
       if (nameNode instanceof nodes.Pair && nameNode.value instanceof nodes.Symbol) {
-        nameNode.value.addAnalysis({ isSymbolTarget: true });
         importedName = nameNode.key.value;
         name = nameNode.value.value;
       } else if (nameNode instanceof nodes.Symbol) {
-        nameNode.addAnalysis({ isSymbolTarget: true });
         importedName = nameNode.value;
         name = nameNode.value;
       }
       if (!name) {
         return;
       }
-      const bindingId = this._tmpid();
-      this.importedBindings.add(name);
+      const bindingId = importBindingIds.get(name) || this._tmpid();
       importBindingIds.set(name, bindingId);
-      declareOnExit.push({
+      declarations.push({
         name,
         imported: true,
         importKind: DECLARATION_IMPORT_KIND.FROM,
+        sourceImportNode: node,
+        sourceOrderNode: nameNode,
         exportedName: importedName,
         storage: DECLARATION_STORAGE.DIRECT,
         jsVar: bindingId
       });
     });
-    return { declareOnExit, importedExportId, importBindingIds };
+    node.addAnalysis({
+      importedExportId,
+      importBindingIds,
+      preseededImportDeclarations: declarations
+    });
+    return declarations;
+  }
+
+  _markScopeVisibleImportDeclarations(declarations, shouldMark) {
+    if (!shouldMark) {
+      return;
+    }
+    declarations.forEach((declaration) => {
+      declaration.scopeVisibleCallable = true;
+    });
   }
 
   analyzeInclude(node) {
@@ -757,15 +841,6 @@ class CompilerAsync extends CompilerBaseAsync {
     });
   }
 
-}
-
-function isSharedChainOperationExpression(node) {
-  const chainOperationCall = node._analysis.chainOperationCall;
-  return !!(
-    chainOperationCall &&
-    chainOperationCall.shared &&
-    (chainOperationCall.chainType === 'text' || chainOperationCall.chainType === 'data')
-  );
 }
 
 export {CompilerAsync};

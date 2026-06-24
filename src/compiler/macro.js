@@ -5,6 +5,7 @@ import {
   RETURN_CHAIN_NAME,
 } from './reserved.js';
 import {
+  isClassifiedImportedCallableDeclaration,
   DECLARATION_ROLE,
   DECLARATION_STORAGE
 } from './declarations.js';
@@ -117,7 +118,8 @@ class CompileMacro {
   analyzeMacro(node) {
     const declareOnEnter = [];
     const declareInParentOnExit = [];
-    const compiledMacroFuncId = `macro_${this.compiler._tmpid()}`;
+    const macroDecl = this.prepareMacroDeclaration(node);
+    const compiledMacroFuncId = node._analysis.compiledMacroFuncId;
     node.name.addAnalysis({ isSymbolTarget: true });
     declareOnEnter.push(this.compiler.return.createChainDeclaration());
     declareOnEnter.push(this._createMacroCallerDeclaration());
@@ -134,13 +136,6 @@ class CompileMacro {
         });
       }
     }, undefined, node);
-    const macroDecl = {
-      name: node.name.value,
-      parentOwned: true,
-      isMacro: true,
-      storage: DECLARATION_STORAGE.DIRECT,
-      jsVar: compiledMacroFuncId
-    };
     declareInParentOnExit.push(macroDecl);
     declareOnEnter.push({ name: CALLER_CHAIN_NAME, type: 'var', initializer: null, internal: true });
     node.body.addAnalysis({ macroSetupOwner: node });
@@ -152,6 +147,23 @@ class CompileMacro {
       hasCallerSupport: false,
       compiledMacroFuncId
     };
+  }
+
+  prepareMacroDeclaration(node) {
+    const existingDeclaration = node._analysis?.macroDeclaration || null;
+    if (existingDeclaration) {
+      return existingDeclaration;
+    }
+    const compiledMacroFuncId = node._analysis?.compiledMacroFuncId || `macro_${this.compiler._tmpid()}`;
+    const macroDeclaration = {
+      name: node.name.value,
+      parentOwned: true,
+      isMacro: true,
+      storage: DECLARATION_STORAGE.DIRECT,
+      jsVar: compiledMacroFuncId
+    };
+    node.addAnalysis({ compiledMacroFuncId, macroDeclaration });
+    return macroDeclaration;
   }
 
   recordMacroCallerInvocation(node) {
@@ -200,40 +212,6 @@ class CompileMacro {
     return true;
   }
 
-  collectMacroCallFacts(node, analysisPass) {
-    if (!(node.name instanceof nodes.Symbol)) {
-      return null;
-    }
-    const macroDecl = analysisPass.recordSourceLookupDeclaration(node.name, node.name.value, node._analysis);
-    if (!macroDecl || !macroDecl.isMacro) {
-      return null;
-    }
-    node.name.addAnalysis({ isStaticCallableCallTarget: true });
-    return {
-      kind: 'local',
-      declaration: macroDecl
-    };
-  }
-
-  compileMacroCall(node) {
-    const macroCall = node._analysis.macroCall;
-    if (!macroCall) {
-      return false;
-    }
-
-    this._emitLocalMacroCall(node, macroCall);
-    return true;
-  }
-
-  _emitLocalMacroCall(node, macroCall) {
-    const compiler = this.compiler;
-    compiler.emit('runtime.invokeMacro(');
-    compiler._compileDirectDeclarationLookup(node.name, node.name.value, macroCall.declaration);
-    compiler.emit(', context, ');
-    compiler._compileAggregate(node.args, null, '[', ']', false, false);
-    compiler.emit(`, ${compiler.buffer.currentBuffer})`);
-  }
-
   _validateParameterDeclaration(name, nameNode, seenParamNames, ownerNode) {
     if (ownerNode.name?.value === name) {
       this.compiler.fail(
@@ -257,8 +235,27 @@ class CompileMacro {
   }
 
   compileMacro(node) {
-    const funcId = this.compileMacroBinding(node);
+    const funcId = node._analysis.macroBindingHoisted
+      ? node._analysis.compiledMacroFuncId
+      : this.compileMacroBinding(node);
     this.compileMacroExport(node, funcId);
+  }
+
+  compileHoistedMacroBindings(node) {
+    const children = node.children || null;
+    if (!children) {
+      return;
+    }
+    children.forEach((child) => {
+      if (!(child instanceof nodes.Macro) || child instanceof nodes.Caller) {
+        return;
+      }
+      if (child._analysis.macroBindingHoisted) {
+        return;
+      }
+      this.compileMacroBinding(child);
+      child.addAnalysis({ macroBindingHoisted: true });
+    });
   }
 
   compileMacroBinding(node) {
@@ -275,23 +272,25 @@ class CompileMacro {
 
   emitInheritanceDirectMacroBindingsFactory(node) {
     const declarations = this._getInheritanceRootMacroDeclarations(node);
+    const importedDeclarations = this._getInheritanceDirectImportedCallableDeclarations(node);
     const emit = this.compiler.emit;
     // Participant roots do not run their source body directly, so root-local
     // macros are created through an owner-scoped factory and attached to the
     // loaded inheritance entry.
     emit.line('function createDirectMacroBindings(ownerState, context) {');
     this._emitInheritanceRootLikeMacroLocals();
-    declarations.forEach((child) => {
-      this.compileMacroBinding(child);
-    });
-    if (declarations.length === 0) {
+    if (declarations.length === 0 && importedDeclarations.length === 0) {
       emit.line('return null;');
     } else {
-      emit.line('return {');
-      declarations.forEach((child) => {
-        emit.line(`${JSON.stringify(child.name.value)}: ${child._analysis.compiledMacroFuncId},`);
+      emit.line('const directMacroBindings = {};');
+      this.compiler.inheritance.withDirectBindingFactory(node, 'directMacroBindings', () => {
+        this.compiler.composition.emitDirectImportFactoryBindings(importedDeclarations, 'directMacroBindings');
+        declarations.forEach((child) => {
+          this.compileMacroBinding(child);
+          emit.line(`directMacroBindings[${JSON.stringify(child.name.value)}] = ${child._analysis.compiledMacroFuncId};`);
+        });
       });
-      emit.line('};');
+      emit.line('return directMacroBindings;');
     }
     emit.line('}');
   }
@@ -307,6 +306,15 @@ class CompileMacro {
 
   _getInheritanceRootMacroDeclarations(node) {
     return node.children.filter((child) => child instanceof nodes.Macro);
+  }
+
+  _getInheritanceDirectImportedCallableDeclarations(node) {
+    const declarations = node._analysis.declaredChains || new Map();
+    return Array.from(declarations.values()).filter((declaration) =>
+      declaration.declarationOwner === node._analysis &&
+      declaration.requiresCleanScopeBinding &&
+      isClassifiedImportedCallableDeclaration(declaration)
+    );
   }
 
   _emitInheritanceRootLikeMacroLocals() {

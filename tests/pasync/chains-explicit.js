@@ -104,7 +104,7 @@ describe('Cascada Script: Explicit Chain Declarations', function () {
       expect(result).to.be('ambientlocal');
     });
 
-    it('keeps a function call ambient before a later same-name function declaration', async () => {
+    it('uses scope-visible function declarations for direct calls before their source declaration', async () => {
       const script = `
         var before = choose("before")
         function choose(item)
@@ -118,7 +118,7 @@ describe('Cascada Script: Explicit Chain Declarations', function () {
           return `ambient:${value}`;
         }
       });
-      expect(result).to.eql({ before: 'ambient:before', after: 'local:after' });
+      expect(result).to.eql({ before: 'local:before', after: 'local:after' });
     });
 
     it('keeps sequential context paths ambient before later same-name locals', async () => {

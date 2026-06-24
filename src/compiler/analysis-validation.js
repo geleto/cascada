@@ -1,5 +1,10 @@
 import {CHAIN_TYPES} from '../chain-types.js';
-import {isChainDeclaration, isImmutableDeclaration, isVarChainDeclaration} from './declarations.js';
+import {SHARED_NAME_PREFIX, getSharedSourceName, isSharedName} from '../inheritance/shared-names.js';
+import {
+  isChainDeclaration,
+  isImmutableDeclaration,
+  isVarChainDeclaration
+} from './declarations.js';
 
 class CompileAnalysisValidation {
   constructor(analysisPass) {
@@ -7,7 +12,12 @@ class CompileAnalysisValidation {
     this.compiler = analysisPass.compiler;
   }
 
-  validateDeclarations(analysis, declarationsToValidate, owner, visibleDeclarations) {
+  validateDeclarations(
+    analysis,
+    declarationsToValidate,
+    owner,
+    visibleDeclarations
+  ) {
     if (declarationsToValidate.length === 0 || !owner) {
       return;
     }
@@ -29,6 +39,46 @@ class CompileAnalysisValidation {
     }
   }
 
+  validateCallableDeclarationConflicts(analysis) {
+    const declarationGroups = [
+      analysis.declareOnEnter,
+      analysis.declareOnExit,
+      analysis.declareInParentOnExit,
+      analysis.declareInRootOnEnter,
+      analysis.declareInRootOnExit
+    ];
+    for (const group of declarationGroups) {
+      this._validateCallableDeclarationGroupConflicts(
+        analysis,
+        group,
+        analysis.visibleCallableDeclarations
+      );
+    }
+  }
+
+  _validateCallableDeclarationGroupConflicts(analysis, declarationsToValidate, visibleCallableDeclarations) {
+    if (declarationsToValidate.length === 0) {
+      return;
+    }
+    for (let i = 0; i < declarationsToValidate.length; i++) {
+      const decl = declarationsToValidate[i];
+      const callableDeclaration = visibleCallableDeclarations.get(decl.name) || null;
+      this._validateCallableDeclarationConflict(analysis, decl, callableDeclaration);
+    }
+  }
+
+  _validateCallableDeclarationConflict(analysis, decl, callableDeclaration) {
+    if (
+      !callableDeclaration ||
+      callableDeclaration === decl ||
+      decl.internal ||
+      decl.explicit === false
+    ) {
+      return;
+    }
+    this._validateDeclarationConflict(analysis, decl, callableDeclaration);
+  }
+
   _validateSourceDeclarationConflict(analysis, owner, decl, visibleDeclaration) {
     if (decl.internal || decl.explicit === false) {
       return;
@@ -39,11 +89,22 @@ class CompileAnalysisValidation {
       return;
     }
 
+    if (
+      visibleDeclaration &&
+      !!decl.shared !== !!visibleDeclaration.shared
+    ) {
+      this._validateDeclarationConflict(analysis, decl, visibleDeclaration);
+      return;
+    }
+
     if (owner.scopeBoundary) {
       return;
     }
 
-    if (visibleDeclaration && !visibleDeclaration.internal) {
+    if (
+      visibleDeclaration &&
+      !visibleDeclaration.internal
+    ) {
       this._validateDeclarationConflict(analysis, decl, visibleDeclaration);
     }
   }
@@ -79,9 +140,16 @@ class CompileAnalysisValidation {
   }
 
   _validateReservedDeclarationName(analysis, decl) {
+    if (!decl.shared && decl.name?.charAt(0) === SHARED_NAME_PREFIX) {
+      this._failReservedDeclarationName(analysis, decl);
+    }
     if (!this.compiler.isReservedDeclaration(decl)) {
       return;
     }
+    this._failReservedDeclarationName(analysis, decl);
+  }
+
+  _failReservedDeclarationName(analysis, decl) {
     const originNode = analysis.node || null;
     const lineno = originNode && originNode.lineno;
     const colno = originNode && originNode.colno;
@@ -131,6 +199,20 @@ class CompileAnalysisValidation {
     }
   }
 
+  validatePostAnalysisFacts(analysis, facts) {
+    [
+      'declareOnEnter',
+      'declareOnExit',
+      'declareInParentOnExit',
+      'declareInRootOnEnter',
+      'declareInRootOnExit'
+    ].forEach((field) => {
+      if (facts[field]) {
+        this._failUnsupportedAnalysisFact(analysis, field, 'first-pass declaration facts');
+      }
+    });
+  }
+
   _failUnsupportedAnalysisFact(analysis, field, replacement) {
     const originNode = analysis.node || null;
     const lineno = originNode && originNode.lineno;
@@ -145,7 +227,6 @@ class CompileAnalysisValidation {
 
   validateMutations(analysis) {
     const scopeOwner = this.analysisPass._getScopeOwner(analysis);
-    const rootDeclarations = this.analysisPass.getRootScopeOwner(analysis).activeVisibleDeclarations;
     const currentTextChain = this.analysisPass.getCurrentTextChain(analysis);
     const localMutates = analysis.mutates;
     for (let i = 0; i < localMutates.length; i++) {
@@ -153,12 +234,10 @@ class CompileAnalysisValidation {
       if (this._shouldSkipChainAccessValidation(name, currentTextChain)) {
         continue;
       }
-      const declaration = this.analysisPass.findLocalUsageDeclaration(analysis, name);
+      const declaration = analysis.visibleDeclarations?.get(name) ||
+        analysis.producedDeclarations?.get(name) ||
+        null;
       if (!declaration) {
-        const rootDeclaration = rootDeclarations ? rootDeclarations.get(name) : null;
-        if (rootDeclaration && rootDeclaration.shared) {
-          continue;
-        }
         this._validateMissingDeclaration(analysis, name, 'mutation');
         continue;
       }
@@ -178,7 +257,6 @@ class CompileAnalysisValidation {
   }
 
   validateObservations(analysis) {
-    const rootDeclarations = this.analysisPass.getRootScopeOwner(analysis).activeVisibleDeclarations;
     const currentTextChain = this.analysisPass.getCurrentTextChain(analysis);
     const localObserves = analysis.observes;
     for (let i = 0; i < localObserves.length; i++) {
@@ -186,12 +264,12 @@ class CompileAnalysisValidation {
       if (this._shouldSkipChainAccessValidation(name, currentTextChain)) {
         continue;
       }
-      if (!this.analysisPass.findLocalUsageDeclaration(analysis, name)) {
-        const rootDeclaration = rootDeclarations ? rootDeclarations.get(name) : null;
-        if (rootDeclaration && rootDeclaration.shared) {
-          continue;
-        }
+      const declaration = analysis.visibleDeclarations?.get(name) ||
+        analysis.producedDeclarations?.get(name) ||
+        null;
+      if (!declaration) {
         this._validateMissingDeclaration(analysis, name, 'use');
+        continue;
       }
     }
   }
@@ -204,6 +282,14 @@ class CompileAnalysisValidation {
     const originNode = analysis.node || null;
     const lineno = originNode && originNode.lineno;
     const colno = originNode && originNode.colno;
+    if (isSharedName(name)) {
+      this.compiler.fail(
+        `this.${getSharedSourceName(name)} requires a root shared declaration`,
+        lineno,
+        colno,
+        originNode || undefined
+      );
+    }
 
     if (originNode && originNode.typename === 'ChainCommand') {
       this.compiler.fail(

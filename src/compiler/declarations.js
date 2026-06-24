@@ -29,6 +29,22 @@ function isImmutableDeclaration(declaration) {
   return !!(declaration && (declaration.isMacro || declaration.imported));
 }
 
+function isStaticCallableDeclaration(declaration) {
+  return !!(declaration && (declaration.isMacro || declaration.imported));
+}
+
+function isScopeVisibleCallableDeclaration(declaration) {
+  return !!(declaration && (declaration.isMacro || declaration.scopeVisibleCallable));
+}
+
+function isClassifiedImportedCallableDeclaration(declaration) {
+  return !!(
+    declaration &&
+    declaration.imported &&
+    (declaration.requiredCallable || declaration.requiredCallableExports?.size > 0)
+  );
+}
+
 export {
   DECLARATION_ROLE,
   DECLARATION_STORAGE,
@@ -36,5 +52,8 @@ export {
   isStoredDirectly,
   isChainDeclaration,
   isVarChainDeclaration,
-  isImmutableDeclaration
+  isImmutableDeclaration,
+  isStaticCallableDeclaration,
+  isScopeVisibleCallableDeclaration,
+  isClassifiedImportedCallableDeclaration
 };

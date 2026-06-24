@@ -113,7 +113,7 @@ class CompileComponent {
     }
 
     const bindingName = staticPath[0];
-    const bindingDecl = this.compiler.analysis.findSourceDeclaration(node._analysis, bindingName);
+    const bindingDecl = node._analysis?.visibleDeclarations?.get(bindingName) || null;
     if (!bindingDecl || !bindingDecl.componentBinding) {
       return null;
     }

@@ -139,7 +139,7 @@ class CompileBuffer {
     }
 
     const chainName = staticPath[0];
-    const chainDecl = node._analysis.lookupDeclaration || null;
+    const chainDecl = node._analysis.visibleDeclarations?.get(chainName) || null;
     const commandFacts = node._analysis.chainCommandFacts || {};
     const chainType = commandFacts.chainType || node.chainType || (chainDecl ? chainDecl.type : null);
     const command = commandFacts.command ?? (staticPath.length >= 2 ? staticPath[staticPath.length - 1] : null);

@@ -1,8 +1,7 @@
 const SHARED_NAME_PREFIX = '$';
-const TEMPLATE_TEXT_CHAIN_NAME = '__text__';
 
 function renameSharedName(name) {
-  if (!name || name === TEMPLATE_TEXT_CHAIN_NAME) {
+  if (!name) {
     return name;
   }
   return name.charAt(0) === SHARED_NAME_PREFIX ? name : `${SHARED_NAME_PREFIX}${name}`;
@@ -12,11 +11,8 @@ function getSharedSourceName(name) {
   return name && name.charAt(0) === SHARED_NAME_PREFIX ? name.slice(1) : name;
 }
 
-function isSharedName(name, scriptMode = true) {
-  return !!name && (
-    name.charAt(0) === SHARED_NAME_PREFIX ||
-    (!scriptMode && name === TEMPLATE_TEXT_CHAIN_NAME)
-  );
+function isSharedName(name) {
+  return !!name && name.charAt(0) === SHARED_NAME_PREFIX;
 }
 
 function isPrivateSharedName(name) {

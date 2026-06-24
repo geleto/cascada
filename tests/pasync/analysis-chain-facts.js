@@ -169,15 +169,15 @@ import {
       const blockNode = collectNodesByType(ast, 'Block')[0];
 
       expect(inferred.map((declaration) => [declaration.name, declaration.type])).to.eql([
-        ['__text__', 'text'],
+        ['$__text__', 'text'],
         ['$theme', 'var']
       ]);
       expect(rootTextDeclares).to.have.length(1);
       expect(rootTextDeclares[0].type).to.be('text');
       expect(rootTextDeclares[0].shared).to.not.be(true);
       expect(blockNode._analysis.boundaryLinkedChains instanceof Set).to.be(true);
-      expect(Array.from(blockNode._analysis.boundaryLinkedChains || [])).to.eql(['$theme']);
-      expect(Array.from(blockNode._analysis.boundaryLinkedObservedChains || [])).to.eql(['$theme']);
+      expect(Array.from(blockNode._analysis.boundaryLinkedChains || [])).to.eql(['$__text__', '$theme']);
+      expect(Array.from(blockNode._analysis.boundaryLinkedObservedChains || [])).to.eql(['$__text__', '$theme']);
       expect(blockNode._analysis.boundaryLinkedMutatedChains).to.be(null);
     });
 
@@ -258,11 +258,25 @@ import {
         .sort((left, right) => left.lineno - right.lineno || left.colno - right.colno);
 
       expect(someVarUses).to.have.length(2);
-      expect(someVarUses[0]._analysis.lookupDeclaration).to.be(null);
-      expect(someVarUses[1]._analysis.lookupDeclaration.name).to.be('someVar');
+      expect(someVarUses[0]._analysis.visibleDeclarations.has('someVar')).to.be(false);
+      expect(someVarUses[1]._analysis.visibleDeclarations.get('someVar').name).to.be('someVar');
       expect(rootAnalysis.visibleDeclarations instanceof Map).to.be(true);
       expect(rootAnalysis.visibleDeclarations.has('someVar')).to.be(false);
       expect(rootAnalysis.declaredChains.has('someVar')).to.be(true);
+    });
+
+    it('should keep callable declarations scope-visible without changing source lookup', function () {
+      const ast = analyzeTemplateSource(
+        '{{ later() }}{% macro later() %}L{% endmacro %}',
+        'scope-visible-callables.njk'
+      );
+      const call = collectNodesByType(ast, 'FunCall')[0];
+      const symbol = call.name;
+
+      expect(symbol._analysis.visibleDeclarations.has('later')).to.be(false);
+      expect(symbol._analysis.visibleCallableDeclarations.has('later')).to.be(true);
+      expect(call._analysis.staticCallableCall.declaration.name).to.be('later');
+      expect(call._analysis.staticCallableCall.localName).to.be('later');
     });
 
     it('should separate declared, observed, mutated, and broad used chain facts', function () {
@@ -560,7 +574,7 @@ import {
       const command = collectNodesByType(ast, 'ChainCommand')[0]._analysis;
 
       expect(keySymbols.some((node) => node._analysis.operationOwnedPath)).to.be(false);
-      expect(keySymbols.some((node) => node._analysis.lookupDeclaration?.name === 'key')).to.be(true);
+      expect(keySymbols.some((node) => node._analysis.visibleDeclarations?.get('key')?.name === 'key')).to.be(true);
       expect(command.observedChains.has('key')).to.be(true);
       expect(command.mutatedChains.has('result')).to.be(true);
       expect(command.usedChains.has('key')).to.be(true);
@@ -578,7 +592,7 @@ import {
       const methodSymbols = collectNodesByType(ast, 'Symbol').filter((node) => node.value === 'method');
 
       expect(methodSymbols.some((node) => node._analysis.operationOwnedPath)).to.be(false);
-      expect(methodSymbols.some((node) => node._analysis.lookupDeclaration?.name === 'method')).to.be(true);
+      expect(methodSymbols.some((node) => node._analysis.visibleDeclarations?.get('method')?.name === 'method')).to.be(true);
       expect(Array.from(inlineIfNode._analysis.observedChainsFromParent || [])).to.eql(['method']);
       expect(Array.from(inlineIfNode._analysis.mutatedChainsFromParent || [])).to.eql(['ns']);
       expect(sortedChainNames(inlineIfNode._analysis.boundaryLinkedChains)).to.eql(['method', 'ns']);
@@ -757,16 +771,15 @@ import {
       );
       const macroNode = collectNodesByType(ast, 'Macro')[0];
       const rootDecl = ast._analysis.declaredChains.get('greet');
-      const macroLookups = collectNodesByType(ast, 'Symbol')
-        .filter((node) => node.value === 'greet' && !node._analysis.isSymbolTarget)
-        .map((node) => node._analysis.lookupDeclaration);
+      const macroCalls = collectNodesByType(ast, 'FunCall')
+        .filter((node) => node.name.value === 'greet');
 
       expect(rootDecl.storage).to.be(DECLARATION_STORAGE.DIRECT);
       expect(rootDecl.type).to.be(undefined);
       expect(macroNode._analysis.declaredChains.has('greet')).to.be(false);
-      expect(macroLookups).to.have.length(2);
-      macroLookups.forEach((declaration) => {
-        expect(declaration).to.be(rootDecl);
+      expect(macroCalls).to.have.length(2);
+      macroCalls.forEach((call) => {
+        expect(call._analysis.staticCallableCall.declaration).to.be(rootDecl);
       });
       expect((ast._analysis.usedChains || new Set()).has('greet')).to.be(false);
       expect((ast._analysis.observedChains || new Set()).has('greet')).to.be(false);
@@ -823,12 +836,12 @@ import {
         'imported-member-boundary.njk'
       );
       const importedCall = collectNodesByType(ast, 'FunCall')
-        .find((node) => node._analysis.importedCallableCall?.kind === DECLARATION_IMPORT_KIND.NAMESPACE);
+        .find((node) => node._analysis.staticCallableCall?.kind === DECLARATION_IMPORT_KIND.NAMESPACE);
       const importDecl = ast._analysis.declaredChains.get('m');
 
       expect(importDecl.storage).to.be(DECLARATION_STORAGE.DIRECT);
       expect(importDecl.type).to.be(undefined);
-      expect(importedCall._analysis.importedCallableCall.localPath).to.be('m.hi');
+      expect(importedCall._analysis.staticCallableCall.localPath).to.be('m.hi');
       expect(importedCall._analysis.wantsLinkedChildBuffer).to.be(true);
       expect((ast._analysis.usedChains || new Set()).has('m')).to.be(false);
       expect((ast._analysis.observedChains || new Set()).has('m')).to.be(false);

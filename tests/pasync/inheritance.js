@@ -464,28 +464,162 @@ describe('Inheritance rebuild', function () {
       expect(await localEnv.renderScript('child.script', {})).to.be('[base:super]|child');
     });
 
-    it('lets template block arguments shadow an outer local macro', async function () {
-      const result = await env.renderTemplateString(
-        '{% macro _label() %}outer{% endmacro %}' +
-        '{% block body(_label) %}{{ _label }}{% endblock %}',
-        { _label: 'inner' }
-      );
-
-      expect(result).to.be('inner');
+    it('rejects template block arguments that reuse an outer local macro name', function () {
+      expect(function () {
+        new AsyncTemplate(
+          '{% macro _label() %}outer{% endmacro %}' +
+          '{% block body(_label) %}{{ _label }}{% endblock %}',
+          env,
+          'block-macro-name-conflict.njk'
+        ).compile();
+      }).to.throwException(/Identifier '_label' has already been declared/);
     });
 
-    it('lets script method arguments shadow an outer local function', async function () {
-      const result = await env.renderScriptString([
-        'function _label()',
-        '  return "outer"',
-        'endfunction',
-        'method body(_label)',
-        '  return _label',
-        'endmethod',
-        'return this.body("inner")'
-      ].join('\n'));
+    it('rejects script method arguments that reuse an outer local function name', function () {
+      expect(function () {
+        new Script([
+          'function _label()',
+          '  return "outer"',
+          'endfunction',
+          'method body(_label)',
+          '  return _label',
+          'endmethod',
+          'return this.body("inner")'
+        ].join('\n'), env, 'method-function-name-conflict.script').compileSource();
+      }).to.throwException(/Identifier '_label' has already been declared/);
+    });
 
-      expect(result).to.be('inner');
+    it('lets template blocks call outer from-import macros', async function () {
+      const localEnv = createEnvironment({
+        'macros.njk': '{% macro label(value) %}[{{ value }}]{% endmacro %}',
+        'main.njk': '{% from "macros.njk" import label %}{% block body %}{{ label("block") }}{% endblock %}'
+      });
+
+      expect(await localEnv.renderTemplate('main.njk', {})).to.be('[block]');
+    });
+
+    it('lets script methods call outer namespace imported functions', async function () {
+      const localEnv = createEnvironment({
+        'helpers.script': [
+          'function label(value)',
+          '  return "[" + value + "]"',
+          'endfunction'
+        ].join('\n'),
+        'main.script': [
+          'import "helpers.script" as helpers',
+          'method body()',
+          '  return helpers.label("method")',
+          'endmethod',
+          'return this.body()'
+        ].join('\n')
+      });
+
+      expect(await localEnv.renderScript('main.script', {})).to.be('[method]');
+    });
+
+    it('lets methods call root imports declared later in source order', async function () {
+      const localEnv = createEnvironment({
+        'helpers.script': [
+          'function label(value)',
+          '  return "[" + value + "]"',
+          'endfunction'
+        ].join('\n'),
+        'main.script': [
+          'method body()',
+          '  return helpers.label("method")',
+          'endmethod',
+          'import "helpers.script" as helpers',
+          'return this.body()'
+        ].join('\n')
+      });
+
+      expect(await localEnv.renderScript('main.script', {})).to.be('[method]');
+    });
+
+    it('lets inherited parent script methods call their own outer imported functions without running the parent constructor', async function () {
+      const localEnv = createEnvironment({
+        'helpers.script': [
+          'function label(value)',
+          '  return "[" + value + "]"',
+          'endfunction'
+        ].join('\n'),
+        'base.script': [
+          'import "helpers.script" as helpers',
+          'method body()',
+          '  return helpers.label("parent")',
+          'endmethod'
+        ].join('\n'),
+        'child.script': [
+          'extends "base.script"',
+          'return this.body()'
+        ].join('\n')
+      });
+
+      expect(await localEnv.renderScript('child.script', {})).to.be('[parent]');
+    });
+
+    it('lets inherited parent template blocks call their own outer imported macros', async function () {
+      const localEnv = createEnvironment({
+        'macros.njk': '{% macro label(value) %}[{{ value }}]{% endmacro %}',
+        'base.njk': '{% from "macros.njk" import label %}Base:{% block body %}{{ label("parent") }}{% endblock %}',
+        'child.njk': '{% extends "base.njk" %}'
+      });
+
+      expect(await localEnv.renderTemplate('child.njk', {})).to.be('Base:[parent]');
+    });
+
+    it('lets template blocks call outer imports with context', async function () {
+      const localEnv = createEnvironment({
+        'macros.njk': '{% macro label() %}[{{ user }}]{% endmacro %}',
+        'main.njk': '{% import "macros.njk" as macros with context %}{% block body %}{{ macros.label() }}{% endblock %}'
+      });
+
+      expect(await localEnv.renderTemplate('main.njk', { user: 'Ada' })).to.be('[Ada]');
+    });
+
+    it('shares clean-scope import export evaluation with the constructor import binding', async function () {
+      let exportRuns = 0;
+      const localEnv = createEnvironment({
+        'macros.njk': '{% set marker = countExport() %}{% macro label() %}ok{% endmacro %}',
+        'main.njk': '{% import "macros.njk" as macros with context %}{% block body %}{{ macros.label() }}{% endblock %}'
+      });
+
+      const result = await localEnv.renderTemplate('main.njk', {
+        countExport() {
+          exportRuns += 1;
+          return exportRuns;
+        }
+      });
+
+      expect(result).to.be('ok');
+      expect(exportRuns).to.be(1);
+    });
+
+    it('rejects explicit import inputs for imported callables used from clean scopes', async function () {
+      const localEnv = createEnvironment({
+        'macros.njk': '{% macro label() %}[{{ user }}]{% endmacro %}',
+        'main.njk': '{% import "macros.njk" as macros with user %}{% block body %}{{ macros.label() }}{% endblock %}'
+      });
+
+      try {
+        await localEnv.renderTemplate('main.njk', { user: 'Ada' });
+        throw new Error('Expected template render to fail');
+      } catch (err) {
+        expect(err.message).to.contain('Imported callables used from macros, methods, or blocks require a static import target and no explicit import inputs.');
+      }
+    });
+
+    it('lets inheritance root macros call outer imported macros', async function () {
+      const localEnv = createEnvironment({
+        'macros.njk': '{% macro label(value) %}[{{ value }}]{% endmacro %}',
+        'main.njk': [
+          '{% from "macros.njk" import label %}',
+          '{% macro wrap(value) %}{{ label(value) }}{% endmacro %}',
+          '{% block body %}{{ wrap("macro") }}{% endblock %}'
+        ].join('')
+      });
+
+      expect(await localEnv.renderTemplate('main.njk', {})).to.be('[macro]');
     });
 
     it('keeps nested template macros out of later block visibility', async function () {
@@ -2734,12 +2868,22 @@ describe('Inheritance rebuild', function () {
     it('requires script this shared access to target a shared declaration', function () {
       [
         'return this.theme',
+        'return this.theme.name',
+        'return this.theme.snapshot()',
+        'return this.theme is error',
+        'return this.theme#',
         'this.theme = "dark"\nreturn null'
       ].forEach((source) => {
         expect(function () {
           new Script(source, env, 'script-missing-shared.script').compileSource();
         }).to.throwException(/this\.theme requires a root shared declaration/);
       });
+    });
+
+    it('keeps script this calls on the inherited-method path', function () {
+      expect(function () {
+        new Script('return this.theme()', env, 'script-this-call.script').compileSource();
+      }).not.to.throwException();
     });
 
     it('rejects __proto__ inheritance names before they reach generated maps', function () {
@@ -2852,6 +2996,24 @@ describe('Inheritance rebuild', function () {
       expect(sharedSchemaInputs.sort((left, right) => left.name.localeCompare(right.name))).to.eql([
         { name: '$mode', type: 'var', hasDefault: false },
         { name: '$theme', type: 'var', hasDefault: false },
+      ]);
+    });
+
+    it('infers template shared declarations from non-call this usage forms', function () {
+      const sharedSchemaInputs = analyzeSharedSchemaInputs([
+        '{{ this.theme.label }}',
+        '{{ this.snapshotValue.snapshot() }}',
+        '{{ this.status is error }}',
+        '{{ this.problem# }}',
+        '{% set this.mode = "compact" %}'
+      ].join(''));
+
+      expect(sharedSchemaInputs.sort((left, right) => left.name.localeCompare(right.name))).to.eql([
+        { name: '$mode', type: 'var', hasDefault: false },
+        { name: '$problem', type: 'var', hasDefault: false },
+        { name: '$snapshotValue', type: 'var', hasDefault: false },
+        { name: '$status', type: 'var', hasDefault: false },
+        { name: '$theme', type: 'var', hasDefault: false }
       ]);
     });
 

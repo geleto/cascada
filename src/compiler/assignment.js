@@ -42,29 +42,34 @@ class CompileAssignment {
     if (node.path && targets.length !== 1) {
       compiler.fail('set_path only supports a single target.', node.lineno, node.colno, node);
     }
-    const thisSharedPath = compiler.chain.collectThisSharedSetPathFacts(node, analysisPass);
-    if (thisSharedPath) {
+    const thisSharedAssignment = compiler.chain.analyzeThisSharedAssignment(node);
+    if (thisSharedAssignment) {
       targets.forEach((target) => compiler.chain.markOperationOwnedPath(target));
       // Nested shared-var assignment reads the current value via RawSnapshot
       // before writing the patched value. Data-chain shared sets enqueue a
       // direct data mutation command and do not need a separate observation.
-      if (thisSharedPath.type === 'var' && thisSharedPath.path.length > 0) {
-        observes.push(thisSharedPath.name);
+      if (thisSharedAssignment.type === 'var' && thisSharedAssignment.path.length > 0) {
+        observes.push(thisSharedAssignment.name);
       }
-      mutates.push(thisSharedPath.name);
-      return {
+      mutates.push(thisSharedAssignment.name);
+      const { declareInRootOnEnter } = thisSharedAssignment;
+      const facts = {
         declareOnExit,
         observes,
         mutates,
-        thisSharedSetPath: thisSharedPath
+        thisSharedAssignment
       };
+      if (declareInRootOnEnter) {
+        facts.declareInRootOnEnter = declareInRootOnEnter;
+      }
+      return facts;
     }
     const assignsValue = !!(node.value || node.body) && !node.declarationOnly;
     targets.forEach((target) => {
       if (target instanceof nodes.Symbol) {
         target.addAnalysis({ isSymbolTarget: true });
         const name = target.value;
-        const declaration = analysisPass.findSourceDeclaration(node._analysis, name);
+        const declaration = node._analysis.visibleDeclarations?.get(name) || null;
         if (compiler.scriptMode && !isDeclaration && declaration && declaration.shared) {
           compiler.fail(
             `Bare shared assignment to '${name}' is not supported. Use this.${name} = ... instead.`,
@@ -99,10 +104,6 @@ class CompileAssignment {
 
   postAnalyzeSet(node) {
     const compiler = this.compiler;
-    if (node._analysis.thisSharedSetPath) {
-      return {};
-    }
-
     const exportFromRootScope = compiler.analysis.isRootScopeOwner(node._analysis);
     const targetFacts = [];
     (node.targets || []).forEach((target) => {
@@ -111,8 +112,9 @@ class CompileAssignment {
         return;
       }
       const name = target.value;
-      const visibleDeclaration = compiler.analysis.findSourceDeclaration(node._analysis, name) ||
-        node._analysis.declareOnExit.find((decl) => decl.name === name);
+      const visibleDeclaration = node._analysis.visibleDeclarations?.get(name) ||
+        node._analysis.producedDeclarations?.get(name) ||
+        null;
       targetFacts.push({
         name,
         isOwnDeclaration: visibleDeclaration && visibleDeclaration.declarationOrigin === node._analysis,
@@ -126,9 +128,9 @@ class CompileAssignment {
 
   compileSet(node) {
     const compiler = this.compiler;
-    const thisSharedPath = node._analysis.thisSharedSetPath;
-    if (thisSharedPath) {
-      compiler.chain.compileThisSharedSetPath(node, thisSharedPath);
+    const thisSharedAssignment = node._analysis.thisSharedAssignment;
+    if (thisSharedAssignment) {
+      compiler.chain.compileThisSharedAssignment(node, thisSharedAssignment);
       return;
     }
 

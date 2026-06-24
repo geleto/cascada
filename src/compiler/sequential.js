@@ -59,7 +59,7 @@ class CompileSequential {
     return { key: nodeLockKey, repair: !!node.sequentialRepair };
   }
 
-  recordBareSequenceLockLookup(node, analysisPass) {
+  collectBareSequenceLockLookupFacts(node) {
     const analysis = node._analysis;
     if (analysis.sequenceLockLookup || node.sequential) {
       return null;
@@ -71,9 +71,11 @@ class CompileSequential {
     if (!sequenceLockLookup) {
       return null;
     }
-    this.compiler._failIfSequenceRootIsDeclared(node, sequenceLockLookup.key, analysisPass);
-    analysis.observes.push(sequenceLockLookup.key);
-    return sequenceLockLookup;
+    this.compiler._failIfSequenceRootIsDeclared(node, sequenceLockLookup.key);
+    return {
+      observes: [sequenceLockLookup.key],
+      sequenceLockLookup
+    };
   }
 
   _findBareSequenceLockLookup(node) {

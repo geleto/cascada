@@ -59,6 +59,52 @@ describe('Async declaration conflict visibility', function () {
     );
   });
 
+  it('rejects template declarations that reuse a later macro name', async function () {
+    const template = `
+      {% set label = "local" %}
+      {% macro label() %}macro{% endmacro %}
+      {{ label }}
+    `;
+
+    await expectRejects(
+      () => env.renderTemplateString(template),
+      'Identifier \'label\' has already been declared.'
+    );
+  });
+
+  it('rejects script declarations that reuse a later function name', async function () {
+    const script = `
+      var label = "local"
+
+      function label()
+        return "macro"
+      endfunction
+
+      return label
+    `;
+
+    await expectRejects(
+      () => env.renderScriptString(script),
+      'Identifier \'label\' has already been declared.'
+    );
+  });
+
+  it('rejects clean-scope callable declarations that reuse an outer callable name', async function () {
+    const template = `
+      {% macro label() %}outer{% endmacro %}
+      {% macro wrapper() %}
+        {% macro label() %}inner{% endmacro %}
+        {{ label() }}
+      {% endmacro %}
+      {{ wrapper() }}
+    `;
+
+    await expectRejects(
+      () => env.renderTemplateString(template),
+      'Identifier \'label\' has already been declared.'
+    );
+  });
+
   it('rejects duplicate template import namespaces before loading the target', async function () {
     const template = `
       {% import "missing.njk" as lib %}

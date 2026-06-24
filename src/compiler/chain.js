@@ -120,7 +120,29 @@ class CompileChain {
     return segments;
   }
 
-  collectThisSharedSetPathFacts(node, analysisPass = this.compiler.analysis) {
+  analyzeThisSharedAssignment(node) {
+    const target = this._getThisSharedAssignmentTarget(node);
+    if (!target) {
+      return null;
+    }
+    let declaration = node._analysis.visibleDeclarations?.get(target.sharedName) || null;
+    let declareInRootOnEnter = null;
+    if (!declaration && !this.compiler.scriptMode) {
+      // Template this.<name> first use is inferred as a root declaration fact;
+      // the generic declaration publisher installs it from declareInRootOnEnter.
+      declaration = this._createImplicitTemplateSharedDeclaration(target.sharedName);
+      declareInRootOnEnter = [declaration];
+    }
+    const facts = {
+      name: target.sharedName,
+      type: declaration ? declaration.type : null,
+      path: target.path,
+      ...(declareInRootOnEnter ? { declareInRootOnEnter } : {})
+    };
+    return facts;
+  }
+
+  _getThisSharedAssignmentTarget(node) {
     const compiler = this.compiler;
     if (!node || !node.targets || node.targets.length !== 1) {
       return null;
@@ -132,14 +154,42 @@ class CompileChain {
       return null;
     }
     const name = segments[0];
-    const declaration = this._findOrRecordThisSharedDeclaration(node._analysis, renameSharedName(name), analysisPass, node, 'strict');
-    if (!declaration) {
+    const sharedName = renameSharedName(name);
+    return {
+      sharedName,
+      path: segments.slice(1)
+    };
+  }
+
+  analyzeThisSharedAccess(node, analysisNode = null) {
+    const access = this._getThisSharedAccess(node, analysisNode);
+    if (!access) {
       return null;
     }
+    const visibleDeclaration = access.analysis.visibleDeclarations?.get(access.sharedName) || null;
+    let declaration = visibleDeclaration;
+    let declareInRootOnEnter = null;
+    if (!declaration && !this.compiler.scriptMode) {
+      // Template this.<name> first use is inferred as a root declaration fact;
+      // the generic declaration publisher installs it from declareInRootOnEnter.
+      declaration = this._createImplicitTemplateSharedDeclaration(access.sharedName);
+      declareInRootOnEnter = [declaration];
+    }
+    const facts = this._createThisSharedAccessFacts(access, declaration);
+    if (declareInRootOnEnter) {
+      facts.declareInRootOnEnter = declareInRootOnEnter;
+    }
+    return facts;
+  }
+
+  _createImplicitTemplateSharedDeclaration(name) {
     return {
-      name: declaration.name,
-      type: declaration.type,
-      path: segments.slice(1)
+      name,
+      type: getSharedSourceName(name) === this.compiler.buffer.currentTextChainName ? 'text' : 'var',
+      initializer: null,
+      shared: true,
+      explicit: false,
+      implicitTemplateShared: true
     };
   }
 
@@ -169,7 +219,7 @@ class CompileChain {
     return staticPath.slice(1);
   }
 
-  compileThisSharedSetPath(node, thisSharedPath) {
+  compileThisSharedAssignment(node, assignment) {
     const compiler = this.compiler;
     if (node.body) {
       compiler.fail('this.<shared> assignment does not support set blocks.', node.lineno, node.colno, node);
@@ -183,29 +233,29 @@ class CompileChain {
     compiler.compileExpression(node.value, null, node.value);
     compiler.emit.line(';');
 
-    if (thisSharedPath.type === 'var') {
+    if (assignment.type === 'var') {
       let resultId = valueId;
-      if (thisSharedPath.path.length > 0) {
+      if (assignment.path.length > 0) {
         resultId = compiler._tmpid();
         compiler.emit(`let ${resultId} = runtime.deepAssign(`);
-        compiler.buffer.emitAddRawSnapshot(thisSharedPath.name, node);
-        compiler.emit(`, ${JSON.stringify(thisSharedPath.path)}, ${valueId})`);
+        compiler.buffer.emitAddRawSnapshot(assignment.name, node);
+        compiler.emit(`, ${JSON.stringify(assignment.path)}, ${valueId})`);
         compiler.emit.line(';');
       }
       compiler.buffer.emitAddChainCommandByType({
         chainType: 'var',
-        chainName: thisSharedPath.name,
+        chainName: assignment.name,
         argsExpr: `[${resultId}]`,
         positionNode: node
       });
       return;
     }
 
-    if (thisSharedPath.type === 'data') {
-      const dataPath = thisSharedPath.path.length > 0 ? thisSharedPath.path : [null];
+    if (assignment.type === 'data') {
+      const dataPath = assignment.path.length > 0 ? assignment.path : [null];
       compiler.buffer.emitAddChainCommandByType({
         chainType: 'data',
-        chainName: thisSharedPath.name,
+        chainName: assignment.name,
         operation: 'set',
         argsExpr: `[${JSON.stringify(dataPath)}, ${valueId}]`,
         positionNode: node
@@ -214,15 +264,11 @@ class CompileChain {
     }
 
     compiler.fail(
-      `Chain '${thisSharedPath.name}' cannot be assigned through this.${thisSharedPath.name}.`,
+      `Chain '${assignment.name}' cannot be assigned through this.${assignment.name}.`,
       node.lineno,
       node.colno,
       node
     );
-  }
-
-  collectThisSharedAccessFacts(node, analysisPass = this.compiler.analysis, analysisNode = null) {
-    return this._collectThisSharedAccessFacts(node, analysisPass, analysisNode, 'strict');
   }
 
   // Some compound expressions are already classified by a higher-level
@@ -241,11 +287,20 @@ class CompileChain {
     }
   }
 
-  probeThisSharedAccessFacts(node, analysisPass = this.compiler.analysis, analysisNode = null) {
-    return this._collectThisSharedAccessFacts(node, analysisPass, analysisNode, 'probe');
+  findThisSharedAccessFacts(node, analysisNode = null) {
+    // Read-only classification for disambiguation and compile fallbacks. This
+    // never creates implicit declarations or reports missing script shared vars.
+    const access = this._getThisSharedAccess(node, analysisNode);
+    if (!access) {
+      return null;
+    }
+    const declaration = access.analysis.visibleDeclarations?.get(access.sharedName) ||
+      access.analysis.producedDeclarations?.get(access.sharedName) ||
+      null;
+    return declaration ? this._createThisSharedAccessFacts(access, declaration) : null;
   }
 
-  _collectThisSharedAccessFacts(node, analysisPass, analysisNode, mode) {
+  _getThisSharedAccess(node, analysisNode) {
     const compiler = this.compiler;
     if (!node) {
       return null;
@@ -257,83 +312,46 @@ class CompileChain {
     const chainName = staticPath[1];
     const activeAnalysis = analysisNode || node._analysis;
     const sharedName = renameSharedName(chainName);
-    const chainDecl = compiler.inheritance.findRootSharedDeclaration(
-      compiler.analysis.getRootScopeOwner(activeAnalysis),
-      sharedName
-    );
-    const parentNode = node._analysis?.parent?.node || null;
+    const declaration = activeAnalysis.visibleDeclarations?.get(sharedName) || null;
+    const parentNode = node._analysis?.parent?.node ||
+      (analysisNode?.node instanceof nodes.FunCall && analysisNode.node.name === node
+        ? analysisNode.node
+        : null);
     const isCallableRoot = staticPath.length === 2 &&
       parentNode instanceof nodes.FunCall &&
       parentNode.name === node;
     if (
       isCallableRoot &&
-      (!compiler.scriptMode || !chainDecl)
+      (!compiler.scriptMode || !declaration)
     ) {
       return null;
     }
     if (
       compiler.scriptMode &&
-      !chainDecl &&
+      !declaration &&
       staticPath.length === 2 &&
       compiler.inheritance.hasLocalMethodDefinition(activeAnalysis, chainName)
     ) {
       return null;
     }
-    const declaration = this._findOrRecordThisSharedDeclaration(
-      activeAnalysis,
-      sharedName,
-      analysisPass,
-      node,
-      mode
-    );
-    if (!declaration) {
-      return null;
-    }
-    const chainPath = [chainName].concat(staticPath.slice(2));
     return {
-      chainName: declaration.name,
-      chainType: declaration.type,
-      chainPath: [declaration.name].concat(staticPath.slice(2)),
-      pathPrefix: chainPath.length > 2 ? chainPath.slice(1, -1) : [],
-      propertyName: chainPath.length >= 2 ? chainPath[chainPath.length - 1] : null
+      analysis: activeAnalysis,
+      chainName,
+      sharedName,
+      staticPath
     };
   }
 
-  _findOrRecordThisSharedDeclaration(analysis, name, analysisPass, originNode, mode) {
-    const compiler = this.compiler;
-    const rootAnalysis = compiler.analysis.getRootScopeOwner(analysis);
-    let declaration = compiler.inheritance.findRootSharedDeclaration(rootAnalysis, name);
-    let type = declaration ? declaration.type : null;
-    if (!compiler.scriptMode) {
-      type = type || (name === compiler.buffer.currentTextChainName ? 'text' : 'var');
-      if (type !== 'var' && name !== compiler.buffer.currentTextChainName) {
-        return null;
-      }
-      if (!declaration || !declaration.shared) {
-        if (mode === 'probe') {
-          return null;
-        }
-        declaration = compiler.inheritance.ensureImplicitTemplateSharedDeclaration(
-          analysis,
-          name,
-          type,
-          originNode
-        );
-      }
-    }
-    if (!declaration || !declaration.shared) {
-      if (compiler.scriptMode && mode === 'strict') {
-        const sourceName = getSharedSourceName(name);
-        compiler.fail(
-          `this.${sourceName} requires a root shared declaration`,
-          originNode.lineno,
-          originNode.colno,
-          originNode
-        );
-      }
-      return null;
-    }
-    return declaration;
+  _createThisSharedAccessFacts(access, declaration = null) {
+    const chainPath = [access.chainName].concat(access.staticPath.slice(2));
+    const chainName = declaration ? declaration.name : access.sharedName;
+    return {
+      chainName,
+      chainType: declaration ? declaration.type : null,
+      chainPath: [chainName].concat(access.staticPath.slice(2)),
+      pathPrefix: chainPath.length > 2 ? chainPath.slice(1, -1) : [],
+      propertyName: chainPath.length >= 2 ? chainPath[chainPath.length - 1] : null
+    };
   }
 
   analyzeChainDeclaration(node) {
@@ -445,7 +463,7 @@ class CompileChain {
       return {};
     }
     const chainName = path[0];
-    const chainDecl = chainName ? compiler.analysis.recordSourceLookupDeclaration(node, chainName) : null;
+    const chainDecl = chainName ? node._analysis.visibleDeclarations?.get(chainName) || null : null;
     const chainType = node.chainType || (chainDecl ? chainDecl.type : null);
     const command = path.length >= 2 ? path[path.length - 1] : null;
     if (callNode && path.length >= 2 && chainDecl && (chainDecl.type === 'var' || isStoredDirectly(chainDecl))) {
@@ -587,6 +605,16 @@ class CompileChain {
     return this._compileSharedChainStatementFunCall(node, chainOperationCall);
   }
 
+  isSharedChainOperationCall(node, chainOperationCall = node?._analysis?.chainOperationCall) {
+    if (!chainOperationCall) {
+      return false;
+    }
+    const declaration = node._analysis.visibleDeclarations?.get(chainOperationCall.chainName) ||
+      node._analysis.producedDeclarations?.get(chainOperationCall.chainName) ||
+      null;
+    return !!declaration?.shared;
+  }
+
   _compileChainObservationFunCall(node, chainOperationCall) {
     const compiler = this.compiler;
     if (chainOperationCall.pathPrefix.length !== 0) {
@@ -595,8 +623,9 @@ class CompileChain {
     if (chainOperationCall.chainType === 'sequence' && chainOperationCall.methodName === 'snapshot') {
       return false;
     }
+    const shared = this.isSharedChainOperationCall(node, chainOperationCall);
     if (chainOperationCall.methodName === 'snapshot') {
-      if (chainOperationCall.shared) {
+      if (shared) {
         compiler.inheritance.emitSharedChainObservation(chainOperationCall.chainName, node, 'snapshot');
       } else {
         compiler.buffer.emitAddSnapshot(chainOperationCall.chainName, node);
@@ -604,7 +633,7 @@ class CompileChain {
       return true;
     }
     if (chainOperationCall.methodName === 'isError') {
-      if (chainOperationCall.shared) {
+      if (shared) {
         compiler.inheritance.emitSharedChainObservation(chainOperationCall.chainName, node, 'isError');
       } else {
         compiler.buffer.emitAddIsError(chainOperationCall.chainName, node);
@@ -612,7 +641,7 @@ class CompileChain {
       return true;
     }
     if (chainOperationCall.methodName === 'getError') {
-      if (chainOperationCall.shared) {
+      if (shared) {
         compiler.inheritance.emitSharedChainObservation(chainOperationCall.chainName, node, 'getError');
       } else {
         compiler.buffer.emitAddGetError(chainOperationCall.chainName, node);
@@ -643,7 +672,7 @@ class CompileChain {
 
   _compileSharedChainStatementFunCall(node, chainOperationCall) {
     const compiler = this.compiler;
-    if (!chainOperationCall.shared) {
+    if (!this.isSharedChainOperationCall(node, chainOperationCall)) {
       return false;
     }
     if (chainOperationCall.chainType === 'text') {

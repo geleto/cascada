@@ -65,7 +65,12 @@ class CompilerBaseAsync extends CompilerCommon {
   analyzeSymbol(node, analysisPass) {
     // Symbol targets introduce or update a name; they are not expression reads
     // and should not perform source/context lookup.
-    if (node._analysis?.isSymbolTarget || node._analysis?.operationOwnedPath || node.isCompilerInternal) {
+    if (
+      node._analysis?.isSymbolTarget ||
+      node._analysis?.operationOwnedPath ||
+      node._analysis?.isStaticCallableCallTarget ||
+      node.isCompilerInternal
+    ) {
       return {};
     }
     const name = node.value;
@@ -75,7 +80,7 @@ class CompilerBaseAsync extends CompilerCommon {
     const sequenceLockLookup = this.sequential.recordSequenceLockLookup(node);
     node.addAnalysis({ sequenceLockLookup });
     if (sequenceLockLookup) {
-      const thisSharedFacts = this.chain.collectThisSharedAccessFacts(node, analysisPass);
+      const thisSharedFacts = this.chain.analyzeThisSharedAccess(node);
       if (thisSharedFacts) {
         this.fail(
           'Sequence marker (!) is only supported on context paths, not this.<shared> chains.',
@@ -84,12 +89,12 @@ class CompilerBaseAsync extends CompilerCommon {
           node
         );
       }
-      this._failIfSequenceRootIsDeclared(node, sequenceLockLookup.key, analysisPass);
+      this._failIfSequenceRootIsDeclared(node, sequenceLockLookup.key);
       const target = sequenceLockLookup.repair ? mutates : observes;
       target.push(sequenceLockLookup.key);
     }
 
-    const declaration = analysisPass.recordSourceLookupDeclaration(node, name);
+    const declaration = this._getVisibleDeclaration(node, name);
     // Skip intrinsic direct names at the source-read producer. Final folding
     // repeats this because observes can also come from custom/post analyzers.
     if (declaration && !(this.scriptMode && declaration.shared) && !isImmutableDeclaration(declaration)) {
@@ -99,16 +104,17 @@ class CompilerBaseAsync extends CompilerCommon {
     return { observes, mutates };
   }
 
-  postAnalyzeSymbol(node, analysisPass) {
+  postAnalyzeSymbol(node) {
     const facts = this.chain.collectDataPathSegmentFacts(node);
+    let sequenceLockFacts = null;
     if (!node._analysis?.isSymbolTarget && !node._analysis?.operationOwnedPath && !node.isCompilerInternal) {
-      const sequenceLockLookup = this.sequential.recordBareSequenceLockLookup(node, analysisPass);
-      if (sequenceLockLookup) {
-        facts.sequenceLockLookup = sequenceLockLookup;
-      }
+      sequenceLockFacts = this.sequential.collectBareSequenceLockLookupFacts(node);
     }
     this.call.validateCallableValueUse(node._analysis);
-    return facts;
+    return {
+      ...facts,
+      ...(sequenceLockFacts || {})
+    };
   }
 
   compileSymbol(node) {
@@ -117,7 +123,7 @@ class CompilerBaseAsync extends CompilerCommon {
       this.emit(name);
       return;
     }
-    const declaredChain = node._analysis.lookupDeclaration || null;
+    const declaredChain = this._getVisibleDeclaration(node, name);
     if (isStoredDirectly(declaredChain)) {
       this._compileDirectDeclarationLookup(node, name, declaredChain);
       return;
@@ -191,10 +197,10 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   _assertSequenceRootIsContextPath(lockKey, node) {
-    this._failIfSequenceRootIsDeclared(node, lockKey, this.analysis);
+    this._failIfSequenceRootIsDeclared(node, lockKey);
   }
 
-  _failIfSequenceRootIsDeclared(node, lockKey, analysisPass) {
+  _failIfSequenceRootIsDeclared(node, lockKey) {
     if (!lockKey || lockKey.charAt(0) !== '!') {
       return;
     }
@@ -203,12 +209,14 @@ class CompilerBaseAsync extends CompilerCommon {
     if (!keyRoot) {
       return;
     }
-    const keyRootChain = Object.prototype.hasOwnProperty.call(node._analysis, 'lookupDeclaration')
-      ? node._analysis.lookupDeclaration
-      : analysisPass.findSourceDeclaration(node._analysis, keyRoot);
+    const keyRootChain = this._getVisibleDeclaration(node, keyRoot);
     if (keyRootChain) {
       this._failNonContextSequenceRoot(node, keyRootChain);
     }
+  }
+
+  _getVisibleDeclaration(node, name) {
+    return node?._analysis?.visibleDeclarations?.get(name) || null;
   }
 
   _binFuncEmitter(node, _scopeState, funcName, separator = ',') {
@@ -599,7 +607,9 @@ class CompilerBaseAsync extends CompilerCommon {
   _emitAsyncDynamicCall(node, currentBufferExpr) {
     const funcName = this._describeCallableTarget(node.name).replace(/"/g, '\\"');
     this.emit('runtime.callWrapAsync(');
-    if (this.scriptMode && node.name instanceof nodes.Symbol && !node.name._analysis?.lookupDeclaration) {
+    if (this.scriptMode &&
+      node.name instanceof nodes.Symbol &&
+      !this._getVisibleDeclaration(node.name, node.name.value)) {
       this.emit(
         `runtime.resolveScriptCallTarget(context, "${node.name.value}", ` +
         `${this.emitErrorContext(node.name)}` +
@@ -705,7 +715,7 @@ class CompilerBaseAsync extends CompilerCommon {
     if (!chainName) {
       return null;
     }
-    const chainDecl = targetNode._analysis.lookupDeclaration || null;
+    const chainDecl = this._getVisibleDeclaration(targetNode, chainName);
     return {
       kind: chainDecl && chainDecl.shared ? ERROR_OBSERVATION_SHARED_CHAIN : ERROR_OBSERVATION_CHAIN,
       chainName
@@ -717,14 +727,14 @@ class CompilerBaseAsync extends CompilerCommon {
       return null;
     }
 
-    const thisSharedFacts = this.chain.collectThisSharedAccessFacts(targetNode);
+    const thisSharedFacts = this.chain.analyzeThisSharedAccess(targetNode);
     if (thisSharedFacts && thisSharedFacts.chainPath.length === 1) {
       return thisSharedFacts.chainName;
     }
 
     if (targetNode instanceof nodes.Symbol) {
       const name = targetNode.value;
-      const chainDecl = targetNode._analysis.lookupDeclaration || null;
+      const chainDecl = this._getVisibleDeclaration(targetNode, name);
       if (chainDecl) {
         if (isStoredDirectly(chainDecl) || (this.scriptMode && chainDecl.shared)) {
           return null;
@@ -737,7 +747,7 @@ class CompilerBaseAsync extends CompilerCommon {
     if (targetNode instanceof nodes.FunCall) {
       const candidate = this.sequential.extractStaticPathRoot(targetNode.name, 2);
       if (candidate) {
-        const chainDecl = targetNode.name?._analysis?.lookupDeclaration || null;
+        const chainDecl = this._getVisibleDeclaration(targetNode.name, candidate);
         if (chainDecl) {
           if (isStoredDirectly(chainDecl) || (this.scriptMode && chainDecl.shared)) {
             return null;

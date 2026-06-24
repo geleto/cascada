@@ -275,7 +275,7 @@ class CompileGuard {
         if (guardedTypes.size === 0) {
           return false;
         }
-        const chainDecl = compiler.analysis.findSourceDeclaration(analysis, name);
+        const chainDecl = analysis.visibleDeclarations?.get(name) || null;
         if (chainDecl) {
           return guardedTypes.has(chainDecl.type);
         }
@@ -291,7 +291,7 @@ class CompileGuard {
         if (name && name.charAt(0) === '!') {
           return false;
         }
-        const chainDecl = compiler.analysis.findSourceDeclaration(analysis, name);
+        const chainDecl = analysis.visibleDeclarations?.get(name) || null;
         return chainDecl && chainDecl.type === 'var';
       });
     }
@@ -329,7 +329,7 @@ class CompileGuard {
       const resolvedChains = new Set(Array.isArray(chainSelector) ? chainSelector : []);
 
       for (const name of variableTargetsRaw) {
-        const chainDecl = compiler.analysis.findSourceDeclaration(guardNode._analysis, name);
+        const chainDecl = guardNode._analysis.visibleDeclarations?.get(name) || null;
         const isDeclaredVar = chainDecl && chainDecl.type === 'var';
 
         if (isDeclaredVar) {

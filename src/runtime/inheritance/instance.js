@@ -118,13 +118,24 @@ class InheritanceInstance {
 
   getDirectMacroBinding(methodData, name, errorContext) {
     const bindings = methodData.ownerEntry.directMacroBindings;
-    if (bindings && Object.prototype.hasOwnProperty.call(bindings, name)) {
+    if (bindings && Object.hasOwn(bindings, name)) {
       return bindings[name];
     }
     RuntimeError.reportAndThrow(
       `missing direct binding '${name}'`,
       errorContext
     );
+  }
+
+  setDirectMacroBinding(methodData, name, value, errorContext) {
+    const bindings = methodData.ownerEntry.directMacroBindings;
+    if (!bindings) {
+      RuntimeError.reportAndThrow(
+        `missing direct binding table for '${name}'`,
+        errorContext
+      );
+    }
+    bindings[name] = value;
   }
 
   _invokeFromMethodData(methodData, args, errorContext, parentBuffer, context, traceParent = null) {

@@ -1,7 +1,8 @@
 
 import * as nodes from '../language/nodes.js';
-import {getSharedSourceName, renameSharedName} from '../inheritance/shared-names.js';
+import {getSharedSourceName} from '../inheritance/shared-names.js';
 import {CompileInheritanceEmit} from './inheritance-emit.js';
+import {isClassifiedImportedCallableDeclaration} from './declarations.js';
 
 const INLINE_SOURCE_OWNER_PATH = '<inline source>';
 
@@ -17,6 +18,7 @@ class CompileInheritance {
     this.compiler = compiler;
     this.emit = this.compiler.emit;
     this.currentCallableNode = null;
+    this.currentDirectBindingFactory = null;
     this.codegen = new CompileInheritanceEmit(this);
   }
 
@@ -88,6 +90,19 @@ class CompileInheritance {
     this.currentCallableNode = callableNode;
     emitEntry();
     this.currentCallableNode = savedCallableNode;
+  }
+
+  withDirectBindingFactory(rootNode, bindingsVar, emitFactory) {
+    const savedFactory = this.currentDirectBindingFactory;
+    this.currentDirectBindingFactory = {
+      rootOwner: rootNode._analysis,
+      bindingsVar
+    };
+    try {
+      emitFactory();
+    } finally {
+      this.currentDirectBindingFactory = savedFactory;
+    }
   }
 
   isConstructorCallableNode(callableNode) {
@@ -165,11 +180,27 @@ class CompileInheritance {
   }
 
   emitDirectMacroReference(declaration, node) {
-    if (!this._usesCallableOwnerDirectMacroBinding(declaration)) {
+    if (this._usesFactoryDirectBinding(declaration)) {
+      this.emit(`${this.currentDirectBindingFactory.bindingsVar}[${JSON.stringify(declaration.name)}]`);
+      return true;
+    }
+    if (!this._usesCallableOwnerDirectBinding(declaration)) {
       return false;
     }
     this.emit(`currentInstance.getDirectMacroBinding(methodData, ${JSON.stringify(declaration.name)}, ${this.compiler.emitErrorContext(node)})`);
     return true;
+  }
+
+  emitDirectImportBindingUpdate(declaration, valueExpr, node) {
+    if (!this._usesCallableOwnerDirectBinding(declaration)) {
+      return false;
+    }
+    this.emit.line(`currentInstance.setDirectMacroBinding(methodData, ${JSON.stringify(declaration.name)}, ${valueExpr}, ${this.compiler.emitErrorContext(node)});`);
+    return true;
+  }
+
+  getDirectImportExportBindingKey(importedExportId) {
+    return `__import:${importedExportId}`;
   }
 
   compileSuper(node) {
@@ -212,57 +243,6 @@ class CompileInheritance {
     return node instanceof nodes.Extends &&
       !node.noParentLiteral &&
       !(node.template instanceof nodes.Literal && typeof node.template.value === 'string');
-  }
-
-  ensureImplicitTemplateSharedDeclaration(analysis, name, type, sourceNode) {
-    const compiler = this.compiler;
-    if (compiler.scriptMode) {
-      return null;
-    }
-    if (!name || name.charAt(0) === '!') {
-      return null;
-    }
-
-    const declaration = {
-      name: renameSharedName(name),
-      type,
-      initializer: null,
-      shared: true,
-      implicitTemplateShared: true
-    };
-    const sharedDeclaration = this._ensureImplicitRootSharedDeclaration(
-      analysis,
-      declaration,
-      sourceNode ? (sourceNode._analysis || analysis) : analysis
-    );
-    return sharedDeclaration;
-  }
-
-  _ensureImplicitRootSharedDeclaration(analysis, declaration, sourceAnalysis) {
-    const rootOwner = this.compiler.analysis.getRootScopeOwner(analysis);
-    const existingDeclaration = this.findRootSharedDeclaration(rootOwner, declaration.name);
-    if (existingDeclaration) {
-      return existingDeclaration;
-    }
-
-    declaration.shared = true;
-    declaration.declarationOrigin = this.compiler.analysis.getTopmostChildAnalysis(sourceAnalysis);
-    declaration.declarationOwner = rootOwner;
-    const visibleDeclarations = rootOwner.activeVisibleDeclarations;
-    if (visibleDeclarations && !visibleDeclarations.has(declaration.name)) {
-      visibleDeclarations.set(declaration.name, declaration);
-    }
-    // The declaration table is rebuilt during finalization, so keep implicit
-    // shared declarations in the root declaration list as their source of truth.
-    if (!rootOwner.declareOnEnter.includes(declaration)) {
-      rootOwner.declareOnEnter.push(declaration);
-    }
-    this.recordRootSharedDeclaration(rootOwner, declaration);
-    return declaration;
-  }
-
-  findRootSharedDeclaration(rootAnalysis, name) {
-    return rootAnalysis.inheritanceSharedDeclarations.find((declaration) => declaration.name === name) || null;
   }
 
   recordRootSharedDeclaration(rootAnalysis, declaration) {
@@ -357,10 +337,25 @@ class CompileInheritance {
     return node._analysis.inheritanceSharedDeclarations;
   }
 
-  _usesCallableOwnerDirectMacroBinding(declaration) {
-    // Callable entries run outside the root JS function. Root-owned macros need
-    // the loaded owner entry's direct binding instead of their local jsVar.
-    if (!this.currentCallableNode || !declaration.isMacro) {
+  _isOwnerDirectBindingDeclaration(declaration) {
+    return !!(
+      declaration &&
+      (declaration.isMacro || isClassifiedImportedCallableDeclaration(declaration))
+    );
+  }
+
+  _usesFactoryDirectBinding(declaration) {
+    if (!this.currentDirectBindingFactory || !isClassifiedImportedCallableDeclaration(declaration)) {
+      return false;
+    }
+    return declaration.declarationOwner === this.currentDirectBindingFactory.rootOwner;
+  }
+
+  _usesCallableOwnerDirectBinding(declaration) {
+    // Callable entries run outside the root JS function. Root-owned macros and
+    // classified imported callables need the loaded owner entry's direct
+    // binding instead of their local jsVar.
+    if (!this.currentCallableNode || !this._isOwnerDirectBindingDeclaration(declaration)) {
       return false;
     }
     const rootOwner = this.compiler.analysis.getRootScopeOwner(this.currentCallableNode._analysis);
@@ -430,16 +425,15 @@ class CompileInheritance {
     return this._getInheritedMethodCallName(nameNode);
   }
 
-  findInheritedMethodCallNameForAnalysis(node, analysisPass) {
+  findInheritedMethodCallNameForAnalysis(node) {
     const methodName = node && node.name
       ? this.findInheritedMethodCallName(node.name)
       : null;
     if (!methodName) {
       return null;
     }
-    const thisSharedAccess = this.compiler.chain.probeThisSharedAccessFacts(
+    const thisSharedAccess = this.compiler.chain.findThisSharedAccessFacts(
       node.name,
-      analysisPass,
       node._analysis
     );
     return thisSharedAccess ? null : methodName;

@@ -774,6 +774,9 @@ class CompilerCommon extends Obj {
   }
 
   _compileChildren(node, frame) {
+    if (this.asyncMode) {
+      this.macro.compileHoistedMacroBindings(node);
+    }
     node.children.forEach((child) => {
       this.compile(child, frame);
     });

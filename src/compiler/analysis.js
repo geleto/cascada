@@ -1,6 +1,6 @@
 
 import * as nodes from '../language/nodes.js';
-import {isImmutableDeclaration} from './declarations.js';
+import {isImmutableDeclaration, isScopeVisibleCallableDeclaration, isStaticCallableDeclaration} from './declarations.js';
 import {CompileAnalysisValidation} from './analysis-validation.js';
 
 /**
@@ -90,16 +90,32 @@ class CompileAnalysis {
     }
 
     this._walk(rootNode);
-    this._finalizeChainUsage(rootNode);
+    this._finalizeAnalysis(rootNode);
   }
 
-  _walk(node, parentNode = null, parentField = null, visibleDeclarations = new Map(), scopeOwner = null) {
+  _walk(
+    node,
+    parentNode = null,
+    parentField = null,
+    visibleDeclarations = new Map(),
+    visibleCallableDeclarations = new Map(),
+    scopeOwner = null,
+    rootVisibleDeclarations = null
+  ) {
     if (!node) {
       return;
     }
     if (Array.isArray(node)) {
       for (let i = 0; i < node.length; i++) {
-        this._walk(node[i], parentNode, parentField, visibleDeclarations, scopeOwner);
+        this._walk(
+          node[i],
+          parentNode,
+          parentField,
+          visibleDeclarations,
+          visibleCallableDeclarations,
+          scopeOwner,
+          rootVisibleDeclarations
+        );
       }
       return;
     }
@@ -112,8 +128,10 @@ class CompileAnalysis {
     // produced by this node become visible to children/later siblings through
     // the live traversal map, not by mutating this node's entry snapshot.
     analysis.visibleDeclarations = new Map(visibleDeclarations);
+    analysis.visibleCallableDeclarations = new Map(visibleCallableDeclarations);
     this._analyzeNode(node);
     this.validation.validateAnalysisFacts(analysis);
+    analysis.producedDeclarations = this._createProducedDeclarationMap(analysis);
     this.compiler._generateErrorContext(node);
 
     const ownsScope = !!analysis.createScope;
@@ -121,36 +139,111 @@ class CompileAnalysis {
     const childVisibleDeclarations = ownsScope
       ? this._createScopeVisibleDeclarations(visibleDeclarations, analysis)
       : visibleDeclarations;
-    if (ownsScope) {
-      analysis.activeVisibleDeclarations = childVisibleDeclarations;
-    }
+    const childVisibleCallableDeclarations = ownsScope
+      ? new Map(visibleCallableDeclarations)
+      : visibleCallableDeclarations;
+    const currentRootVisibleDeclarations = rootVisibleDeclarations ||
+      (!scopeOwner && ownsScope ? childVisibleDeclarations : null);
 
-    this.validation.validateDeclarations(analysis, analysis.declareOnEnter, currentScopeOwner, childVisibleDeclarations);
-    this._publishDeclarations(analysis, analysis.declareOnEnter, currentScopeOwner, childVisibleDeclarations);
+    this.validation.validateDeclarations(
+      analysis,
+      analysis.declareOnEnter,
+      currentScopeOwner,
+      childVisibleDeclarations
+    );
+    this._publishDeclarations(
+      analysis,
+      analysis.declareOnEnter,
+      currentScopeOwner,
+      childVisibleDeclarations,
+      childVisibleCallableDeclarations
+    );
     this._recordOwnedDeclarations(analysis, analysis.declareOnEnter, currentScopeOwner);
-    this.validation.validateDeclarations(analysis, analysis.declareOnExit, currentScopeOwner, childVisibleDeclarations);
+    if (analysis.declareInRootOnEnter.length > 0) {
+      const rootOwner = this.getRootScopeOwner(analysis);
+      const rootDeclarations = currentRootVisibleDeclarations || visibleDeclarations;
+      this.validation.validateDeclarations(
+        analysis,
+        analysis.declareInRootOnEnter,
+        rootOwner,
+        rootDeclarations
+      );
+      this._publishRootDeclarations(
+        analysis,
+        analysis.declareInRootOnEnter,
+        rootOwner,
+        childVisibleDeclarations,
+        childVisibleCallableDeclarations,
+        rootDeclarations
+      );
+    }
+    this.validation.validateDeclarations(
+      analysis,
+      analysis.declareOnExit,
+      currentScopeOwner,
+      childVisibleDeclarations
+    );
+    if (analysis.declareInRootOnExit.length > 0) {
+      const rootOwner = this.getRootScopeOwner(analysis);
+      this.validation.validateDeclarations(
+        analysis,
+        analysis.declareInRootOnExit,
+        rootOwner,
+        currentRootVisibleDeclarations || visibleDeclarations
+      );
+    }
     if (analysis.declareInParentOnExit.length > 0 && scopeOwner) {
-      this.validation.validateDeclarations(analysis, analysis.declareInParentOnExit, scopeOwner, visibleDeclarations);
-      // Parent-owned declarations, such as macro/function names, are visible
-      // inside the declaring node for self-reference, but only become visible
-      // to later parent-scope source after the node exits.
-      this._publishDeclarations(analysis, analysis.declareInParentOnExit, scopeOwner, childVisibleDeclarations);
+      this.validation.validateDeclarations(
+        analysis,
+        analysis.declareInParentOnExit,
+        scopeOwner,
+        visibleDeclarations
+      );
       this._recordOwnedDeclarations(analysis, analysis.declareInParentOnExit, scopeOwner);
     }
     this.validation.validateObservations(analysis);
     this.validation.validateMutations(analysis);
 
     node.fields.forEach((field) => {
-      this._walk(node[field], node, field, childVisibleDeclarations, currentScopeOwner);
+      this._walk(
+        node[field],
+        node,
+        field,
+        childVisibleDeclarations,
+        childVisibleCallableDeclarations,
+        currentScopeOwner,
+        currentRootVisibleDeclarations
+      );
     });
 
-    this._publishDeclarations(analysis, analysis.declareOnExit, currentScopeOwner, childVisibleDeclarations);
+    this._publishDeclarations(
+      analysis,
+      analysis.declareOnExit,
+      currentScopeOwner,
+      childVisibleDeclarations,
+      childVisibleCallableDeclarations
+    );
     this._recordOwnedDeclarations(analysis, analysis.declareOnExit, currentScopeOwner);
-    if (analysis.declareInParentOnExit.length > 0 && scopeOwner) {
-      this._publishDeclarations(analysis, analysis.declareInParentOnExit, scopeOwner, visibleDeclarations);
+    if (analysis.declareInRootOnExit.length > 0) {
+      const rootOwner = this.getRootScopeOwner(analysis);
+      const rootDeclarations = currentRootVisibleDeclarations || visibleDeclarations;
+      this._publishRootDeclarations(
+        analysis,
+        analysis.declareInRootOnExit,
+        rootOwner,
+        childVisibleDeclarations,
+        childVisibleCallableDeclarations,
+        rootDeclarations
+      );
     }
-    if (ownsScope) {
-      analysis.activeVisibleDeclarations = null;
+    if (analysis.declareInParentOnExit.length > 0 && scopeOwner) {
+      this._publishDeclarations(
+        analysis,
+        analysis.declareInParentOnExit,
+        scopeOwner,
+        visibleDeclarations,
+        visibleCallableDeclarations
+      );
     }
   }
 
@@ -187,13 +280,18 @@ class CompileAnalysis {
       declareOnEnter: [],
       declareOnExit: [],
       declareInParentOnExit: [],
+      declareInRootOnEnter: [],
+      declareInRootOnExit: [],
+      // Declarations produced by this exact node. These are not source-visible
+      // to the node's expression children, but local analysis facts such as
+      // `var x = ...` may still need to validate or classify writes to `x`.
+      producedDeclarations: null,
       observes: [],
       mutates: [],
       // Finalized declarations owned by this scope. This is for aggregation,
       // export/ownership, and parent-chain derivation only. It is not a
       // source lookup table; it may include declarations that were not visible
-      // at a given source point. Use `visibleDeclarations` through
-      // `findSourceDeclaration` for source meaning.
+      // at a given source point. Use `visibleDeclarations` for source meaning.
       declaredChains: null,
       observedChains: null,
       usedChains: null,
@@ -213,7 +311,10 @@ class CompileAnalysis {
       // Immutable snapshot of declarations visible at this exact source point.
       // Ordinary identifier resolution should use this, not `declaredChains`.
       visibleDeclarations: null,
-      activeVisibleDeclarations: null,
+      // Static callable lookup has different visibility from values. Source-
+      // visible imports cross clean callable scopes, and scope-owned macros /
+      // promoted root-constructor imports are added by callable finalization.
+      visibleCallableDeclarations: null,
       parent: parentAnalysis,
       inheritedSequenceFunCallLockKey:
         previousAnalysis.inheritedSequenceFunCallLockKey ??
@@ -257,7 +358,7 @@ class CompileAnalysis {
   }
 
   // Lifecycle: these read the finalized `*ChainsFromParent` facts, which only
-  // exist after `_finalizeChainUsage` has run for the node. They are valid from
+  // exist after `_finalizeAnalysis` has run for the node. They are valid from
   // post-analyzers (children finalize before their parent) and from codegen.
   // First-pass analyzers must not call them — the facts are still null there.
   getChainsUsedFromParent(node) {
@@ -299,35 +400,6 @@ class CompileAnalysis {
       return names;
     }
     return [];
-  }
-
-  // Source meaning lookup. This intentionally reads the source-point visibility
-  // snapshot rather than finalized scope-owned declarations.
-  findSourceDeclaration(analysis, name) {
-    return analysis.visibleDeclarations?.get(name) || null;
-  }
-
-  recordSourceLookupDeclaration(node, name, analysis = node._analysis) {
-    const declaration = this.findSourceDeclaration(analysis, name);
-    node.addAnalysis({ lookupDeclaration: declaration });
-    return declaration;
-  }
-
-  findLocalUsageDeclaration(analysis, name) {
-    if (!name) {
-      return null;
-    }
-    const sourceDeclaration = this.findSourceDeclaration(analysis, name);
-    if (sourceDeclaration) {
-      return sourceDeclaration;
-    }
-    // These lists are not source lookup tables. They only cover usage facts
-    // recorded on the declaration-owning node itself, such as `var x = ...`,
-    // macro setup lanes, or parent-owned macro names for self-reference.
-    return analysis.declareOnEnter.find((decl) => decl.name === name) ||
-      analysis.declareInParentOnExit.find((decl) => decl.name === name) ||
-      analysis.declareOnExit.find((decl) => decl.name === name) ||
-      null;
   }
 
   getRootNode(analysis) {
@@ -378,22 +450,32 @@ class CompileAnalysis {
     if (!analysis.scopeBoundary) {
       return new Map(parentVisibleDeclarations);
     }
-    if (!this._isCallableNode(analysis.node)) {
-      return new Map();
-    }
     const visibleDeclarations = new Map();
     parentVisibleDeclarations.forEach((declaration, name) => {
-      if (declaration.isMacro) {
+      if (declaration.shared) {
         visibleDeclarations.set(name, declaration);
       }
     });
     return visibleDeclarations;
   }
 
-  _isCallableNode(node) {
-    return node instanceof nodes.Macro ||
-      node instanceof nodes.Block ||
-      node instanceof nodes.MethodDefinition;
+  _createProducedDeclarationMap(analysis) {
+    const declarations = new Map();
+    const declarationGroups = [
+      analysis.declareOnEnter,
+      analysis.declareInParentOnExit,
+      analysis.declareInRootOnEnter,
+      analysis.declareInRootOnExit,
+      analysis.declareOnExit
+    ];
+    for (const group of declarationGroups) {
+      for (const declaration of group) {
+        if (!declarations.has(declaration.name)) {
+          declarations.set(declaration.name, declaration);
+        }
+      }
+    }
+    return declarations.size > 0 ? declarations : null;
   }
 
   _getScopeOwner(analysis) {
@@ -451,7 +533,13 @@ class CompileAnalysis {
     }
   }
 
-  _publishDeclarations(analysis, declarationsToPublish, owner, visibleDeclarations) {
+  _publishDeclarations(
+    analysis,
+    declarationsToPublish,
+    owner,
+    visibleDeclarations,
+    visibleCallableDeclarations = null
+  ) {
     if (declarationsToPublish.length === 0 || !owner) {
       return;
     }
@@ -460,10 +548,66 @@ class CompileAnalysis {
       declaration.declarationOrigin = declaration.declarationOrigin || analysis;
       declaration.declarationOwner = owner;
       visibleDeclarations.set(declaration.name, declaration);
+      if (visibleCallableDeclarations && isStaticCallableDeclaration(declaration)) {
+        visibleCallableDeclarations.set(declaration.name, declaration);
+      }
       if (declaration.shared) {
         this.compiler.inheritance.recordRootSharedDeclaration(owner, declaration);
       }
     }
+  }
+
+  _publishRootDeclarations(
+    analysis,
+    declarationsToPublish,
+    rootOwner,
+    childVisibleDeclarations,
+    childVisibleCallableDeclarations,
+    rootVisibleDeclarations
+  ) {
+    this._publishDeclarations(
+      analysis,
+      declarationsToPublish,
+      rootOwner,
+      childVisibleDeclarations,
+      childVisibleCallableDeclarations
+    );
+    if (rootVisibleDeclarations !== childVisibleDeclarations) {
+      this._publishDeclarations(
+        analysis,
+        declarationsToPublish,
+        rootOwner,
+        rootVisibleDeclarations,
+        null
+      );
+    }
+    this._recordOwnedDeclarations(analysis, declarationsToPublish, rootOwner);
+  }
+
+  _applyCallableVisibility(node, scopeCallableDeclarations) {
+    const analysis = node._analysis;
+    const parentScopeCallableDeclarations = scopeCallableDeclarations;
+    if (analysis.createScope && analysis.declaredChains) {
+      analysis.declaredChains.forEach((declaration, name) => {
+        if (!isScopeVisibleCallableDeclaration(declaration)) {
+          return;
+        }
+        if (scopeCallableDeclarations === parentScopeCallableDeclarations) {
+          scopeCallableDeclarations = parentScopeCallableDeclarations
+            ? new Map(parentScopeCallableDeclarations)
+            : new Map();
+        }
+        scopeCallableDeclarations.set(name, declaration);
+      });
+    }
+    if (scopeCallableDeclarations) {
+      scopeCallableDeclarations.forEach((declaration, name) => {
+        analysis.visibleCallableDeclarations.set(name, declaration);
+      });
+    }
+    this.validation.validateCallableDeclarationConflicts(analysis);
+    this.compiler.call.classifyStaticCallableCall(node);
+    return scopeCallableDeclarations;
   }
 
   addCommandFacts(node, { observed = null, mutated = null } = {}) {
@@ -498,14 +642,14 @@ class CompileAnalysis {
     return names.size > 0 ? Array.from(names) : null;
   }
 
-  _finalizeChainUsage(node) {
+  _finalizeAnalysis(node, scopeCallableDeclarations = null) {
     if (!node) {
       return this._createChainUsageAggregate();
     }
     if (Array.isArray(node)) {
       const aggregate = this._createChainUsageAggregate();
       node.forEach((child) => {
-        const childAggregate = this._finalizeChainUsage(child);
+        const childAggregate = this._finalizeAnalysis(child, scopeCallableDeclarations);
         this._mergeChainUsage(aggregate, childAggregate);
       });
       return aggregate;
@@ -516,16 +660,21 @@ class CompileAnalysis {
 
     const analysis = node._analysis;
     const childUsage = this._createChainUsageAggregate();
+    scopeCallableDeclarations = this._applyCallableVisibility(node, scopeCallableDeclarations);
 
-    // Children finalize first, so post-analyzers can inspect immediate child facts.
+    // Callable visibility is finalized before children so static call targets can
+    // be marked before their symbol/name nodes derive ordinary lookup facts.
+    // Children then finalize before post-analyzers, so post-analyzers can inspect
+    // immediate child facts.
     node.fields.forEach((field) => {
-      const childAggregate = this._finalizeChainUsage(node[field]);
+      const childAggregate = this._finalizeAnalysis(node[field], scopeCallableDeclarations);
       this._mergeChainUsage(childUsage, childAggregate);
     });
 
     const postAnalysisFacts = this._postAnalyzeNode(node);
     if (postAnalysisFacts) {
       this.validation.validateReturnedAnalysisFacts(analysis, postAnalysisFacts);
+      this.validation.validatePostAnalysisFacts(analysis, postAnalysisFacts);
       node.addAnalysis(postAnalysisFacts);
       this.validation.validateAnalysisFacts(analysis);
     }
@@ -542,13 +691,17 @@ class CompileAnalysis {
     // read-only var storage after mutation aggregation, then purge/update the
     // aggregate chain facts with the final storage predicate.
     localObserves.forEach((name) => {
-      const declaration = this.findLocalUsageDeclaration(analysis, name);
+      const declaration = analysis.visibleDeclarations?.get(name) ||
+        analysis.producedDeclarations?.get(name) ||
+        null;
       if (!isImmutableDeclaration(declaration)) {
         this._addChainObservation(usage, name);
       }
     });
     localMutates.forEach((name) => {
-      const declaration = this.findLocalUsageDeclaration(analysis, name);
+      const declaration = analysis.visibleDeclarations?.get(name) ||
+        analysis.producedDeclarations?.get(name) ||
+        null;
       if (isImmutableDeclaration(declaration)) {
         // First-walk validation catches ordinary source mutations. Keep this
         // final guard for mutation facts added by post-analyzers after that pass.

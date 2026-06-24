@@ -169,6 +169,8 @@ Static imported calls may target either Cascada macros or ordinary functions. On
 {{ ui.version }}             {# valid ordinary namespace member #}
 ```
 
+Macros and inherited blocks can call imported paths that were imported earlier in the same template. `with context` imports work in those clean scopes; imports with explicit inputs, object inputs, or dynamic targets must be called from ordinary root code instead.
+
 This lets Cascada preserve deterministic output ordering and parallel execution without tracing macro values through variables. CascadaScript is not subject to this template call-only rule; script functions return values and can be assigned to local variables and called through them.
 
 ## Call Blocks and `caller()`

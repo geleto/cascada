@@ -24,7 +24,7 @@ class CompileCall {
       return compiler.return.collectIsUnsetCallFacts(node);
     }
 
-    const sequenceCall = this._collectSequenceCallFacts(node, analysisPass, sequenceLockLookup);
+    const sequenceCall = this._collectSequenceCallFacts(node, sequenceLockLookup);
     if (sequenceCall) {
       return sequenceCall;
     }
@@ -34,43 +34,36 @@ class CompileCall {
       return macroCallerInvocation;
     }
 
-    const macroCall = compiler.macro.collectMacroCallFacts(node, analysisPass);
-    const importedCallableCall = macroCall
-      ? null
-      : this._collectImportedCallableCallFacts(node, analysisPass);
-    if (!importedCallableCall) {
-      this._recordStaticCallTargetRootLookup(node, analysisPass);
-    }
     const inheritedMethodCallName =
-      compiler.inheritance.findInheritedMethodCallNameForAnalysis(node, analysisPass);
+      compiler.inheritance.findInheritedMethodCallNameForAnalysis(node);
     const componentBindingName = this._collectComponentCallUsage(node);
     if (componentBindingName) {
       mutates.push(componentBindingName);
     }
-    const chainOperationCall = this._collectChainOperationCallUsage(node, analysisPass, observes, mutates);
+    const chainOperationCall = this._collectChainOperationCallUsage(node, observes, mutates);
+    const declareInRootOnEnter = chainOperationCall?.declareInRootOnEnter || [];
 
     return {
+      declareInRootOnEnter,
       observes,
       mutates,
       chainOperationCall,
-      macroCall,
       macroCallerInvocation: false,
-      importedCallableCall,
+      staticCallableCall: null,
       inheritedMethodCallName,
-      wantsLinkedChildBuffer: !!importedCallableCall
+      wantsLinkedChildBuffer: false
     };
   }
 
   postAnalyzeFunCall(node) {
     const compiler = this.compiler;
     const thisSharedFacts = node.name
-      ? compiler.chain.probeThisSharedAccessFacts(node.name, compiler.analysis, node._analysis)
+      ? compiler.chain.findThisSharedAccessFacts(node.name, node._analysis)
       : null;
     const inheritedMethodCallName =
       compiler.inheritance.recordInheritedMethodCallUsage(node, thisSharedFacts);
 
     return {
-      funCallThisSharedAccessFacts: thisSharedFacts,
       componentBindingRoot: node.name ? compiler.component.findBindingRoot(node.name) : null,
       componentBindingFacts: node.name ? compiler.component.findBindingFacts(node.name, { forCall: true }) : null,
       inheritedMethodCallName: inheritedMethodCallName ??
@@ -98,10 +91,7 @@ class CompileCall {
     if (this._compileSequenceCall(node)) {
       return;
     }
-    if (compiler.macro.compileMacroCall(node)) {
-      return;
-    }
-    if (this._compileImportedCallableCall(node)) {
+    if (this._compileStaticCallableCall(node)) {
       return;
     }
     if (compiler.inheritance.compileInheritedMethodCall(node)) {
@@ -110,7 +100,7 @@ class CompileCall {
     compiler._emitAsyncDynamicCall(node, compiler.buffer.currentBuffer);
   }
 
-  _collectSequenceCallFacts(node, analysisPass, sequenceLockLookup) {
+  _collectSequenceCallFacts(node, sequenceLockLookup) {
     if (!sequenceLockLookup) {
       return null;
     }
@@ -118,9 +108,8 @@ class CompileCall {
     const compiler = this.compiler;
     // Sequence calls always have a callable target; the sequence marker lives
     // on the static call path, not on a nameless expression.
-    const thisSharedFacts = compiler.chain.probeThisSharedAccessFacts(
+    const thisSharedFacts = compiler.chain.analyzeThisSharedAccess(
       node.name,
-      analysisPass,
       node._analysis
     );
     if (thisSharedFacts) {
@@ -131,7 +120,7 @@ class CompileCall {
         node
       );
     }
-    compiler._failIfSequenceRootIsDeclared(node, sequenceLockLookup.key, analysisPass);
+    compiler._failIfSequenceRootIsDeclared(node, sequenceLockLookup.key);
     return {
       mutates: [sequenceLockLookup.key]
     };
@@ -154,32 +143,33 @@ class CompileCall {
     return true;
   }
 
-  _recordStaticCallTargetRootLookup(node, analysisPass) {
-    if (!node.name) {
+  classifyStaticCallableCall(node) {
+    if (!(node instanceof nodes.FunCall) ||
+      node._analysis?.operationOwnedPath ||
+      node._analysis?.sequenceLockLookup ||
+      node._analysis?.macroCallerInvocation ||
+      this.compiler.return.isUnsetCall(node)) {
       return;
     }
-    const staticPath = this.compiler.sequential.extractStaticPath(node.name);
-    const rootName = staticPath.root;
-    if (rootName) {
-      analysisPass.recordSourceLookupDeclaration(node.name, rootName, node._analysis);
+    const staticCallableCall = this._collectStaticCallableCallFacts(node);
+    if (!staticCallableCall) {
+      return;
     }
+    node.addAnalysis({
+      staticCallableCall,
+      wantsLinkedChildBuffer: staticCallableCall.kind !== 'local-macro'
+    });
   }
 
-  findStaticCallableDeclaration(analysis, name, analysisPass = this.compiler.analysis) {
-    const currentDeclaration = analysisPass.findSourceDeclaration(analysis, name);
-    if (currentDeclaration) {
-      return currentDeclaration;
-    }
-    // Clean callable scopes do not import ordinary parent declarations into
-    // their body scope, but static callable classification still uses the
-    // source point where the callable was declared. Walk every ancestor source
-    // snapshot; scope boundaries are not lookup boundaries for this
-    // classification.
-    let current = analysis.parent;
+  _findNearestCallableAnalysis(analysis) {
+    let current = analysis;
     while (current) {
-      const declaration = current.visibleDeclarations?.get(name) || null;
-      if (declaration) {
-        return declaration;
+      if (
+        current.node instanceof nodes.Macro ||
+        current.node instanceof nodes.Block ||
+        current.node instanceof nodes.MethodDefinition
+      ) {
+        return current;
       }
       current = current.parent;
     }
@@ -212,7 +202,7 @@ class CompileCall {
   }
 
   _validateSymbolCallableValueUse(analysis, node) {
-    const declaration = this.findStaticCallableDeclaration(analysis, node.value);
+    const declaration = analysis.visibleCallableDeclarations?.get(node.value) || null;
     if (!declaration) {
       return;
     }
@@ -230,7 +220,7 @@ class CompileCall {
     if (!path || path.length < 2) {
       return;
     }
-    const declaration = this.findStaticCallableDeclaration(analysis, path[0]);
+    const declaration = analysis.visibleCallableDeclarations?.get(path[0]) || null;
     if (!declaration?.imported || declaration.importKind !== DECLARATION_IMPORT_KIND.NAMESPACE) {
       return;
     }
@@ -259,7 +249,7 @@ class CompileCall {
     );
   }
 
-  _collectImportedCallableCallFacts(node, analysisPass) {
+  _collectStaticCallableCallFacts(node) {
     if (!node.name) {
       return null;
     }
@@ -270,16 +260,38 @@ class CompileCall {
     }
 
     const rootName = path[0];
-    const declaration = this.findStaticCallableDeclaration(
-      node._analysis,
-      rootName,
-      analysisPass
-    );
+    const declaration = node._analysis.visibleCallableDeclarations?.get(rootName) || null;
+
+    if (declaration?.isMacro) {
+      if (!(node.name instanceof nodes.Symbol) || path.length !== 1) {
+        return null;
+      }
+      node.name.addAnalysis({
+        isStaticCallableCallTarget: true
+      });
+      return {
+        kind: 'local-macro',
+        declaration,
+        localName: rootName,
+        localPath: rootName
+      };
+    }
+
     if (!declaration?.imported) {
       return null;
     }
 
-    let importedCallableCall = null;
+    const importedCallableCall = this._classifyImportedCallableCall(node, path, declaration, rootName);
+    if (!importedCallableCall) {
+      return null;
+    }
+
+    this._recordImportedCallableUse(importedCallableCall, node._analysis);
+    node.name.addAnalysis({ isStaticCallableCallTarget: true });
+    return importedCallableCall;
+  }
+
+  _classifyImportedCallableCall(node, path, declaration, rootName) {
     if (declaration.importKind === DECLARATION_IMPORT_KIND.NAMESPACE) {
       if (path.length === 1) {
         this.compiler.fail(
@@ -296,15 +308,16 @@ class CompileCall {
       if (!exportedName) {
         return null;
       }
-      importedCallableCall = {
+      return {
         kind: DECLARATION_IMPORT_KIND.NAMESPACE,
         declaration,
         namespaceName: rootName,
         exportedName,
         localPath: `${rootName}.${exportedName}`
       };
-    } else if (declaration.importKind === DECLARATION_IMPORT_KIND.FROM && path.length === 1) {
-      importedCallableCall = {
+    }
+    if (declaration.importKind === DECLARATION_IMPORT_KIND.FROM && path.length === 1) {
+      return {
         kind: DECLARATION_IMPORT_KIND.FROM,
         declaration,
         localName: rootName,
@@ -312,14 +325,7 @@ class CompileCall {
         localPath: rootName
       };
     }
-
-    if (!importedCallableCall) {
-      return null;
-    }
-
-    this._recordImportedCallableUse(importedCallableCall);
-    node.name.addAnalysis({ isStaticCallableCallTarget: true });
-    return importedCallableCall;
+    return null;
   }
 
   _getStaticNamespaceCallableExportName(targetNode, namespaceName) {
@@ -335,8 +341,11 @@ class CompileCall {
     return targetNode.val.value;
   }
 
-  _recordImportedCallableUse(importedCallableCall) {
+  _recordImportedCallableUse(importedCallableCall, analysis) {
     const declaration = importedCallableCall.declaration;
+    if (this._needsCleanScopeCallableBinding(analysis)) {
+      declaration.requiresCleanScopeBinding = true;
+    }
     if (importedCallableCall.kind === DECLARATION_IMPORT_KIND.FROM) {
       declaration.requiredCallable = true;
       declaration.requiredCallableLocalPath = importedCallableCall.localPath;
@@ -346,10 +355,23 @@ class CompileCall {
     declaration.requiredCallableExports.set(importedCallableCall.exportedName, importedCallableCall.localPath);
   }
 
-  _compileImportedCallableCall(node) {
-    const importedCallableCall = node._analysis.importedCallableCall;
-    if (!importedCallableCall) {
+  _needsCleanScopeCallableBinding(analysis) {
+    const callableAnalysis = this._findNearestCallableAnalysis(analysis);
+    return !!(
+      callableAnalysis &&
+      !(callableAnalysis.node instanceof nodes.MethodDefinition && callableAnalysis.node.isCompilerInternal)
+    );
+  }
+
+  _compileStaticCallableCall(node) {
+    const staticCallableCall = node._analysis.staticCallableCall;
+    if (!staticCallableCall) {
       return false;
+    }
+
+    if (staticCallableCall.kind === 'local-macro') {
+      this._emitLocalMacroInvocation(node, staticCallableCall);
+      return true;
     }
 
     const compiler = this.compiler;
@@ -358,9 +380,18 @@ class CompileCall {
       callSignature: compiler._describeCallSignature(node.name, node.args)
     };
     compiler.boundaries.compileValueBoundary(compiler.buffer, node, (n) => {
-      this._emitImportedCallableInvocation(n, importedCallableCall);
+      this._emitImportedCallableInvocation(n, staticCallableCall);
     }, node, stackFields);
     return true;
+  }
+
+  _emitLocalMacroInvocation(node, staticCallableCall) {
+    const compiler = this.compiler;
+    compiler.emit('runtime.invokeMacro(');
+    compiler._compileDirectDeclarationLookup(node.name, staticCallableCall.localName, staticCallableCall.declaration);
+    compiler.emit(', context, ');
+    compiler._compileAggregate(node.args, null, '[', ']', false, false);
+    compiler.emit(`, ${compiler.buffer.currentBuffer})`);
   }
 
   _emitImportedCallableInvocation(node, importedCallableCall) {
@@ -404,13 +435,13 @@ class CompileCall {
       : null;
   }
 
-  _collectChainOperationCallUsage(node, analysisPass, observes, mutates) {
+  _collectChainOperationCallUsage(node, observes, mutates) {
     const compiler = this.compiler;
     if (!node.name || node._analysis.sequenceLockLookup) {
       return null;
     }
 
-    const callFacts = this._getChainOperationCallFacts(node, analysisPass);
+    const callFacts = this._getChainOperationCallFacts(node);
     if (!callFacts) {
       return null;
     }
@@ -423,21 +454,19 @@ class CompileCall {
     return callFacts;
   }
 
-  _getChainOperationCallFacts(node, analysisPass) {
+  _getChainOperationCallFacts(node) {
     const compiler = this.compiler;
-    const thisSharedFacts = compiler.chain.probeThisSharedAccessFacts(
+    const thisSharedFacts = compiler.chain.analyzeThisSharedAccess(
       node.name,
-      analysisPass,
       node._analysis
     );
     if (thisSharedFacts) {
       const methodName = thisSharedFacts.chainPath.length >= 2
         ? thisSharedFacts.chainPath[thisSharedFacts.chainPath.length - 1]
         : null;
-      return {
+      const facts = {
         chainName: thisSharedFacts.chainName,
         chainType: thisSharedFacts.chainType,
-        shared: true,
         methodName,
         pathPrefix: thisSharedFacts.pathPrefix,
         isObservation:
@@ -445,6 +474,10 @@ class CompileCall {
           (methodName === 'isError' || methodName === 'getError' ||
             (methodName === 'snapshot' && thisSharedFacts.chainType !== 'sequence'))
       };
+      if (thisSharedFacts.declareInRootOnEnter) {
+        facts.declareInRootOnEnter = thisSharedFacts.declareInRootOnEnter;
+      }
+      return facts;
     }
 
     if (!compiler.scriptMode) {
@@ -457,7 +490,7 @@ class CompileCall {
     }
 
     const chainName = sequencePath[0];
-    const chainDecl = analysisPass.recordSourceLookupDeclaration(node.name, chainName, node._analysis);
+    const chainDecl = node._analysis.visibleDeclarations?.get(chainName) || null;
     if (!chainDecl || chainDecl.shared) {
       return null;
     }
@@ -469,7 +502,6 @@ class CompileCall {
     return {
       chainName,
       chainType: chainDecl.type,
-      shared: chainDecl.shared,
       methodName,
       pathPrefix: sequencePath.slice(1, -1),
       isObservation:

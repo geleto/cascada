@@ -97,7 +97,7 @@ context.addResolvedExport("greet", macro_12);
 
 This direct export must be used in template mode too. Current template-mode macro export uses `context.addDeferredExport(name, chainName, buffer)`, which requires a backing chain and will fail once macro names stop allocating `var` chains.
 
-Macro/function bodies also need a body-local self declaration for recursion. The source-visible declaration in the surrounding scope lets later code call `greet(...)`; the body-local declaration makes `greet(...)` inside the macro/function body resolve even though the body is a clean `scopeBoundary: true` scope. Both declarations point at the same `jsVar`.
+Macro/function recursion and sibling calls use the static callable visibility fact, not a body-local source declaration. The source-visible declaration still appears in the surrounding scope at the declaration point for ordinary value visibility, while `visibleCallableDeclarations` makes the callable available across clean callable scopes and throughout the declaring scope.
 
 ### 2. Import Namespaces And From-Imports (intrinsic)
 
@@ -217,12 +217,12 @@ The existing declaration flow should continue to own visibility:
 
 - first pass records source-visible declarations for validation and lookup
 - finalization installs finalized declarations on scope owners
-- symbol analysis records `lookupDeclaration` as it does today
+- symbol compile reads the node's `visibleDeclarations` snapshot directly
 - missing-name validation checks declarations before falling back to ambient/context lookup
 
-For explicit direct declarations such as macro/function names, `lookupDeclaration.storage` can be `DECLARATION_STORAGE.DIRECT` during the existing symbol analysis pass.
+For explicit direct declarations such as macro/function names, the static callable analysis fact carries the declaration for direct calls.
 
-For derived direct declarations (read-only vars), storage is decided after the first walk because eligibility depends on finalized usage. Prefer keeping one declaration object and setting its `storage` after derivation, so existing `lookupDeclaration` pointers see the final choice. Declaration installation currently copies objects into `sourceVisibleDeclarations` and then into `declaredChains`; make both maps point at the same object (or rewrite `lookupDeclaration` pointers in the derivation pass) so no pointer keeps a stale pre-derivation declaration.
+For derived direct declarations (read-only vars), storage is decided after the first walk because eligibility depends on finalized usage. Prefer keeping one declaration object and setting its `storage` after derivation, so existing `visibleDeclarations`, `visibleCallableDeclarations`, and `declaredChains` entries see the final choice where the name appears in more than one map.
 
 Conflict validation is reused from the existing declaration map:
 
@@ -354,7 +354,7 @@ compileSymbol(node) {
     return;
   }
 
-  const declaration = node._analysis.lookupDeclaration;
+  const declaration = node._analysis.visibleDeclarations.get(node.value);
   if (declaration && declaration.storage === DECLARATION_STORAGE.DIRECT) {
     emit(declaration.jsVar);
     return;

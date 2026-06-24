@@ -1,4 +1,5 @@
 import * as nodes from '../language/nodes.js';
+import {isClassifiedImportedCallableDeclaration} from './declarations.js';
 
 class CompileComposition {
   constructor(compiler) {
@@ -8,9 +9,22 @@ class CompileComposition {
 
   _emitValueImportBinding(name, sourceVar, node) {
     this.emit.line(`runtime.markPromiseHandled(${sourceVar});`);
+    const declaration = this._findImportDeclaration(node, name);
+    if (declaration) {
+      this.compiler.inheritance.emitDirectImportBindingUpdate(declaration, sourceVar, node);
+    }
     if (this.compiler.analysis.isRootScopeOwner(node._analysis)) {
       this.emit.line(`context.addResolvedExport("${name}", ${sourceVar});`);
     }
+  }
+
+  _findImportDeclaration(node, name) {
+    return this._getImportDeclarations(node).find((declaration) => declaration.name === name) ||
+      null;
+  }
+
+  _getImportDeclarations(node) {
+    return node._analysis.declareOnExit.concat(node._analysis.declareInRootOnExit);
   }
 
   compileAsyncResolveTargetFile(node, eagerCompile, ignoreMissing, allowNoParent = false, loadFailureKind = null) {
@@ -71,36 +85,11 @@ class CompileComposition {
   }
 
   compileImport(node) {
-    const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
-    if (!node.withContext && withVars.length === 0 && !node.withValue) {
-      const target = node.target.value;
-      const id = this.compileAsyncResolveTargetFile(node, false, false, false, 'import');
-      const exportedId = node._analysis.importedExportId;
-      const errorContext = this.compiler.emitErrorContext(node);
-      this.emit.line(`let ${exportedId} = runtime.valueWithOrigin(runtime.resolveThen(${id}, (resolvedTemplate) => {`);
-      this.emit.line('  resolvedTemplate.compile();');
-      this.emit.line('  renderState.throwIfFatalErrorReported();');
-      this.emit.line('  return runtime.resolveSingle(resolvedTemplate.getExported(null, null, renderState));');
-      this.emit.line(`}).catch((e) => runtime.handleLoadFailure(e, ${errorContext}, "import", env)), ${errorContext}, "LoadFailed");`);
-      this.compiler.buffer.emitLimitedLoopCompletion(exportedId, node);
-      this._emitValueImportBinding(target, exportedId, node);
-      return;
-    }
-
     const target = node.target.value;
-    const id = this.compileAsyncResolveTargetFile(node, false, false, false, 'import');
     const exportedId = node._analysis.importedExportId;
-    const importVarsVar = this.compiler._tmpid();
-    const importContextVar = this.compiler._tmpid();
-    const errorContext = this.compiler.emitErrorContext(node);
-    this.emit.line(`let ${importVarsVar} = {};`);
-    this.compiler.compositionPayload.emitCompiledInputs(node, importVarsVar);
-    this.compiler.compositionPayload.emitContext(importContextVar, importVarsVar, node.withContext);
-    this.emit.line(`let ${exportedId} = runtime.valueWithOrigin(runtime.resolveThen(${id}, (resolvedTemplate) => {`);
-    this.emit.line('  resolvedTemplate.compile();');
-    this.emit.line('  renderState.throwIfFatalErrorReported();');
-    this.emit.line(`  return runtime.resolveSingle(resolvedTemplate.getExported(${importContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, renderState));`);
-    this.emit.line(`}).catch((e) => runtime.handleLoadFailure(e, ${errorContext}, "import", env)), ${errorContext}, "LoadFailed");`);
+    if (!this._emitDirectImportExportReuse(node, exportedId)) {
+      this._emitAsyncImportExports(node, exportedId);
+    }
     this.compiler.buffer.emitLimitedLoopCompletion(exportedId, node);
     this._emitValueImportBinding(target, exportedId, node);
   }
@@ -130,35 +119,30 @@ class CompileComposition {
   }
 
   compileFromImport(node) {
-    const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
-    if (!node.withContext && withVars.length === 0 && !node.withValue) {
-      this._compileAsyncFromImportWithoutPayload(node);
-      return;
-    }
-    this._compileAsyncFromImportWithPayload(node);
-  }
-
-  _compileAsyncFromImportWithoutPayload(node) {
-    const importedId = this.compileAsyncResolveTargetFile(node, false, false, false, 'import');
     const exportedId = node._analysis.importedExportId;
     const bindingIds = [];
-    const errorContext = this.compiler.emitErrorContext(node);
-    this.emit.line(`let ${exportedId} = runtime.valueWithOrigin(runtime.resolveThen(${importedId}, (resolvedTemplate) => {`);
-    this.emit.line('  resolvedTemplate.compile();');
-    this.emit.line('  renderState.throwIfFatalErrorReported();');
-    this.emit.line('  return runtime.resolveSingle(resolvedTemplate.getExported(null, null, renderState));');
-    this.emit.line(`}).catch((e) => runtime.handleLoadFailure(e, ${errorContext}, "import", env)), ${errorContext}, "LoadFailed");`);
+    if (!this._emitDirectImportExportReuse(node, exportedId)) {
+      this._emitAsyncImportExports(node, exportedId);
+    }
     this._emitAsyncFromImportBindings(node, exportedId, bindingIds);
     this.compiler.buffer.emitLimitedLoopCompletions(bindingIds.length > 0 ? bindingIds : [exportedId], node);
   }
 
-  _compileAsyncFromImportWithPayload(node) {
+  _emitAsyncImportExports(node, exportedId) {
+    const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
     const importedId = this.compileAsyncResolveTargetFile(node, false, false, false, 'import');
-    const exportedId = node._analysis.importedExportId;
-    const bindingIds = [];
+    const errorContext = this.compiler.emitErrorContext(node);
+    if (!node.withContext && withVars.length === 0 && !node.withValue) {
+      this.emit.line(`let ${exportedId} = runtime.valueWithOrigin(runtime.resolveThen(${importedId}, (resolvedTemplate) => {`);
+      this.emit.line('  resolvedTemplate.compile();');
+      this.emit.line('  renderState.throwIfFatalErrorReported();');
+      this.emit.line('  return runtime.resolveSingle(resolvedTemplate.getExported(null, null, renderState));');
+      this.emit.line(`}).catch((e) => runtime.handleLoadFailure(e, ${errorContext}, "import", env)), ${errorContext}, "LoadFailed");`);
+      return;
+    }
+
     const importVarsVar = this.compiler._tmpid();
     const importContextVar = this.compiler._tmpid();
-    const errorContext = this.compiler.emitErrorContext(node);
     this.emit.line(`let ${importVarsVar} = {};`);
     this.compiler.compositionPayload.emitCompiledInputs(node, importVarsVar);
     this.compiler.compositionPayload.emitContext(importContextVar, importVarsVar, node.withContext);
@@ -167,8 +151,72 @@ class CompileComposition {
     this.emit.line('  renderState.throwIfFatalErrorReported();');
     this.emit.line(`  return runtime.resolveSingle(resolvedTemplate.getExported(${importContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, renderState));`);
     this.emit.line(`}).catch((e) => runtime.handleLoadFailure(e, ${errorContext}, "import", env)), ${errorContext}, "LoadFailed");`);
-    this._emitAsyncFromImportBindings(node, exportedId, bindingIds);
-    this.compiler.buffer.emitLimitedLoopCompletions(bindingIds.length > 0 ? bindingIds : [exportedId], node);
+  }
+
+  _emitDirectImportExportReuse(node, exportedId) {
+    if (!this.compiler.inheritance._isInsideCompilerInternalCallable(node) ||
+      this._getCleanScopeImportDeclarations(node).length === 0) {
+      return false;
+    }
+    const importKey = this.compiler.inheritance.getDirectImportExportBindingKey(node._analysis.importedExportId);
+    this.emit.line(`let ${exportedId} = currentInstance.getDirectMacroBinding(methodData, ${JSON.stringify(importKey)}, ${this.compiler.emitErrorContext(node)});`);
+    return true;
+  }
+
+  emitDirectImportFactoryBindings(declarations, bindingsVar) {
+    const declarationsByImport = new Map();
+    declarations.forEach((declaration) => {
+      const importNode = declaration.sourceImportNode;
+      if (!declarationsByImport.has(importNode)) {
+        declarationsByImport.set(importNode, []);
+      }
+      declarationsByImport.get(importNode).push(declaration);
+    });
+    declarationsByImport.forEach((importDeclarations, importNode) => {
+      this._emitDirectImportFactoryBinding(importNode, importDeclarations, bindingsVar);
+    });
+  }
+
+  _emitDirectImportFactoryBinding(importNode, declarations, bindingsVar) {
+    this._validateDirectImportFactorySupport(importNode);
+    const exportedId = importNode._analysis.importedExportId;
+    const importKey = this.compiler.inheritance.getDirectImportExportBindingKey(exportedId);
+    this._emitAsyncImportExports(importNode, exportedId);
+    this.emit.line(`${bindingsVar}[${JSON.stringify(importKey)}] = ${exportedId};`);
+    if (importNode instanceof nodes.Import) {
+      declarations.forEach((declaration) => {
+        this.emit.line(`${bindingsVar}[${JSON.stringify(declaration.name)}] = ${exportedId};`);
+      });
+      return;
+    }
+    declarations.forEach((declaration) => {
+      const errorContext = this.compiler.emitErrorContext(declaration.sourceOrderNode);
+      this.emit.line(`const ${declaration.jsVar} = runtime.valueWithOrigin(runtime.thenValue(${exportedId}, (exported) => {`);
+      this.emit.line(`  return runtime.getImportedExport(exported, ${JSON.stringify(declaration.exportedName)}, ${errorContext});`);
+      this.emit.line(`}), ${errorContext}, "ImportBindingMissing");`);
+      this.emit.line(`${bindingsVar}[${JSON.stringify(declaration.name)}] = ${declaration.jsVar};`);
+    });
+  }
+
+  _validateDirectImportFactorySupport(node) {
+    const withVars = node.withVars && node.withVars.children ? node.withVars.children : [];
+    const hasStaticTarget = node.template instanceof nodes.Literal && typeof node.template.value === 'string';
+    if (hasStaticTarget && !node.withValue && withVars.length === 0) {
+      return;
+    }
+    this.compiler.fail(
+      'Imported callables used from macros, methods, or blocks require a static import target and no explicit import inputs.',
+      node.lineno,
+      node.colno,
+      node
+    );
+  }
+
+  _getCleanScopeImportDeclarations(node) {
+    return this._getImportDeclarations(node).filter((declaration) =>
+      declaration.requiresCleanScopeBinding &&
+      isClassifiedImportedCallableDeclaration(declaration)
+    );
   }
 
   _emitAsyncFromImportBindings(node, exportedId, bindingIds) {
