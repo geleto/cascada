@@ -149,7 +149,7 @@ class CompileComposition {
     this.emit.line('  return runtime.resolveSingle(resolvedTemplate.getExported(null, null, renderState));');
     this.emit.line(`}).catch((e) => runtime.handleLoadFailure(e, ${errorContext}, "import", env)), ${errorContext}, "LoadFailed");`);
     this._emitAsyncFromImportBindings(node, exportedId, bindingIds);
-    this._emitFromImportCompletion(node, exportedId, bindingIds);
+    this.compiler.buffer.emitLimitedLoopCompletions(bindingIds.length > 0 ? bindingIds : [exportedId], node);
   }
 
   _compileAsyncFromImportWithPayload(node) {
@@ -168,7 +168,7 @@ class CompileComposition {
     this.emit.line(`  return runtime.resolveSingle(resolvedTemplate.getExported(${importContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, renderState));`);
     this.emit.line(`}).catch((e) => runtime.handleLoadFailure(e, ${errorContext}, "import", env)), ${errorContext}, "LoadFailed");`);
     this._emitAsyncFromImportBindings(node, exportedId, bindingIds);
-    this._emitFromImportCompletion(node, exportedId, bindingIds);
+    this.compiler.buffer.emitLimitedLoopCompletions(bindingIds.length > 0 ? bindingIds : [exportedId], node);
   }
 
   _emitAsyncFromImportBindings(node, exportedId, bindingIds) {
@@ -180,28 +180,13 @@ class CompileComposition {
         ? nameNode.value.value
         : nameNode.value;
       const id = node._analysis.importBindingIds.get(alias);
-      const failMsg = `cannot import '${importedName}'`.replace(/"/g, '\\"');
       const errorContext = this.compiler.emitErrorContext(nameNode);
-
       this.emit.line(`let ${id} = runtime.valueWithOrigin(runtime.thenValue(${exportedId}, (exported) => {`);
-      this.emit.line(`  if(Object.prototype.hasOwnProperty.call(exported, "${importedName}")) {`);
-      this.emit.line(`    return exported["${importedName}"];`);
-      this.emit.line(`  }`);
-      this.emit.line(`  throw runtime.PoisonError.create("${failMsg}", ${errorContext}, "ImportBindingMissing");`);
+      this.emit.line(`  return runtime.getImportedExport(exported, ${JSON.stringify(importedName)}, ${errorContext});`);
       this.emit.line(`}), ${errorContext}, "ImportBindingMissing");`);
       bindingIds.push(id);
       this._emitValueImportBinding(alias, id, node);
     });
-  }
-
-  _emitFromImportCompletion(node, exportedId, bindingIds) {
-    if (bindingIds.length > 0) {
-      const boundaryCompletion = this.compiler._tmpid();
-      this.emit.line(`let ${boundaryCompletion} = runtime.resolveAll([${bindingIds.join(', ')}]);`);
-      this.compiler.buffer.emitLimitedLoopCompletion(boundaryCompletion, node);
-    } else {
-      this.compiler.buffer.emitLimitedLoopCompletion(exportedId, node);
-    }
   }
 
   compileSyncFromImport(node, frame) {

@@ -11,6 +11,15 @@ const {AsyncEnvironment, AsyncTemplate} = typeof window !== 'undefined'
 
   const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+  async function expectRejects(promise) {
+    try {
+      await promise;
+      expect().fail('Expected promise to reject');
+    } catch (err) {
+      return err;
+    }
+  }
+
   describe('Async mode with loaded templates', () => {
     let loader;
     let env;
@@ -97,7 +106,7 @@ const {AsyncEnvironment, AsyncTemplate} = typeof window !== 'undefined'
           );
         });
 
-        it('should compile imported callable value boundaries without async callbacks', () => {
+        it('should compile imported macro value boundaries without async callbacks', () => {
           const source = new AsyncTemplate(
             '{% from "forms.njk" import label %}{{ label("Name") }}',
             env,
@@ -108,6 +117,350 @@ const {AsyncEnvironment, AsyncTemplate} = typeof window !== 'undefined'
           expect(source).to.contain('runtime.thenValue');
           expect(source).to.not.contain('async (currentBuffer)');
           expect(source).to.not.contain('return await');
+        });
+
+        it('should let ordinary macro bodies call from-import macros', async () => {
+          const template = `
+            {% from "forms.njk" import label %}
+            {% macro render() %}{{ label("Name") }}{% endmacro %}
+            {{ render() }}
+          `;
+
+          const result = await env.renderTemplateString(template);
+          expect(unescape(result.trim())).to.equal(
+            `<div>
+            <label>Name</label>
+            </div>`
+          );
+        });
+
+        it('should let ordinary macro bodies call namespace imported macros', async () => {
+          const template = `
+            {% import "forms.njk" as forms %}
+            {% macro render() %}{{ forms.label("Name") }}{% endmacro %}
+            {{ render() }}
+          `;
+
+          const result = await env.renderTemplateString(template);
+          expect(unescape(result.trim())).to.equal(
+            `<div>
+            <label>Name</label>
+            </div>`
+          );
+        });
+
+        it('should let scripts call imported Cascada functions and plain function values through the same callable path', async () => {
+          loader.addTemplate('script-callables.script', [
+            'function scriptEcho(value)',
+            '  return "script:" + value',
+            'endfunction'
+          ].join('\n'));
+          loader.addTemplate('plain-callables.script', 'var plainEcho = externalEcho');
+
+          const result = await env.renderScriptString([
+            'from "script-callables.script" import scriptEcho',
+            'import "script-callables.script" as scriptLib',
+            'from "plain-callables.script" import plainEcho with context',
+            'import "plain-callables.script" as plainLib with context',
+            'return [',
+            '  scriptEcho("from-script"),',
+            '  scriptLib.scriptEcho("ns-script"),',
+            '  plainEcho("from-plain"),',
+            '  plainLib.plainEcho("ns-plain")',
+            ']'
+          ].join('\n'), {
+            externalEcho(value) {
+              return 'plain:' + value;
+            }
+          });
+
+          expect(result).to.eql([
+            'script:from-script',
+            'script:ns-script',
+            'plain:from-plain',
+            'plain:ns-plain'
+          ]);
+        });
+
+        it('should let async templates call imported function values from output and expression positions', async () => {
+          loader.addTemplate('function-values.njk', '{% set label = makeLabel %}');
+
+          const context = {
+            makeLabel(value) {
+              return `Label ${value}`;
+            }
+          };
+          const output = await env.renderTemplateString(
+            '{% from "function-values.njk" import label with context %}{{ label("Name") }}',
+            context
+          );
+          const expression = await env.renderTemplateString(
+            '{% from "function-values.njk" import label with context %}{% set text = label("Name") + "!" %}{{ text }}',
+            context
+          );
+          const namespaceOutput = await env.renderTemplateString(
+            '{% import "function-values.njk" as values with context %}{{ values.label("Name") }}',
+            context
+          );
+          const namespaceExpression = await env.renderTemplateString(
+            '{% import "function-values.njk" as values with context %}{% set text = values.label("Name") + "!" %}{{ text }}',
+            context
+          );
+
+          expect(output.trim()).to.equal('Label Name');
+          expect(expression.trim()).to.equal('Label Name!');
+          expect(namespaceOutput.trim()).to.equal('Label Name');
+          expect(namespaceExpression.trim()).to.equal('Label Name!');
+        });
+
+        it('should let imported macros return strings inside template expressions', async () => {
+          const result = await env.renderTemplateString(
+            '{% from "forms.njk" import label %}{{ label("Name") + "!" }}'
+          );
+
+          expect(unescape(result.trim())).to.equal(`<div>
+            <label>Name</label>
+            </div>!`);
+        });
+
+        it('should reject non-call use of classified from-import callables', async () => {
+          const error = await expectRejects(env.renderTemplateString(
+            '{% from "forms.njk" import label %}{{ label }}{{ label("Name") }}'
+          ));
+
+          expect(error.message).to.contain('Imported callable \'label\' cannot be used as a value');
+        });
+
+        it('should reject classified from-import callables passed or assigned as values', async () => {
+          env.addGlobal('helper', (value) => value);
+          const passed = await expectRejects(env.renderTemplateString(
+            '{% from "forms.njk" import label %}{{ label("Name") }}{{ helper(label) }}'
+          ));
+          const assigned = await expectRejects(env.renderTemplateString(
+            '{% from "forms.njk" import label %}{{ label("Name") }}{% set x = label %}'
+          ));
+
+          expect(passed.message).to.contain('Imported callable \'label\' cannot be used as a value');
+          expect(assigned.message).to.contain('Imported callable \'label\' cannot be used as a value');
+        });
+
+        it('should reject classified from-import callables passed to known macro calls at compile time', async () => {
+          const error = await expectRejects(env.renderTemplateString(
+            '{% from "forms.njk" import label %}{% macro wrapper(value) %}ok{% endmacro %}{{ label("Name") }}{{ wrapper(label) }}'
+          ));
+
+          expect(error.message).to.contain('Imported callable \'label\' cannot be used as a value');
+        });
+
+        it('should reject non-call use of classified namespace callables', async () => {
+          const error = await expectRejects(env.renderTemplateString(
+            '{% import "forms.njk" as forms %}{{ forms.label("Name") }}{{ forms.label.text }}'
+          ));
+
+          expect(error.message).to.contain('Imported callable \'forms.label\' cannot be used as a value');
+        });
+
+        it('should reject classified namespace callables passed or assigned as values', async () => {
+          env.addGlobal('helper', (value) => value);
+          const passed = await expectRejects(env.renderTemplateString(
+            '{% import "forms.njk" as forms %}{{ forms.label("Name") }}{{ helper(forms.label) }}'
+          ));
+          const assigned = await expectRejects(env.renderTemplateString(
+            '{% import "forms.njk" as forms %}{{ forms.label("Name") }}{% set x = forms.label %}'
+          ));
+
+          expect(passed.message).to.contain('Imported callable \'forms.label\' cannot be used as a value');
+          expect(assigned.message).to.contain('Imported callable \'forms.label\' cannot be used as a value');
+        });
+
+        it('should reject classified namespace callables passed to known macro calls at compile time', async () => {
+          const error = await expectRejects(env.renderTemplateString(
+            '{% import "forms.njk" as forms %}{% macro wrapper(value) %}ok{% endmacro %}{{ forms.label("Name") }}{{ wrapper(forms.label) }}'
+          ));
+
+          expect(error.message).to.contain('Imported callable \'forms.label\' cannot be used as a value');
+        });
+
+        it('should keep namespace objects and unrelated namespace members usable', async () => {
+          loader.addTemplate('metadata-forms.njk', `
+            {% set version = "v1" %}
+            {% macro label(text) %}<label>{{ text }}</label>{% endmacro %}
+          `);
+
+          const result = await env.renderTemplateString(
+            '{% import "metadata-forms.njk" as forms %}{{ forms.version }} {{ forms.label("Name") }}'
+          );
+
+          expect(result.trim()).to.equal('v1 <label>Name</label>');
+        });
+
+        it('should keep deeper namespace calls ordinary for non-macro values', async () => {
+          loader.addTemplate('tools.njk', '{% set tool = makeTool() %}');
+          const result = await env.renderTemplateString(
+            '{% import "tools.njk" as tools with context %}{{ tools.tool.run("x") }}',
+            {
+              makeTool() {
+                return {
+                  run(name) {
+                    return 'Tool ' + name;
+                  }
+                };
+              }
+            }
+          );
+
+          expect(result.trim()).to.equal('Tool x');
+        });
+
+        it('should reject dynamic namespace calls that resolve to macros', async () => {
+          const error = await expectRejects(env.renderTemplateString(
+            '{% import "forms.njk" as forms %}{{ forms[name]("Name") }}',
+            { name: 'label' }
+          ));
+
+          expect(error.message).to.contain('cannot be called through a dynamic value');
+        });
+
+        it('should reject calls to imported namespaces', async () => {
+          const error = await expectRejects(env.renderTemplateString(
+            '{% import "forms.njk" as forms %}{{ forms("Name") }}'
+          ));
+
+          expect(error.message).to.contain('Import namespace \'forms\' is not callable');
+        });
+
+        it('should call aliased from-import macros through the exported name', async () => {
+          const result = await env.renderTemplateString(
+            '{% from "forms.njk" import label as l %}{{ l("Name") }}'
+          );
+
+          expect(unescape(result.trim())).to.equal(
+            `<div>
+            <label>Name</label>
+            </div>`
+          );
+        });
+
+        it('should fail when a from-import static callable export is not callable', async () => {
+          loader.addTemplate('values.njk', '{% set label = "Name" %}');
+
+          const error = await expectRejects(env.renderTemplateString(
+            '{% from "values.njk" import label %}{{ label("Name") }}'
+          ));
+
+          expect(error.message).to.contain('Unable to call `label`, which is not a function');
+        });
+
+        it('should fail when an aliased from-import static callable export is not callable', async () => {
+          loader.addTemplate('values.njk', '{% set label = "Name" %}');
+
+          const error = await expectRejects(env.renderTemplateString(
+            '{% from "values.njk" import label as l %}{{ l("Name") }}'
+          ));
+
+          expect(error.message).to.contain('Unable to call `l`, which is not a function');
+        });
+
+        it('should keep missing required from-import exports as missing imports', async () => {
+          loader.addTemplate('values.njk', '{% set other = "Name" %}');
+
+          const error = await expectRejects(env.renderTemplateString(
+            '{% from "values.njk" import label %}{{ label("Name") }}'
+          ));
+
+          expect(error.message).to.contain('cannot import \'label\'');
+        });
+
+        it('should fail when a namespace static callable export is not callable', async () => {
+          loader.addTemplate('values.njk', '{% set label = "Name" %}');
+
+          const error = await expectRejects(env.renderTemplateString(
+            '{% import "values.njk" as values %}{{ values.label("Name") }}'
+          ));
+
+          expect(error.message).to.contain('Unable to call `values["label"]`, which is not a function');
+        });
+
+        it('should keep missing required namespace exports as missing imports', async () => {
+          loader.addTemplate('values.njk', '{% set other = "Name" %}');
+
+          const error = await expectRejects(env.renderTemplateString(
+            '{% import "values.njk" as values %}{{ values.label("Name") }}'
+          ));
+
+          expect(error.message).to.contain('cannot import \'label\'');
+        });
+
+        it('should fail when a from-import static callable export resolves asynchronously to a non-callable', async () => {
+          loader.addTemplate('values.njk', '{% set label = getLabel() %}');
+          const context = {
+            async getLabel() {
+              await delay(1);
+              return 'Name';
+            }
+          };
+
+          const error = await expectRejects(env.renderTemplateString(
+            '{% from "values.njk" import label with context %}{{ label("Name") }}',
+            context
+          ));
+
+          expect(error.message).to.contain('Unable to call `label`, which is not a function');
+        });
+
+        it('should not leave unhandled rejections when async from-import callable validation fails', async function () {
+          if (typeof process === 'undefined' || !process.on || !process.off) {
+            this.skip();
+          }
+          loader.addTemplate('values.njk', '{% set label = getLabel() %}');
+          const context = {
+            async getLabel() {
+              await delay(1);
+              return 'Name';
+            }
+          };
+          const unhandled = [];
+          const onUnhandled = (error) => {
+            unhandled.push(error);
+          };
+
+          process.on('unhandledRejection', onUnhandled);
+          try {
+            const error = await expectRejects(env.renderTemplateString(
+              '{% from "values.njk" import label with context %}{{ label("Name") }}',
+              context
+            ));
+            await delay(20);
+            expect(error.message).to.contain('Unable to call `label`, which is not a function');
+            expect(unhandled).to.eql([]);
+          } finally {
+            process.off('unhandledRejection', onUnhandled);
+          }
+        });
+
+        it('should fail when a namespace static callable export resolves asynchronously to a non-callable', async () => {
+          loader.addTemplate('values.njk', '{% set label = getLabel() %}');
+          const context = {
+            async getLabel() {
+              await delay(1);
+              return 'Name';
+            }
+          };
+
+          const error = await expectRejects(env.renderTemplateString(
+            '{% import "values.njk" as values with context %}{{ values.label("Name") }}',
+            context
+          ));
+
+          expect(error.message).to.contain('Unable to call `values["label"]`, which is not a function');
+        });
+
+        it('should not make later imports visible inside earlier macro declarations', async () => {
+          const error = await expectRejects(env.renderTemplateString(
+            '{% macro render() %}{{ label("Name") }}{% endmacro %}{% from "forms.njk" import label %}{{ render() }}'
+          ));
+
+          expect(error.message).to.contain('cannot be called through a dynamic value');
         });
 
         it('should not export macros declared inside blocks', async () => {

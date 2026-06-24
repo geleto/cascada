@@ -1,6 +1,7 @@
 
 import {createPoison, isPoison, isPoisonError, PoisonError, RuntimeError, valueWithOrigin} from './errors.js';
 import {throwReportedFatal} from './error-context.js';
+import {isMacro} from './macro.js';
 import {RESOLVE_MARKER, resolveAll} from './resolve.js';
 
 /**
@@ -16,8 +17,9 @@ function callWrap(obj, name, context, args, currentBuffer = null) {
   const isGlobal = Object.prototype.hasOwnProperty.call(context.env.globals, name) &&
                  !Object.prototype.hasOwnProperty.call(context.ctx, name);
 
-  const executionContext = (obj.isMacro || isGlobal) ? context : context.ctx;
-  if (obj.isMacro) {
+  const macro = isMacro(obj);
+  const executionContext = (macro || isGlobal) ? context : context.ctx;
+  if (macro) {
     return obj._invoke(executionContext, args, currentBuffer);
   }
   return obj.apply(executionContext, args);
@@ -27,13 +29,18 @@ function callWrap(obj, name, context, args, currentBuffer = null) {
  * Async call wrapper using sync-first hybrid pattern.
  */
 function callWrapAsync(obj, name, context, args, errorContext, currentBuffer = null) {
+  return callWrapAsyncInternal(obj, name, context, args, errorContext, currentBuffer, false);
+}
+
+function callWrapStaticCallableAsync(obj, name, context, args, errorContext, currentBuffer = null) {
+  return callWrapAsyncInternal(obj, name, context, args, errorContext, currentBuffer, true);
+}
+
+function callWrapAsyncInternal(obj, name, context, args, errorContext, currentBuffer, allowTemplateMacro) {
   throwReportedFatal(errorContext);
 
-  if (obj && obj.isMacro) {
-    // Macros are promise/poison-transparent Cascada boundaries. They receive
-    // raw argument values and any thrown/rejected error must propagate as a
-    // real fatal error rather than being normalized into FunCall poison here.
-    return obj._invoke(context, args, currentBuffer);
+  if (isMacro(obj)) {
+    return invokeMacroCallTarget(obj, name, context, args, errorContext, currentBuffer, allowTemplateMacro);
   }
 
   // Check if we need async path: obj or any arg is a promise
@@ -48,7 +55,7 @@ function callWrapAsync(obj, name, context, args, errorContext, currentBuffer = n
     // Must use async path to await all promises before making decisions
     // _callWrapAsyncComplex is async and returns poison when errors occur
     // When awaited, poison values throw PoisonError due to thenable protocol (by design)
-    return _callWrapAsyncComplex(obj, name, context, args, errorContext, currentBuffer);
+    return _callWrapAsyncComplex(obj, name, context, args, errorContext, currentBuffer, allowTemplateMacro);
   }
 
   // All values are non-promises - collect all errors synchronously
@@ -89,7 +96,7 @@ function callWrapAsync(obj, name, context, args, errorContext, currentBuffer = n
   }
 }
 
-async function _callWrapAsyncComplex(obj, name, context, args, errorContext, currentBuffer = null) {
+async function _callWrapAsyncComplex(obj, name, context, args, errorContext, currentBuffer = null, allowTemplateMacro = false) {
   const errors = [];
 
   // Await obj if it's a promise and check for poison
@@ -112,11 +119,8 @@ async function _callWrapAsyncComplex(obj, name, context, args, errorContext, cur
 
   throwReportedFatal(errorContext);
 
-  if (obj && obj.isMacro) {
-    // Macros are promise/poison-transparent Cascada boundaries. Keep promise-
-    // valued args untouched and let any thrown/rejected error propagate as a
-    // real fatal error to the nearest cb()-owning boundary.
-    return obj._invoke(context, args, currentBuffer);
+  if (isMacro(obj)) {
+    return invokeMacroCallTarget(obj, name, context, args, errorContext, currentBuffer, allowTemplateMacro);
   }
 
   let resolvedArgs = args;
@@ -237,9 +241,27 @@ function getCallExecutionContext(context, name) {
   return isGlobal ? context : context.ctx;
 }
 
+function invokeMacroCallTarget(macro, name, context, args, errorContext, currentBuffer, allowTemplateMacro) {
+  if (!allowTemplateMacro && isTemplateContext(context)) {
+    RuntimeError.reportAndThrow(
+      `Macro '${name}' cannot be called through a dynamic value in an async template. Call it directly.`,
+      errorContext
+    );
+  }
+  // Macros are promise/poison-transparent Cascada boundaries. They receive raw
+  // argument values and any thrown/rejected error must propagate as a real
+  // fatal error rather than being normalized into FunCall poison here.
+  return macro._invoke(context, args, currentBuffer);
+}
+
+function isTemplateContext(context) {
+  return !!(context && !context.scriptMode);
+}
+
 export {
   callWrap,
   callWrapAsync,
+  callWrapStaticCallableAsync,
   envCallWrapAsync,
   invokeCallbackExtension,
   classifyCallTarget,

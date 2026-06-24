@@ -10,7 +10,7 @@ import {
 import {CompilerBaseAsync} from './compiler-base-async.js';
 import {CompileBuffer} from './buffer.js';
 import {WAITED_CHAIN_NAME} from './reserved.js';
-import {DECLARATION_STORAGE} from './declarations.js';
+import {DECLARATION_IMPORT_KIND, DECLARATION_STORAGE} from './declarations.js';
 
 class CompilerAsync extends CompilerBaseAsync {
   init(sourcePath, options) {
@@ -37,6 +37,26 @@ class CompilerAsync extends CompilerBaseAsync {
 
   compileCallExtensionAsync(node) {
     this._compileAsyncCallExtension(node, true);
+  }
+
+  postAnalyzeDo(node) {
+    if (this.scriptMode) {
+      return {};
+    }
+    if (node.findAll(nodes.FunCall).length > 0) {
+      return {};
+    }
+    const hasSequenceRepair = node.findAll(nodes.Symbol).some(child => child._analysis.sequenceLockLookup?.repair) ||
+      node.findAll(nodes.LookupVal).some(child => child._analysis.sequenceLockLookup?.repair);
+    if (!hasSequenceRepair) {
+      this.fail(
+        'The do tag must contain at least one function call or sequence repair.',
+        node.lineno,
+        node.colno,
+        node
+      );
+    }
+    return {};
   }
 
   _compileAsyncCallExtension(node, async) {
@@ -561,6 +581,7 @@ class CompilerAsync extends CompilerBaseAsync {
       declareOnExit: [{
         name,
         imported: true,
+        importKind: DECLARATION_IMPORT_KIND.NAMESPACE,
         storage: DECLARATION_STORAGE.DIRECT,
         jsVar: importedExportId
       }],
@@ -575,11 +596,14 @@ class CompilerAsync extends CompilerBaseAsync {
     const importBindingIds = new Map();
     node.names.children.forEach((nameNode) => {
       let name = null;
+      let importedName = null;
       if (nameNode instanceof nodes.Pair && nameNode.value instanceof nodes.Symbol) {
         nameNode.value.addAnalysis({ isSymbolTarget: true });
+        importedName = nameNode.key.value;
         name = nameNode.value.value;
       } else if (nameNode instanceof nodes.Symbol) {
         nameNode.addAnalysis({ isSymbolTarget: true });
+        importedName = nameNode.value;
         name = nameNode.value;
       }
       if (!name) {
@@ -591,6 +615,8 @@ class CompilerAsync extends CompilerBaseAsync {
       declareOnExit.push({
         name,
         imported: true,
+        importKind: DECLARATION_IMPORT_KIND.FROM,
+        exportedName: importedName,
         storage: DECLARATION_STORAGE.DIRECT,
         jsVar: bindingId
       });

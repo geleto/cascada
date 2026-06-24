@@ -39,6 +39,7 @@ class CompileLookup {
       facts.sequenceLockLookup = sequenceLockLookup;
     }
     Object.assign(facts, this.compiler.chain.collectDataPathLookupFacts(node));
+    this.compiler.call.validateCallableValueUse(node._analysis);
     return facts;
   }
 

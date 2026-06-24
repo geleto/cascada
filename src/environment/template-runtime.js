@@ -215,7 +215,7 @@ class TemplateRuntime extends Obj {
 
     for (const name in exported) {
       const item = exported[name];
-      boundExported[name] = (typeof item === 'function' && item.isMacro)
+      boundExported[name] = globalRuntime.isMacro(item)
         ? item.bind(macroContext)
         : item;
     }

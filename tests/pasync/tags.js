@@ -79,6 +79,15 @@ import {delay} from '../util.js';
         expect(b).to.equal(2);
       });
 
+      it('should reject discarded expressions without function calls', async () => {
+        try {
+          await env.renderTemplateString('{% do [value, other] %}', { value: 1, other: 2 });
+          expect().fail('Expected do validation to fail');
+        } catch (err) {
+          expect(err.message).to.contain('The do tag must contain at least one function call');
+        }
+      });
+
       it('should not output the result of the expression', async () => {
         const context = {
           return42: async () => { await delay(10); return 42; }

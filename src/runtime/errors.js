@@ -587,6 +587,7 @@ function requireLoadFailureKind(kind) {
  */
 class RuntimePromise {
   constructor(promise, errorContext, kind) {
+    markPromiseHandled(promise);
     this.promise = promise && typeof promise.then === 'function'
       ? promise.then(value => poisonIfNaN(value, errorContext))
       : Promise.resolve(poisonIfNaN(promise, errorContext));

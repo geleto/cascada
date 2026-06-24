@@ -4,7 +4,11 @@ import {transform} from '../../src/language/transformer.js';
 import {CompilerAsync} from '../../src/compiler/compiler.js';
 import * as nodes from '../../src/language/nodes.js';
 import {transpiler as scriptTranspiler} from '../../src/language/script-transpiler.js';
-import {DECLARATION_STORAGE, isStoredDirectly} from '../../src/compiler/declarations.js';
+import {
+  DECLARATION_IMPORT_KIND,
+  DECLARATION_STORAGE,
+  isStoredDirectly
+} from '../../src/compiler/declarations.js';
 
 (function () {
   function createIdPool() {
@@ -616,6 +620,20 @@ import {DECLARATION_STORAGE, isStoredDirectly} from '../../src/compiler/declarat
       expect(Array.from(callerNode._analysis.declaredChains.keys())).to.eql(['caller', '__return__', '__text__']);
     });
 
+    it('should classify only direct caller calls as caller invocations', function () {
+      const ast = analyzeTemplateSource(
+        '{% macro wrap() %}{{ caller.foo() }}{% endmacro %}' +
+        '{% call wrap() %}X{% endcall %}',
+        'caller-member-analysis.njk'
+      );
+      const macroNode = collectNodesByType(ast, 'Macro')[0];
+      const memberCall = collectNodesByType(ast, 'FunCall')
+        .find((node) => node.name instanceof nodes.LookupVal);
+
+      expect(macroNode._analysis.hasCallerSupport).to.be(false);
+      expect(memberCall._analysis.macroCallerInvocation).to.be(false);
+    });
+
     it('should keep precise macro argument variable facts owned by the macro body', function () {
       const ast = analyzeTemplateSource(
         '{% macro adjust(a, b=a) %}{% set b = b ~ "!" %}{{ b }}{% endmacro %}{{ adjust("x") }}',
@@ -805,11 +823,12 @@ import {DECLARATION_STORAGE, isStoredDirectly} from '../../src/compiler/declarat
         'imported-member-boundary.njk'
       );
       const importedCall = collectNodesByType(ast, 'FunCall')
-        .find((node) => node._analysis.importedCallable);
+        .find((node) => node._analysis.importedCallableCall?.kind === DECLARATION_IMPORT_KIND.NAMESPACE);
       const importDecl = ast._analysis.declaredChains.get('m');
 
       expect(importDecl.storage).to.be(DECLARATION_STORAGE.DIRECT);
       expect(importDecl.type).to.be(undefined);
+      expect(importedCall._analysis.importedCallableCall.localPath).to.be('m.hi');
       expect(importedCall._analysis.wantsLinkedChildBuffer).to.be(true);
       expect((ast._analysis.usedChains || new Set()).has('m')).to.be(false);
       expect((ast._analysis.observedChains || new Set()).has('m')).to.be(false);

@@ -8,6 +8,11 @@ const DECLARATION_STORAGE = Object.freeze({
   DIRECT: 2
 });
 
+const DECLARATION_IMPORT_KIND = Object.freeze({
+  FROM: 'from',
+  NAMESPACE: 'namespace'
+});
+
 function isStoredDirectly(declaration) {
   return !!(declaration && declaration.storage === DECLARATION_STORAGE.DIRECT);
 }
@@ -27,6 +32,7 @@ function isImmutableDeclaration(declaration) {
 export {
   DECLARATION_ROLE,
   DECLARATION_STORAGE,
+  DECLARATION_IMPORT_KIND,
   isStoredDirectly,
   isChainDeclaration,
   isVarChainDeclaration,

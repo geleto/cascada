@@ -918,7 +918,7 @@ async function expectRejects(promise) {
           {}
         ));
 
-        expect(error.message).to.contain('Macro \'greet\' cannot be used as a value');
+        expect(error.message).to.contain('Callable \'greet\' cannot be used as a value');
       });
 
       it('rejects local macros passed as async template values', async () => {
@@ -929,7 +929,16 @@ async function expectRejects(promise) {
           {}
         ));
 
-        expect(error.message).to.contain('Macro \'greet\' cannot be used as a value');
+        expect(error.message).to.contain('Callable \'greet\' cannot be used as a value');
+      });
+
+      it('rejects local macros passed to known macro calls at compile time', async () => {
+        const error = await expectRejects(env.renderTemplateString(
+          '{% macro greet() %}hi{% endmacro %}{% macro wrapper(value) %}ok{% endmacro %}{{ wrapper(greet) }}',
+          {}
+        ));
+
+        expect(error.message).to.contain('Callable \'greet\' cannot be used as a value');
       });
 
       it('rejects local macros as the base of deeper lookups in async templates', async () => {
@@ -938,7 +947,7 @@ async function expectRejects(promise) {
           {}
         ));
 
-        expect(error.message).to.contain('Macro \'greet\' cannot be used as a value');
+        expect(error.message).to.contain('Callable \'greet\' cannot be used as a value');
       });
 
       it('rejects local macros in async template conditionals', async () => {
@@ -947,7 +956,7 @@ async function expectRejects(promise) {
           {}
         ));
 
-        expect(error.message).to.contain('Macro \'greet\' cannot be used as a value');
+        expect(error.message).to.contain('Callable \'greet\' cannot be used as a value');
       });
 
       it('rejects local macro aliases in async templates', async () => {
@@ -956,7 +965,7 @@ async function expectRejects(promise) {
           {}
         ));
 
-        expect(error.message).to.contain('Macro \'greet\' cannot be used as a value');
+        expect(error.message).to.contain('Callable \'greet\' cannot be used as a value');
       });
 
       it('does not apply template call-only validation to scripts', async () => {
@@ -977,7 +986,87 @@ async function expectRejects(promise) {
           {}
         ));
 
-        expect(error.message).to.contain('Macro \'greet\' cannot be used as a value');
+        expect(error.message).to.contain('Callable \'greet\' cannot be used as a value');
+      });
+
+      it('lets runtime macro values pass as generic template call arguments', async () => {
+        env.addGlobal('helper', (value) => (runtime.isMacro(value) ? 'macro' : 'other'));
+        const external = runtime.makeMacro([], [], () => 'hi');
+
+        const result = await env.renderTemplateString('{{ helper(external) }}', { external });
+
+        expect(result).to.equal('macro');
+      });
+
+      it('does not classify arbitrary _invoke values as macros', async () => {
+        env.addGlobal('helper', (value) => (runtime.isMacro(value) ? 'macro' : 'other'));
+        const external = { _invoke() { return 'hi'; } };
+
+        const result = await env.renderTemplateString('{{ helper(external) }}', { external });
+
+        expect(result).to.equal('other');
+      });
+
+      it('lets runtime macro values pass as filter arguments', async () => {
+        env.addFilter('describeMacro', (value) => (runtime.isMacro(value) ? 'macro' : 'other'));
+        const external = runtime.makeMacro([], [], () => 'hi');
+
+        const result = await env.renderTemplateString('{{ external | describeMacro }}', { external });
+
+        expect(result).to.equal('macro');
+      });
+
+      it('lets runtime macro values pass as async filter tag arguments', async () => {
+        env.addFilter('withArg', (value, arg) => value + ':' + (runtime.isMacro(arg) ? 'macro' : 'other'));
+        const external = runtime.makeMacro([], [], () => 'hi');
+
+        const result = await env.renderTemplateString('{% filter withArg(external) %}x{% endfilter %}', { external });
+
+        expect(result).to.equal('x:macro');
+      });
+
+      it('lets runtime macro values pass as test arguments', async () => {
+        env.addTest('macroValue', (value) => runtime.isMacro(value));
+        const external = runtime.makeMacro([], [], () => 'hi');
+
+        const result = await env.renderTemplateString('{{ external is macroValue }}', { external });
+
+        expect(result).to.equal('true');
+      });
+
+      it('does not reject runtime macro values rendered as template output', async () => {
+        const external = runtime.makeMacro([], [], () => 'hi');
+
+        const result = await env.renderTemplateString('{{ external }}', { external });
+
+        expect(result).to.contain('function macro');
+      });
+
+      it('lets unknown runtime macro values enter known macros until consumed', async () => {
+        const external = runtime.makeMacro([], [], () => 'hi');
+
+        const result = await env.renderTemplateString(
+          '{% macro wrapper(value) %}ok{% endmacro %}{{ wrapper(external) }}',
+          { external }
+        );
+
+        expect(result).to.equal('ok');
+      });
+
+      it('rejects runtime macro values called through the generic template path', async () => {
+        const external = runtime.makeMacro([], [], () => 'hi');
+
+        const error = await expectRejects(env.renderTemplateString('{{ external() }}', { external }));
+
+        expect(error.message).to.contain('cannot be called through a dynamic value');
+      });
+
+      it('rejects discarded template expressions without function calls at compile time', async () => {
+        const external = runtime.makeMacro([], [], () => 'hi');
+
+        const error = await expectRejects(env.renderTemplateString('{% do external %}', { external }));
+
+        expect(error.message).to.contain('The do tag must contain at least one function call');
       });
     });
 

@@ -107,6 +107,7 @@ class CompilerBaseAsync extends CompilerCommon {
         facts.sequenceLockLookup = sequenceLockLookup;
       }
     }
+    this.call.validateCallableValueUse(node._analysis);
     return facts;
   }
 

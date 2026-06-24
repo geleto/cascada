@@ -145,12 +145,28 @@ A template macro renders text where it is called. This differs from CascadaScrip
 {{ button("Save") }}
 ```
 
-Cascada async templates are stricter than classic Nunjucks/sync templates: local macro names are call-only and cannot be used as ordinary values:
+Cascada async templates are stricter than classic Nunjucks/sync templates: local macro names are call-only and cannot be used as ordinary values. A macro call can still be used inside an expression; it contributes its rendered string:
 
 ```nunjucks
+{{ button("Save") }}
+{{ button("Save") ~ "!" }}
 {{ button }}                 {# error #}
 {{ helper(button) }}         {# error #}
 {% set x = button %}         {# error: button is read as a value #}
+```
+
+Static imported calls may target either Cascada macros or ordinary functions. Once an imported path is used as a static callable, that path is call-only in async templates; namespace imports are path-specific:
+
+```nunjucks
+
+{% from "ui.njk" import button %}
+{{ button("Save") }}
+{{ button }}                 {# error #}
+
+{% import "ui.njk" as ui %}
+{{ ui.button("Save") }}
+{{ ui.button }}              {# error #}
+{{ ui.version }}             {# valid ordinary namespace member #}
 ```
 
 This lets Cascada preserve deterministic output ordering and parallel execution without tracing macro values through variables. CascadaScript is not subject to this template call-only rule; script functions return values and can be assigned to local variables and called through them.

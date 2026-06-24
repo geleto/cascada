@@ -90,7 +90,6 @@ class CompileAnalysis {
     }
 
     this._walk(rootNode);
-    this._finalizeDeclarations(rootNode);
     this._finalizeChainUsage(rootNode);
   }
 
@@ -109,6 +108,9 @@ class CompileAnalysis {
     }
 
     const analysis = this._initializeAnalysis(node, parentNode, parentField);
+    // Source lookup snapshots are captured on entry to the node. Declarations
+    // produced by this node become visible to children/later siblings through
+    // the live traversal map, not by mutating this node's entry snapshot.
     analysis.visibleDeclarations = new Map(visibleDeclarations);
     this._analyzeNode(node);
     this.validation.validateAnalysisFacts(analysis);
@@ -125,6 +127,7 @@ class CompileAnalysis {
 
     this.validation.validateDeclarations(analysis, analysis.declareOnEnter, currentScopeOwner, childVisibleDeclarations);
     this._publishDeclarations(analysis, analysis.declareOnEnter, currentScopeOwner, childVisibleDeclarations);
+    this._recordOwnedDeclarations(analysis, analysis.declareOnEnter, currentScopeOwner);
     this.validation.validateDeclarations(analysis, analysis.declareOnExit, currentScopeOwner, childVisibleDeclarations);
     if (analysis.declareInParentOnExit.length > 0 && scopeOwner) {
       this.validation.validateDeclarations(analysis, analysis.declareInParentOnExit, scopeOwner, visibleDeclarations);
@@ -132,44 +135,23 @@ class CompileAnalysis {
       // inside the declaring node for self-reference, but only become visible
       // to later parent-scope source after the node exits.
       this._publishDeclarations(analysis, analysis.declareInParentOnExit, scopeOwner, childVisibleDeclarations);
+      this._recordOwnedDeclarations(analysis, analysis.declareInParentOnExit, scopeOwner);
     }
-    analysis.visibleDeclarations = new Map(childVisibleDeclarations);
-
     this.validation.validateObservations(analysis);
     this.validation.validateMutations(analysis);
-    this.validation.validateMacroValueUse(analysis);
 
     node.fields.forEach((field) => {
       this._walk(node[field], node, field, childVisibleDeclarations, currentScopeOwner);
     });
 
     this._publishDeclarations(analysis, analysis.declareOnExit, currentScopeOwner, childVisibleDeclarations);
+    this._recordOwnedDeclarations(analysis, analysis.declareOnExit, currentScopeOwner);
     if (analysis.declareInParentOnExit.length > 0 && scopeOwner) {
       this._publishDeclarations(analysis, analysis.declareInParentOnExit, scopeOwner, visibleDeclarations);
     }
     if (ownsScope) {
       analysis.activeVisibleDeclarations = null;
     }
-  }
-
-  _forEachNode(node, visit, parentNode = null, parentField = null) {
-    if (!node) {
-      return;
-    }
-    if (Array.isArray(node)) {
-      for (let i = 0; i < node.length; i++) {
-        this._forEachNode(node[i], visit, parentNode, parentField);
-      }
-      return;
-    }
-    if (!(node instanceof nodes.Node)) {
-      return;
-    }
-
-    visit(node, parentNode, parentField);
-    node.fields.forEach((field) => {
-      this._forEachNode(node[field], visit, node, field);
-    });
   }
 
   _initializeAnalysis(node, parentNode, parentField) {
@@ -339,10 +321,13 @@ class CompileAnalysis {
     if (sourceDeclaration) {
       return sourceDeclaration;
     }
-    // On-exit declarations are intentionally not source-visible to their own
-    // initializer/body children, but the declaration statement itself may carry
-    // usage facts for its target, such as `var x = ...` or `set x = ...`.
-    return analysis.declareOnExit.find((decl) => decl.name === name) || null;
+    // These lists are not source lookup tables. They only cover usage facts
+    // recorded on the declaration-owning node itself, such as `var x = ...`,
+    // macro setup lanes, or parent-owned macro names for self-reference.
+    return analysis.declareOnEnter.find((decl) => decl.name === name) ||
+      analysis.declareInParentOnExit.find((decl) => decl.name === name) ||
+      analysis.declareOnExit.find((decl) => decl.name === name) ||
+      null;
   }
 
   getRootNode(analysis) {
@@ -451,24 +436,11 @@ class CompileAnalysis {
     return runtimeName.slice(0, hashIndex);
   }
 
-  _finalizeDeclarations(rootNode) {
-    this._forEachNode(rootNode, (node) => {
-      const analysis = node._analysis;
-      const owner = this._getScopeOwner(analysis);
-      this._recordOwnedDeclarations(analysis, analysis.declareOnEnter, owner);
-      this._recordOwnedDeclarations(analysis, analysis.declareOnExit, owner);
-      if (analysis.declareInParentOnExit.length > 0) {
-        const parentOwner = analysis.parent ? this._getScopeOwner(analysis.parent) : null;
-        this._recordOwnedDeclarations(analysis, analysis.declareInParentOnExit, parentOwner);
-      }
-    });
-  }
-
   _recordOwnedDeclarations(analysis, declarationsToRecord, owner) {
     if (declarationsToRecord.length === 0 || !owner) {
       return;
     }
-    // Build the finalized owner inventory only after source-point validation.
+    // Build owner inventory only after this declaration batch passes validation.
     // Do not use this map to resolve source occurrences.
     const declarations = this._ensureDeclarationMap(owner, 'declaredChains');
     for (let i = 0; i < declarationsToRecord.length; i++) {

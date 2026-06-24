@@ -1,7 +1,6 @@
-import * as nodes from '../language/nodes.js';
-import {CALLER_CHAIN_NAME} from './reserved.js';
-import {isStoredDirectly} from './declarations.js';
+import {DECLARATION_IMPORT_KIND, isStoredDirectly} from './declarations.js';
 import {COMPONENT_BINDING_METHOD_CALL} from './component.js';
+import * as nodes from '../language/nodes.js';
 
 class CompileCall {
   constructor(compiler) {
@@ -30,13 +29,18 @@ class CompileCall {
       return sequenceCall;
     }
 
-    const callerCall = this._collectCallerCallFacts(node, analysisPass);
-    if (callerCall) {
-      return callerCall;
+    const macroCallerInvocation = compiler.macro.collectMacroCallerInvocationFacts(node, analysisPass);
+    if (macroCallerInvocation) {
+      return macroCallerInvocation;
     }
 
-    const directMacroCall = this._collectDirectMacroCallFacts(node, analysisPass);
-    const importedCallable = this._collectImportedCallableUsage(node, analysisPass, observes);
+    const macroCall = compiler.macro.collectMacroCallFacts(node, analysisPass);
+    const importedCallableCall = macroCall
+      ? null
+      : this._collectImportedCallableCallFacts(node, analysisPass);
+    if (!importedCallableCall) {
+      this._recordStaticCallTargetRootLookup(node, analysisPass);
+    }
     const inheritedMethodCallName =
       compiler.inheritance.findInheritedMethodCallNameForAnalysis(node, analysisPass);
     const componentBindingName = this._collectComponentCallUsage(node);
@@ -49,14 +53,11 @@ class CompileCall {
       observes,
       mutates,
       chainOperationCall,
-      importedCallable,
-      directCallerCall: false,
-      directMacroCall,
+      macroCall,
+      macroCallerInvocation: false,
+      importedCallableCall,
       inheritedMethodCallName,
-      // Direct same-scope macro calls reuse the current buffer through
-      // runtime.invokeMacro(..., currentBuffer). Imported callable calls need a
-      // value boundary, so only those are marked as linked child buffers here.
-      wantsLinkedChildBuffer: !!importedCallable
+      wantsLinkedChildBuffer: !!importedCallableCall
     };
   }
 
@@ -91,13 +92,13 @@ class CompileCall {
     if (compiler.chain.compileChainOperationFunCall(node)) {
       return;
     }
-    if (this._compileCallerCall(node)) {
+    if (compiler.macro.compileMacroCallerInvocation(node)) {
       return;
     }
     if (this._compileSequenceCall(node)) {
       return;
     }
-    if (this._compileDirectMacroCall(node)) {
+    if (compiler.macro.compileMacroCall(node)) {
       return;
     }
     if (this._compileImportedCallableCall(node)) {
@@ -153,101 +154,201 @@ class CompileCall {
     return true;
   }
 
-  _collectCallerCallFacts(node, analysisPass) {
-    const compiler = this.compiler;
-    const isCallerCall = node.name &&
-      (
-        (node.name instanceof nodes.Symbol && node.name.value === 'caller') ||
-        compiler.sequential.extractStaticPathRoot(node.name) === 'caller'
-      );
-    if (!isCallerCall) {
-      return null;
+  _recordStaticCallTargetRootLookup(node, analysisPass) {
+    if (!node.name) {
+      return;
     }
-
-    const mutates = [];
-    const textChain = analysisPass.getCurrentTextChain(node._analysis);
-    if (textChain) {
-      mutates.push(textChain);
+    const staticPath = this.compiler.sequential.extractStaticPath(node.name);
+    const rootName = staticPath.root;
+    if (rootName) {
+      analysisPass.recordSourceLookupDeclaration(node.name, rootName, node._analysis);
     }
-    // caller() is a reserved macro call-block binding in async mode. Its
-    // invocation ordering uses the macro-local __caller__ lane, so any
-    // nested child boundary containing caller() must link that lane.
-    mutates.push(CALLER_CHAIN_NAME);
-    compiler.macro.recordCallerCall(node);
-    return { mutates, directCallerCall: true };
   }
 
-  _compileCallerCall(node) {
-    const compiler = this.compiler;
-    if (!compiler.macro || !compiler.macro.isDirectCallerCall(node)) {
-      return false;
+  findStaticCallableDeclaration(analysis, name, analysisPass = this.compiler.analysis) {
+    const currentDeclaration = analysisPass.findSourceDeclaration(analysis, name);
+    if (currentDeclaration) {
+      return currentDeclaration;
     }
-    compiler.macro._emitCallerCallDispatch({
-      bufferId: compiler.buffer.currentBuffer,
+    // Clean callable scopes do not import ordinary parent declarations into
+    // their body scope, but static callable classification still uses the
+    // source point where the callable was declared. Walk every ancestor source
+    // snapshot; scope boundaries are not lookup boundaries for this
+    // classification.
+    let current = analysis.parent;
+    while (current) {
+      const declaration = current.visibleDeclarations?.get(name) || null;
+      if (declaration) {
+        return declaration;
+      }
+      current = current.parent;
+    }
+    return null;
+  }
+
+  validateCallableValueUse(analysis) {
+    const node = analysis.node;
+    // A valid static callable call target is still a symbol/lookup read with
+    // declaration facts. Call classification marks it so this validation only
+    // rejects value uses.
+    if (
+      this.compiler.scriptMode ||
+      analysis.isSymbolTarget ||
+      analysis.operationOwnedPath ||
+      analysis.isStaticCallableCallTarget ||
+      node.isCompilerInternal
+    ) {
+      return;
+    }
+
+    if (node instanceof nodes.Symbol) {
+      this._validateSymbolCallableValueUse(analysis, node);
+      return;
+    }
+
+    if (node instanceof nodes.LookupVal) {
+      this._validateImportedNamespaceCallableValueUse(analysis, node);
+    }
+  }
+
+  _validateSymbolCallableValueUse(analysis, node) {
+    const declaration = this.findStaticCallableDeclaration(analysis, node.value);
+    if (!declaration) {
+      return;
+    }
+    if (declaration.isMacro) {
+      this._failCallableValueUse(node, node.value);
+      return;
+    }
+    if (declaration.imported && declaration.importKind === DECLARATION_IMPORT_KIND.FROM && declaration.requiredCallable) {
+      this._failImportedCallableValueUse(node, declaration.requiredCallableLocalPath || node.value);
+    }
+  }
+
+  _validateImportedNamespaceCallableValueUse(analysis, node) {
+    const path = this.compiler.sequential.extractStaticPathSegments(node);
+    if (!path || path.length < 2) {
+      return;
+    }
+    const declaration = this.findStaticCallableDeclaration(analysis, path[0]);
+    if (!declaration?.imported || declaration.importKind !== DECLARATION_IMPORT_KIND.NAMESPACE) {
+      return;
+    }
+    const callablePath = declaration.requiredCallableExports?.get(path[1]) || null;
+    if (!callablePath) {
+      return;
+    }
+    this._failImportedCallableValueUse(node, callablePath);
+  }
+
+  _failCallableValueUse(node, name) {
+    this.compiler.fail(
+      `Callable '${name}' cannot be used as a value in an async template. Call it directly.`,
+      node.lineno,
+      node.colno,
       node
-    });
-    return true;
+    );
   }
 
-  _collectDirectMacroCallFacts(node, analysisPass) {
-    if (!(node.name instanceof nodes.Symbol) || !analysisPass.findSourceDeclaration) {
-      return null;
-    }
-    const macroDecl = analysisPass.recordSourceLookupDeclaration(node.name, node.name.value, node._analysis);
-    if (!macroDecl || !macroDecl.isMacro) {
-      return null;
-    }
-    node.name.addAnalysis({ isMacroCallTarget: true });
-    return { declaration: macroDecl };
+  _failImportedCallableValueUse(node, path) {
+    this.compiler.fail(
+      `Imported callable '${path}' cannot be used as a value in an async template. Call it directly.`,
+      node.lineno,
+      node.colno,
+      node
+    );
   }
 
-  _compileDirectMacroCall(node) {
-    const directMacroCall = node._analysis.directMacroCall;
-    if (!directMacroCall) {
-      return false;
+  _collectImportedCallableCallFacts(node, analysisPass) {
+    if (!node.name) {
+      return null;
     }
 
-    const compiler = this.compiler;
-    compiler.emit('runtime.invokeMacro(');
-    if (directMacroCall.declaration) {
-      compiler._compileDirectDeclarationLookup(node.name, node.name.value, directMacroCall.declaration);
-    } else {
-      compiler.compile(node.name, null);
+    const path = this.compiler.sequential.extractStaticPathSegments(node.name);
+    if (!path || path.length === 0) {
+      return null;
     }
-    compiler.emit(', context, ');
-    compiler._compileAggregate(node.args, null, '[', ']', false, false);
-    compiler.emit(`, ${compiler.buffer.currentBuffer})`);
-    return true;
+
+    const rootName = path[0];
+    const declaration = this.findStaticCallableDeclaration(
+      node._analysis,
+      rootName,
+      analysisPass
+    );
+    if (!declaration?.imported) {
+      return null;
+    }
+
+    let importedCallableCall = null;
+    if (declaration.importKind === DECLARATION_IMPORT_KIND.NAMESPACE) {
+      if (path.length === 1) {
+        this.compiler.fail(
+          `Import namespace '${rootName}' is not callable; call a named export such as ${rootName}.name(...).`,
+          node.name.lineno,
+          node.name.colno,
+          node.name
+        );
+      }
+      if (path.length !== 2) {
+        return null;
+      }
+      const exportedName = this._getStaticNamespaceCallableExportName(node.name, rootName);
+      if (!exportedName) {
+        return null;
+      }
+      importedCallableCall = {
+        kind: DECLARATION_IMPORT_KIND.NAMESPACE,
+        declaration,
+        namespaceName: rootName,
+        exportedName,
+        localPath: `${rootName}.${exportedName}`
+      };
+    } else if (declaration.importKind === DECLARATION_IMPORT_KIND.FROM && path.length === 1) {
+      importedCallableCall = {
+        kind: DECLARATION_IMPORT_KIND.FROM,
+        declaration,
+        localName: rootName,
+        exportedName: declaration.exportedName,
+        localPath: rootName
+      };
+    }
+
+    if (!importedCallableCall) {
+      return null;
+    }
+
+    this._recordImportedCallableUse(importedCallableCall);
+    node.name.addAnalysis({ isStaticCallableCallTarget: true });
+    return importedCallableCall;
   }
 
-  _collectImportedCallableUsage(node, analysisPass, observes) {
-    const compiler = this.compiler;
-    if (!node.name || !analysisPass.findSourceDeclaration) {
+  _getStaticNamespaceCallableExportName(targetNode, namespaceName) {
+    if (!(targetNode instanceof nodes.LookupVal)) {
       return null;
     }
-
-    const importedRoot = compiler.sequential.extractStaticPathRoot(node.name);
-    const importedDecl = importedRoot ? analysisPass.recordSourceLookupDeclaration(node.name, importedRoot, node._analysis) : null;
-    const isImportedCallable =
-      (importedDecl && importedDecl.imported) ||
-      (!importedDecl && importedRoot && compiler.importedBindings && compiler.importedBindings.has(importedRoot));
-    if (!isImportedCallable) {
+    if (!(targetNode.target instanceof nodes.Symbol) || targetNode.target.value !== namespaceName) {
       return null;
     }
+    if (!(targetNode.val instanceof nodes.Literal) || typeof targetNode.val.value !== 'string') {
+      return null;
+    }
+    return targetNode.val.value;
+  }
 
-    const importedChainName = importedDecl && (importedDecl.runtimeName || importedRoot);
-    if (importedChainName && !isStoredDirectly(importedDecl)) {
-      observes.push(importedChainName);
+  _recordImportedCallableUse(importedCallableCall) {
+    const declaration = importedCallableCall.declaration;
+    if (importedCallableCall.kind === DECLARATION_IMPORT_KIND.FROM) {
+      declaration.requiredCallable = true;
+      declaration.requiredCallableLocalPath = importedCallableCall.localPath;
+      return;
     }
-    const textChain = analysisPass.getCurrentTextChain(node._analysis);
-    if (textChain) {
-      observes.push(textChain);
-    }
-    return true;
+    declaration.requiredCallableExports ||= new Map();
+    declaration.requiredCallableExports.set(importedCallableCall.exportedName, importedCallableCall.localPath);
   }
 
   _compileImportedCallableCall(node) {
-    if (!node._analysis.importedCallable) {
+    const importedCallableCall = node._analysis.importedCallableCall;
+    if (!importedCallableCall) {
       return false;
     }
 
@@ -257,9 +358,38 @@ class CompileCall {
       callSignature: compiler._describeCallSignature(node.name, node.args)
     };
     compiler.boundaries.compileValueBoundary(compiler.buffer, node, (n) => {
-      compiler._emitAsyncDynamicCall(n, 'currentBuffer');
+      this._emitImportedCallableInvocation(n, importedCallableCall);
     }, node, stackFields);
     return true;
+  }
+
+  _emitImportedCallableInvocation(node, importedCallableCall) {
+    const compiler = this.compiler;
+    const callableId = compiler._tmpid();
+    const argsId = compiler._tmpid();
+    const callableName = compiler._describeCallableTarget(node.name).replace(/"/g, '\\"');
+
+    compiler.emit('(() => {');
+    compiler.emit(`const ${callableId} = `);
+    this._emitImportedCallableValue(node, importedCallableCall);
+    compiler.emit.line(';');
+    compiler.emit(`const ${argsId} = `);
+    compiler._compileAggregate(node.args, null, '[', ']', false, false);
+    compiler.emit.line(';');
+    compiler.emit(`return runtime.callWrapStaticCallableAsync(${callableId}, "${callableName}", context, ${argsId}, ${compiler.emitErrorContext(node)}, currentBuffer);`);
+    compiler.emit('})()');
+  }
+
+  _emitImportedCallableValue(node, importedCallableCall) {
+    const compiler = this.compiler;
+    if (importedCallableCall.kind === DECLARATION_IMPORT_KIND.FROM) {
+      compiler._compileDirectDeclarationLookup(node.name, importedCallableCall.localName, importedCallableCall.declaration);
+      return;
+    }
+
+    compiler.emit('runtime.thenValue(');
+    compiler._compileDirectDeclarationLookup(node.name, importedCallableCall.namespaceName, importedCallableCall.declaration);
+    compiler.emit(`, (exported) => runtime.getImportedExport(exported, ${JSON.stringify(importedCallableCall.exportedName)}, ${compiler.emitErrorContext(node.name)}))`);
   }
 
   _collectComponentCallUsage(node) {

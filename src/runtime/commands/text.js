@@ -63,7 +63,7 @@ class TextCommand extends ChainCommand {
 }
 
 function normalizeTextCommandArg(value, chain, errorContext) {
-  const materialized = materializeTemplateTextValue(value, errorContext);
+  const materialized = thenValue(value, (resolved) => materializeTemplateTextValue(resolved, errorContext));
   return thenValue(materialized, (resolved) => normalizeMaterializedTextArg(resolved, chain, errorContext));
 }
 

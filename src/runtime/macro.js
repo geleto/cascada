@@ -1,4 +1,6 @@
 
+import {PoisonError} from './errors.js';
+
 function makeMacro(argNames, kwargNames, func, useAsyncMacroSignature = false) {
   const invokeCompiledMacro = function invokeCompiledMacro(executionContext, macroArgs, currentBuffer = null) {
     var argCount = numArgs(macroArgs);
@@ -46,11 +48,22 @@ function makeMacro(argNames, kwargNames, func, useAsyncMacroSignature = false) {
   return macro;
 }
 
+function isMacro(value) {
+  return !!(value && value.isMacro === true && typeof value._invoke === 'function');
+}
+
 function invokeMacro(macro, executionContext, args, currentBuffer = null) {
-  if (macro && typeof macro._invoke === 'function') {
+  if (isMacro(macro)) {
     return macro._invoke(executionContext, args, currentBuffer);
   }
   return macro.apply(executionContext, args);
+}
+
+function getImportedExport(exported, exportedName, missingErrorContext) {
+  if (!Object.hasOwn(exported, exportedName)) {
+    throw PoisonError.create(`cannot import '${exportedName}'`, missingErrorContext, 'ImportBindingMissing');
+  }
+  return exported[exportedName];
 }
 
 function withPath(context, path, func) {
@@ -92,4 +105,13 @@ function numArgs(args) {
   }
 }
 
-export { makeMacro, invokeMacro, withPath, makeKeywordArgs, getKeywordArgs, numArgs };
+export {
+  makeMacro,
+  isMacro,
+  invokeMacro,
+  getImportedExport,
+  withPath,
+  makeKeywordArgs,
+  getKeywordArgs,
+  numArgs
+};

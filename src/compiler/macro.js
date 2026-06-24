@@ -15,15 +15,15 @@ class CompileMacro {
     this.currentCallerBindingContext = null;
   }
 
-  isDirectCallerCall(node) {
+  canCompileMacroCallerInvocation(node) {
     return !!(
       this.compiler.asyncMode &&
-      node._analysis.directCallerCall &&
+      node._analysis.macroCallerInvocation &&
       this.currentCallerBindingContext
     );
   }
 
-  _emitCallerCallDispatch({ bufferId, node }) {
+  _emitMacroCallerInvocationDispatch({ bufferId, node }) {
     const compiler = this.compiler;
     const activeContext = this.currentCallerBindingContext;
     const argsId = compiler._tmpid();
@@ -41,7 +41,7 @@ class CompileMacro {
     compiler.emit(`let ${argsId} = `);
     compiler._compileAggregate(node.args, null, '[', ']', false, false);
     compiler.emit.line(';');
-    compiler.emit.line(`if (${activeContext.rawCallerVar} && ${activeContext.rawCallerVar}.isMacro) {`);
+    compiler.emit.line(`if (runtime.isMacro(${activeContext.rawCallerVar})) {`);
 
     const invocationBufferId = compiler._tmpid();
     const invocationFinishedId = compiler._tmpid();
@@ -154,7 +154,7 @@ class CompileMacro {
     };
   }
 
-  recordCallerCall(node) {
+  recordMacroCallerInvocation(node) {
     let current = node._analysis.parent;
     while (current) {
       const owner = current.node;
@@ -168,6 +168,70 @@ class CompileMacro {
       }
       current = current.parent;
     }
+  }
+
+  collectMacroCallerInvocationFacts(node, analysisPass) {
+    const isCallerCall = node.name instanceof nodes.Symbol && node.name.value === 'caller';
+    if (!isCallerCall) {
+      return null;
+    }
+
+    const mutates = [];
+    const textChain = analysisPass.getCurrentTextChain(node._analysis);
+    if (textChain) {
+      mutates.push(textChain);
+    }
+    // caller() is a reserved macro call-block binding in async mode. Its
+    // invocation ordering uses the macro-local __caller__ lane, so any
+    // nested child boundary containing caller() must link that lane.
+    mutates.push(CALLER_CHAIN_NAME);
+    this.recordMacroCallerInvocation(node);
+    return { mutates, macroCallerInvocation: true };
+  }
+
+  compileMacroCallerInvocation(node) {
+    if (!this.canCompileMacroCallerInvocation(node)) {
+      return false;
+    }
+    this._emitMacroCallerInvocationDispatch({
+      bufferId: this.compiler.buffer.currentBuffer,
+      node
+    });
+    return true;
+  }
+
+  collectMacroCallFacts(node, analysisPass) {
+    if (!(node.name instanceof nodes.Symbol)) {
+      return null;
+    }
+    const macroDecl = analysisPass.recordSourceLookupDeclaration(node.name, node.name.value, node._analysis);
+    if (!macroDecl || !macroDecl.isMacro) {
+      return null;
+    }
+    node.name.addAnalysis({ isStaticCallableCallTarget: true });
+    return {
+      kind: 'local',
+      declaration: macroDecl
+    };
+  }
+
+  compileMacroCall(node) {
+    const macroCall = node._analysis.macroCall;
+    if (!macroCall) {
+      return false;
+    }
+
+    this._emitLocalMacroCall(node, macroCall);
+    return true;
+  }
+
+  _emitLocalMacroCall(node, macroCall) {
+    const compiler = this.compiler;
+    compiler.emit('runtime.invokeMacro(');
+    compiler._compileDirectDeclarationLookup(node.name, node.name.value, macroCall.declaration);
+    compiler.emit(', context, ');
+    compiler._compileAggregate(node.args, null, '[', ']', false, false);
+    compiler.emit(`, ${compiler.buffer.currentBuffer})`);
   }
 
   _validateParameterDeclaration(name, nameNode, seenParamNames, ownerNode) {
@@ -353,7 +417,7 @@ class CompileMacro {
     // caller boundary when it was invoked through a call block.
     // Each caller() invocation gets its own child buffer under the macro-local
     // all-callers buffer so multiple invocations can run independently.
-    compiler.emit(`(${rawCallerVar} && ${rawCallerVar}.isMacro ? function() {`);
+    compiler.emit(`(runtime.isMacro(${rawCallerVar}) ? function() {`);
     compiler.emit(`let ${invocationArgsId} = Array.prototype.slice.call(arguments);`);
     compiler.emit(`let ${invocationBufferId} = new runtime.CommandBuffer(context, ${allCallersBufferId}, ${rawCallerVar}.__callerLinkedFacts || null, ${rawCallerVar}.__callerOwnFacts || null, null, ${callerBufferStackErrorContext}, null, renderState);`);
     compiler.emit(`let ${invocationFinishedId} = ${invocationBufferId}.getFinishedPromise();`);
@@ -381,7 +445,7 @@ class CompileMacro {
     // only after all started caller() invocations have registered.
     compiler.emit.line(`runtime.declareBufferChain(${bufferId}, "${CALLER_CHAIN_NAME}", "var", context, null);`);
     // Caller-capable macros still allow plain invocations with no caller block.
-    compiler.emit.line(`if (${rawCallerVar} && ${rawCallerVar}.isMacro) {`);
+    compiler.emit.line(`if (runtime.isMacro(${rawCallerVar})) {`);
     // The all-callers buffer is parent-linked because caller() may emit
     // parent-visible observable commands, unlike the isolated macro buffer.
     compiler.emit.line(`  ${allCallersBufferId} = new runtime.CommandBuffer(context, macroParentBuffer, ${rawCallerVar}.__callerLinkedFacts || null, ${rawCallerVar}.__callerOwnFacts || null, macroParentBuffer, ${callerBufferStackErrorContext}, macroParentBuffer, renderState);`);

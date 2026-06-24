@@ -1,5 +1,4 @@
 import {CHAIN_TYPES} from '../chain-types.js';
-import * as nodes from '../language/nodes.js';
 import {isChainDeclaration, isImmutableDeclaration, isVarChainDeclaration} from './declarations.js';
 
 class CompileAnalysisValidation {
@@ -178,34 +177,6 @@ class CompileAnalysisValidation {
     }
   }
 
-  validateMacroValueUse(analysis) {
-    const node = analysis.node;
-    // A valid macro call target is still a symbol read with lookupDeclaration.
-    // Call classification marks it so this validation only rejects value uses.
-    if (
-      this.compiler.scriptMode ||
-      !(node instanceof nodes.Symbol) ||
-      analysis.isSymbolTarget ||
-      analysis.operationOwnedPath ||
-      analysis.isMacroCallTarget ||
-      node.isCompilerInternal
-    ) {
-      return;
-    }
-
-    const declaration = analysis.lookupDeclaration || null;
-    if (!declaration?.isMacro) {
-      return;
-    }
-
-    this.compiler.fail(
-      `Macro '${node.value}' cannot be used as a value in an async template. Call it directly.`,
-      node.lineno,
-      node.colno,
-      node
-    );
-  }
-
   validateObservations(analysis) {
     const rootDeclarations = this.analysisPass.getRootScopeOwner(analysis).activeVisibleDeclarations;
     const currentTextChain = this.analysisPass.getCurrentTextChain(analysis);
@@ -215,7 +186,7 @@ class CompileAnalysisValidation {
       if (this._shouldSkipChainAccessValidation(name, currentTextChain)) {
         continue;
       }
-      if (!this.analysisPass.findSourceDeclaration(analysis, name)) {
+      if (!this.analysisPass.findLocalUsageDeclaration(analysis, name)) {
         const rootDeclaration = rootDeclarations ? rootDeclarations.get(name) : null;
         if (rootDeclaration && rootDeclaration.shared) {
           continue;

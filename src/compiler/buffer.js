@@ -295,7 +295,7 @@ class CompileBuffer {
   }
 
   // Register produced work with the current waited-loop timing chain.
-  // This records completion of the value created at the current source
+  // This records completion of values created at the current source
   // position, not completion of any command that later consumes that value.
   //
   // Keep that distinction: output command promises are tied to chain
@@ -303,16 +303,23 @@ class CompileBuffer {
   // make limited-concurrency loops stall behind later snapshot/finalSnapshot
   // traversal.
   emitLimitedLoopCompletion(valueExpr, positionNode = null) {
+    this.emitLimitedLoopCompletions([valueExpr], positionNode);
+  }
+
+  emitLimitedLoopCompletions(valueExprs, positionNode = null) {
     // In __waited__ scope, root work contributes one timing-only
     // WaitResolveCommand to the owning iteration buffer's chain.
-    const waitedChainName = this.currentWaitedChainName;
-    const waitedOwnerBuffer = this.currentWaitedOwnerBuffer || this.currentBuffer;
-    if (!this.compiler.asyncMode || !waitedChainName) {
+    if (!(this.compiler.asyncMode && this.currentWaitedChainName)) {
       return;
     }
+    if (valueExprs.length === 0) {
+      return;
+    }
+    const waitedChainName = this.currentWaitedChainName;
+    const waitedOwnerBuffer = this.currentWaitedOwnerBuffer || this.currentBuffer;
     // Register as usage, not mutation: __waited__ tracks completion, not chain state.
     this.compiler.emit.line(
-      `${waitedOwnerBuffer}.addCommand(new runtime.WaitResolveCommand({ chainName: "${waitedChainName}", args: [${valueExpr}], errorContext: ${this.compiler.emitErrorContext(positionNode)} }), "${waitedChainName}");`
+      `${waitedOwnerBuffer}.addCommand(new runtime.WaitResolveCommand({ chainName: "${waitedChainName}", args: [${valueExprs.join(', ')}], errorContext: ${this.compiler.emitErrorContext(positionNode)} }), "${waitedChainName}");`
     );
   }
 

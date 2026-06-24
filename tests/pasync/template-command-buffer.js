@@ -528,17 +528,19 @@ class FailingObservation extends runtime.Command {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
       loader.addTemplate('macros.njk', '{% macro show(value) %}[{{ value }}]{% endmacro %}');
-      loader.addTemplate('part.njk', '{{ label }}{{ show(label) }}');
+      loader.addTemplate('part.njk', '{{ label }}');
 
       const tmpl = new AsyncTemplate(`
         {% if flag %}
           {% set label = "A" %}
           {% from "macros.njk" import show %}
-          {% include "part.njk" with label, show %}
+          {% include "part.njk" with label %}
+          {{ show(label) }}
         {% else %}
           {% set label = "B" %}
           {% from "macros.njk" import show %}
-          {% include "part.njk" with label, show %}
+          {% include "part.njk" with label %}
+          {{ show(label) }}
         {% endif %}
         {% switch mode %}
         {% case "one" %}
@@ -853,7 +855,7 @@ class FailingObservation extends runtime.Command {
       expect(result).to.be('Hi x');
     });
 
-    it('should not treat a macro parameter shadowing a from-import binding as imported callable', async function () {
+    it('should not treat a macro parameter shadowing a from-import binding as an imported macro', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
       loader.addTemplate('macros.njk', '{% macro foo(name) %}Foo {{ name }}{% endmacro %}');
@@ -872,7 +874,7 @@ class FailingObservation extends runtime.Command {
       expect(result).to.be('Helper x');
     });
 
-    it('should not treat a macro parameter shadowing an imported namespace as imported callable', async function () {
+    it('should not treat a macro parameter shadowing an imported namespace as an imported macro', async function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
       loader.addTemplate('macros.njk', '{% macro hi(name) %}Hi {{ name }}{% endmacro %}');
