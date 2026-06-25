@@ -155,10 +155,9 @@ Cascada async templates are stricter than classic Nunjucks/sync templates: local
 {% set x = button %}         {# error: button is read as a value #}
 ```
 
-Static imported calls may target either Cascada macros or ordinary functions. Once an imported path is used as a static callable, that path is call-only in async templates; namespace imports are path-specific:
+Imported names can be Cascada macros or ordinary functions. In async templates an imported name is used either for calls or as an ordinary value, not both; for namespace imports this applies per member:
 
 ```nunjucks
-
 {% from "ui.njk" import button %}
 {{ button("Save") }}
 {{ button }}                 {# error #}
@@ -169,7 +168,7 @@ Static imported calls may target either Cascada macros or ordinary functions. On
 {{ ui.version }}             {# valid ordinary namespace member #}
 ```
 
-Macros and inherited blocks can call imported paths that were imported earlier in the same template. `with context` imports work in those clean scopes; imports with explicit inputs, object inputs, or dynamic targets must be called from ordinary root code instead.
+Macros and inherited blocks can call imported paths that were imported earlier in the same template. `with context` imports work from inside macros and blocks; imports with explicit inputs, object inputs, or dynamic targets must be called from ordinary root code instead.
 
 This lets Cascada preserve deterministic output ordering and parallel execution without tracing macro values through variables. CascadaScript is not subject to this template call-only rule; script functions return values and can be assigned to local variables and called through them.
 
