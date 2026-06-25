@@ -64,7 +64,6 @@ class CompileAssignment {
       }
       return facts;
     }
-    const assignsValue = !!(node.value || node.body) && !node.declarationOnly;
     targets.forEach((target) => {
       if (target instanceof nodes.Symbol) {
         target.addAnalysis({ isSymbolTarget: true });
@@ -84,9 +83,6 @@ class CompileAssignment {
           !declaration;
         if (isDeclaration || shouldDeclareImplicitTemplateVar) {
           declareOnExit.push({ name, type: 'var', initializer: null, explicit: !!isDeclaration });
-          if (assignsValue) {
-            mutates.push(name);
-          }
         } else {
           if (node.path) {
             observes.push(name);
@@ -137,6 +133,12 @@ class CompileAssignment {
     const ids = [];
     const isDeclarationOnly = !!node.declarationOnly;
     const targetFacts = node._analysis.setTargetFacts ?? null;
+    const isLiteralNone = node.value instanceof nodes.Literal && node.value.value === null;
+    const allTargetsAreOwnDeclarations = node.targets.every((target, i) => {
+      const facts = targetFacts && targetFacts[i] ? targetFacts[i] : null;
+      return facts && facts.isOwnDeclaration;
+    });
+    const canSeedLiteralNoneDirectly = isLiteralNone && allTargetsAreOwnDeclarations && !node.path && !node.body;
 
     node.targets.forEach((target, i) => {
       if (!(target instanceof nodes.Symbol)) {
@@ -156,9 +158,7 @@ class CompileAssignment {
           isVarDeclaration: false
         };
 
-      if (facts.isOwnDeclaration) {
-        this.emit(`runtime.declareBufferChain(${compiler.buffer.currentBuffer}, "${name}", "var", context, null);`);
-      } else if (!facts.isVarDeclaration) {
+      if (!facts.isOwnDeclaration && !facts.isVarDeclaration) {
         compiler.fail(
           `Compiler error: analysis did not resolve a visible var declaration for '${name}'.`,
           target.lineno,
@@ -168,13 +168,20 @@ class CompileAssignment {
         );
       }
 
+      if (canSeedLiteralNoneDirectly) {
+        ids.push(null);
+        return;
+      }
+
       const id = compiler._tmpid();
       this.emit.line(`let ${id};`);
       ids.push(id);
     });
 
     let hasAssignedValue = false;
-    if (node.path) {
+    if (canSeedLiteralNoneDirectly) {
+      hasAssignedValue = true;
+    } else if (node.path) {
       const targetName = node.targets[0].value;
       const pathValueId = compiler._tmpid();
       this.emit(`let ${pathValueId} = `);
@@ -207,8 +214,15 @@ class CompileAssignment {
       const valueId = ids[i];
       const facts = targetFacts && targetFacts[i] ? targetFacts[i] : null;
 
+      if (facts && facts.isOwnDeclaration) {
+        const initializer = hasAssignedValue ? valueId : 'null';
+        this.emit.line(`runtime.declareBufferChain(${compiler.buffer.currentBuffer}, "${name}", "var", context, ${initializer});`);
+      }
+
       if (hasAssignedValue) {
-        this.emit.line(`${compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ chainName: '${name}', args: [${valueId}], errorContext: ${compiler.emitErrorContext(node)} }), '${name}');`);
+        if (!(facts && facts.isOwnDeclaration)) {
+          this.emit.line(`${compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ chainName: '${name}', args: [${valueId}], errorContext: ${compiler.emitErrorContext(node)} }), '${name}');`);
+        }
       }
 
       if (name.charAt(0) !== '_' && hasAssignedValue && facts && facts.exportFromRootScope && !facts.isSharedDeclaration) {

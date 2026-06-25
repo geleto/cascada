@@ -19,6 +19,7 @@ class DataChain extends Chain {
   // so an applied data command leaves no unresolved promises or lazy markers in
   // _target. Snapshot observations can therefore capture the current object
   // immediately and rely on copy-on-write for later mutations.
+  // TODO: Converge data initializers on non-command initialization once _target supports promises.
   _getCurrentResult() {
     return this._target;
   }

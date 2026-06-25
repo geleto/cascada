@@ -1811,7 +1811,7 @@ describe('error context tracing runtime foundation', () => {
       expect(source).to.match(/runtime\.memberLookupScript\([^;]+__ec\[\d+\], output\)/);
       expect(source).to.match(/runtime\.sequentialCallWrapValue\([^;]+__ec\[\d+\], false, output\)/);
       expect(source).to.match(/new runtime\.SnapshotCommand\(\{ chainName: "name", errorContext: __ec\[\d+\] \}\)/);
-      expect(source).to.match(/new runtime\.VarCommand\(\{ chainName: 'name', args: \[t_\d+\], errorContext: __ec\[\d+\] \}\)/);
+      expect(source).to.match(/runtime\.declareBufferChain\(output, "name", "var", context, t_\d+\)/);
       expect(source).to.contain('new runtime.DataCommand({ chainName: \'result\'');
       expect(source).to.match(/errorContext: __ec\[\d+\] \}\);/);
     });

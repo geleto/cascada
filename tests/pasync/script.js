@@ -1,6 +1,10 @@
 
 import expect from 'expect.js';
-import {AsyncEnvironment, Script} from '../../src/environment/environment.js';
+import {AsyncEnvironment, AsyncTemplate, Script} from '../../src/environment/environment.js';
+import {createPoison, PoisonError} from '../../src/runtime/runtime.js';
+
+const TEST_POISON_EC = [1, 1, 'ScriptVar.TestPoison', 'script-var.casc', null, null];
+const testPoison = (message) => createPoison(PoisonError.create(message, TEST_POISON_EC, 'UserCallThrew'));
 
 describe('Cascada Script: Variables', function () {
   let env;
@@ -22,6 +26,170 @@ describe('Cascada Script: Variables', function () {
 
       const result = await env.renderScriptString(script, context);
       expect(result.result.user).to.eql({ id: 1, name: 'Alice' });
+    });
+
+    it('should initialize read-only vars without a mutation command', async function () {
+      const script = [
+        'var x = fetchValue()',
+        'return x'
+      ].join('\n');
+      const compiled = new Script(script, env, 'var-initializer-command.casc').compileSource();
+
+      expect(compiled).to.match(/runtime\.declareBufferChain\(output, "x", "var", context, t_\d+\)/);
+      expect(compiled).to.not.contain('new runtime.VarCommand({ chainName: \'x\'');
+
+      const result = await env.renderScriptString(script, {
+        fetchValue: () => Promise.resolve('ready')
+      });
+      expect(result).to.be('ready');
+    });
+
+    it('should declare uninitialized vars without a mutation command', async function () {
+      const script = [
+        'var x',
+        'return x'
+      ].join('\n');
+      const compiled = new Script(script, env, 'var-empty-declaration-command.casc').compileSource();
+
+      expect(compiled).to.contain('runtime.declareBufferChain(output, "x", "var", context, null)');
+      expect(compiled).to.not.contain('new runtime.VarCommand({ chainName: \'x\'');
+
+      const result = await env.renderScriptString(script, {});
+      expect(result).to.be(null);
+    });
+
+    it('should initialize explicit none declarations without a temp or mutation command', async function () {
+      const script = [
+        'var x = none',
+        'return x'
+      ].join('\n');
+      const compiled = new Script(script, env, 'var-none-initializer-command.casc').compileSource();
+
+      expect(compiled).to.contain('runtime.declareBufferChain(output, "x", "var", context, null)');
+      expect(compiled).to.not.match(/t_\d+ = null;/);
+      expect(compiled).to.not.contain('new runtime.VarCommand({ chainName: \'x\'');
+
+      const result = await env.renderScriptString(script, {});
+      expect(result).to.be(null);
+    });
+
+    it('should initialize multiple explicit none declarations without temps or mutation commands', async function () {
+      const script = [
+        'var x, y = none',
+        'return { x: x, y: y }'
+      ].join('\n');
+      const compiled = new Script(script, env, 'var-multi-none-initializer-command.casc').compileSource();
+
+      expect(compiled).to.contain('runtime.declareBufferChain(output, "x", "var", context, null)');
+      expect(compiled).to.contain('runtime.declareBufferChain(output, "y", "var", context, null)');
+      expect(compiled).to.not.match(/t_\d+ = null;/);
+      expect(compiled).to.not.contain('new runtime.VarCommand({ chainName: \'x\'');
+      expect(compiled).to.not.contain('new runtime.VarCommand({ chainName: \'y\'');
+
+      const result = await env.renderScriptString(script, {});
+      expect(result).to.eql({ x: null, y: null });
+    });
+
+    it('should initialize multiple declared vars without mutation commands', async function () {
+      const script = [
+        'var x, y = fetchValue()',
+        'return { x: x, y: y }'
+      ].join('\n');
+      const compiled = new Script(script, env, 'var-multi-initializer-command.casc').compileSource();
+
+      expect(compiled).to.match(/runtime\.declareBufferChain\(output, "x", "var", context, t_\d+\)/);
+      expect(compiled).to.match(/runtime\.declareBufferChain\(output, "y", "var", context, t_\d+\)/);
+      expect(compiled).to.not.contain('new runtime.VarCommand({ chainName: \'x\'');
+      expect(compiled).to.not.contain('new runtime.VarCommand({ chainName: \'y\'');
+
+      const result = await env.renderScriptString(script, {
+        fetchValue: () => Promise.resolve('ready')
+      });
+      expect(result).to.eql({ x: 'ready', y: 'ready' });
+    });
+
+    it('should still emit mutation commands for var reassignment', async function () {
+      const script = [
+        'var x = 1',
+        'x = 2',
+        'return x'
+      ].join('\n');
+      const compiled = new Script(script, env, 'var-reassignment-command.casc').compileSource();
+
+      expect(compiled).to.match(/runtime\.declareBufferChain\(output, "x", "var", context, t_\d+\)/);
+      expect(compiled).to.match(/new runtime\.VarCommand\(\{ chainName: 'x', args: \[t_\d+\], errorContext: __ec\[\d+\] \}\)/);
+
+      const result = await env.renderScriptString(script, {});
+      expect(result).to.be(2);
+    });
+
+    it('should still emit mutation commands for none reassignment', async function () {
+      const script = [
+        'var x = 1',
+        'x = none',
+        'return x'
+      ].join('\n');
+      const compiled = new Script(script, env, 'var-none-reassignment-command.casc').compileSource();
+
+      expect(compiled).to.match(/runtime\.declareBufferChain\(output, "x", "var", context, t_\d+\)/);
+      expect(compiled).to.match(/t_\d+ = null;/);
+      expect(compiled).to.match(/new runtime\.VarCommand\(\{ chainName: 'x', args: \[t_\d+\], errorContext: __ec\[\d+\] \}\)/);
+
+      const result = await env.renderScriptString(script, {});
+      expect(result).to.be(null);
+    });
+
+    it('should preserve source-ordered reads around eager initialization and reassignment', async function () {
+      const script = [
+        'var x = 1',
+        'var a = x',
+        'x = 2',
+        'var b = x',
+        'return { a: a, b: b }'
+      ].join('\n');
+
+      const result = await env.renderScriptString(script, {});
+      expect(result).to.eql({ a: 1, b: 2 });
+    });
+
+    it('should expose poison from var declaration initializers at read time', async function () {
+      const script = [
+        'var x = fail()',
+        'return { hasError: x is error, message: x#.message }'
+      ].join('\n');
+
+      const result = await env.renderScriptString(script, {
+        fail() {
+          return testPoison('init poison');
+        }
+      });
+      expect(result.hasError).to.be(true);
+      expect(result.message).to.contain('init poison');
+      expect(result.message).to.contain('ScriptVar.TestPoison');
+    });
+
+    it('should initialize implicit template vars without a mutation command', async function () {
+      const template = '{% set x = fetchValue() %}{{ x }}';
+      const compiled = new AsyncTemplate(template, env, 'template-set-var-initializer.njk').compileSource();
+
+      expect(compiled).to.match(/runtime\.declareBufferChain\(output, "x", "var", context, t_\d+\)/);
+      expect(compiled).to.not.contain('new runtime.VarCommand({ chainName: \'x\'');
+
+      const result = await env.renderTemplateString(template, {
+        fetchValue: () => Promise.resolve('ready')
+      });
+      expect(result).to.be('ready');
+    });
+
+    it('should initialize block-set template vars without a mutation command', async function () {
+      const template = '{% set x %}ready{% endset %}{{ x }}';
+      const compiled = new AsyncTemplate(template, env, 'template-block-set-var-initializer.njk').compileSource();
+
+      expect(compiled).to.match(/runtime\.declareBufferChain\(output, "x", "var", context, t_\d+\)/);
+      expect(compiled).to.not.contain('new runtime.VarCommand({ chainName: \'x\'');
+
+      const result = await env.renderTemplateString(template, {});
+      expect(result).to.be('ready');
     });
 
     it('should declare a variable with default value none', async function () {

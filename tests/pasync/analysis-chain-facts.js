@@ -310,7 +310,7 @@ import {
       expect(root.mutatedChains.has('both')).to.be(true);
     });
 
-    it('should classify chain declarations with command initializers as mutations', function () {
+    it('should classify only command-backed chain declaration initializers as mutations', function () {
       const ast = analyzeScriptSource([
         'var x = 5',
         'data result = { a: 1 }',
@@ -322,7 +322,7 @@ import {
 
       expect(root.declaredChains.has('x')).to.be(true);
       expect(root.usedChains.has('x')).to.be(true);
-      expect(root.mutatedChains.has('x')).to.be(true);
+      expect(root.mutatedChains.has('x')).to.be(false);
       expect(root.mutatedChains.has('result')).to.be(true);
       expect(root.mutatedChains.has('body')).to.be(true);
       expect(root.mutatedChains.has('logger')).to.be(false);
@@ -433,7 +433,7 @@ import {
 
       expect(sortedChainNames(outer.observedChains)).to.eql(sortedChainNames(['x', outer.textOutput]));
       expect(Array.from(outer.usedChains || [])).to.eql([outer.textOutput, 'x', 'inner']);
-      expect(Array.from(outer.mutatedChains || [])).to.eql([outer.textOutput, 'inner']);
+      expect(Array.from(outer.mutatedChains || [])).to.eql([outer.textOutput]);
       expect(sortedChainNames(inner.observedChains)).to.eql(sortedChainNames(['x', inner.textOutput]));
       expect(Array.from(inner.usedChains || [])).to.eql([inner.textOutput, 'x']);
       expect(Array.from(inner.mutatedChains || [])).to.eql([inner.textOutput]);
@@ -471,7 +471,7 @@ import {
 
       expect(sortedChainNames(outer.observedChains)).to.eql(sortedChainNames(['x', outer.textOutput]));
       expect(sortedChainNames(outer.usedChains)).to.eql(sortedChainNames(['x', 'inner', outer.textOutput]));
-      expect(Array.from(outer.mutatedChains || [])).to.eql(['x', 'inner']);
+      expect(Array.from(outer.mutatedChains || [])).to.eql(['x']);
       expect(sortedChainNames(inner.observedChains)).to.eql(sortedChainNames(['x', inner.textOutput]));
       expect(Array.from(inner.usedChains || [])).to.eql([inner.textOutput, 'x']);
       expect(Array.from(inner.mutatedChains || [])).to.eql([inner.textOutput, 'x']);
@@ -721,7 +721,7 @@ import {
       const recoveryNode = collectNodesByType(ast, 'Guard.Recover')[0]._analysis;
 
       expect((bodyNode.observedChains || new Set()).has('local')).to.be(true);
-      expect((bodyNode.mutatedChains || new Set()).has('local')).to.be(true);
+      expect((bodyNode.mutatedChains || new Set()).has('local')).to.be(false);
       expect((guardNode.observedChains || new Set()).has('local')).to.be(false);
       expect((guardNode.mutatedChains || new Set()).has('local')).to.be(false);
       expect(guardNode.guardFacts.bodyErrorChains).to.contain('local');
@@ -787,6 +787,18 @@ import {
       expect((macroNode._analysis.usedChains || new Set()).has('greet')).to.be(false);
       expect((macroNode._analysis.observedChains || new Set()).has('greet')).to.be(false);
       expect((macroNode._analysis.mutatedChains || new Set()).has('greet')).to.be(false);
+    });
+
+    it('should not treat var declaration initializers as mutations', function () {
+      const ast = analyzeScriptSource([
+        'var x = "value"',
+        'return x'
+      ].join('\n'), 'var-initializer-chain-facts.casc');
+      const setNode = collectNodesByType(ast, 'Set')[0];
+
+      expect(setNode._analysis.mutates).to.eql([]);
+      expect((ast._analysis.observedChains || new Set()).has('x')).to.be(true);
+      expect((ast._analysis.mutatedChains || new Set()).has('x')).to.be(false);
     });
 
     it('should derive short-circuit expression links only when command effects are present', function () {

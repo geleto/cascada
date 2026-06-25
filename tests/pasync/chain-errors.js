@@ -22,7 +22,7 @@ import {
 } from '../../src/runtime/chains/index.js';
 
 import {CommandBuffer} from '../../src/runtime/command-buffer.js';
-import {createArray, RESOLVE_MARKER, RESOLVED_VALUE_MARKER} from '../../src/runtime/resolve.js';
+import {createArray, resolveSingle, RESOLVE_MARKER, RESOLVED_VALUE_MARKER} from '../../src/runtime/resolve.js';
 
 const TEST_EC = [1, 1, 'Test', 'test.casc', null, null];
 const ORIGIN_EC = [9, 9, 'Origin', 'origin.casc', null, null];
@@ -101,6 +101,85 @@ describe('chain errors', function () {
       }).apply(output);
 
       expect(output._target).to.be(3);
+    });
+
+    it('VarChain initial values mark unread rejected promises handled', async function () {
+      if (typeof process === 'undefined' || !process.on) {
+        this.skip();
+      }
+
+      const initialError = new Error('unread initial rejection');
+      const unhandled = [];
+      const onUnhandled = (reason) => {
+        if (reason === initialError) {
+          unhandled.push(reason);
+        }
+      };
+      const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+      process.on('unhandledRejection', onUnhandled);
+      try {
+        const buffer = new CommandBuffer(null, null, null, null, null, TEST_EC);
+        const chain = declareBufferChain(
+          buffer,
+          'value',
+          'var',
+          null,
+          Promise.reject(initialError)
+        );
+
+        chain.setValue('overwritten');
+        buffer.finish();
+
+        await pause(20);
+        expect(chain._getCurrentResult()).to.be('overwritten');
+        expect(unhandled).to.eql([]);
+      } finally {
+        process.off('unhandledRejection', onUnhandled);
+      }
+    });
+
+    it('VarChain initial values use the same storage normalization as assignments', () => {
+      const output = new VarChain(null, 'value', null, 'var');
+      const resolved = resolveSingle('ready');
+
+      output.setInitialValue(resolved);
+      expect(output._target).to.be('ready');
+
+      const poison = createPoison(testError('initial poison'));
+      output.setInitialValue(poison);
+
+      expect(isPoison(output._target)).to.be(true);
+      expect(output._target).not.to.be(poison);
+      expect(output._target.errors).to.have.length(1);
+      expect(output._target.errors[0].message).to.contain('initial poison');
+    });
+
+    it('VarCommand delegates initialize-if-empty writes through VarChain storage', () => {
+      const output = new VarChain(null, 'value', null, 'var');
+
+      new VarCommand({
+        chainName: 'value',
+        args: [resolveSingle('first')],
+        errorContext: TEST_EC,
+        initializeIfNotSet: true
+      }).apply(output);
+      expect(output._target).to.be('first');
+
+      new VarCommand({
+        chainName: 'value',
+        args: [resolveSingle('ignored')],
+        errorContext: TEST_EC,
+        initializeIfNotSet: true
+      }).apply(output);
+      expect(output._target).to.be('first');
+
+      new VarCommand({
+        chainName: 'value',
+        args: [resolveSingle('replaced')],
+        errorContext: TEST_EC
+      }).apply(output);
+      expect(output._target).to.be('replaced');
     });
 
     it('DataCommand writes poison to addressed path and allows later repair overwrite', async () => {
