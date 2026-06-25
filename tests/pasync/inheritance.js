@@ -536,6 +536,34 @@ describe('Inheritance rebuild', function () {
       expect(await localEnv.renderScript('main.script', {})).to.be('[method]');
     });
 
+    it('lets template constructors call outer namespace imported macros', async function () {
+      const localEnv = createEnvironment({
+        'macros.njk': '{% macro label(value) %}[{{ value }}]{% endmacro %}',
+        'main.njk': '{% import "macros.njk" as macros %}{{ macros.label("constructor") }}{% block body %}{{ macros.label("block") }}{% endblock %}'
+      });
+
+      expect(await localEnv.renderTemplate('main.njk', {})).to.be('[constructor][block]');
+    });
+
+    it('lets script constructors call outer from-import functions', async function () {
+      const localEnv = createEnvironment({
+        'helpers.script': [
+          'function label(value)',
+          '  return "[" + value + "]"',
+          'endfunction'
+        ].join('\n'),
+        'main.script': [
+          'from "helpers.script" import label',
+          'method body()',
+          '  return label("method")',
+          'endmethod',
+          'return label("constructor") + this.body()'
+        ].join('\n')
+      });
+
+      expect(await localEnv.renderScript('main.script', {})).to.be('[constructor][method]');
+    });
+
     it('lets inherited parent script methods call their own outer imported functions without running the parent constructor', async function () {
       const localEnv = createEnvironment({
         'helpers.script': [
