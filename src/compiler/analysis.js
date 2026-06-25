@@ -23,6 +23,83 @@ class CompileAnalysis {
     };
   }
 
+  _initializeAnalysis(node, parentNode, parentField) {
+    const parentAnalysis = parentNode?._analysis ?? null;
+    const previousAnalysis = node._analysis ?? {};
+
+    // Keep this base shape limited to cross-cutting analysis facts that this
+    // pass owns or derives for many node types: scope/declaration ownership,
+    // chain use/mutation/link metadata, and shared boundary state. Node-
+    // specific facts such as declaration targets, sequential lookup details,
+    // guard/import/caller/component metadata, etc. should be attached only by
+    // the analyzer that owns that feature.
+    //
+    // Analysis facts are populated in two passes: node analyzers seed local
+    // declarations/observations/mutations/boundary flags during the walk. Post-analyzers run
+    // after child facts are ready and before this node's aggregate chain
+    // footprint is derived.
+    node._analysis = {
+      node,
+      // `createScope` marks a lexical scope whose async commands are backed by
+      // a child CommandBuffer: either the owner node's control-flow boundary or
+      // an explicit `withScopeCommandBuffer`. Do not reintroduce a parallel
+      // "creates scope buffer" flag.
+      createScope: false,
+      // Clean scopes, such as macros, do not implicitly link parent lanes.
+      // Non-clean scope buffers may still derive parent links from ordinary
+      // observed/mutated facts.
+      scopeBoundary: false,
+      // Meaningful only on scope owners: read-only mutation checks hop from
+      // scope owner to scope owner and do not inspect intermediate nodes.
+      parentReadOnly: false,
+      textOutput: null,
+      declareOnEnter: [],
+      declareOnExit: [],
+      declareInParentOnExit: [],
+      declareInRootOnEnter: [],
+      declareInRootOnExit: [],
+      // Declarations produced by this exact node. These are not source-visible
+      // to the node's expression children, but local analysis facts such as
+      // `var x = ...` may still need to validate or classify writes to `x`.
+      producedDeclarations: null,
+      observes: [],
+      mutates: [],
+      // Finalized declarations owned by this scope. This is for aggregation,
+      // export/ownership, and parent-chain derivation only. It is not a
+      // source lookup table; it may include declarations that were not visible
+      // at a given source point. Use `visibleDeclarations` for source meaning.
+      declaredChains: null,
+      observedChains: null,
+      usedChains: null,
+      mutatedChains: null,
+      observedChainsFromParent: null,
+      usedChainsFromParent: null,
+      mutatedChainsFromParent: null,
+      boundaryLinkedChains: null,
+      boundaryLinkedObservedChains: null,
+      // Parent-owned linked chains this boundary may mutate. Future command-buffer
+      // command-buffer lane runners can use this to distinguish read-only child buffers.
+      boundaryLinkedMutatedChains: null,
+      wantsLinkedChildBuffer: false,
+      createsLinkedChildBuffer: false,
+      expressionControlFlowBoundary: false,
+      ...previousAnalysis,
+      // Immutable snapshot of declarations visible at this exact source point.
+      // Ordinary identifier resolution should use this, not `declaredChains`.
+      visibleDeclarations: null,
+      // Static callable lookup has different visibility from values. Source-
+      // visible imports cross clean callable scopes, and scope-owned macros /
+      // promoted root-constructor imports are added by callable finalization.
+      visibleCallableDeclarations: null,
+      parent: parentAnalysis,
+      inheritedSequenceFunCallLockKey:
+        previousAnalysis.inheritedSequenceFunCallLockKey ??
+        parentAnalysis?.inheritedSequenceFunCallLockKey ??
+        null
+    };
+    return node._analysis;
+  }
+
   registerCompiler(owner) {
     const handlersToRegister = [];
     this._getCompilerMethodNames(owner).forEach((methodName) => {
@@ -245,83 +322,6 @@ class CompileAnalysis {
         visibleCallableDeclarations
       );
     }
-  }
-
-  _initializeAnalysis(node, parentNode, parentField) {
-    const parentAnalysis = parentNode?._analysis ?? null;
-    const previousAnalysis = node._analysis ?? {};
-
-    // Keep this base shape limited to cross-cutting analysis facts that this
-    // pass owns or derives for many node types: scope/declaration ownership,
-    // chain use/mutation/link metadata, and shared boundary state. Node-
-    // specific facts such as declaration targets, sequential lookup details,
-    // guard/import/caller/component metadata, etc. should be attached only by
-    // the analyzer that owns that feature.
-    //
-    // Analysis facts are populated in two passes: node analyzers seed local
-    // declarations/observations/mutations/boundary flags during the walk. Post-analyzers run
-    // after child facts are ready and before this node's aggregate chain
-    // footprint is derived.
-    node._analysis = {
-      node,
-      // `createScope` marks a lexical scope whose async commands are backed by
-      // a child CommandBuffer: either the owner node's control-flow boundary or
-      // an explicit `withScopeCommandBuffer`. Do not reintroduce a parallel
-      // "creates scope buffer" flag.
-      createScope: false,
-      // Clean scopes, such as macros, do not implicitly link parent lanes.
-      // Non-clean scope buffers may still derive parent links from ordinary
-      // observed/mutated facts.
-      scopeBoundary: false,
-      // Meaningful only on scope owners: read-only mutation checks hop from
-      // scope owner to scope owner and do not inspect intermediate nodes.
-      parentReadOnly: false,
-      textOutput: null,
-      declareOnEnter: [],
-      declareOnExit: [],
-      declareInParentOnExit: [],
-      declareInRootOnEnter: [],
-      declareInRootOnExit: [],
-      // Declarations produced by this exact node. These are not source-visible
-      // to the node's expression children, but local analysis facts such as
-      // `var x = ...` may still need to validate or classify writes to `x`.
-      producedDeclarations: null,
-      observes: [],
-      mutates: [],
-      // Finalized declarations owned by this scope. This is for aggregation,
-      // export/ownership, and parent-chain derivation only. It is not a
-      // source lookup table; it may include declarations that were not visible
-      // at a given source point. Use `visibleDeclarations` for source meaning.
-      declaredChains: null,
-      observedChains: null,
-      usedChains: null,
-      mutatedChains: null,
-      observedChainsFromParent: null,
-      usedChainsFromParent: null,
-      mutatedChainsFromParent: null,
-      boundaryLinkedChains: null,
-      boundaryLinkedObservedChains: null,
-      // Parent-owned linked chains this boundary may mutate. Future command-buffer
-      // command-buffer lane runners can use this to distinguish read-only child buffers.
-      boundaryLinkedMutatedChains: null,
-      wantsLinkedChildBuffer: false,
-      createsLinkedChildBuffer: false,
-      expressionControlFlowBoundary: false,
-      ...previousAnalysis,
-      // Immutable snapshot of declarations visible at this exact source point.
-      // Ordinary identifier resolution should use this, not `declaredChains`.
-      visibleDeclarations: null,
-      // Static callable lookup has different visibility from values. Source-
-      // visible imports cross clean callable scopes, and scope-owned macros /
-      // promoted root-constructor imports are added by callable finalization.
-      visibleCallableDeclarations: null,
-      parent: parentAnalysis,
-      inheritedSequenceFunCallLockKey:
-        previousAnalysis.inheritedSequenceFunCallLockKey ??
-        parentAnalysis?.inheritedSequenceFunCallLockKey ??
-        null
-    };
-    return node._analysis;
   }
 
   _analyzeNode(node) {
