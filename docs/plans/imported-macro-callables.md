@@ -19,7 +19,7 @@ There are two gaps. Ordinary macro-body calls work today but rely on fallback/am
 - Let imported static calls target either Cascada macros or ordinary functions. Macros render to strings in expressions; functions return ordinary values.
 - Make template macros call-only. Existing bare-read / pass-as-value behavior is removed deliberately for local and imported macros in async template mode.
 - Put every statically knowable macro/callable-use validation in compiler analysis. Runtime validation is only for missing imports, non-callable call targets, and values that are genuinely dynamic at the point of use.
-- Reuse direct macro binding transport for clean scopes.
+- Reuse direct callable binding transport for clean scopes.
 - Keep namespace imports path-specific: `ui.button(...)` is call-only, but `ui` and `ui.version` remain ordinary namespace reads.
 
 ## Non-Goals
@@ -373,7 +373,7 @@ Once imported static calls are classified, the generic async-template dynamic ca
 
 ## Clean Scope Transport
 
-Use the same owner-entry direct macro binding transport as root-local macros where the imported static call resolves to a Cascada macro; do not add a separate inheritance import payload. Clean-scope transport should carry only the static callable paths that were classified by analysis.
+Use the same owner-entry direct callable binding transport as root-local macros where the imported static call resolves to a Cascada macro; do not add a separate inheritance import payload. Clean-scope transport should carry only the static callable paths that were classified by analysis.
 
 Target shape:
 
@@ -386,7 +386,7 @@ There are two clean-scope mechanics:
 - ordinary macro bodies compiled inside the root JS function already work today without owner-entry transport, but the imported callable analysis phase must make their classification declaration-visibility based rather than fallback-driven (see [Declaration Visibility](#declaration-visibility));
 - inheritance callables run outside the root JS function, so methods, blocks, constructors, and inheritance-compiled root macros need owner-entry transport.
 
-Crux of this phase: `createDirectMacroBindings` runs synchronously before the entry root executes, so root-local macros can be constructed there but import `jsVar`s do not exist yet.
+Crux of this phase: `createDirectCallableBindings` runs synchronously before the entry root executes, so root-local macros can be constructed there but import `jsVar`s do not exist yet.
 
 Clean-scope transport supports imports with a static target and no explicit import inputs. `with context` is supported because the factory has the render context; dynamic import targets and explicit payload inputs are rejected for clean-scope callable use instead of adding a second payload/runtime path.
 
@@ -396,12 +396,12 @@ Constructor import statements reuse the factory-created export value when clean-
 
 Explicit payload expressions (`with value`, named inputs, object inputs) are a compile-time error when that imported callable is used from a clean scope.
 
-The table can remain `directMacroBindings` while clean-scope support only transports macro-compatible callable paths. Ordinary imported values must not be retrievable through it.
+The table is named `directCallableBindings` because it carries root-local macros and classified imported callable paths. Ordinary imported values must not be retrievable through it.
 
 Clean callable compilation uses the same source construct for local and imported macro references:
 
 ```js
-currentInstance.getDirectMacroBinding(methodData, key, errorContext)
+currentInstance.getDirectCallableBinding(methodData, key, errorContext)
 ```
 
 where `key` may be a local macro name (`"label"`), a from-import alias (`"button"`), a namespace binding (`"ui"`), or the compiler-owned import-export key used to share constructor and factory import evaluation.
@@ -482,7 +482,7 @@ Add async tests for:
    - update user-facing template/import documentation for imported static calls and call-only imported paths.
 
 3. Clean scope transport
-   - extend direct macro bindings so macros/methods/blocks/constructors can use classified imported callable paths visible at their declaration point;
+   - extend direct callable bindings so macros/methods/blocks/constructors can use classified imported callable paths visible at their declaration point;
    - keep ordinary imported values out of clean scopes;
    - update template inheritance/composition documentation for imported static calls from clean scopes.
 
@@ -493,7 +493,7 @@ Add async tests for:
    - update CascadaScript documentation with the allowed handle positions and escape restrictions.
 
 5. Naming cleanup
-   - if direct macro bindings now carry local and imported macro bindings, keep the macro-specific name if it remains accurate;
+   - rename the clean-scope owner-entry transport from direct macro bindings to direct callable bindings because it carries root-local macros and classified imported callable paths;
    - defer broader declaration-table renames to the direct-storage cleanup phase.
 
 6. User-facing documentation sweep

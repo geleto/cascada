@@ -27,14 +27,14 @@ class CompileInheritance {
   }
 
   compileParticipantRootBody(node) {
-    const directMacroBindingsVar = this.compiler._tmpid();
-    this.emit.line(`const ${directMacroBindingsVar} = createDirectMacroBindings(ownerState, context);`);
-    this.compiler.macro.emitInheritanceRootMacroExports(node, directMacroBindingsVar);
-    this.codegen.participantRootRender(node, directMacroBindingsVar);
+    const directCallableBindingsVar = this.compiler._tmpid();
+    this.emit.line(`const ${directCallableBindingsVar} = createDirectCallableBindings(ownerState, context);`);
+    this.compiler.macro.emitInheritanceRootMacroExports(node, directCallableBindingsVar);
+    this.codegen.participantRootRender(node, directCallableBindingsVar);
   }
 
   compileParticipantRootExport(node, rootCompileResult) {
-    this.compiler.macro.emitInheritanceDirectMacroBindingsFactory(node);
+    this.compiler.macro.emitInheritanceDirectCallableBindingsFactory(node);
     const methodEntries = this.codegen.callableEntriesObject(rootCompileResult.callableEntries);
     const sharedSchema = this.codegen.sharedSchemaLiteral(node);
     this.codegen.participantRootExport(node, methodEntries, sharedSchema);
@@ -179,7 +179,7 @@ class CompileInheritance {
     // entries, not by inline root-body emission.
   }
 
-  emitDirectMacroReference(declaration, node) {
+  emitDirectCallableReference(declaration, node) {
     if (this._usesFactoryDirectBinding(declaration)) {
       this.emit(`${this.currentDirectBindingFactory.bindingsVar}[${JSON.stringify(declaration.name)}]`);
       return true;
@@ -187,7 +187,7 @@ class CompileInheritance {
     if (!this._usesCallableOwnerDirectBinding(declaration)) {
       return false;
     }
-    this.emit(`currentInstance.getDirectMacroBinding(methodData, ${JSON.stringify(declaration.name)}, ${this.compiler.emitErrorContext(node)})`);
+    this.emit(`currentInstance.getDirectCallableBinding(methodData, ${JSON.stringify(declaration.name)}, ${this.compiler.emitErrorContext(node)})`);
     return true;
   }
 
@@ -195,7 +195,7 @@ class CompileInheritance {
     if (!this._usesCallableOwnerDirectBinding(declaration)) {
       return false;
     }
-    this.emit.line(`currentInstance.setDirectMacroBinding(methodData, ${JSON.stringify(declaration.name)}, ${valueExpr}, ${this.compiler.emitErrorContext(node)});`);
+    this.emit.line(`currentInstance.setDirectCallableBinding(methodData, ${JSON.stringify(declaration.name)}, ${valueExpr}, ${this.compiler.emitErrorContext(node)});`);
     return true;
   }
 

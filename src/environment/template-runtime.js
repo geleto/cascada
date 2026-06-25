@@ -266,7 +266,7 @@ class TemplateRuntime extends Obj {
     this.blocks = this._getCompiledBlocks(props, blockContracts);
     this.inheritanceSpec = props.inheritanceSpec;
     this.resolveInheritanceParent = props.resolveInheritanceParent;
-    this.createDirectMacroBindings = props.createDirectMacroBindings || null;
+    this.createDirectCallableBindings = props.createDirectCallableBindings || null;
     this.getErrorContexts = props.getErrorContexts;
     this.rootRenderFunc = props.root;
     this.compiled = true;

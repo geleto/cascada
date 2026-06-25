@@ -12,7 +12,7 @@ function reportInheritanceLoadError(error, errorContext) {
   return RuntimeError.report(error, requireInheritanceLoadErrorContext(errorContext));
 }
 
-function loadEntry(templateOrScript, errorContext, ownerState, context, entryRootDirectMacroBindings, isEntry) {
+function loadEntry(templateOrScript, errorContext, ownerState, context, entryRootDirectCallableBindings, isEntry) {
   templateOrScript.compile();
   const path = templateOrScript.path ?? null;
   if (!templateOrScript.inheritanceSpec || !templateOrScript.resolveInheritanceParent) {
@@ -31,13 +31,13 @@ function loadEntry(templateOrScript, errorContext, ownerState, context, entryRoo
     scriptMode: !!templateOrScript.scriptMode,
     errorContextTable: templateOrScript.getErrorContexts(ownerState.runtime, path, ownerState.renderState)
   });
-  // Callable metadata needs owner-local root macro bindings.
+  // Callable metadata needs owner-local direct callable bindings.
   // Parent roots are not rendered during loading, so create those bindings
   // here while preserving the already-created entry bindings from root().
-  const entryDirectMacroBindings = isEntry
-    ? (entryRootDirectMacroBindings || null)
-    : (templateOrScript.createDirectMacroBindings
-      ? templateOrScript.createDirectMacroBindings(entryOwnerState, context)
+  const entryDirectCallableBindings = isEntry
+    ? (entryRootDirectCallableBindings || null)
+    : (templateOrScript.createDirectCallableBindings
+      ? templateOrScript.createDirectCallableBindings(entryOwnerState, context)
       : null);
   return Object.freeze({
     templateOrScript,
@@ -45,7 +45,7 @@ function loadEntry(templateOrScript, errorContext, ownerState, context, entryRoo
     path,
     errorContextTable,
     ownerState: entryOwnerState,
-    directMacroBindings: entryDirectMacroBindings,
+    directCallableBindings: entryDirectCallableBindings,
     errorContext
   });
 }
@@ -58,7 +58,7 @@ async function resolveLoadedParent(entry, context) {
   }
 }
 
-async function loadInheritanceChain({ templateOrScript, ownerState, context, errorContext, directMacroBindings }) {
+async function loadInheritanceChain({ templateOrScript, ownerState, context, errorContext, directCallableBindings }) {
   const entries = [];
   const seen = new Set();
   let currentTemplateOrScript = templateOrScript;
@@ -79,7 +79,7 @@ async function loadInheritanceChain({ templateOrScript, ownerState, context, err
 
     let entry;
     try {
-      entry = loadEntry(currentTemplateOrScript, selectedByErrorContext, ownerState, context, directMacroBindings, isEntry);
+      entry = loadEntry(currentTemplateOrScript, selectedByErrorContext, ownerState, context, directCallableBindings, isEntry);
     } catch (error) {
       throw reportInheritanceLoadError(error, selectedByErrorContext);
     }

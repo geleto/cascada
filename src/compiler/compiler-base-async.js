@@ -155,7 +155,7 @@ class CompilerBaseAsync extends CompilerCommon {
         node
       );
     }
-    if (this.inheritance.emitDirectMacroReference(declaration, node)) {
+    if (this.inheritance.emitDirectCallableReference(declaration, node)) {
       return;
     }
     this.emit(declaration.jsVar);

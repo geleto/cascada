@@ -270,36 +270,36 @@ class CompileMacro {
     }
   }
 
-  emitInheritanceDirectMacroBindingsFactory(node) {
+  emitInheritanceDirectCallableBindingsFactory(node) {
     const declarations = this._getInheritanceRootMacroDeclarations(node);
     const importedDeclarations = this._getInheritanceDirectImportedCallableDeclarations(node);
     const emit = this.compiler.emit;
     // Participant roots do not run their source body directly, so root-local
     // macros are created through an owner-scoped factory and attached to the
     // loaded inheritance entry.
-    emit.line('function createDirectMacroBindings(ownerState, context) {');
+    emit.line('function createDirectCallableBindings(ownerState, context) {');
     this._emitInheritanceRootLikeMacroLocals();
     if (declarations.length === 0 && importedDeclarations.length === 0) {
       emit.line('return null;');
     } else {
-      emit.line('const directMacroBindings = {};');
-      this.compiler.inheritance.withDirectBindingFactory(node, 'directMacroBindings', () => {
-        this.compiler.composition.emitDirectImportFactoryBindings(importedDeclarations, 'directMacroBindings');
+      emit.line('const directCallableBindings = {};');
+      this.compiler.inheritance.withDirectBindingFactory(node, 'directCallableBindings', () => {
+        this.compiler.composition.emitDirectImportFactoryBindings(importedDeclarations, 'directCallableBindings');
         declarations.forEach((child) => {
           this.compileMacroBinding(child);
-          emit.line(`directMacroBindings[${JSON.stringify(child.name.value)}] = ${child._analysis.compiledMacroFuncId};`);
+          emit.line(`directCallableBindings[${JSON.stringify(child.name.value)}] = ${child._analysis.compiledMacroFuncId};`);
         });
       });
-      emit.line('return directMacroBindings;');
+      emit.line('return directCallableBindings;');
     }
     emit.line('}');
   }
 
-  emitInheritanceRootMacroExports(node, directMacroBindingsVar) {
+  emitInheritanceRootMacroExports(node, directCallableBindingsVar) {
     this._getInheritanceRootMacroDeclarations(node).forEach((child) => {
       this.compileMacroExport(
         child,
-        `${directMacroBindingsVar}[${JSON.stringify(child.name.value)}]`
+        `${directCallableBindingsVar}[${JSON.stringify(child.name.value)}]`
       );
     });
   }

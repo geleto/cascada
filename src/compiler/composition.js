@@ -159,7 +159,7 @@ class CompileComposition {
       return false;
     }
     const importKey = this.compiler.inheritance.getDirectImportExportBindingKey(node._analysis.importedExportId);
-    this.emit.line(`let ${exportedId} = currentInstance.getDirectMacroBinding(methodData, ${JSON.stringify(importKey)}, ${this.compiler.emitErrorContext(node)});`);
+    this.emit.line(`let ${exportedId} = currentInstance.getDirectCallableBinding(methodData, ${JSON.stringify(importKey)}, ${this.compiler.emitErrorContext(node)});`);
     return true;
   }
 
