@@ -233,7 +233,7 @@ class CompileCall {
   }
 
   _getSymbolCallableReference(analysis, node) {
-    const declaration = analysis.visibleCallableDeclarations?.get(node.value) || null;
+    const declaration = this._getUnshadowedCallableDeclaration(analysis, node.value);
     if (!declaration) {
       return null;
     }
@@ -251,7 +251,7 @@ class CompileCall {
     if (!path || path.length < 2) {
       return null;
     }
-    const declaration = analysis.visibleCallableDeclarations?.get(path[0]) || null;
+    const declaration = this._getUnshadowedCallableDeclaration(analysis, path[0]);
     if (!declaration?.imported || declaration.importKind !== DECLARATION_IMPORT_KIND.NAMESPACE) {
       return null;
     }
@@ -366,7 +366,7 @@ class CompileCall {
     }
 
     const rootName = path[0];
-    const declaration = node._analysis.visibleCallableDeclarations?.get(rootName) || null;
+    const declaration = this._getUnshadowedCallableDeclaration(node._analysis, rootName);
 
     if (declaration?.isMacro && !declaration.imported) {
       if (!(node.name instanceof nodes.Symbol) || path.length !== 1) {
@@ -450,6 +450,22 @@ class CompileCall {
       return null;
     }
     return targetNode.val.value;
+  }
+
+  _getUnshadowedCallableDeclaration(analysis, name) {
+    const declaration = analysis.visibleCallableDeclarations?.get(name) || null;
+    if (!declaration) {
+      return null;
+    }
+    // Callable-name shadowing is rejected later by declaration validation, but
+    // first-pass import-call classification runs before that validation can
+    // report the conflict. Avoid classifying the shadowed outer callable here
+    // so the user gets the declaration-conflict error instead of a misleading
+    // call-site error such as "Import namespace 'x' is not callable".
+    const sourceDeclaration = analysis.visibleDeclarations?.get(name) || null;
+    return !sourceDeclaration || sourceDeclaration === declaration
+      ? declaration
+      : null;
   }
 
   _recordImportedCallableUse(importedCallableCall, analysis) {

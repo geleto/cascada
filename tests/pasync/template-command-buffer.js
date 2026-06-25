@@ -855,7 +855,7 @@ class FailingObservation extends runtime.Command {
       expect(result).to.be('Hi x');
     });
 
-    it('should reject a macro parameter that reuses a from-import binding name', function () {
+    it('should reject macro parameters that reuse from-import binding names', function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
       loader.addTemplate('macros.njk', '{% macro foo(name) %}Foo {{ name }}{% endmacro %}');
@@ -869,7 +869,7 @@ class FailingObservation extends runtime.Command {
       }).to.throwException(/Identifier 'foo' has already been declared/);
     });
 
-    it('should reject a macro parameter that reuses an imported namespace name', function () {
+    it('should reject macro parameters that reuse imported namespace names', function () {
       const loader = new StringLoader();
       const env = new AsyncEnvironment(loader);
       loader.addTemplate('macros.njk', '{% macro hi(name) %}Hi {{ name }}{% endmacro %}');
