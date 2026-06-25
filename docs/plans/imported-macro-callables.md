@@ -2,7 +2,7 @@
 
 Imported values may be used through static calls from clean scopes: ordinary macro bodies, methods, blocks, constructors, and inheritance-compiled root macros. A static imported call may resolve to either a Cascada macro or an ordinary function. The implementation should keep this close to real macro handling where the value is a macro, while preserving source-order value visibility and keeping ordinary imported values out of clean scopes.
 
-This plan covers async-template macro call-only validation, imported static-call classification, and clean-scope transport for imported static calls. CascadaScript macro/function handle value-use policy is documented as a deferrable follow-up because it is separable from imported static-call support.
+This plan covers async-template macro call-only validation, imported static-call classification, clean-scope transport for imported static calls, and the CascadaScript macro/function handle value-use policy.
 
 ## Current Baseline
 
@@ -27,7 +27,7 @@ There are two gaps. Ordinary macro-body calls work today but rely on fallback/am
 - Do not make arbitrary imported values visible inside clean scopes.
 - Do not classify dynamic imported paths such as `ui[name](...)` as static imported calls. In async templates they may remain ordinary dynamic calls only for non-macro values; if they resolve to a Cascada macro, that is a runtime error. Script mode may keep dynamic macro calls.
 - Do not change sync compiler behavior in this phase.
-- Do not apply async-template call-only validation to CascadaScript. Script macro/function handle value-use policy is covered below, but escape hardening is deferrable.
+- Do not apply async-template call-only validation to CascadaScript. Script mode has its own direct macro/function handle policy.
 
 ## Template vs Script Semantics
 
@@ -83,7 +83,7 @@ var formatter = chooseFormatter()
 return formatter(value)
 ```
 
-Deferrable script hardening: direct macro/function handle references should not escape to the host as ordinary values:
+Script direct-handle validation rejects macro/function handles escaping to the host as ordinary values:
 
 ```cascada
 return ourFunction               // root return: compile/runtime error
@@ -92,7 +92,7 @@ return nativeApply(ourFunction)  // native/global call: compile/runtime error
 return "fn=" + ourFunction       // ordinary scalar/data use: compile/runtime error
 ```
 
-Script-mode macro/function handle validation, when implemented, should be syntactic and direct. It should allow direct macro/function handle references in assignments, object/array aggregate declarations, non-root function returns, and arguments to statically known Cascada functions/macros. It should reject direct macro/function handle references in root returns, native/global/dynamic unknown call arguments, and ordinary scalar/data operations. Do not chase aliases or track handle taint through variables, conditionals, loops, object fields, or mutation:
+Script-mode macro/function handle validation is syntactic and direct. It allows direct macro/function handle references in assignments, object/array aggregate declarations, non-root function returns, and arguments to statically known Cascada functions/macros. It rejects direct macro/function handle references in root returns, native/global/dynamic unknown call arguments, and ordinary scalar/data operations. Do not chase aliases or track handle taint through variables, conditionals, loops, object fields, or mutation:
 
 ```cascada
 var x = ourFunction

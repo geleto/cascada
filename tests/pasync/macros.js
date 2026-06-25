@@ -1070,6 +1070,216 @@ async function expectRejects(promise) {
       });
     });
 
+    describe('CascadaScript macro/function handle policy', () => {
+      it('allows local function handles in controlled script positions', async () => {
+        const result = await env.renderScriptString([
+          'function format(value)',
+          '  return "[" + value + "]"',
+          'endfunction',
+          'function apply(fn, value)',
+          '  return fn(value)',
+          'endfunction',
+          'function choose()',
+          '  return format',
+          'endfunction',
+          'var direct = format',
+          'var list = [format]',
+          'var tools = { format: format }',
+          'var picked = choose()',
+          'return [direct("a"), list[0]("b"), tools.format("c"), picked("d"), apply(format, "e"), apply(value="f", fn=format)]'
+        ].join('\n'));
+
+        expect(result).to.eql(['[a]', '[b]', '[c]', '[d]', '[e]', '[f]']);
+      });
+
+      it('allows classified imported callable handles in controlled script positions', async () => {
+        const loader = new StringLoader();
+        loader.addTemplate('formatters.script', [
+          'function format(value)',
+          '  return "[" + value + "]"',
+          'endfunction'
+        ].join('\n'));
+        const scriptEnv = new AsyncEnvironment(loader);
+
+        const result = await scriptEnv.renderScriptString([
+          'from "formatters.script" import format',
+          'import "formatters.script" as fmt',
+          'function apply(fn, value)',
+          '  return fn(value)',
+          'endfunction',
+          'function choose()',
+          '  return format',
+          'endfunction',
+          'var classifiedFrom = format("seen")',
+          'var classifiedNamespace = fmt.format("seen")',
+          'var direct = format',
+          'var tools = { format: fmt.format }',
+          'return [classifiedFrom, classifiedNamespace, direct("a"), tools.format("b"), choose()("c"), apply(format, "d"), apply(fmt.format, "e"), apply(value="f", fn=format), apply(value="g", fn=fmt.format)]'
+        ].join('\n'));
+
+        expect(result).to.eql(['[seen]', '[seen]', '[a]', '[b]', '[c]', '[d]', '[e]', '[f]', '[g]']);
+      });
+
+      it('rejects direct local function handles at script escape points', async () => {
+        const prefix = [
+          'function format(value)',
+          '  return value',
+          'endfunction'
+        ].join('\n');
+
+        const rootReturn = await expectRejects(env.renderScriptString(`${prefix}\nreturn format`));
+        const aggregateRootReturn = await expectRejects(env.renderScriptString(`${prefix}\nreturn { fn: format }`));
+        const arrayRootReturn = await expectRejects(env.renderScriptString(`${prefix}\nreturn [format]`));
+        const nativeArgument = await expectRejects(env.renderScriptString(
+          `${prefix}\nreturn nativeApply(format)`,
+          { nativeApply: (fn) => fn('x') }
+        ));
+        const dynamicCallArgument = await expectRejects(env.renderScriptString([
+          prefix,
+          'var tbl = { call: nativeApply }',
+          'var key = "call"',
+          'return tbl[key](format)'
+        ].join('\n'), { nativeApply: (fn) => fn('x') }));
+        const scalarUse = await expectRejects(env.renderScriptString(`${prefix}\nreturn "fn=" + format`));
+        const chainMethodArgument = await expectRejects(env.renderScriptString([
+          prefix,
+          'data result',
+          'result.items.push(format)',
+          'return result.snapshot()'
+        ].join('\n')));
+        const textChainArgument = await expectRejects(env.renderScriptString([
+          prefix,
+          'text body',
+          'body(format)',
+          'return body.snapshot()'
+        ].join('\n')));
+        const constructorRootReturn = await expectRejects(env.renderScriptString([
+          'extends none',
+          prefix,
+          'return format'
+        ].join('\n')));
+
+        expect(rootReturn.message).to.contain('Cascada callable \'format\' cannot be used directly here');
+        expect(aggregateRootReturn.message).to.contain('Cascada callable \'format\' cannot be used directly here');
+        expect(arrayRootReturn.message).to.contain('Cascada callable \'format\' cannot be used directly here');
+        expect(nativeArgument.message).to.contain('Cascada callable \'format\' cannot be used directly here');
+        expect(dynamicCallArgument.message).to.contain('Cascada callable \'format\' cannot be used directly here');
+        expect(scalarUse.message).to.contain('Cascada callable \'format\' cannot be used directly here');
+        expect(chainMethodArgument.message).to.contain('Cascada callable \'format\' cannot be used directly here');
+        expect(textChainArgument.message).to.contain('Cascada callable \'format\' cannot be used directly here');
+        expect(constructorRootReturn.message).to.contain('Cascada callable \'format\' cannot be used directly here');
+      });
+
+      it('rejects direct classified imported callable handles at script escape points', async () => {
+        const loader = new StringLoader();
+        loader.addTemplate('formatters.script', [
+          'function format(value)',
+          '  return value',
+          'endfunction'
+        ].join('\n'));
+        const scriptEnv = new AsyncEnvironment(loader);
+
+        const fromImportReturn = await expectRejects(scriptEnv.renderScriptString([
+          'from "formatters.script" import format',
+          'var classified = format("seen")',
+          'return format'
+        ].join('\n')));
+        const namespaceReturn = await expectRejects(scriptEnv.renderScriptString([
+          'import "formatters.script" as fmt',
+          'var classified = fmt.format("seen")',
+          'return fmt.format'
+        ].join('\n')));
+        const nativeArgument = await expectRejects(scriptEnv.renderScriptString([
+          'from "formatters.script" import format',
+          'var classified = format("seen")',
+          'return nativeApply(format)'
+        ].join('\n'), { nativeApply: (fn) => fn('x') }));
+        const chainMethodArgument = await expectRejects(scriptEnv.renderScriptString([
+          'from "formatters.script" import format',
+          'var classified = format("seen")',
+          'data result',
+          'result.items.push(format)',
+          'return result.snapshot()'
+        ].join('\n')));
+        const constructorRootReturn = await expectRejects(scriptEnv.renderScriptString([
+          'extends none',
+          'from "formatters.script" import format',
+          'var classified = format("seen")',
+          'return format'
+        ].join('\n')));
+
+        expect(fromImportReturn.message).to.contain('Imported callable \'format\' cannot be used directly here');
+        expect(namespaceReturn.message).to.contain('Imported callable \'fmt.format\' cannot be used directly here');
+        expect(nativeArgument.message).to.contain('Imported callable \'format\' cannot be used directly here');
+        expect(chainMethodArgument.message).to.contain('Imported callable \'format\' cannot be used directly here');
+        expect(constructorRootReturn.message).to.contain('Imported callable \'format\' cannot be used directly here');
+      });
+
+      it('rejects calls to imported namespaces in scripts', async () => {
+        const loader = new StringLoader();
+        loader.addTemplate('formatters.script', [
+          'function format(value)',
+          '  return value',
+          'endfunction'
+        ].join('\n'));
+        const scriptEnv = new AsyncEnvironment(loader);
+
+        const error = await expectRejects(scriptEnv.renderScriptString([
+          'import "formatters.script" as fmt',
+          'return fmt("seen")'
+        ].join('\n')));
+
+        expect(error.message).to.contain('Import namespace \'fmt\' is not callable');
+      });
+
+      it('does not reject callable handles used as object keys', async () => {
+        const result = await env.renderScriptString([
+          'function format(value)',
+          '  return value',
+          'endfunction',
+          'var keyed = { format: "ok" }',
+          'return keyed.format'
+        ].join('\n'));
+
+        expect(result).to.be('ok');
+      });
+
+      it('allows nested callable-handle aggregates in controlled script positions', async () => {
+        const result = await env.renderScriptString([
+          'function format(value)',
+          '  return "[" + value + "]"',
+          'endfunction',
+          'var nested = [[format], { tool: { format: format } }]',
+          'return [nested[0][0]("a"), nested[1].tool.format("b")]'
+        ].join('\n'));
+
+        expect(result).to.eql(['[a]', '[b]']);
+      });
+
+      it('rejects nested callable-handle aggregates at root script return', async () => {
+        const error = await expectRejects(env.renderScriptString([
+          'function format(value)',
+          '  return value',
+          'endfunction',
+          'return [[format], { tool: { format: format } }]'
+        ].join('\n')));
+
+        expect(error.message).to.contain('Cascada callable \'format\' cannot be used directly here');
+      });
+
+      it('does not chase script callable aliases during direct validation', async () => {
+        const result = await env.renderScriptString([
+          'function format(value)',
+          '  return value',
+          'endfunction',
+          'var alias = format',
+          'return alias'
+        ].join('\n'));
+
+        expect(runtime.isMacro(result)).to.be(true);
+      });
+    });
+
     describe('Macro argument variable semantics', () => {
       it('should allow reassignment of macro argument in async template mode', async () => {
         const template = `

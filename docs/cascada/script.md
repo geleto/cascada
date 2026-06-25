@@ -1416,6 +1416,49 @@ return passwordField
 // { name: "pass", value: "", type: "password" }
 ```
 
+### Function Handles
+
+Functions are values in CascadaScript when they stay inside Cascada-controlled code. You can assign a function handle to a variable, store it in an object or array, return it from another function, and pass it directly to a statically known Cascada function:
+
+```javascript
+function format(value)
+  return "[" + value + "]"
+endfunction
+
+function apply(fn, value)
+  return fn(value)
+endfunction
+
+function chooseFormatter()
+  return format
+endfunction
+
+var direct = format
+var tools = { format: format }
+var list = [format]
+
+return [
+  direct("a"),
+  tools.format("b"),
+  list[0]("c"),
+  chooseFormatter()("d"),
+  apply(format, "e")
+]
+```
+
+Direct function handles cannot be returned from the script root, passed directly to native or context functions, or used as ordinary scalar values:
+
+```javascript
+return format               // error: root return
+return { fn: format }       // error: root return contains a direct handle
+return nativeApply(format)  // error: native/context call argument
+return "fn=" + format       // error: scalar value use
+```
+
+This validation only checks direct uses. It does not follow aliases, so do not use aliases to work around the rule; that is outside the supported function-handle pattern.
+
+The same rules apply to imported script functions once they are used as statically known Cascada callables.
+
 ### Returning a Computed Value
 
 Functions can `return` any ordinary value directly - a primitive, an object literal, or a variable. Channels themselves are not returned directly; use `snapshot()` and return the resulting value:

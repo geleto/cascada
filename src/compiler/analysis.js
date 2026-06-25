@@ -65,8 +65,11 @@ class CompileAnalysis {
       expressionControlFlowBoundary: false,
       ...previousAnalysis,
 
-      // DERRIVED FACTS: (computed by analysis).
+      // STRUCTURAL FACTS: (computed by the analysis walk).
       parent: parentAnalysis,
+      parentField,
+
+      // DERIVED FACTS: (computed by analysis).
       // Immutable snapshot of declarations visible at this exact source point.
       // Ordinary identifier resolution should use this, not `declaredChains`.
       visibleDeclarations: null,
@@ -609,7 +612,7 @@ class CompileAnalysis {
       });
     }
     this.validation.validateCallableDeclarationConflicts(analysis);
-    this.compiler.call.classifyStaticCallableCall(node);
+    this.compiler.call.finalizeStaticCallableCall(node);
     return scopeCallableDeclarations;
   }
 
