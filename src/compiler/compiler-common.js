@@ -471,14 +471,15 @@ class CompilerCommon extends Obj {
     };
   }
 
-  createCallableArgumentChainBindings(callableSignature, emitValueExpression, getPositionNode = () => null) {
+  createCallableArgumentChainBindings(callableSignature, emitInitializerExpression, opts = {}) {
     const { argNames, keywordDefaultsByName } = this.getCallableArgumentChainFacts(callableSignature);
+    const initializerJsVarName = opts.initializerJsVarName || (() => null);
     return argNames.map((name) => ({
       name,
-      emitValueExpression: () => {
-        emitValueExpression(name, keywordDefaultsByName.get(name));
+      emitInitializerExpression: () => {
+        emitInitializerExpression(name, keywordDefaultsByName.get(name));
       },
-      positionNode: getPositionNode(name)
+      initializerJsVarName: initializerJsVarName(name)
     }));
   }
 

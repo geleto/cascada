@@ -2334,6 +2334,10 @@ const createTestPoison = (error) => createPoison(PoisonError.wrap(error, TEST_EC
           {{ handle(value) }}
         {%- endfor -%}
         `;
+        const source = new AsyncTemplate(template, env, 'direct-bounded-async-iterator.njk').compileSource();
+
+        expect(source).to.contain('value = runtime.normalizeVarValue(value);');
+        expect(source).not.to.contain('runtime.declareBufferChain(currentBuffer, "value", "var"');
 
         await env.renderTemplateString(template, context);
 

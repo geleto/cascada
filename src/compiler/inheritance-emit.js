@@ -1,3 +1,5 @@
+import {isStoredDirectly} from './declarations.js';
+
 const COMPILED_METHOD_ENTRIES_VAR = '__compiledMethodEntries';
 const COMPILED_SHARED_SCHEMA_VAR = '__compiledSharedSchema';
 const INHERITED_CALLABLE_EXTRA_PARAMS = [
@@ -199,15 +201,15 @@ class CompileInheritanceEmit {
   }
 
   callableArgumentChains(callableNode, callableSignature, payloadOriginalArgsVar) {
-    this.compiler.chain.emitLocalVarChainBindings(
+    this.compiler.chain.emitLocalVarBindings(
       this.compiler.buffer.currentBuffer,
       this.compiler.createCallableArgumentChainBindings(
         callableSignature,
         (name, defaultValueNode) => {
           this.callableArgumentValue(payloadOriginalArgsVar, name, defaultValueNode);
-        },
-        () => callableNode
-      )
+        }
+      ),
+      callableNode._analysis?.declarations || new Map()
     );
   }
 
@@ -239,9 +241,13 @@ class CompileInheritanceEmit {
 
   inheritedCallableFunction(callableNode, emitBody) {
     const callableSignature = this._getCallableSignature(callableNode);
+    const argumentDeclarations = callableNode._analysis?.declarations || new Map();
+    const chainBackedArgNames = callableSignature.argNames.filter((name) =>
+      !isStoredDirectly(argumentDeclarations.get(name))
+    );
     const staticFacts = this.compiler.chain.getCommandBufferFacts(
       callableNode,
-      callableSignature.argNames
+      chainBackedArgNames
     );
     const staticObservedChains = JSON.stringify(staticFacts.ownFacts?.[0] ?? []);
     const staticMutatedChains = JSON.stringify(staticFacts.ownFacts?.[1] ?? []);

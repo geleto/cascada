@@ -144,7 +144,7 @@ Development and tests require Node `>=22`.
 *   ✅ **DO:** Use explicit `if` statements for conditional processing or side effects, such as iterating, pushing, emitting, or mutating optional values. Avoid `(items ?? []).forEach(...)` when `if (items) { ... }` is clearer.
 *   ❌ **DON'T:** Swap `||` and `??` casually: `||` treats `false`, `0`, and `""` as missing; `??` only treats `null`/`undefined` as missing.
 *   ❌ **DON'T:** Hide invariant violations with optional chaining, `||` defaults, `!!`, or repeated `typeof`/array/object/string/number guards. Keep guards that support sync mode, public helpers, synthetic nodes, or pre-child-walk metadata seeding.
-*   ✅ **DO:** Trust the runtime to handle synchronization. Provide correct chain analysis metadata (`declaredChains`, `usedChains`, `mutatedChains`, `sequenceLocks`) and linked-chain information so buffers can observe the right values in source order.
+*   ✅ **DO:** Trust the runtime to handle synchronization. Provide correct chain analysis metadata (`declarations`, `usedChains`, `mutatedChains`, `sequenceLocks`) and linked-chain information so buffers can observe the right values in source order.
 *   ❌ **DON'T:** Write raw `(async () => { ... })()` blocks. Use the established compiler boundary/buffer helpers in `emit.js`, `boundaries.js`, `buffer.js`, and related compiler modules so chain linking, current-buffer state, and error context stay consistent.
 *   ❌ **DON'T:** Modify legacy synchronous error handling (top-level `lineno`/`colno` variables). All new error handling targets async model (`errorContext` objects and per-block `try/catch`).
 

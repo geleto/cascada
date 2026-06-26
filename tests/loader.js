@@ -1258,7 +1258,9 @@ const {FileSystemLoader, NodeResolveLoader} = nodeLoaders;
         });
 
         expect(result).to.be.a('string');
-        expect(result).to.contain('runtime.declareBufferChain(output, "x", "var"');
+        expect(result).to.contain('const t_1 = runtime.normalizeVarValue(t_2);');
+        expect(result).to.contain('context.addResolvedExport("x", t_1);');
+        expect(result).not.to.contain('runtime.declareBufferChain(output, "x", "var"');
       });
     });
 

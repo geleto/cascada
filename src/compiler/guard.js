@@ -1,6 +1,7 @@
 import * as nodes from '../language/nodes.js';
 import {validateGuardVariablesDeclared} from './validation.js';
 
+// Experimental implementation, will be rewritten
 class CompileGuard {
   constructor(compiler) {
     this.compiler = compiler;
@@ -9,6 +10,7 @@ class CompileGuard {
 
   analyzeGuard(node) {
     const compiler = this.compiler;
+    const guardTargets = this._getGuardTargets(node);
     node.body.addAnalysis({
       createScope: true,
       wantsLinkedChildBuffer: true
@@ -28,7 +30,6 @@ class CompileGuard {
       }
       node.recoveryBody.addAnalysis(recoveryAnalysis);
     }
-    const guardTargets = this._getGuardTargets(node);
     validateGuardVariablesDeclared(guardTargets.variableValidationTargets, compiler, node);
     return { guardTargets, wantsLinkedChildBuffer: true };
   }
@@ -83,8 +84,7 @@ class CompileGuard {
         targets: guardTargets,
         needsGuardState: guardTargets.variableTargetsAll || hasSequenceTargets,
         resolvedSequenceTargets,
-        guardChains,
-        bodyErrorChains: this._getGuardBodyErrorChainNames(node)
+        guardChains
       }
     };
   }
@@ -110,7 +110,7 @@ class CompileGuard {
       guardRepairLinePos = compiler.codebuf.length;
       this.emit.line('');
 
-      const { bufferId: bodyBufferId } = compiler.emit.withScopeCommandBuffer({
+      compiler.emit.withScopeCommandBuffer({
         analysisNode: node.body,
         errorContextNode: node.body,
         declareTextChain: false,
@@ -139,7 +139,7 @@ class CompileGuard {
 
       const guardErrorsVar = compiler._tmpid();
       this.emit.line(
-        `return runtime.thenValue(runtime.guard.finalizeGuard(${guardStateVar || 'null'}, ${compiler.buffer.currentBuffer}, ${JSON.stringify(guardChains)}, ${chainGuardStateVar || 'null'}, ${guardErrorContext}, ${bodyBufferId}, ${JSON.stringify(guardFacts.bodyErrorChains)}), (${guardErrorsVar}) => {`
+        `return runtime.thenValue(runtime.guard.finalizeGuard(${guardStateVar || 'null'}, ${compiler.buffer.currentBuffer}, ${JSON.stringify(guardChains)}, ${chainGuardStateVar || 'null'}, ${guardErrorContext}), (${guardErrorsVar}) => {`
       );
       this.emit.line(`if (${guardErrorsVar}.length > 0) {`);
 
@@ -240,14 +240,6 @@ class CompileGuard {
     return compiler.return.excludeGuardCaptureChains(merged);
   }
 
-  _getGuardBodyErrorChainNames(node) {
-    const declaredChains = node.body._analysis.declaredChains;
-    if (!declaredChains) {
-      return [];
-    }
-    return this.compiler.return.excludeGuardCaptureChains(declaredChains.keys());
-  }
-
   _getGuardedChainNames(usedChains, guardTargets, analysis) {
     const compiler = this.compiler;
     const used = usedChains;
@@ -255,11 +247,14 @@ class CompileGuard {
     if (!guardTargets) {
       return [];
     }
-
+    if (!guardTargets.hasAnySelectors) {
+      return used;
+    }
     if (guardTargets.chainSelector === '*') {
       return used;
     }
 
+    const guarded = new Set();
     const hasNamedChains = Array.isArray(guardTargets.chainSelector) && guardTargets.chainSelector.length > 0;
     const hasTypedChains = Array.isArray(guardTargets.typeTargets) && guardTargets.typeTargets.length > 0;
     if (hasNamedChains || hasTypedChains) {
@@ -268,39 +263,39 @@ class CompileGuard {
         guardedSet.add(compiler.analysis.getCurrentTextChain(analysis));
       }
       const guardedTypes = new Set(hasTypedChains ? guardTargets.typeTargets : []);
-      return used.filter((name) => {
+      used.forEach((name) => {
+        let matches = false;
         if (guardedSet.has(name)) {
-          return true;
+          matches = true;
         }
-        if (guardedTypes.size === 0) {
-          return false;
+        if (!matches && guardedTypes.size > 0) {
+          const chainDecl = analysis.visibleDeclarations?.get(name) || null;
+          if (chainDecl) {
+            matches = guardedTypes.has(chainDecl.type);
+          } else if (!compiler.scriptMode && name === compiler.analysis.getCurrentTextChain(analysis)) {
+            matches = guardedTypes.has('text');
+          } else {
+            matches = guardedTypes.has(name);
+          }
         }
-        const chainDecl = analysis.visibleDeclarations?.get(name) || null;
-        if (chainDecl) {
-          return guardedTypes.has(chainDecl.type);
+        if (matches) {
+          guarded.add(name);
         }
-        if (!compiler.scriptMode && name === compiler.analysis.getCurrentTextChain(analysis) && guardedTypes.has('text')) {
-          return true;
-        }
-        return guardedTypes.has(name);
       });
     }
 
     if (guardTargets.variableTargetsAll) {
-      return used.filter((name) => {
+      used.forEach((name) => {
         if (name && name.charAt(0) === '!') {
-          return false;
+          return;
         }
         const chainDecl = analysis.visibleDeclarations?.get(name) || null;
-        return chainDecl && chainDecl.type === 'var';
+        if (chainDecl && chainDecl.type === 'var') {
+          guarded.add(name);
+        }
       });
     }
-
-    if (!guardTargets.hasAnySelectors) {
-      return used;
-    }
-
-    return [];
+    return Array.from(guarded);
   }
 
   _getGuardTargets(guardNode) {
@@ -316,16 +311,14 @@ class CompileGuard {
       ? guardNode.typeTargets
       : null;
 
-    const variableTargetsRaw = guardNode.variableTargets === '*'
-      ? '*'
-      : (Array.isArray(guardNode.variableTargets) && guardNode.variableTargets.length > 0
-        ? guardNode.variableTargets
-        : null);
-    const variableTargetsAll = variableTargetsRaw === '*';
-    const hasVariableTargetsSelector = variableTargetsRaw !== null;
+    const variableTargetsRaw = Array.isArray(guardNode.variableTargets) && guardNode.variableTargets.length > 0
+      ? guardNode.variableTargets
+      : null;
+    const variableTargetsAll = !!guardNode.allVariableTargets;
+    const hasVariableTargetsSelector = variableTargetsAll || variableTargetsRaw !== null;
     const variableValidationTargets = [];
 
-    if (Array.isArray(variableTargetsRaw) && variableTargetsRaw.length > 0) {
+    if (variableTargetsRaw) {
       const resolvedChains = new Set(Array.isArray(chainSelector) ? chainSelector : []);
 
       for (const name of variableTargetsRaw) {

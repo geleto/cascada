@@ -35,7 +35,9 @@ describe('Cascada Script: Variables', function () {
       ].join('\n');
       const compiled = new Script(script, env, 'var-initializer-command.casc').compileSource();
 
-      expect(compiled).to.match(/runtime\.declareBufferChain\(output, "x", "var", context, t_\d+\)/);
+      expect(compiled).to.match(/const t_\d+ = runtime\.normalizeVarValue\(t_\d+\)/);
+      expect(compiled).to.contain('context.addResolvedExport("x"');
+      expect(compiled).to.not.contain('runtime.declareBufferChain(output, "x", "var"');
       expect(compiled).to.not.contain('new runtime.VarCommand({ chainName: \'x\'');
 
       const result = await env.renderScriptString(script, {
@@ -51,7 +53,9 @@ describe('Cascada Script: Variables', function () {
       ].join('\n');
       const compiled = new Script(script, env, 'var-empty-declaration-command.casc').compileSource();
 
-      expect(compiled).to.contain('runtime.declareBufferChain(output, "x", "var", context, null)');
+      expect(compiled).to.match(/const t_\d+ = runtime\.normalizeVarValue\(null\)/);
+      expect(compiled).to.contain('context.addResolvedExport("x"');
+      expect(compiled).to.not.contain('runtime.declareBufferChain(output, "x", "var"');
       expect(compiled).to.not.contain('new runtime.VarCommand({ chainName: \'x\'');
 
       const result = await env.renderScriptString(script, {});
@@ -65,7 +69,9 @@ describe('Cascada Script: Variables', function () {
       ].join('\n');
       const compiled = new Script(script, env, 'var-none-initializer-command.casc').compileSource();
 
-      expect(compiled).to.contain('runtime.declareBufferChain(output, "x", "var", context, null)');
+      expect(compiled).to.match(/const t_\d+ = runtime\.normalizeVarValue\(null\)/);
+      expect(compiled).to.contain('context.addResolvedExport("x"');
+      expect(compiled).to.not.contain('runtime.declareBufferChain(output, "x", "var"');
       expect(compiled).to.not.match(/t_\d+ = null;/);
       expect(compiled).to.not.contain('new runtime.VarCommand({ chainName: \'x\'');
 
@@ -80,8 +86,11 @@ describe('Cascada Script: Variables', function () {
       ].join('\n');
       const compiled = new Script(script, env, 'var-multi-none-initializer-command.casc').compileSource();
 
-      expect(compiled).to.contain('runtime.declareBufferChain(output, "x", "var", context, null)');
-      expect(compiled).to.contain('runtime.declareBufferChain(output, "y", "var", context, null)');
+      expect(compiled).to.match(/const t_\d+ = runtime\.normalizeVarValue\(null\)/);
+      expect(compiled).to.contain('context.addResolvedExport("x"');
+      expect(compiled).to.contain('context.addResolvedExport("y"');
+      expect(compiled).to.not.contain('runtime.declareBufferChain(output, "x", "var"');
+      expect(compiled).to.not.contain('runtime.declareBufferChain(output, "y", "var"');
       expect(compiled).to.not.match(/t_\d+ = null;/);
       expect(compiled).to.not.contain('new runtime.VarCommand({ chainName: \'x\'');
       expect(compiled).to.not.contain('new runtime.VarCommand({ chainName: \'y\'');
@@ -97,8 +106,11 @@ describe('Cascada Script: Variables', function () {
       ].join('\n');
       const compiled = new Script(script, env, 'var-multi-initializer-command.casc').compileSource();
 
-      expect(compiled).to.match(/runtime\.declareBufferChain\(output, "x", "var", context, t_\d+\)/);
-      expect(compiled).to.match(/runtime\.declareBufferChain\(output, "y", "var", context, t_\d+\)/);
+      expect(compiled).to.match(/const t_\d+ = runtime\.normalizeVarValue\(t_\d+\)/);
+      expect(compiled).to.contain('context.addResolvedExport("x"');
+      expect(compiled).to.contain('context.addResolvedExport("y"');
+      expect(compiled).to.not.contain('runtime.declareBufferChain(output, "x", "var"');
+      expect(compiled).to.not.contain('runtime.declareBufferChain(output, "y", "var"');
       expect(compiled).to.not.contain('new runtime.VarCommand({ chainName: \'x\'');
       expect(compiled).to.not.contain('new runtime.VarCommand({ chainName: \'y\'');
 
@@ -172,7 +184,9 @@ describe('Cascada Script: Variables', function () {
       const template = '{% set x = fetchValue() %}{{ x }}';
       const compiled = new AsyncTemplate(template, env, 'template-set-var-initializer.njk').compileSource();
 
-      expect(compiled).to.match(/runtime\.declareBufferChain\(output, "x", "var", context, t_\d+\)/);
+      expect(compiled).to.match(/const t_\d+ = runtime\.normalizeVarValue\(t_\d+\)/);
+      expect(compiled).to.contain('context.addResolvedExport("x"');
+      expect(compiled).to.not.contain('runtime.declareBufferChain(output, "x", "var"');
       expect(compiled).to.not.contain('new runtime.VarCommand({ chainName: \'x\'');
 
       const result = await env.renderTemplateString(template, {
@@ -185,7 +199,9 @@ describe('Cascada Script: Variables', function () {
       const template = '{% set x %}ready{% endset %}{{ x }}';
       const compiled = new AsyncTemplate(template, env, 'template-block-set-var-initializer.njk').compileSource();
 
-      expect(compiled).to.match(/runtime\.declareBufferChain\(output, "x", "var", context, t_\d+\)/);
+      expect(compiled).to.match(/const t_\d+ = runtime\.normalizeVarValue\(t_\d+\)/);
+      expect(compiled).to.contain('context.addResolvedExport("x"');
+      expect(compiled).to.not.contain('runtime.declareBufferChain(output, "x", "var"');
       expect(compiled).to.not.contain('new runtime.VarCommand({ chainName: \'x\'');
 
       const result = await env.renderTemplateString(template, {});
@@ -464,6 +480,26 @@ describe('Cascada Script: Variables', function () {
 
       const compiled = new Script(script, env, 'dup-branch-script.casc').compileSource();
       expect(/scopedValue#\d+/.test(compiled)).to.be(false);
+    });
+
+    it('should give sibling direct declarations distinct generated JS variables', function () {
+      const script = [
+        'var result = {}',
+        'if flag',
+        '  var scopedValue = "A"',
+        '  result.out = scopedValue',
+        'else',
+        '  var scopedValue = "B"',
+        '  result.out = scopedValue',
+        'endif',
+        'return result'
+      ].join('\n');
+      const compiled = new Script(script, env, 'direct-sibling-js-vars.casc').compileSource();
+      const bindings = Array.from(compiled.matchAll(/const (t_\d+) = runtime\.normalizeVarValue\(t_\d+\);/g))
+        .map((match) => match[1]);
+
+      expect(bindings).to.have.length(2);
+      expect(new Set(bindings).size).to.be(2);
     });
 
     it('should timeout with branch-local var assigned into outer object path (minimal repro)', async function () {

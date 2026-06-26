@@ -43,7 +43,7 @@ Cascada implements the **Cascading Chain Network** — a concurrency model for i
 
 Prevents race conditions and ensures sequential equivalence when concurrent blocks read/write the same outer-scope variables, via compile-time chain analysis and the command buffer tree.
 
--   **Compile-time analysis** (`src/compiler/analysis.js`): Annotates AST nodes with declaration/use/mutation metadata. Important fields include `declaredChains`, `usedChains`, `mutatedChains`, `usedChainsFromParent`, `mutatedChainsFromParent`, and `sequenceLocks`.
+-   **Compile-time analysis** (`src/compiler/analysis.js`): Annotates AST nodes with declaration/use/mutation metadata. Important fields include `declarations`, `usedChains`, `mutatedChains`, `usedChainsFromParent`, `mutatedChainsFromParent`, and `sequenceLocks`.
 -   **Buffer code generation** (`src/compiler/buffer.js`, `src/compiler/emit.js`): Emits command creation, linked-chain metadata, child buffer creation, and async boundary wiring.
 -   **Implicit Variable Synchronization**: Chain observations and `resolveAll`/`resolveSingle` await pending values only when consumed. Data dependencies serialize naturally without explicit locks.
 -   **Linked chains**: `analysis.js` derives `boundaryLinkedChains`, `boundaryLinkedObservedChains`, and `boundaryLinkedMutatedChains` from the boundary's chain footprint (see Chain Scope And Visibility). Analyzers set `wantsLinkedChildBuffer` as intent; finalization computes `createsLinkedChildBuffer` as the outcome. `createsLinkedChildBuffer` means the node creates a child `CommandBuffer`; it can be true even when the finalized link sets are empty. `emit.js`/`buffer.js` pass finalized links to `new CommandBuffer(...)` and boundary functions so child buffers route commands to the correct parent lanes. Pure-observation expression boundaries keep the intent but compute `createsLinkedChildBuffer = false` and drop both link sets. If a chain is not linked, fix analysis/emit rather than adding runtime fallbacks.
@@ -54,7 +54,7 @@ Prevents race conditions and ensures sequential equivalence when concurrent bloc
 
 A chain is visible in a scope only if it is declared there or linked from a parent. Visibility is fixed at compile time — there is no runtime fallback lookup.
 
--   `declaredChains` — chains introduced at this scope level; not linked to the parent even if the parent has the same name.
+-   `declarations` — source-visible declarations introduced at this scope level, including both direct-storage values and command-buffer chains. Chain-backed declarations are not linked to the parent even if the parent has the same name.
 -   `usedChains` / `mutatedChains` — full aggregate read and write footprint, including chains declared by this node.
 -   `usedChainsFromParent` / `mutatedChainsFromParent` — parent-visible read and write footprint, derived from the aggregate footprint minus local declarations. Compiler consumers that need outer dependencies should use the `analysis.getChainsUsedFromParent(...)` / `analysis.getChainsMutatedFromParent(...)` helpers.
 -   `boundaryLinkedChains` — parent-visible chains the child can observe or mutate, derived from `usedChainsFromParent`.

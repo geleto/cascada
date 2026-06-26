@@ -1,7 +1,26 @@
 
 import * as nodes from '../language/nodes.js';
-import {isImmutableDeclaration, isScopeVisibleCallableDeclaration, isStaticCallableDeclaration} from './declarations.js';
+import {
+  DECLARATION_ROLE,
+  canUseDirectStorage,
+  isImmutableDeclaration,
+  isScopeVisibleCallableDeclaration,
+  isStaticCallableDeclaration,
+  isStoredDirectly
+} from './declarations.js';
 import {CompileAnalysisValidation} from './analysis-validation.js';
+
+const CHAIN_FACT_FIELDS = Object.freeze([
+  'observedChains',
+  'usedChains',
+  'mutatedChains',
+  'observedChainsFromParent',
+  'usedChainsFromParent',
+  'mutatedChainsFromParent',
+  'boundaryLinkedChains',
+  'boundaryLinkedObservedChains',
+  'boundaryLinkedMutatedChains'
+]);
 
 /**
  * Chain analysis pass.
@@ -71,7 +90,7 @@ class CompileAnalysis {
 
       // DERIVED FACTS: (computed by analysis).
       // Immutable snapshot of declarations visible at this exact source point.
-      // Ordinary identifier resolution should use this, not `declaredChains`.
+      // Ordinary identifier resolution should use this, not `declarations`.
       visibleDeclarations: null,
       // Static callable lookup has different visibility from values. Source-
       // visible imports cross clean callable scopes, and scope-owned macros /
@@ -85,7 +104,7 @@ class CompileAnalysis {
       // export/ownership, and parent-chain derivation only. It is not a
       // source lookup table; it may include declarations that were not visible
       // at a given source point. Use `visibleDeclarations` for source meaning.
-      declaredChains: null,
+      declarations: null,
       observedChains: null,
       usedChains: null,
       mutatedChains: null,
@@ -173,7 +192,12 @@ class CompileAnalysis {
     }
 
     this._walk(rootNode);
-    this._finalizeAnalysis(rootNode);
+    this._finalizedAnalyses = [];
+    try {
+      this._finalizeAnalysis(rootNode);
+    } finally {
+      this._finalizedAnalyses = null;
+    }
   }
 
   _walk(
@@ -416,8 +440,8 @@ class CompileAnalysis {
     return current.node;
   }
 
-  _installDeclaration(owner, decl, declarationOrigin, field = 'declaredChains') {
-    const declarations = this._ensureDeclarationMap(owner, field);
+  _installDeclaration(owner, decl, declarationOrigin) {
+    const declarations = this._ensureDeclarations(owner);
     decl.declarationOwner = owner;
     if (decl.shared) {
       if (!decl.declarationOrigin) {
@@ -431,9 +455,9 @@ class CompileAnalysis {
     declarations.set(decl.name, decl);
   }
 
-  _ensureDeclarationMap(analysis, field) {
-    analysis[field] = analysis[field] || new Map();
-    return analysis[field];
+  _ensureDeclarations(analysis) {
+    analysis.declarations = analysis.declarations || new Map();
+    return analysis.declarations;
   }
 
   getRootScopeOwner(analysis) {
@@ -530,7 +554,7 @@ class CompileAnalysis {
     }
     // Build owner inventory only after this declaration batch passes validation.
     // Do not use this map to resolve source occurrences.
-    const declarations = this._ensureDeclarationMap(owner, 'declaredChains');
+    const declarations = this._ensureDeclarations(owner);
     for (let i = 0; i < declarationsToRecord.length; i++) {
       const declaration = declarationsToRecord[i];
       if (!declarations.has(declaration.name)) {
@@ -593,8 +617,8 @@ class CompileAnalysis {
   _applyCallableVisibility(node, scopeCallableDeclarations) {
     const analysis = node._analysis;
     const parentScopeCallableDeclarations = scopeCallableDeclarations;
-    if (analysis.createScope && analysis.declaredChains) {
-      analysis.declaredChains.forEach((declaration, name) => {
+    if (analysis.createScope && analysis.declarations) {
+      analysis.declarations.forEach((declaration, name) => {
         if (!isScopeVisibleCallableDeclaration(declaration)) {
           return;
         }
@@ -689,13 +713,8 @@ class CompileAnalysis {
     const localMutates = analysis.mutates;
     const usage = this._createChainUsageAggregate();
 
-    // Derived direct storage is not decided yet: this fold is still assembling
-    // the mutation facts that later storage derivation will use. At this point
-    // only intrinsic immutable declarations (macros/imports) are known to have
-    // no lane, so this pre-derivation filter intentionally uses
-    // isImmutableDeclaration rather than isStoredDirectly. Phase 3 will derive
-    // read-only var storage after mutation aggregation, then purge/update the
-    // aggregate chain facts with the final storage predicate.
+    // This fold assembles the mutation facts used to derive storage below, so
+    // only intrinsic immutable declarations are filtered before derivation.
     localObserves.forEach((name) => {
       const declaration = analysis.visibleDeclarations?.get(name) ||
         analysis.producedDeclarations?.get(name) ||
@@ -716,10 +735,13 @@ class CompileAnalysis {
       this._addChainMutation(usage, name);
     });
     this._mergeChainUsage(usage, childUsage);
-    const declaredHere = analysis.declaredChains;
+    const declaredHere = analysis.declarations;
     if (declaredHere) {
+      this._changeDeclarationsToDirectStorage(declaredHere, usage.mutatedChains);
+      this._purgeDirectDeclarationsFromChains(usage, declaredHere);
+      this._purgeDirectDeclarationFactsFromFinalizedAnalyses(declaredHere);
       declaredHere.forEach((decl, name) => {
-        if (!isImmutableDeclaration(decl)) {
+        if (!isStoredDirectly(decl)) {
           this._addBroadChainUse(usage, name);
         }
       });
@@ -738,7 +760,9 @@ class CompileAnalysis {
     analysis.boundaryLinkedChains = this.validation.normalizeChainSet(analysis.boundaryLinkedChains, 'boundaryLinkedChains', analysis);
     analysis.boundaryLinkedObservedChains = this.validation.normalizeChainSet(analysis.boundaryLinkedObservedChains, 'boundaryLinkedObservedChains', analysis);
     analysis.boundaryLinkedMutatedChains = this.validation.normalizeChainSet(analysis.boundaryLinkedMutatedChains, 'boundaryLinkedMutatedChains', analysis);
+    this._purgeDirectDeclarationFactsFromAnalysis(analysis);
     this._finalizeBufferCreation(analysis);
+    this._finalizedAnalyses?.push(analysis);
     return this._getPropagatedChainUsage(
       analysis,
       localObserves,
@@ -781,11 +805,100 @@ class CompileAnalysis {
     }
   }
 
-  _deriveChainsFromParent(usage, declaredChains) {
+  _changeDeclarationsToDirectStorage(declarations, mutatedChains) {
+    declarations.forEach((declaration, name) => {
+      if (
+        isStoredDirectly(declaration) ||
+        !canUseDirectStorage(declaration) ||
+        mutatedChains.has(name)
+      ) {
+        return;
+      }
+      declaration.directStorage = true;
+      this._ensureDirectDeclarationBinding(declaration);
+    });
+  }
+
+  _ensureDirectDeclarationBinding(declaration) {
+    if (declaration.jsVar) {
+      return;
+    }
+    if (
+      declaration.role === DECLARATION_ROLE.MACRO_ARGUMENT ||
+      declaration.role === DECLARATION_ROLE.MACRO_CALLER ||
+      declaration.blockArg
+    ) {
+      declaration.jsVar = `l_${declaration.name}`;
+      return;
+    }
+    if (declaration.loopVariable) {
+      declaration.jsVar = declaration.name;
+      return;
+    }
+    declaration.jsVar = this.compiler._tmpid();
+  }
+
+  _purgeDirectDeclarationsFromChains(usage, declarations) {
+    declarations.forEach((declaration, name) => {
+      if (!isStoredDirectly(declaration)) {
+        return;
+      }
+      usage.observedChains.delete(name);
+      usage.usedChains.delete(name);
+      usage.mutatedChains.delete(name);
+    });
+  }
+
+  _purgeDirectDeclarationFactsFromFinalizedAnalyses(declarations) {
+    if (!this._finalizedAnalyses) {
+      return;
+    }
+    const names = [];
+    declarations.forEach((declaration, name) => {
+      if (isStoredDirectly(declaration)) {
+        names.push(name);
+      }
+    });
+    if (names.length === 0) {
+      return;
+    }
+    this._finalizedAnalyses.forEach((analysis) => {
+      if (this._purgeDirectDeclarationFactsFromAnalysis(analysis, names)) {
+        this._finalizeBufferCreation(analysis);
+      }
+    });
+  }
+
+  _purgeDirectDeclarationFactsFromAnalysis(analysis, names = null) {
+    if (!analysis) {
+      return false;
+    }
+    let changed = false;
+    CHAIN_FACT_FIELDS.forEach((field) => {
+      const chains = analysis[field];
+      if (!chains) {
+        return;
+      }
+      const candidates = names || chains;
+      candidates.forEach((name) => {
+        if (chains.has(name) && isStoredDirectly(analysis.visibleDeclarations?.get(name))) {
+          chains.delete(name);
+          changed = true;
+        }
+      });
+      if (chains.size === 0) {
+        analysis[field] = null;
+        changed = true;
+      }
+    });
+    return changed;
+  }
+
+  _deriveChainsFromParent(usage, declarations) {
     const parentUsage = this._createChainUsageAggregate();
     this._mergeChainUsage(parentUsage, usage);
-    if (declaredChains) {
-      declaredChains.forEach((_decl, name) => {
+    if (declarations) {
+      declarations.forEach((_decl, name) => {
         parentUsage.observedChains.delete(name);
         parentUsage.usedChains.delete(name);
         parentUsage.mutatedChains.delete(name);
@@ -812,7 +925,7 @@ class CompileAnalysis {
       localMutates.forEach((name) => {
         this._addChainMutation(parentUsage, name);
       });
-      return this._deriveChainsFromParent(parentUsage, analysis.declaredChains);
+      return this._deriveChainsFromParent(parentUsage, analysis.declarations);
     }
     if (this._propagatesBoundaryLinkedUsage(analysis)) {
       return this._getBoundaryLinkedUsage(analysis);

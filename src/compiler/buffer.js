@@ -148,11 +148,7 @@ class CompileBuffer {
     const isObservationCall = isCallNode && (
       commandFacts.callNode === node.call
         ? commandFacts.isObservation
-        : (
-          !receiverPath &&
-          (command === 'isError' || command === 'getError' ||
-            (command === 'snapshot' && chainType !== 'sequence'))
-        )
+        : !receiverPath && this.compiler.chain.isChainObservationCommand(command, chainType)
     );
 
     if (isObservationCall) {

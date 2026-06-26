@@ -1293,6 +1293,49 @@ async function expectRejects(promise) {
         expect(rendered.trim()).to.equal('3');
       });
 
+      it('should compile read-only macro arguments as direct bindings', async () => {
+        let defaultCount = 0;
+        env.addGlobal('defaultTitle', () => {
+          defaultCount += 1;
+          return 'title';
+        });
+        const template = `{% macro show(name, title = defaultTitle()) %}{{ name }}:{{ title }}{% endmacro %}{{ show("Ada") }}{{ show("Grace", title="Dr") }}`;
+        const source = new AsyncTemplate(template, env, 'direct-macro-args.njk').compileSource();
+
+        expect(source).to.contain('l_name = runtime.normalizeVarValue(l_name);');
+        expect(source).to.match(/const l_title = runtime\.normalizeVarValue\(/);
+        expect(source).to.not.match(/declareBufferChain\(t_\d+, "name", "var"/);
+        expect(source).to.not.match(/declareBufferChain\(t_\d+, "title", "var"/);
+
+        const result = await env.renderTemplateString(template, {});
+        expect(result).to.be('Ada:titleGrace:Dr');
+        expect(defaultCount).to.be(1);
+      });
+
+      it('should inspect read-only macro argument errors without a var chain', async () => {
+        const template = '{% macro inspect(x) %}{{ x is error }}|{{ x#errors[0].kind }}{% endmacro %}{{ inspect(value) }}';
+        const source = new AsyncTemplate(template, env, 'direct-macro-arg-error.njk').compileSource();
+        const poison = runtime.createPoison(runtime.PoisonError.create(
+          'macro arg poison',
+          [1, 1, 'MacroArg.TestPoison', 'macro-arg.njk', null, null],
+          'MacroArgPoison'
+        ));
+
+        expect(source).to.contain('l_x = runtime.normalizeVarValue(l_x);');
+        expect(source).to.not.match(/declareBufferChain\([^\n]+"x", "var"/);
+
+        const result = await env.renderTemplateString(template, { value: poison });
+        expect(result).to.be('true|MacroArgPoison');
+      });
+
+      it('should keep reassigned macro arguments chain-backed', () => {
+        const template = `{% macro bump(x) %}{% set x = x + 1 %}{{ x }}{% endmacro %}{{ bump(1) }}`;
+        const source = new AsyncTemplate(template, env, 'chain-backed-macro-arg.njk').compileSource();
+
+        expect(source).to.match(/runtime\.declareBufferChain\(t_\d+, "x", "var", context, l_x\)/);
+        expect(source).to.match(/new runtime\.VarCommand\(\{ chainName: 'x', args: \[t_\d+\], errorContext: __ec\[\d+\] \}\)/);
+      });
+
       it('should reject reassignment of macro/function names', async () => {
         const template = '{% macro greet() %}hi{% endmacro %}{% set greet = 1 %}';
         const script = [
@@ -1380,6 +1423,27 @@ async function expectRejects(promise) {
         expect(result).to.equal(3);
       });
 
+      it('should compile read-only script function arguments as direct error-inspectable values', async () => {
+        const script = [
+          'function inspect(x)',
+          '  return { hasError: x is error, kind: x#errors[0].kind }',
+          'endfunction',
+          'return inspect(value)'
+        ].join('\n');
+        const source = new Script(script, env, 'direct-script-function-arg.casc').compileSource();
+        const poison = runtime.createPoison(runtime.PoisonError.create(
+          'script arg poison',
+          [1, 1, 'ScriptArg.TestPoison', 'script-arg.casc', null, null],
+          'ScriptArgPoison'
+        ));
+
+        expect(source).to.contain('l_x = runtime.normalizeVarValue(l_x);');
+        expect(source).to.not.match(/declareBufferChain\([^\n]+"x", "var"/);
+
+        const result = await env.renderScriptString(script, { value: poison });
+        expect(result).to.eql({ hasError: true, kind: 'ScriptArgPoison' });
+      });
+
       it('should keep caller binding assignable inside macro body', async () => {
         const template = `
           {%- macro wrap() -%}
@@ -1390,6 +1454,17 @@ async function expectRejects(promise) {
         `;
         const rendered = await env.renderTemplateString(template, {});
         expect(rendered.trim()).to.equal('override');
+      });
+
+      it('should compile read-only call-block parameters as direct bindings', async () => {
+        const template = '{% macro wrap(items) %}{% for item in items %}[{{ caller(item) }}]{% endfor %}{% endmacro %}{% call(value) wrap(items) %}{{ value }}{% endcall %}';
+        const source = new AsyncTemplate(template, env, 'direct-call-block-arg.njk').compileSource();
+
+        expect(source).to.contain('l_value = runtime.normalizeVarValue(l_value);');
+        expect(source).to.not.match(/declareBufferChain\([^\n]+"value", "var"/);
+
+        const result = await env.renderTemplateString(template, { items: ['a', 'b'] });
+        expect(result).to.be('[a][b]');
       });
 
       it('should resolve default macro params from earlier params and allow reassignment', async () => {

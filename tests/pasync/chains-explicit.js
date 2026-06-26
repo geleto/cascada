@@ -1982,17 +1982,42 @@ describe('Cascada Script: Explicit Chain Declarations', function () {
       expect(result).to.be('hi');
     });
 
-    it('should call snapshot() as a regular method on var values', async () => {
-      const script = `
-        var result = makeObj()
-        return result.snapshot()
-      `;
-      const result = await render(script, {
-        makeObj: () => ({
+    it('should reject snapshot() on declared var values', async () => {
+      const snapshotContext = {
+        makeObj: () => ({ snapshot: () => 1 })
+      };
+      const expectSnapshotRejected = async (operation, name) => {
+        try {
+          await operation();
+          expect().fail('Expected snapshot on var to fail');
+        } catch (err) {
+          expect(err.message).to.contain(`Variable '${name}' does not support snapshot()`);
+        }
+      };
+
+      await expectSnapshotRejected(() => render(`
+          var result = makeObj()
+          return result.snapshot()
+        `, snapshotContext), 'result');
+
+      await expectSnapshotRejected(() => env.renderTemplateString(
+        '{% set result = makeObj() %}{% do result.snapshot() %}',
+        snapshotContext
+      ), 'result');
+
+      await expectSnapshotRejected(() => env.renderTemplateString(
+        '{% set result = makeObj() %}{% command result.snapshot() %}',
+        snapshotContext
+      ), 'result');
+    });
+
+    it('should call snapshot() as a regular method on ambient values', async () => {
+      const result = await render('return obj.snapshot()', {
+        obj: {
           snapshot() {
             return 1;
           }
-        })
+        }
       });
       expect(result).to.be(1);
     });
@@ -2017,21 +2042,17 @@ describe('Cascada Script: Explicit Chain Declarations', function () {
       }));
 
       const body = (name) =>
-        `{{ ${name}.snapshot() }}|` +
         `{% set observed = ${name}.anything() %}{{ observed }}|` +
-        `{% do ${name}.snapshot() %}{% do ${name}.anything() %}` +
-        `{% command ${name}.snapshot() %}{% command ${name}.anything() %}`;
+        `{% do ${name}.anything() %}` +
+        `{% command ${name}.anything() %}`;
 
       const assertMethodCalls = async (name, source) => {
         calls.length = 0;
         const result = await env.renderTemplateString(source);
-        expect(result).to.be(`${name}:snapshot|${name}:anything|`);
+        expect(result).to.be(`${name}:anything|`);
         expect(calls).to.eql([
-          `${name}:snapshot`,
           `${name}:anything`,
-          `${name}:snapshot`,
           `${name}:anything`,
-          `${name}:snapshot`,
           `${name}:anything`
         ]);
       };
@@ -2058,25 +2079,25 @@ describe('Cascada Script: Explicit Chain Declarations', function () {
       calls.length = 0;
       const scriptResult = await env.renderScriptString(`
         function useArg(x)
-          var observed = x.snapshot()
+          var observed = x.anything()
           x.anything()
           return observed
         endfunction
         var local = makeObj("script-var")
-        var localObserved = local.snapshot()
+        var localObserved = local.anything()
         local.anything()
         var argObserved = useArg(makeObj("function"))
         return { local: localObserved, arg: argObserved }
       `);
       expect(scriptResult).to.eql({
-        local: 'script-var:snapshot',
-        arg: 'function:snapshot'
+        local: 'script-var:anything',
+        arg: 'function:anything'
       });
       expect(calls.slice().sort()).to.eql([
         'function:anything',
-        'function:snapshot',
+        'function:anything',
         'script-var:anything',
-        'script-var:snapshot'
+        'script-var:anything'
       ]);
     });
 

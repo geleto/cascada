@@ -1,4 +1,5 @@
 import * as nodes from '../language/nodes.js';
+import {isStoredDirectly} from './declarations.js';
 
 class CompileAssignment {
   constructor(compiler) {
@@ -6,19 +7,15 @@ class CompileAssignment {
     this.emit = this.compiler.emit;
   }
 
-  analyzeCallAssign(node, analysisPass) {
-    return this.analyzeSet(node, analysisPass);
-  }
-
-  postAnalyzeCallAssign(node) {
-    return this.postAnalyzeSet(node);
+  analyzeCallAssign(node) {
+    return this.analyzeSet(node);
   }
 
   compileCallAssign(node) {
     this.compileSet(node);
   }
 
-  analyzeSet(node, analysisPass) {
+  analyzeSet(node) {
     const compiler = this.compiler;
     const declareOnExit = [];
     const observes = [];
@@ -98,30 +95,6 @@ class CompileAssignment {
     };
   }
 
-  postAnalyzeSet(node) {
-    const compiler = this.compiler;
-    const exportFromRootScope = compiler.analysis.isRootScopeOwner(node._analysis);
-    const targetFacts = [];
-    (node.targets || []).forEach((target) => {
-      if (!(target instanceof nodes.Symbol)) {
-        targetFacts.push(null);
-        return;
-      }
-      const name = target.value;
-      const visibleDeclaration = node._analysis.visibleDeclarations?.get(name) ||
-        node._analysis.producedDeclarations?.get(name) ||
-        null;
-      targetFacts.push({
-        name,
-        isOwnDeclaration: visibleDeclaration && visibleDeclaration.declarationOrigin === node._analysis,
-        isVarDeclaration: visibleDeclaration && visibleDeclaration.type === 'var',
-        isSharedDeclaration: visibleDeclaration && visibleDeclaration.shared,
-        exportFromRootScope
-      });
-    });
-    return { setTargetFacts: targetFacts };
-  }
-
   compileSet(node) {
     const compiler = this.compiler;
     const thisSharedAssignment = node._analysis.thisSharedAssignment;
@@ -132,11 +105,11 @@ class CompileAssignment {
 
     const ids = [];
     const isDeclarationOnly = !!node.declarationOnly;
-    const targetFacts = node._analysis.setTargetFacts ?? null;
+    const targetInfo = this._getSetTargetInfo(node);
     const isLiteralNone = node.value instanceof nodes.Literal && node.value.value === null;
     const allTargetsAreOwnDeclarations = node.targets.every((target, i) => {
-      const facts = targetFacts && targetFacts[i] ? targetFacts[i] : null;
-      return facts && facts.isOwnDeclaration;
+      const info = targetInfo[i];
+      return info && info.isOwnDeclaration;
     });
     const canSeedLiteralNoneDirectly = isLiteralNone && allTargetsAreOwnDeclarations && !node.path && !node.body;
 
@@ -151,14 +124,9 @@ class CompileAssignment {
         );
       }
       const name = target.value;
-      const facts = targetFacts && targetFacts[i]
-        ? targetFacts[i]
-        : {
-          isOwnDeclaration: false,
-          isVarDeclaration: false
-        };
+      const info = targetInfo[i] || { isOwnDeclaration: false, isVarDeclaration: false };
 
-      if (!facts.isOwnDeclaration && !facts.isVarDeclaration) {
+      if (!info.isOwnDeclaration && !info.isVarDeclaration) {
         compiler.fail(
           `Compiler error: analysis did not resolve a visible var declaration for '${name}'.`,
           target.lineno,
@@ -211,23 +179,55 @@ class CompileAssignment {
 
     node.targets.forEach((target, i) => {
       const name = target.value;
-      const valueId = ids[i];
-      const facts = targetFacts && targetFacts[i] ? targetFacts[i] : null;
+      const valueId = ids[i] ?? 'null';
+      const info = targetInfo[i];
+      const isDirectDeclaration = info && info.isOwnDeclaration && isStoredDirectly(info.declaration);
 
-      if (facts && facts.isOwnDeclaration) {
+      if (info && info.isOwnDeclaration) {
         const initializer = hasAssignedValue ? valueId : 'null';
-        this.emit.line(`runtime.declareBufferChain(${compiler.buffer.currentBuffer}, "${name}", "var", context, ${initializer});`);
+        compiler.chain.emitLocalVarBindings(compiler.buffer.currentBuffer, [{
+          name,
+          declaration: info.declaration,
+          emitInitializerExpression: () => {
+            this.emit(initializer);
+          }
+        }], node._analysis.declarations);
       }
 
       if (hasAssignedValue) {
-        if (!(facts && facts.isOwnDeclaration)) {
+        if (!(info && info.isOwnDeclaration)) {
           this.emit.line(`${compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ chainName: '${name}', args: [${valueId}], errorContext: ${compiler.emitErrorContext(node)} }), '${name}');`);
         }
       }
 
-      if (name.charAt(0) !== '_' && hasAssignedValue && facts && facts.exportFromRootScope && !facts.isSharedDeclaration) {
-        this.emit.line(`context.addDeferredExport("${name}", "${name}", ${compiler.buffer.currentBuffer});`);
+      if (name.charAt(0) !== '_' && hasAssignedValue && info && info.exportFromRootScope && !info.isSharedDeclaration) {
+        if (isDirectDeclaration) {
+          this.emit.line(`context.addResolvedExport("${name}", ${info.declaration.jsVar});`);
+        } else {
+          this.emit.line(`context.addDeferredExport("${name}", "${name}", ${compiler.buffer.currentBuffer});`);
+        }
       }
+    });
+  }
+
+  _getSetTargetInfo(node) {
+    const exportFromRootScope = this.compiler.analysis.isRootScopeOwner(node._analysis);
+    return (node.targets || []).map((target) => {
+      if (!(target instanceof nodes.Symbol)) {
+        return null;
+      }
+      const name = target.value;
+      const declaration = node._analysis.visibleDeclarations?.get(name) ||
+        node._analysis.producedDeclarations?.get(name) ||
+        null;
+      return {
+        name,
+        declaration,
+        isOwnDeclaration: !!(declaration && declaration.declarationOrigin === node._analysis),
+        isVarDeclaration: !!(declaration && declaration.type === 'var'),
+        isSharedDeclaration: !!(declaration && declaration.shared),
+        exportFromRootScope
+      };
     });
   }
 }

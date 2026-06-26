@@ -137,15 +137,10 @@ async function finalizeGuard(
   buffer,
   allowedChains,
   chainGuardState,
-  errorContext,
-  bodyBuffer = null,
-  bodyAllowedChains = null
+  errorContext
 ) {
   errorContext = requireCommandErrorContext(errorContext, 'guard.finalizeGuard');
   const bufferErrors = await collectChainErrors(buffer, allowedChains, errorContext);
-  const bodyErrors = bodyBuffer
-    ? await collectChainErrors(bodyBuffer, bodyAllowedChains, errorContext)
-    : [];
   const sequenceErrors = [];
   if (guardState) {
     if (guardState.detectionPromises && guardState.detectionPromises.length > 0) {
@@ -155,7 +150,7 @@ async function finalizeGuard(
       sequenceErrors.push(...guardState.sequenceErrors);
     }
   }
-  const guardErrors = bufferErrors.concat(bodyErrors, sequenceErrors);
+  const guardErrors = bufferErrors.concat(sequenceErrors);
 
   if (chainGuardState && guardErrors.length === 0) {
     const commitErrors = await settleSequenceTransactions(chainGuardState, 'commit');

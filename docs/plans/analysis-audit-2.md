@@ -450,9 +450,7 @@ For completeness, suspicious-looking spots that turned out correct:
   the latter by `_validateMacroDeclarationConflict`'s same-origin branch.
 - **Walk-time vs finalized declaration clones** are distinct objects, but
   `declarationOrigin` always carries the *analysis object* (never cloned), so
-  identity comparisons like `postAnalyzeSet`'s `isOwnDeclaration`
-  ([assignment.js:92](../../src/compiler/assignment.js#L92)) hold across the
-  table rebuild.
+  assignment target ownership checks hold across the table rebuild.
 - **`_deriveChainsFromParent` subtracting finalized `declaredChains`** cannot
   strip a legitimately-outer chain: explicit shadowing is rejected by
   `_validateAncestorDeclarationConflicts`, so a name cannot be both an outer

@@ -33,6 +33,7 @@ class CompileCall {
     if (macroCallerInvocation) {
       return macroCallerInvocation;
     }
+    this._validateDeclaredVarSnapshotCall(node);
 
     const inheritedMethodCallName =
       compiler.inheritance.findInheritedMethodCallNameForAnalysis(node);
@@ -63,6 +64,24 @@ class CompileCall {
     };
   }
 
+  _validateDeclaredVarSnapshotCall(node) {
+    const compiler = this.compiler;
+    const sequencePath = compiler.sequential.extractStaticPathSegments(node.name);
+    if (!sequencePath || sequencePath.length !== 2 || sequencePath[1] !== 'snapshot') {
+      return;
+    }
+    const declaration = node._analysis.visibleDeclarations?.get(sequencePath[0]) || null;
+    if (!declaration || declaration.shared || declaration.type !== 'var') {
+      return;
+    }
+    compiler.fail(
+      `Variable '${sequencePath[0]}' does not support snapshot(). Use '${sequencePath[0]}' directly.`,
+      node.lineno,
+      node.colno,
+      node
+    );
+  }
+
   postAnalyzeFunCall(node) {
     const compiler = this.compiler;
     const thisSharedFacts = node.name
@@ -72,8 +91,6 @@ class CompileCall {
       compiler.inheritance.recordInheritedMethodCallUsage(node, thisSharedFacts);
 
     return {
-      componentBindingRoot: node.name ? compiler.component.findBindingRoot(node.name) : null,
-      componentBindingFacts: node.name ? compiler.component.findBindingFacts(node.name, { forCall: true }) : null,
       inheritedMethodCallName: inheritedMethodCallName ??
         node._analysis.inheritedMethodCallName ??
         null
@@ -598,8 +615,7 @@ class CompileCall {
         pathPrefix: thisSharedFacts.pathPrefix,
         isObservation:
           thisSharedFacts.chainPath.length === 2 &&
-          (methodName === 'isError' || methodName === 'getError' ||
-            (methodName === 'snapshot' && thisSharedFacts.chainType !== 'sequence'))
+          compiler.chain.isChainObservationCommand(methodName, thisSharedFacts.chainType)
       };
       if (thisSharedFacts.declareInRootOnEnter) {
         facts.declareInRootOnEnter = thisSharedFacts.declareInRootOnEnter;
@@ -633,19 +649,14 @@ class CompileCall {
       pathPrefix: sequencePath.slice(1, -1),
       isObservation:
         sequencePath.length === 2 &&
-        (methodName === 'isError' || methodName === 'getError' ||
-          (methodName === 'snapshot' && chainDecl.type !== 'sequence'))
+        compiler.chain.isChainObservationCommand(methodName, chainDecl.type)
     };
   }
 
   _compileComponentCall(node) {
     const compiler = this.compiler;
-    const componentBindingRoot =
-      node._analysis.componentBindingRoot ??
-      compiler.component.findBindingRoot(node.name);
-    const componentBindingFacts =
-      node._analysis.componentBindingFacts ??
-      compiler.component.findBindingFacts(node.name, { forCall: true });
+    const componentBindingRoot = compiler.component.findBindingRoot(node.name);
+    const componentBindingFacts = compiler.component.findBindingFacts(node.name, { forCall: true });
 
     if (componentBindingFacts) {
       if (componentBindingFacts.kind === COMPONENT_BINDING_METHOD_CALL) {

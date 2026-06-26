@@ -665,8 +665,8 @@ endguard
 
 // [GUARD-03] RULE: Selectors:
 //   guard          → channels + sequence + ! paths touched (default)
-//   guard *        → everything (vars + channels + sequence + ! paths)   — CANNOT combine with others
-//   guard var      → all variables written inside
+//   guard *        → everything (visible vars + channels + sequence + ! paths)   — CANNOT combine with others
+//   guard var      → all visible variables written inside
 //   guard data     → all data channels touched
 //   guard text     → all text channels touched
 //   guard sequence → all sequence objects touched
@@ -686,7 +686,7 @@ endguard
 // poison error; read `err.message` or inspect `err.errors`. Bare `recover` is also valid.
 // If all errors are detected and repaired inside the guard via `is error`, the guard is successful — no recovery.
 
-// [GUARD-06] RULE (PERFORMANCE): variable protection (via `guard *` or explicit names) makes code that depends
+// [GUARD-06] RULE (PERFORMANCE): variable protection (via `guard *`, `guard var`, or explicit names) makes code that depends
 // on those vars WAIT for the guard to finish. Use `guard *` only for small, tightly scoped operations.
 
 // [GUARD-07] RULE: Manual `revert` (reset guarded state inside a guard) is WORK-IN-PROGRESS and not yet

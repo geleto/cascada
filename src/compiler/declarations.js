@@ -3,18 +3,13 @@ const DECLARATION_ROLE = Object.freeze({
   MACRO_CALLER: 2
 });
 
-const DECLARATION_STORAGE = Object.freeze({
-  CHAIN: 1,
-  DIRECT: 2
-});
-
 const DECLARATION_IMPORT_KIND = Object.freeze({
   FROM: 'from',
   NAMESPACE: 'namespace'
 });
 
 function isStoredDirectly(declaration) {
-  return !!(declaration && declaration.storage === DECLARATION_STORAGE.DIRECT);
+  return !!(declaration && declaration.directStorage);
 }
 
 function isChainDeclaration(declaration) {
@@ -27,6 +22,18 @@ function isVarChainDeclaration(declaration) {
 
 function isImmutableDeclaration(declaration) {
   return !!(declaration && (declaration.isMacro || declaration.imported));
+}
+
+function canUseDirectStorage(declaration) {
+  return !!(
+    declaration &&
+    declaration.type === 'var' &&
+    !declaration.shared &&
+    // Caller bindings are internal by placement but value-like by behavior;
+    // other internal vars are scheduling/runtime lanes and must remain chains.
+    (!declaration.internal || declaration.role === DECLARATION_ROLE.MACRO_CALLER) &&
+    !isImmutableDeclaration(declaration)
+  );
 }
 
 function isStaticCallableDeclaration(declaration) {
@@ -47,12 +54,12 @@ function isClassifiedImportedCallableDeclaration(declaration) {
 
 export {
   DECLARATION_ROLE,
-  DECLARATION_STORAGE,
   DECLARATION_IMPORT_KIND,
   isStoredDirectly,
   isChainDeclaration,
   isVarChainDeclaration,
   isImmutableDeclaration,
+  canUseDirectStorage,
   isStaticCallableDeclaration,
   isScopeVisibleCallableDeclaration,
   isClassifiedImportedCallableDeclaration

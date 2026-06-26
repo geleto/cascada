@@ -219,6 +219,28 @@ const TEST_EC = [1, 1, 'Guard.Test', 'guard-test.njk', null, null];
       expect(result.count).to.equal(1);
     });
 
+    it('should union named chain and var selectors in script mode', async () => {
+      const script = `
+        data result
+        var count = 1
+        guard result, var
+          count = count + 1
+          result.temp = "DROP"
+          result.fail = explode()
+        endguard
+
+        result.count = count
+        return result.snapshot()`;
+
+      const result = await env.renderScriptString(script, {
+        explode: () => {
+          throw new Error('boom');
+        }
+      });
+
+      expect(result).to.eql({ count: 1 });
+    });
+
     it('should keep pre-guard snapshot while reverting guard output on failure', async () => {
       const script = `
         text output
@@ -847,7 +869,7 @@ const TEST_EC = [1, 1, 'Guard.Test', 'guard-test.njk', null, null];
         guard result
           var x = "guard"
           result.guardLocal = x
-          var failed = fail()
+          result.failed = fail()
         recover err
           var x = "recover"
           result.recoverLocal = x
@@ -873,7 +895,7 @@ const TEST_EC = [1, 1, 'Guard.Test', 'guard-test.njk', null, null];
         guard result
           var err = "guard-local"
           result.before = err
-          var failed = fail()
+          result.failed = fail()
         recover err
           result.errorMessage = err.message
           result.after = "recover"
@@ -912,15 +934,15 @@ const TEST_EC = [1, 1, 'Guard.Test', 'guard-test.njk', null, null];
       expect(source).to.contain('"local"');
     });
 
-    it('should recover when a body-local declaration receives poison', async () => {
+    it('should ignore body-local declaration poison when only another chain is guarded', async () => {
       const script = `
         data result
         guard result
           var local = fail()
-          result.unreachable = true
+          result.continued = true
         recover err
           result.recovered = true
-          result.errorSeen = err is error
+          result.error = err.message
         endguard
 
         return result.snapshot()`;
@@ -929,12 +951,32 @@ const TEST_EC = [1, 1, 'Guard.Test', 'guard-test.njk', null, null];
         fail: () => poison('body local failed')
       });
 
-      // The recovery variable holds a PoisonError object; `is error` only
-      // matches poisoned values.
       expect(result).to.eql({
-        recovered: true,
-        errorSeen: false
+        continued: true
       });
+    });
+
+    it('should route consumed direct local var errors through guarded chain recovery', async () => {
+      const script = `
+        data result
+        guard result
+          var local = { a: fail1(), b: [fail2()] }
+          result.a = local.a
+        recover err
+          result.recovered = true
+          result.message = err.message
+        endguard
+
+        return result.snapshot()`;
+
+      const result = await env.renderScriptString(script, {
+        async fail1() { throw new Error('guard direct one'); },
+        async fail2() { throw new Error('guard direct two'); }
+      });
+
+      expect(result.recovered).to.be(true);
+      expect(result.message).to.contain('guard direct one');
+      expect(result.message).not.to.contain('guard direct two');
     });
 
     it('should recover in template mode (reverting output)', async () => {

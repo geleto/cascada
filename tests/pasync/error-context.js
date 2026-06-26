@@ -817,10 +817,10 @@ describe('error context tracing runtime foundation', () => {
         other: 'unused'
       });
     }, (command, chainName) =>
-      command.constructor.name === 'SnapshotCommand' &&
-      chainName === 'first' &&
+      command.constructor.name === 'VarCommand' &&
+      chainName === '__return__' &&
       command.errorContext &&
-      command.errorContext[2] === 'Symbol'
+      command.errorContext[2] === 'Return'
     );
 
     expect(output).to.be('STACK_MARKER');
@@ -1810,8 +1810,9 @@ describe('error context tracing runtime foundation', () => {
       expect(source).to.match(/runtime\.resolveScriptCallTarget\(context, "fetchUser", __ec\[\d+\]\)/);
       expect(source).to.match(/runtime\.memberLookupScript\([^;]+__ec\[\d+\], output\)/);
       expect(source).to.match(/runtime\.sequentialCallWrapValue\([^;]+__ec\[\d+\], false, output\)/);
-      expect(source).to.match(/new runtime\.SnapshotCommand\(\{ chainName: "name", errorContext: __ec\[\d+\] \}\)/);
-      expect(source).to.match(/runtime\.declareBufferChain\(output, "name", "var", context, t_\d+\)/);
+      expect(source).to.match(/const t_\d+ = runtime\.normalizeVarValue\(t_\d+\);/);
+      expect(source).to.match(/context\.addResolvedExport\("name", t_\d+\);/);
+      expect(source).not.to.contain('runtime.declareBufferChain(output, "name", "var"');
       expect(source).to.contain('new runtime.DataCommand({ chainName: \'result\'');
       expect(source).to.match(/errorContext: __ec\[\d+\] \}\);/);
     });

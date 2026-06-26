@@ -10,7 +10,7 @@ import {
 import {CompilerBaseAsync} from './compiler-base-async.js';
 import {CompileBuffer} from './buffer.js';
 import {WAITED_CHAIN_NAME} from './reserved.js';
-import {DECLARATION_IMPORT_KIND, DECLARATION_STORAGE} from './declarations.js';
+import {DECLARATION_IMPORT_KIND} from './declarations.js';
 
 class CompilerAsync extends CompilerBaseAsync {
   init(sourcePath, options) {
@@ -176,7 +176,7 @@ class CompilerAsync extends CompilerBaseAsync {
     const declareOnEnter = [];
     const declaredNames = analysisPass.extractSymbols(node.name);
     declaredNames.forEach((name) => {
-      declareOnEnter.push({ name, type: 'var', initializer: null });
+      declareOnEnter.push({ name, type: 'var', initializer: null, loopVariable: true });
     });
     if (declarationsInBody) {
       node.body.addAnalysis({
@@ -184,7 +184,6 @@ class CompilerAsync extends CompilerBaseAsync {
         loopOwner: node,
         declareOnEnter
       });
-      analysisPass.addCommandFacts(node.body, { mutated: declaredNames });
       if (node.else_) {
         node.else_.addAnalysis({ createScope: true });
       }
@@ -651,7 +650,7 @@ class CompilerAsync extends CompilerBaseAsync {
       importKind: DECLARATION_IMPORT_KIND.NAMESPACE,
       sourceImportNode: node,
       sourceOrderNode: node,
-      storage: DECLARATION_STORAGE.DIRECT,
+      directStorage: true,
       jsVar: importedExportId
     };
     node.addAnalysis({
@@ -687,7 +686,7 @@ class CompilerAsync extends CompilerBaseAsync {
         sourceImportNode: node,
         sourceOrderNode: nameNode,
         exportedName: importedName,
-        storage: DECLARATION_STORAGE.DIRECT,
+        directStorage: true,
         jsVar: bindingId
       });
     });

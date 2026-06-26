@@ -1538,6 +1538,24 @@ const {AsyncEnvironment, AsyncTemplate} = typeof window !== 'undefined'
         expect(result.trim()).to.equal('Child Ada');
       });
 
+      it('should compile read-only inherited block arguments without var chains', () => {
+        loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
+        const childTemplate = '{% extends "base.njk" %}{% block content(user) %}Child {{ user }}{% endblock %}';
+
+        const source = new AsyncTemplate(childTemplate, env, 'direct-block-arg-child.njk').compileSource();
+        expect(source).to.contain('const l_user = runtime.normalizeVarValue(');
+        expect(source).not.to.contain('runtime.declareBufferChain(output, "user", "var"');
+      });
+
+      it('should keep reassigned inherited block arguments chain-backed', () => {
+        loader.addTemplate('base.njk', '{% block content(user) %}Base {{ user }}{% endblock %}');
+        const childTemplate = '{% extends "base.njk" %}{% block content(user) %}{% set user = "Grace" %}{{ user }}{% endblock %}';
+
+        const source = new AsyncTemplate(childTemplate, env, 'chain-block-arg-child.njk').compileSource();
+        expect(source).to.contain('runtime.declareBufferChain(output, "user", "var"');
+        expect(source).to.match(/new runtime\.VarCommand\(\{ chainName: 'user', args: \[t_\d+\], errorContext: methodData\.errorContextTable\[\d+\] \}\)/);
+      });
+
       it('should expose render-context bare names through async block overrides by default', async () => {
         loader.addTemplate('base.njk', '{% block content %}Base {{ username }}{% endblock %}');
         const childTemplate = '{% extends "base.njk" %}{% block content %}Child {{ username }}{% endblock %}';

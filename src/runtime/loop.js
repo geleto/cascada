@@ -334,53 +334,38 @@ async function iterateAsyncLimited(arr, loopBody, loopVars, errorContext, limit,
   let didIterate = false;
   let index = 0;
   let iteratorDone = false;
+  let firstBodyError = null;
+  let activeCount = 0;
+  let slotResolvers = [];
+  const iteratorDoneToken = Symbol('ASYNC_ITERATOR_DONE');
 
-  let resolveAllScheduled;
-  let rejectAllScheduled;
-  const allIterationsScheduled = new Promise((resolve, reject) => {
-    resolveAllScheduled = resolve;
-    rejectAllScheduled = reject;
-  });
-
-  // --- Simple lock so iterator.next() is never called concurrently ---
-  let iteratorLocked = false;
-  const lockQueue = [];
-
-  async function acquireIteratorLock() {
-    while (iteratorLocked) {
-      await new Promise(resolve => lockQueue.push(resolve));
-    }
-    iteratorLocked = true;
-  }
-
-  function releaseIteratorLock() {
-    iteratorLocked = false;
-    const next = lockQueue.shift();
-    if (next) {
-      next();
+  function wakeSlotWaiters() {
+    const resolvers = slotResolvers;
+    slotResolvers = [];
+    for (const resolve of resolvers) {
+      resolve();
     }
   }
 
-  // Helper to pull the next value from the async iterator
+  function waitForSlot() {
+    if (activeCount === 0 || activeCount < Math.max(1, Math.floor(limit)) || firstBodyError) {
+      return undefined;
+    }
+    return new Promise(resolve => slotResolvers.push(resolve));
+  }
+
   async function getNext() {
     if (iteratorDone || isFatalReported(errorContext)) {
       iteratorDone = true;
-      return null;
+      return iteratorDoneToken;
     }
 
-    await acquireIteratorLock();
     try {
-      // Re-check under the lock to avoid extra next() calls after done
-      if (iteratorDone || isFatalReported(errorContext)) {
-        iteratorDone = true;
-        return null;
-      }
-
       const result = await iterator.next();
 
       if (result.done) {
         iteratorDone = true;
-        return null;
+        return iteratorDoneToken;
       }
 
       return result.value;
@@ -391,19 +376,12 @@ async function iterateAsyncLimited(arr, loopBody, loopVars, errorContext, limit,
       const poisonError = PoisonError.wrap(err, errorContext, 'IteratorThrew');
       poisonError.didIterate = didIterate;
       poisonError.errors[poisonError.errors.length - 1].didIterate = didIterate;
-      if (rejectAllScheduled) {
-        rejectAllScheduled(poisonError);
-        rejectAllScheduled = null;
-      }
       iteratorDone = true;
-      return null;
-    } finally {
-      releaseIteratorLock();
+      throw poisonError;
     }
   }
 
-  // Use the same limited body-call helper as arrays
-  async function runIteration(i, value) {
+  function runIteration(i, value) {
     // Soft error: generator yielded an Error. Preserve the yielded error's
     // own origin when present; otherwise use the iterator source boundary.
     if (value instanceof Error) {
@@ -412,54 +390,62 @@ async function iterateAsyncLimited(arr, loopBody, loopVars, errorContext, limit,
     value = normalizeLoopValue(value, errorContext);
 
     const res = callLoopBodyLimited(loopBody, loopVars, value, i, undefined, false, errorContext, buffer, asyncOptions);
-    // Normalise sync/async body
-    await res;
+    return res;
   }
 
-  async function worker() {
-    while (true) {
-      const value = await getNext();
-      if (value === null) {
-        // Iterator exhausted or hard error already routed via rejectAllScheduled
-        if (iteratorDone && resolveAllScheduled) {
-          // First worker that observes exhaustion resolves "all scheduled"
-          resolveAllScheduled();
-          resolveAllScheduled = null;
-        }
-        return;
+  function finishIteration(err = null) {
+    activeCount--;
+    if (err && !firstBodyError) {
+      if (!isPoisonError(err)) {
+        err.didIterate = didIterate;
       }
-
-      const currentIndex = index++;
-      didIterate = true;
-
-      try {
-        const res = runIteration(currentIndex, value);
-        await res;
-      } catch (err) {
-        // Error inside loop body. Let iterate(...) handle via its outer catch.
-        if (rejectAllScheduled) {
-          if (!isPoisonError(err)) {
-            err.didIterate = didIterate;
-          }
-          rejectAllScheduled(err);
-          rejectAllScheduled = null;
-        }
-        return;
-      }
+      firstBodyError = err;
     }
+    wakeSlotWaiters();
+  }
+
+  function startIteration(i, value) {
+    activeCount++;
+    queueMicrotask(() => {
+      let res;
+      try {
+        res = runIteration(i, value);
+      } catch (err) {
+        finishIteration(err);
+        return;
+      }
+      if (res && typeof res.then === 'function') {
+        markPromiseHandled(res.then(
+          () => finishIteration(),
+          (err) => finishIteration(err)
+        ));
+        return;
+      }
+      finishIteration();
+    });
   }
 
   const workerCount = Math.max(1, Math.floor(limit));
 
-  // Kick off the initial workers immediately
-  for (let i = 0; i < workerCount; i++) {
-    // Fire-and-forget; we only wait for "all scheduled"
-    markPromiseHandled(worker());
+  while (!iteratorDone && !firstBodyError && !isFatalReported(errorContext)) {
+    while (activeCount < workerCount && !iteratorDone && !firstBodyError && !isFatalReported(errorContext)) {
+      const value = await getNext();
+      if (value === iteratorDoneToken) {
+        break;
+      }
+      const currentIndex = index++;
+      didIterate = true;
+      startIteration(currentIndex, value);
+    }
+    const slot = waitForSlot();
+    if (slot && typeof slot.then === 'function') {
+      await slot;
+    }
   }
 
-  // Wait until every iteration has been *started* (scheduled),
-  // mirroring iterateArrayLimited semantics.
-  await allIterationsScheduled;
+  if (firstBodyError) {
+    throw firstBodyError;
+  }
 
   return didIterate;
 }

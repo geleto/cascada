@@ -1,7 +1,7 @@
 import expect from 'expect.js';
 import {StringLoader, delay} from '../util.js';
 
-const {AsyncEnvironment, AsyncTemplate} = typeof window !== 'undefined'
+const {AsyncEnvironment, AsyncTemplate, Script} = typeof window !== 'undefined'
   ? window.nunjucks
   : await import('../../src/environment/environment.js');
 const runtime = typeof window !== 'undefined' ? window.nunjucks.runtime : await import('../../src/runtime/runtime.js');
@@ -541,6 +541,31 @@ const createAsyncLoopOptions = (overrides = {}) => ({
           '{{ a }},{{ b }},{{ c }}.{% endfor %}';
         const result = await env.renderTemplateString(template, context);
         expect(result).to.equal('x,y,z.1,2,3.');
+      });
+
+      it('should compile read-only destructured loop variables as direct bindings', async () => {
+        const template = '{% for a, b in items %}{{ a }}{{ b }}{% endfor %}';
+        const source = new AsyncTemplate(template, env, 'direct-destructured-loop-vars.njk').compileSource();
+
+        expect(source).to.contain('a = runtime.normalizeVarValue(a);');
+        expect(source).to.contain('b = runtime.normalizeVarValue(b);');
+        expect(source).to.not.match(/declareBufferChain\([^\n]+"a", "var"/);
+        expect(source).to.not.match(/declareBufferChain\([^\n]+"b", "var"/);
+
+        const result = await env.renderTemplateString(template, { items: [['a', '1'], ['b', '2']] });
+        expect(result).to.equal('a1b2');
+      });
+
+      it('should keep only reassigned destructured loop variables chain-backed', async () => {
+        const template = '{% for a, b in items %}{% set a = a ~ "!" %}{{ a }}{{ b }}{% endfor %}';
+        const source = new AsyncTemplate(template, env, 'chain-destructured-loop-vars.njk').compileSource();
+
+        expect(source).to.match(/declareBufferChain\([^\n]+"a", "var", context, a\)/);
+        expect(source).to.contain('b = runtime.normalizeVarValue(b);');
+        expect(source).to.not.match(/declareBufferChain\([^\n]+"b", "var"/);
+
+        const result = await env.renderTemplateString(template, { items: [['a', '1'], ['b', '2']] });
+        expect(result).to.equal('a!1b!2');
       });
 
       it('should handle async functions with loop.index', async () => {
@@ -2945,6 +2970,42 @@ return result.snapshot()`;
       expect(result.summary.userNames).to.have.length(4);
       expect(result.summary.userNames).to.contain('User 1');
       expect(result.summary.userNames).to.contain('User 2');
+    });
+
+    it('should compile read-only loop variables as direct bindings', async () => {
+      const script = [
+        'data output',
+        'for item in items',
+        '  output.items.push(item)',
+        'endfor',
+        'return output.snapshot()'
+      ].join('\n');
+      const source = new Script(script, env, 'direct-loop-var.casc').compileSource();
+
+      expect(source).to.contain('item = runtime.normalizeVarValue(item);');
+      expect(source).to.not.contain('declareBufferChain(currentBuffer, "item", "var"');
+      expect(source).to.not.contain('new runtime.VarCommand({ chainName: \'item\'');
+
+      const result = await env.renderScriptString(script, { items: ['a', 'b'] });
+      expect(result.items).to.eql(['a', 'b']);
+    });
+
+    it('should keep reassigned loop variables chain-backed', async () => {
+      const script = [
+        'data output',
+        'for item in items',
+        '  item = item + "!"',
+        '  output.items.push(item)',
+        'endfor',
+        'return output.snapshot()'
+      ].join('\n');
+      const source = new Script(script, env, 'chain-loop-var.casc').compileSource();
+
+      expect(source).to.contain('runtime.declareBufferChain(currentBuffer, "item", "var", context, item);');
+      expect(source).to.match(/new runtime\.VarCommand\(\{ chainName: 'item', args: \[t_\d+\], errorContext: .* \}\)/);
+
+      const result = await env.renderScriptString(script, { items: ['a', 'b'] });
+      expect(result.items).to.eql(['a!', 'b!']);
     });
 
     it('should handle while loop in script format (Sequential)', async () => {

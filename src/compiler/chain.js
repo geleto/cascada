@@ -60,8 +60,16 @@ class CompileChain {
     if (analysis.createsLinkedChildBuffer) {
       return;
     }
-    addSetNames(observedChains, analysis.observedChains);
-    addSetNames(mutatedChains, analysis.mutatedChains);
+    if (analysis.observedChains) {
+      analysis.observedChains.forEach((name) => {
+        observedChains.add(name);
+      });
+    }
+    if (analysis.mutatedChains) {
+      analysis.mutatedChains.forEach((name) => {
+        mutatedChains.add(name);
+      });
+    }
     this._addInlineChildCommandFacts(analysis, observedChains, mutatedChains);
   }
 
@@ -80,29 +88,37 @@ class CompileChain {
     };
   }
 
-  emitLocalVarChainDeclaration(bufferId, name) {
-    this.compiler.emit.line(`runtime.declareBufferChain(${bufferId}, "${name}", "var", context, null);`);
+  emitLocalVarChainBinding(bufferId, binding) {
+    this.compiler.emit(`runtime.declareBufferChain(${bufferId}, ${JSON.stringify(binding.name)}, "var", context, `);
+    binding.emitInitializerExpression();
+    this.compiler.emit.line(');');
   }
 
-  emitLocalVarChainInit(bufferId, name, emitValueExpression, positionNode = null) {
-    this.compiler.emit(`${bufferId}.addCommand(new runtime.VarCommand({ chainName: ${JSON.stringify(name)}, args: [`);
-    emitValueExpression();
-    this.compiler.emit.line(`], errorContext: ${this.compiler.emitErrorContext(positionNode)} }), ${JSON.stringify(name)});`);
+  emitLocalVarBindings(bufferId, bindings, declarations) {
+    bindings.forEach((binding) => {
+      const declaration = binding.declaration ||
+        declarations?.get(binding.name) ||
+        null;
+      if (isStoredDirectly(declaration)) {
+        this.emitDirectLocalVarBinding(binding, declaration);
+        return;
+      }
+      this.emitLocalVarChainBinding(bufferId, binding);
+    });
   }
 
-  emitLocalVarChainBindings(bufferId, bindings) {
-    bindings.forEach((binding) => {
-      this.emitLocalVarChainDeclaration(bufferId, binding.name);
-    });
-    bindings.forEach((binding) => {
-      this.emitLocalVarChainInit(
-        bufferId,
-        binding.name,
-        binding.emitValueExpression,
-        binding.positionNode
-      );
-      this.compiler.emit.line('');
-    });
+  emitDirectLocalVarBinding(binding, declaration) {
+    if (declaration.jsVar === binding.initializerJsVarName) {
+      this.compiler.emit.line(`${declaration.jsVar} = runtime.normalizeVarValue(${declaration.jsVar});`);
+      return;
+    }
+
+    if (binding.reservedJsVarName === declaration.jsVar) {
+      declaration.jsVar = this.compiler._tmpid();
+    }
+    this.compiler.emit(`const ${declaration.jsVar} = runtime.normalizeVarValue(`);
+    binding.emitInitializerExpression();
+    this.compiler.emit.line(');');
   }
 
   getStaticLiteralPathSegments(pathNode) {
@@ -466,15 +482,22 @@ class CompileChain {
     const chainDecl = chainName ? node._analysis.visibleDeclarations?.get(chainName) || null : null;
     const chainType = node.chainType || (chainDecl ? chainDecl.type : null);
     const command = path.length >= 2 ? path[path.length - 1] : null;
+    if (callNode && path.length === 2 && command === 'snapshot' && chainDecl && chainDecl.type === 'var') {
+      this.compiler.fail(
+        `Variable '${chainName}' does not support snapshot(). Use '${chainName}' directly.`,
+        callNode.lineno,
+        callNode.colno,
+        node,
+        callNode
+      );
+    }
     if (callNode && path.length >= 2 && chainDecl && (chainDecl.type === 'var' || isStoredDirectly(chainDecl))) {
-      return { varLikeMemberCall: true };
+      return {};
     }
     this.markOperationOwnedPath(node.call);
     const isSequenceGet = !callNode && chainDecl && chainDecl.type === 'sequence';
     const isObservation = isSequenceGet ||
-      (callNode && path.length === 2 &&
-       (path[1] === 'isError' || path[1] === 'getError' ||
-        (path[1] === 'snapshot' && (!chainDecl || chainDecl.type !== 'sequence'))));
+      (callNode && path.length === 2 && this.isChainObservationCommand(path[1], chainDecl?.type));
     if (chainType === 'data' && callNode && !isObservation && callNode.args.children.length > 0) {
       this._recordDataCommandPath(callNode.args.children[0]);
     }
@@ -579,7 +602,12 @@ class CompileChain {
   }
 
   compileChainCommand(node) {
-    if (node._analysis.varLikeMemberCall) {
+    const callNode = node.call instanceof nodes.FunCall ? node.call : null;
+    const path = callNode ? this.compiler.sequential.extractStaticPathSegments(callNode.name) : null;
+    const declaration = path?.length >= 2
+      ? node._analysis.visibleDeclarations?.get(path[0]) || null
+      : null;
+    if (declaration && (declaration.type === 'var' || isStoredDirectly(declaration))) {
       this.compiler.emit('runtime.observeDiscardedExpression(');
       this.compiler.compileExpression(node.call, null, node.call);
       this.compiler.emit.line(`, ${this.compiler.emitErrorContext(node.call)});`);
@@ -615,40 +643,53 @@ class CompileChain {
     return !!declaration?.shared;
   }
 
-  _compileChainObservationFunCall(node, chainOperationCall) {
+  isChainObservationMode(mode) {
+    return mode === 'snapshot' || mode === 'isError' || mode === 'getError';
+  }
+
+  isChainObservationCommand(command, chainType) {
+    return this.isChainObservationMode(command) &&
+      !(command === 'snapshot' && chainType === 'sequence');
+  }
+
+  emitChainObservation(chainName, node, mode = 'snapshot', shared = false, implicitVarRead = false) {
+    if (!this.isChainObservationMode(mode)) {
+      return false;
+    }
     const compiler = this.compiler;
-    if (chainOperationCall.pathPrefix.length !== 0) {
-      return false;
-    }
-    if (chainOperationCall.chainType === 'sequence' && chainOperationCall.methodName === 'snapshot') {
-      return false;
-    }
-    const shared = this.isSharedChainOperationCall(node, chainOperationCall);
-    if (chainOperationCall.methodName === 'snapshot') {
-      if (shared) {
-        compiler.inheritance.emitSharedChainObservation(chainOperationCall.chainName, node, 'snapshot');
-      } else {
-        compiler.buffer.emitAddSnapshot(chainOperationCall.chainName, node);
-      }
+    if (shared) {
+      compiler.inheritance.emitSharedChainObservation(chainName, node, mode, implicitVarRead);
       return true;
     }
-    if (chainOperationCall.methodName === 'isError') {
-      if (shared) {
-        compiler.inheritance.emitSharedChainObservation(chainOperationCall.chainName, node, 'isError');
-      } else {
-        compiler.buffer.emitAddIsError(chainOperationCall.chainName, node);
-      }
+    if (mode === 'snapshot') {
+      compiler.buffer.emitAddSnapshot(chainName, node);
       return true;
     }
-    if (chainOperationCall.methodName === 'getError') {
-      if (shared) {
-        compiler.inheritance.emitSharedChainObservation(chainOperationCall.chainName, node, 'getError');
-      } else {
-        compiler.buffer.emitAddGetError(chainOperationCall.chainName, node);
-      }
+    if (mode === 'isError') {
+      compiler.buffer.emitAddIsError(chainName, node);
+      return true;
+    }
+    if (mode === 'getError') {
+      compiler.buffer.emitAddGetError(chainName, node);
       return true;
     }
     return false;
+  }
+
+  _compileChainObservationFunCall(node, chainOperationCall) {
+    if (chainOperationCall.pathPrefix.length !== 0) {
+      return false;
+    }
+    if (!this.isChainObservationCommand(chainOperationCall.methodName, chainOperationCall.chainType)) {
+      return false;
+    }
+    const shared = this.isSharedChainOperationCall(node, chainOperationCall);
+    return this.emitChainObservation(
+      chainOperationCall.chainName,
+      node,
+      chainOperationCall.methodName,
+      shared
+    );
   }
 
   _compileSequenceChainFunCall(node, chainOperationCall) {
@@ -721,13 +762,6 @@ function compactChainFactGroups(groups) {
 
 function chainSetToArray(chains) {
   return chains ? Array.from(chains) : null;
-}
-
-function addSetNames(target, names) {
-  if (!names) {
-    return;
-  }
-  names.forEach((name) => target.add(name));
 }
 
 function addChainFactGroupNames(groups, index, names) {

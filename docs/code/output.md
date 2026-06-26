@@ -143,7 +143,7 @@ Key files:
 
 Important analysis fields:
 
-- `declaredChains`
+- `declarations`
 - `usedChains`
 - `mutatedChains`
 
@@ -151,7 +151,7 @@ The compiler uses these fields to:
 
 - link parent-visible chains into child buffers
 - determine control-flow poison chains
-- validate chain declarations and observations
+- validate declarations and chain observations
 - emit ordered chain commands on the active `currentBuffer`
 - keep local declarations separate from parent-visible chains
 

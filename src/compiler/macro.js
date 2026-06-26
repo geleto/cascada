@@ -6,8 +6,7 @@ import {
 } from './reserved.js';
 import {
   isClassifiedImportedCallableDeclaration,
-  DECLARATION_ROLE,
-  DECLARATION_STORAGE
+  DECLARATION_ROLE
 } from './declarations.js';
 
 class CompileMacro {
@@ -159,7 +158,7 @@ class CompileMacro {
       name: node.name.value,
       parentOwned: true,
       isMacro: true,
-      storage: DECLARATION_STORAGE.DIRECT,
+      directStorage: true,
       jsVar: compiledMacroFuncId
     };
     node.addAnalysis({ compiledMacroFuncId, macroDeclaration });
@@ -309,7 +308,7 @@ class CompileMacro {
   }
 
   _getInheritanceDirectImportedCallableDeclarations(node) {
-    const declarations = node._analysis.declaredChains || new Map();
+    const declarations = node._analysis.declarations || new Map();
     return Array.from(declarations.values()).filter((declaration) =>
       declaration.declarationOwner === node._analysis &&
       declaration.requiresCleanScopeBinding &&
@@ -370,7 +369,6 @@ class CompileMacro {
       ) {
         return;
       }
-      mutated.add(decl.name);
       const defaultNode = defaultNodesByName.get(decl.name);
       if (defaultNode) {
         addSetNames(observed, defaultNode._analysis.observedChains);
@@ -494,15 +492,6 @@ class CompileMacro {
     const compiler = this.compiler;
     const hasCallerSupport = !!(rawCallerVar && allCallersBufferId);
     const positionalArgNames = new Set(args.map((arg) => arg.value));
-    const positionNodesByName = new Map();
-    args.forEach((arg) => {
-      positionNodesByName.set(arg.value, arg);
-    });
-    if (kwargs) {
-      kwargs.children.forEach((pair) => {
-        positionNodesByName.set(pair.key.value, pair);
-      });
-    }
 
     if (compiler.scriptMode) {
       compiler.return.emitDeclareChain(bufferId);
@@ -519,7 +508,7 @@ class CompileMacro {
 
     const bindings = [{
       name: 'caller',
-      emitValueExpression: () => {
+      emitInitializerExpression: () => {
         if (hasCallerSupport) {
           this._emitCallerBindingValue({
             bufferId,
@@ -530,8 +519,7 @@ class CompileMacro {
         } else {
           compiler.emit('kwargs.caller');
         }
-      },
-      positionNode: node
+      }
     }].concat(compiler.createCallableArgumentChainBindings(
       callableSignature,
       (name, defaultValueNode) => {
@@ -542,10 +530,14 @@ class CompileMacro {
         compiler.emit(`Object.prototype.hasOwnProperty.call(kwargs, ${JSON.stringify(name)}) ? kwargs[${JSON.stringify(name)}] : `);
         compiler._compileExpression(defaultValueNode, managedFrame);
       },
-      (name) => positionNodesByName.get(name) || node
+      {
+        initializerJsVarName: (name) => (
+          positionalArgNames.has(name) ? `l_${name}` : null
+        )
+      }
     ));
 
-    compiler.chain.emitLocalVarChainBindings(bufferId, bindings);
+    compiler.chain.emitLocalVarBindings(bufferId, bindings, node._analysis.declarations);
   }
 
   _emitSyncMacroBindings({ managedFrame, args, kwargs }) {

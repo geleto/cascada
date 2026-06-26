@@ -13,15 +13,15 @@ Today many source-visible values are represented as `var` chains because that is
 The target split is:
 
 - `isCompilerInternal`: generated JS names that are not source-visible and bypass source lookup.
-- declarations with `storage: DECLARATION_STORAGE.DIRECT`: source-visible names that follow the same lexical scope rules as chains, but are read directly from a generated JS variable.
-- declarations with `storage: DECLARATION_STORAGE.CHAIN`: source-visible command-buffer lanes that can be observed, mutated, snapshotted, linked, or exported through buffer state.
+- declarations with `directStorage: true`: source-visible names that follow the same lexical scope rules as chains, but are read directly from a generated JS variable.
+- declarations without `directStorage: true`: source-visible command-buffer lanes that can be observed, mutated, snapshotted, linked, or exported through buffer state.
 
 Minimal shape:
 
 ```js
 {
   name: "greet",
-  storage: DECLARATION_STORAGE.DIRECT,
+  directStorage: true,
   jsVar: "macro_12",
   isMacro: true   // existing flag; macro/import flags carry the category — no new `kind` field
 }
@@ -81,7 +81,7 @@ The source name `greet` resolves to:
 ```js
 {
   name: "greet",
-  storage: DECLARATION_STORAGE.DIRECT,
+  directStorage: true,
   jsVar: "macro_12",
   isMacro: true
 }
@@ -199,12 +199,12 @@ Invalid leakage:
 
 Use the existing declaration maps. Do not add parallel `directDeclarations` / `sourceVisibleDirectDeclarations` maps.
 
-Add a storage discriminator to declaration objects:
+Use `directStorage: true` as the storage override on declaration objects. Omitting it means the declaration is chain-backed:
 
 ```js
 {
   name,
-  storage: DECLARATION_STORAGE.CHAIN | DECLARATION_STORAGE.DIRECT,
+  directStorage: true, // direct only; omit for chain-backed declarations
   type,     // chain declarations only
   jsVar,    // direct declarations only
   // category stays on the existing flags: `isMacro` (macros/functions — `function`
@@ -222,7 +222,7 @@ The existing declaration flow should continue to own visibility:
 
 For explicit direct declarations such as macro/function names, the static callable analysis fact carries the declaration for direct calls.
 
-For derived direct declarations (read-only vars), storage is decided after the first walk because eligibility depends on finalized usage. Prefer keeping one declaration object and setting its `storage` after derivation, so existing `visibleDeclarations`, `visibleCallableDeclarations`, and `declaredChains` entries see the final choice where the name appears in more than one map.
+For derived direct declarations (read-only vars), storage is decided after the first walk because eligibility depends on finalized usage. Prefer keeping one declaration object and setting its `directStorage` flag after derivation, so existing `visibleDeclarations`, `visibleCallableDeclarations`, and `declarations` entries see the final choice where the name appears in more than one map.
 
 Conflict validation is reused from the existing declaration map:
 
@@ -231,9 +231,9 @@ Conflict validation is reused from the existing declaration map:
 - chain-storage declaration vs direct-storage declaration
 - all declaration kinds share one same-scope uniqueness rule; do not add a macro-only, import-only, or chain-only namespace
 
-Existing chain-only helpers can remain when the caller truly needs a chain. New source-name checks should inspect `declaration.storage` so direct declarations are not accidentally reported as unknown names.
+Existing chain-only helpers can remain when the caller truly needs a chain. New source-name checks should use `isStoredDirectly(declaration)` so direct declarations are not accidentally reported as unknown names.
 
-Eventually rename fields such as `declaredChains` to `declarations` if the mixed storage makes the old name misleading. The rename is cleanup, not a prerequisite for the first macro/function-name implementation.
+Use `declarations` for finalized owner maps once the map can contain mixed direct and chain-backed source names. The old chain-only name is misleading after Phase 3.
 
 Do not replace ordinary chain declarations with derived direct storage during the first walk. Eligibility depends on finalized usage facts.
 
@@ -256,14 +256,14 @@ The simplest safe implementation is staged, following the two categories above:
 
 Storage is set two ways, depending on whether a declaration is direct *by construction* or *by usage*:
 
-- **Intrinsic — direct by flag.** Macros/functions (`isMacro`) and import namespaces / from-import aliases (`imported`) are direct references by construction. Set `storage = DIRECT` at declaration creation; no usage analysis is involved, and they carry no chain `type` (their value lives in `jsVar`). The assignment validator forbids reassigning them, so they never enter `mutatedChains`.
+- **Intrinsic — direct by flag.** Macros/functions (`isMacro`) and import namespaces / from-import aliases (`imported`) are direct references by construction. Set `directStorage: true` at declaration creation; no usage analysis is involved, and they carry no chain `type` (their value lives in `jsVar`). The assignment validator forbids reassigning them, so they never enter `mutatedChains`.
 - **Derived — direct by `mutatedChains`.** A plain var-like declaration — an ordinary `var`, argument, or loop variable: `type === 'var'`, not `shared`, not `internal`, not intrinsic — is direct iff it is never reassigned:
 
 ```js
 // for a var-typed, non-shared, non-internal, non-intrinsic declaration:
-declaration.storage = mutatedChains.has(name)
-  ? DECLARATION_STORAGE.CHAIN
-  : DECLARATION_STORAGE.DIRECT;
+if (!mutatedChains.has(name)) {
+  declaration.directStorage = true;
+}
 ```
 
 `mutatedChains` is the owning scope's accumulated mutations — after the init fix below it holds real source reassignments/path-assignments, anywhere in the scope including nested branches and loops. [What Not To Convert](#what-not-to-convert) is the negation: a non-`var` chain type, shared, internal, or mutated. So `var`s, arguments, and loop variables share one derived test, while macros and namespaces never reach it (they are direct by flag).
@@ -288,7 +288,7 @@ Intrinsics:
 - macros/functions: [`analyzeMacro`](../../src/compiler/macro.js) returns `mutates: [name]` for the macro name.
 - imports / from-imports: [`analyzeImport` / `analyzeFromImport`](../../src/compiler/compiler-async.js) return `mutates: [name]` for each bound name.
 
-Fix all five under the one principle — initialization does not enter `mutates`. For derived var-likes that is what makes `mutatedChains` mean "really reassigned." For intrinsics it is also a correctness requirement: the central immutability validator rejects any reassignment of an `isMacro`/`imported` declaration, so if a macro/import's *own* initial binding were still in `mutates`, the validator would reject the declaration itself — this is why "an immutable declaration is never in `mutates`" must actually hold. The intrinsic removals land in the Phase 1 conversion (the same change that sets `storage = DIRECT`); the derived ones in Phase 2/3. Do not add a `hasPostSetupUserMutation` predicate; just stop conflating init with mutation at each site. Initialization is then emitted as command facts only for declarations that stay chain-backed.
+Fix all five under the one principle — initialization does not enter `mutates`. For derived var-likes that is what makes `mutatedChains` mean "really reassigned." For intrinsics it is also a correctness requirement: the central immutability validator rejects any reassignment of an `isMacro`/`imported` declaration, so if a macro/import's *own* initial binding were still in `mutates`, the validator would reject the declaration itself — this is why "an immutable declaration is never in `mutates`" must actually hold. The intrinsic removals land in the Phase 1 conversion (the same change that sets `directStorage: true`); the derived ones in Phase 2/3. Do not add a `hasPostSetupUserMutation` predicate; just stop conflating init with mutation at each site. Initialization is then emitted as command facts only for declarations that stay chain-backed.
 
 The analysis change and the codegen change are coupled and must land together. `mutates` is AST-derived, so the analysis fix does not depend on codegen — but the reverse does. Once a read-only chain-backed `var` has no mutation fact, its command-buffer lane is specialized observe-only ([`_createLaneEntryWithFacts`](../../src/runtime/command-buffer.js) → [`buffer-lane-entry.js`](../../src/runtime/buffer-lane-entry.js): `observes && !mutates` exposes only `observe`). A `VarCommand` is a mutation command, so emitting the initial value as a `VarCommand` into that lane throws `expected an observable entry`. The initial value must therefore be emitted as a **non-command initializer**, not a `VarCommand`, in the same change that removes initialization from `mutates`:
 
@@ -299,21 +299,23 @@ Mind the initializer argument's semantics: [`declareBufferChain`](../../src/runt
 
 This reuses initializer plumbing that already exists: `var`'s `applyInitializer` → `setInitialValue` is wired today (used for sentinels like `RETURN_UNSET`). The only new code is factoring `VarCommand`'s value normalization into a shared helper so the initializer behaves like a set. It is also an optimization — read-only chain-backed declarations drop one command each. Do not build a cross-type initializer system now — see [Unified Initialization](#unified-initialization).
 
-### Deciding storage and purging — folded into `_finalizeChainUsage`, no new pass
+### Deciding storage and purging
 
-Use the existing `mutatedChains` fact (post-init-fix); do not build a new source-mutation accumulation, and do not key the decision off `observedChains`/`usedChains` (those count reads). Fold both the storage decision and the purge into [`_finalizeChainUsage`](../../src/compiler/analysis.js), which already walks per scope, children-first. Per scope, in order:
+Use the existing `mutatedChains` fact (post-init-fix); do not build a new source-mutation accumulation, and do not key the decision off `observedChains`/`usedChains` (those count reads). Storage is decided during [`_finalizeChainUsage`](../../src/compiler/analysis.js), which already walks per scope, children-first. Per scope, in order:
 
 1. assemble the scope's full mutation set — local `mutates` + children's + any post-analysis facts (e.g. `_getSetupFacts`); this *is* `mutatedChains` once complete;
-2. decide storage for the scope's derived declarations from that set — a flat iteration over the scope's declarations, no per-node recursion — and set `declaration.storage`;
-3. build the scope's observe/use and boundary-linked facts, filtering out direct names so a direct declaration never reaches a chain-lane fact. (A direct name has no chain; a lingering observe/use fact would provision a lane for a chain that is never declared.)
+2. decide storage for the scope's derived declarations from that set — a flat iteration over the scope's declarations, no per-node recursion — and set `declaration.directStorage`;
+3. build the scope's observe/use and boundary-linked facts, filtering out direct names already known in that scope so a direct declaration never reaches a chain-lane fact. (A direct name has no chain; a lingering observe/use fact would provision a lane for a chain that is never declared.)
 
 Storage must be decided **after** step 1 (the mutation set isn't complete until local, child, and post-analysis mutations are folded in) and **before** step 3 (so the filter sees final storage).
+
+Because descendant scopes can fold parent-read facts before the owner scope derives storage, finalization also runs a focused reconciliation sweep after storage has been finalized. That sweep removes now-direct declarations from descendant aggregate chain facts (`observedChains`, `usedChains`, `boundaryLinked*`, and related parent facts). This is not a separate read taxonomy; it is cleanup of stale chain-lane metadata that was computed before the owning declaration's final storage was known.
 
 Purge at the **aggregation**, not on raw `observes`. The filter goes where per-node `observes`/uses fold into `observedChains`/`usedChains` (`_addChainObservation` / `_addBroadChainUse`). The raw per-node `observes` array stays untouched: its only other consumer is `_validateObservations`, which just checks the read name is *declared* — a direct var is, so it passes — and it runs during the walk before storage is decided, so raw `observes` couldn't be purged there anyway. So no `observesStrictly` fact is needed: the existing raw-`observes` (= "this name is read", for validation) vs aggregated-`observedChains` (= "this chain lane is observed", consumed by [`chain.js`](../../src/compiler/chain.js) `getCommandBufferFacts` for child-buffer/lane creation) split already separates the two meanings — only the aggregate is filtered. `mutates` needs no purge (a direct var is never mutated, so it is never in `mutatedChains`).
 
 Do not retain the dropped names in a parallel `observedDirect`/`usedDirect` set either — nothing consumes scope-level "this direct var is read." Closure capture across a child boundary is automatic in generated JS (the child references the `jsVar` and the engine captures it, given the binding is emitted in an enclosing JS scope — a codegen invariant, not a queried fact), and validation already uses raw `observes`. A parallel set would have no reader; just don't add the name to the aggregate.
 
-A direct var's reads are thus absent from the chain facts — codegen emits its `jsVar` instead. No new pass, no new tree recursion, no new accumulation, no new fact: the decision reads `mutatedChains`, and removal is a filter on the sweep that already runs.
+A direct var's reads are thus absent from the final chain facts — codegen emits its `jsVar` instead. The decision reads `mutatedChains`; the reconciliation sweep only removes chain-lane facts for declarations that are now known to be direct.
 
 ### Shared vs per-kind
 
@@ -322,7 +324,7 @@ A direct var's reads are thus absent from the chain facts — codegen emits its 
 - **Shared:** the storage predicate (keyed on the owning scope's `mutatedChains`, folded into `_finalizeChainUsage`), the read lowering (`compileSymbol` → `jsVar` or snapshot), the chain initializer for survivors, and the central immutability check.
 - **Per kind — only the value source and direct `jsVar`:** a `var` body declaration binds an initializer expression to a fresh-tmpid `const`; a positional argument *is* the `l_<name>` parameter; a keyword argument materializes `kwargs[...] ? … : default` into `l_<name>`; a loop variable *is* the per-iteration function parameter — the loop body compiles to a separate function with the loop var as a parameter ([loop.js](../../src/compiler/loop.js)), and the per-iteration seed currently emitted as a `VarCommand` (`_emitLoopValueAssignment`) is the initialization a direct loop variable drops (use case 5).
 
-So implement one binding emitter parameterized by `(declaration, valueExpr, positionNode)` that branches on `declaration.storage` — chain → the unified initializer, direct → reuse the parameter or emit `const jsVar = valueExpr` — and call it from the var, argument, and loop-variable sites. The three "initialization is not a mutation" edits ([`assignment.js`](../../src/compiler/assignment.js), [`_getSetupFacts`](../../src/compiler/macro.js), [`_collectLoopDeclarationFacts`](../../src/compiler/compiler-async.js)) are the same fix at the three value sources.
+So implement one binding emitter parameterized by `(declaration, valueExpr, positionNode)` that branches on `isStoredDirectly(declaration)` — chain → the unified initializer, direct → reuse the parameter or emit `const jsVar = valueExpr` — and call it from the var, argument, and loop-variable sites. The three "initialization is not a mutation" edits ([`assignment.js`](../../src/compiler/assignment.js), [`_getSetupFacts`](../../src/compiler/macro.js), [`_collectLoopDeclarationFacts`](../../src/compiler/compiler-async.js)) are the same fix at the three value sources.
 
 ## Unified Initialization
 
@@ -355,7 +357,7 @@ compileSymbol(node) {
   }
 
   const declaration = node._analysis.visibleDeclarations.get(node.value);
-  if (declaration && declaration.storage === DECLARATION_STORAGE.DIRECT) {
+  if (isStoredDirectly(declaration)) {
     emit(declaration.jsVar);
     return;
   }
@@ -372,10 +374,10 @@ const macro_12 = runtime.makeMacro(...);
 
 If an AST node is synthesized to refer directly to `macro_12`, that synthesized symbol may use `isCompilerInternal`. Parsed source symbols such as `greet` must use direct lookup.
 
-Reads, error inspection, and `.snapshot()` all lower through existing chokepoints once `declaration.storage` is final — no new per-node branches:
+Reads, error inspection, and `.snapshot()` all lower through existing chokepoints once `declaration.directStorage` is final — no new per-node branches:
 
 - Reads: `compileSymbol` (above) emits `declaration.jsVar` for direct storage, or the snapshot/read path for chain-backed `var`.
-- `value is error` / `value#`: make `_getObservedChainName` / `_getErrorObservationFacts` return `null` for a direct declaration. `compileIs` / `compilePeekError` already fall back to `runtime.isError(value)` / `runtime.peekError(value)` when there is no observed chain, so neither method needs its own storage check.
+- `value is error` / `value#`: `_compileErrorObservation` returns `false` for direct declarations. `compileIs` / `compilePeekError` then fall back to `runtime.isError(value)` / `runtime.peekError(value)` when there is no observed chain.
 - `.snapshot()`: rejected at compile time on declared `var`s. The chokepoint is the chain-operation classification in [`chain.js`](../../src/compiler/chain.js) (`compileChainOperationFunCall` / its `chainOperationCall` analysis): today, when the static root resolves to a `var`, `.snapshot()` returns `false` and falls through to an ordinary method call — instead, fail there. It stays a chain operation only for non-var lanes.
 
 The generated JS declaration kind must match the generated scope. Use `const` for immutable bindings when the binding is emitted exactly once in the owning JS scope. Use `let` if branch/loop codegen needs a declaration shape that is assigned conditionally. Do not widen a binding's JS scope beyond the analyzed Cascada scope merely to make codegen convenient.
@@ -461,12 +463,12 @@ Three phases, lowest-risk first.
 
 ### Phase 1 — Intrinsic (always direct): macros/functions and namespaces
 
-1. Add `DECLARATION_STORAGE` (`CHAIN`, `DIRECT`) constants in `src/compiler/declarations.js`, plus an `isImmutable(decl)` helper over the existing flags (`decl.isMacro || decl.imported`). No new `kind` field.
-2. Add `storage` and `jsVar` to declaration objects without changing the existing declaration maps.
+1. Add a `directStorage: true` declaration marker, plus an `isImmutable(decl)` helper over the existing flags (`decl.isMacro || decl.imported`). No new `kind` field.
+2. Add `directStorage` and `jsVar` to declaration objects without changing the existing declaration maps.
 3. Add the `compileSymbol` direct-storage fast path after `isCompilerInternal`, before `loop` magic and chain/shared lookup handling.
 4. Add the shared chain-usage purge: after storage is finalized, [`_finalizeChainUsage`](../../src/compiler/analysis.js) removes every direct-storage name from the existing `observes`/`used` aggregates, so no lane is provisioned for a chain that doesn't exist. (`mutates`/`mutatedChains` needs no purge — a direct declaration is never reassigned, so it is never there.) This updates the existing facts — *not* a separate read-vs-observe fact taxonomy — and every later phase reuses it. Verify the during-walk validations (`_validateObservations` / `_validateMutations`) tolerate direct names, since they run before this purge.
 5. Convert macro/function names to direct-storage declarations in one atomic change:
-   - set `storage = DIRECT` and `jsVar = compiledMacroFuncId` on the declaration (the `isMacro` flag already marks the category)
+   - set `directStorage: true` and `jsVar = compiledMacroFuncId` on the declaration (the `isMacro` flag already marks the category)
    - remove the macro-name chain declaration and its `mutates: [name]`
    - remove the `declareBufferChain` / `VarCommand` emission
    - keep/add a body-local self direct declaration for recursion (the step-4 purge removes the now-direct name from the chain-usage facts)
@@ -488,14 +490,14 @@ Scope this phase to `var` declarations only. Arguments and loop variables are ha
 
 ### Phase 3 — Derived (non-mutating var-likes become direct)
 
-13. Fold the storage decision into `_finalizeChainUsage`: apply the predicate per scope using the existing `mutatedChains` (post-Phase-2, init excluded) — a flat iteration over the scope's declarations, no new pass and no new accumulation. The step-4 purge then drops the now-direct names from the chain-usage facts.
+13. Fold the storage decision into `_finalizeChainUsage`: apply the predicate per scope using the existing `mutatedChains` (post-Phase-2, init excluded) — a flat iteration over the scope's declarations, with no new mutation accumulation. The follow-up reconciliation purge then drops now-direct names from any chain-usage facts that were folded before the owner scope's storage decision was known.
 14. Convert `var`, arguments, and loop variables **together** (one shared decision + binding emitter — do not split by kind, and do not convert a kind to direct storage whose value-source emitter isn't wired). Each kind's init-is-not-a-mutation fix lands here, atomic with its conversion to direct, so no read-only one is ever an observe-only chain with a command seed:
     - `var`: already non-mutating from Phase 2
     - arguments: remove the per-argument init from [`_getSetupFacts`](../../src/compiler/macro.js); read-only → direct (`jsVar` is the `l_<name>` parameter, or a materialized keyword local), mutated → chain
     - loop variables: remove the per-iteration seed from [`_collectLoopDeclarationFacts`](../../src/compiler/compiler-async.js) (`addCommandFacts(body, { mutated })`); read-only → direct (the iteration parameter), mutated → chain
     - caller arguments follow the argument rule, but decide their value source (`_emitCallerBindingValue` / `__caller__`) when reached
 15. Export a root direct `var` with `addResolvedExport(name, jsVar)` instead of the deferred chain export (the one storage-keyed export rule).
-16. Rename finalized owner maps such as `declaredChains` to `declarations` once ordinary vars/args/loop vars can also be direct. Do this after every consumer is storage-aware; before Phase 3 the old name is still tolerable, but after mixed storage it is misleading.
+16. Use `declarations` for finalized owner maps once ordinary vars/args/loop vars can also be direct. Do this after every consumer is storage-aware; before Phase 3 the old chain-only name is still tolerable, but after mixed storage it is misleading.
 17. Tests: derived storage; a nested-branch mutation forces chain; root-var re-export; read-only argument / loop variable; promise/poison parity.
 
 ## Tests

@@ -6,7 +6,6 @@ import * as nodes from '../../src/language/nodes.js';
 import {transpiler as scriptTranspiler} from '../../src/language/script-transpiler.js';
 import {
   DECLARATION_IMPORT_KIND,
-  DECLARATION_STORAGE,
   isStoredDirectly
 } from '../../src/compiler/declarations.js';
 
@@ -149,7 +148,7 @@ import {
       const expectedUsed = new Set();
       addChainNames(expectedUsed, analysis.observedChains);
       addChainNames(expectedUsed, analysis.mutatedChains);
-      addDeclaredChainNames(expectedUsed, analysis.declaredChains);
+      addDeclaredChainNames(expectedUsed, analysis.declarations);
 
       const expectedUsedFromParent = new Set();
       addChainNames(expectedUsedFromParent, analysis.observedChainsFromParent);
@@ -262,7 +261,7 @@ import {
       expect(someVarUses[1]._analysis.visibleDeclarations.get('someVar').name).to.be('someVar');
       expect(rootAnalysis.visibleDeclarations instanceof Map).to.be(true);
       expect(rootAnalysis.visibleDeclarations.has('someVar')).to.be(false);
-      expect(rootAnalysis.declaredChains.has('someVar')).to.be(true);
+      expect(rootAnalysis.declarations.has('someVar')).to.be(true);
     });
 
     it('should keep callable declarations scope-visible without changing source lookup', function () {
@@ -293,7 +292,7 @@ import {
       ].join('\n'), 'separated-chain-facts.casc');
       const root = ast._analysis;
 
-      expect(root.declaredChains.has('declaredOnly')).to.be(true);
+      expect(root.declarations.has('declaredOnly')).to.be(true);
       expect(root.usedChains.has('declaredOnly')).to.be(true);
       expect(root.observedChains.has('declaredOnly')).to.be(false);
       expect(root.mutatedChains.has('declaredOnly')).to.be(false);
@@ -320,8 +319,9 @@ import {
       ].join('\n'), 'initialized-chain-facts.casc');
       const root = ast._analysis;
 
-      expect(root.declaredChains.has('x')).to.be(true);
-      expect(root.usedChains.has('x')).to.be(true);
+      expect(root.declarations.has('x')).to.be(true);
+      expect(isStoredDirectly(root.declarations.get('x'))).to.be(true);
+      expect(root.usedChains.has('x')).to.be(false);
       expect(root.mutatedChains.has('x')).to.be(false);
       expect(root.mutatedChains.has('result')).to.be(true);
       expect(root.mutatedChains.has('body')).to.be(true);
@@ -348,7 +348,7 @@ import {
         'broad-used-template-extends-parity.njk'
       );
       const callerBoundaryAst = analyzeTemplateSource(
-        '{% set value = "v" %}' +
+        '{% set value = "v" %}{% set value = value %}' +
         '{% macro wrap(tag) %}<{{ tag }}>{{ caller() }}</{{ tag }}>{% endmacro %}' +
         '{% call wrap("span") %}{{ value }}{% endcall %}',
         'broad-used-template-caller-parity.njk'
@@ -371,11 +371,11 @@ import {
 
       [controlFlowAst, extendsBoundaryAst, callerBoundaryAst, guardAst].forEach(expectBroadUsedChainParity);
 
-      expect(Array.from(controlFlowAst._analysis.usedChains || [])).to.eql(['flag', 'result', '__return__']);
-      expect(Array.from(ifNode._analysis.usedChainsFromParent || [])).to.eql(['flag', 'result']);
+      expect(Array.from(controlFlowAst._analysis.usedChains || [])).to.eql(['result', '__return__']);
+      expect(Array.from(ifNode._analysis.usedChainsFromParent || [])).to.eql(['result']);
       expect(Array.from(ifNode.body._analysis.usedChainsFromParent || [])).to.eql(['result']);
       expect(Array.from(ifNode.else_._analysis.usedChainsFromParent || [])).to.eql([]);
-      expect(Array.from(whileNode._analysis.usedChainsFromParent || [])).to.eql(['flag']);
+      expect(Array.from(whileNode._analysis.usedChainsFromParent || [])).to.eql([]);
       expect(Array.from(whileNode.body._analysis.usedChainsFromParent || [])).to.eql([]);
       expect(Array.from(callerNode._analysis.usedChainsFromParent || [])).to.eql(['value']);
       expect(Array.from(guardNode.body._analysis.usedChainsFromParent || [])).to.eql(['result']);
@@ -423,7 +423,7 @@ import {
 
     it('should keep nested capture text outputs out of outer stored chain facts', function () {
       const ast = analyzeTemplateSource(
-        '{% set x = "v" %}' +
+        '{% set x = "v" %}{% set x = x %}' +
         '{% set outer %}A{{ x }}{% set inner %}B{{ x }}{% endset %}C{% endset %}',
         'nested-capture-analysis.njk'
       );
@@ -432,7 +432,7 @@ import {
       const inner = captures[1]._analysis;
 
       expect(sortedChainNames(outer.observedChains)).to.eql(sortedChainNames(['x', outer.textOutput]));
-      expect(Array.from(outer.usedChains || [])).to.eql([outer.textOutput, 'x', 'inner']);
+      expect(Array.from(outer.usedChains || [])).to.eql([outer.textOutput, 'x']);
       expect(Array.from(outer.mutatedChains || [])).to.eql([outer.textOutput]);
       expect(sortedChainNames(inner.observedChains)).to.eql(sortedChainNames(['x', inner.textOutput]));
       expect(Array.from(inner.usedChains || [])).to.eql([inner.textOutput, 'x']);
@@ -449,7 +449,7 @@ import {
 
     it('should record capture snapshots as ordinary owned observations', function () {
       const ast = analyzeTemplateSource(
-        '{% set x = "v" %}{% set captured %}A{{ x }}B{% endset %}{{ captured }}',
+        '{% set x = "v" %}{% set x = x %}{% set captured %}A{{ x }}B{% endset %}{{ captured }}',
         'capture-owned-observation-analysis.njk'
       );
       const capture = collectNodesByType(ast, 'Capture')[0]._analysis;
@@ -470,7 +470,7 @@ import {
       const inner = captures[1]._analysis;
 
       expect(sortedChainNames(outer.observedChains)).to.eql(sortedChainNames(['x', outer.textOutput]));
-      expect(sortedChainNames(outer.usedChains)).to.eql(sortedChainNames(['x', 'inner', outer.textOutput]));
+      expect(sortedChainNames(outer.usedChains)).to.eql(sortedChainNames(['x', outer.textOutput]));
       expect(Array.from(outer.mutatedChains || [])).to.eql(['x']);
       expect(sortedChainNames(inner.observedChains)).to.eql(sortedChainNames(['x', inner.textOutput]));
       expect(Array.from(inner.usedChains || [])).to.eql([inner.textOutput, 'x']);
@@ -487,7 +487,7 @@ import {
 
     it('should derive boundary-linked chains from stored facts minus declarations', function () {
       const ast = analyzeTemplateSource(
-        '{% set x = "v" %}' +
+        '{% set x = "v" %}{% set x = x %}' +
         '{% set outer %}A{{ x }}{% set inner %}B{{ x }}{% endset %}C{% endset %}',
         'nested-capture-linked-analysis.njk'
       );
@@ -575,9 +575,9 @@ import {
 
       expect(keySymbols.some((node) => node._analysis.operationOwnedPath)).to.be(false);
       expect(keySymbols.some((node) => node._analysis.visibleDeclarations?.get('key')?.name === 'key')).to.be(true);
-      expect(command.observedChains.has('key')).to.be(true);
+      expect((command.observedChains || new Set()).has('key')).to.be(false);
       expect(command.mutatedChains.has('result')).to.be(true);
-      expect(command.usedChains.has('key')).to.be(true);
+      expect((command.usedChains || new Set()).has('key')).to.be(false);
       expect(command.usedChains.has('result')).to.be(true);
     });
 
@@ -593,9 +593,9 @@ import {
 
       expect(methodSymbols.some((node) => node._analysis.operationOwnedPath)).to.be(false);
       expect(methodSymbols.some((node) => node._analysis.visibleDeclarations?.get('method')?.name === 'method')).to.be(true);
-      expect(Array.from(inlineIfNode._analysis.observedChainsFromParent || [])).to.eql(['method']);
+      expect(Array.from(inlineIfNode._analysis.observedChainsFromParent || [])).to.eql([]);
       expect(Array.from(inlineIfNode._analysis.mutatedChainsFromParent || [])).to.eql(['ns']);
-      expect(sortedChainNames(inlineIfNode._analysis.boundaryLinkedChains)).to.eql(['method', 'ns']);
+      expect(sortedChainNames(inlineIfNode._analysis.boundaryLinkedChains)).to.eql(['ns']);
       expect(Array.from(inlineIfNode._analysis.boundaryLinkedMutatedChains || [])).to.eql(['ns']);
     });
 
@@ -620,7 +620,7 @@ import {
     it('should derive caller invocation links from analysis-owned caller facts', function () {
       const ast = analyzeTemplateSource(
         '{% macro wrap(tag) %}<{{ tag }}>{{ caller() }}</{{ tag }}>{% endmacro %}' +
-        '{% set x = "v" %}' +
+        '{% set x = "v" %}{% set x = x %}' +
         '{% call wrap("span") %}X{{ x }}Y{% endcall %}',
         'caller-linked-analysis.njk'
       );
@@ -631,7 +631,7 @@ import {
       expect(callerNode._analysis.wantsLinkedChildBuffer).to.be(true);
       expect(callerNode._analysis.createsLinkedChildBuffer).to.be(true);
       expect(Array.from(callerNode._analysis.boundaryLinkedChains || [])).to.eql(['x']);
-      expect(Array.from(callerNode._analysis.declaredChains.keys())).to.eql(['caller', '__return__', '__text__']);
+      expect(Array.from(callerNode._analysis.declarations.keys())).to.eql(['caller', '__return__', '__text__']);
     });
 
     it('should classify only direct caller calls as caller invocations', function () {
@@ -657,10 +657,10 @@ import {
       const bodyFacts = macro.body._analysis;
 
       expect(Array.from(bodyFacts.observedChains || [])).to.not.contain('caller');
-      expect(Array.from(bodyFacts.observedChains || [])).to.contain('a');
+      expect(Array.from(bodyFacts.observedChains || [])).to.not.contain('a');
       expect(Array.from(bodyFacts.observedChains || [])).to.contain('b');
-      expect(Array.from(bodyFacts.mutatedChains || [])).to.contain('caller');
-      expect(Array.from(bodyFacts.mutatedChains || [])).to.contain('a');
+      expect(Array.from(bodyFacts.mutatedChains || [])).to.not.contain('caller');
+      expect(Array.from(bodyFacts.mutatedChains || [])).to.not.contain('a');
       expect(Array.from(bodyFacts.mutatedChains || [])).to.contain('b');
       expect(Array.from(macro._analysis.boundaryLinkedChains || [])).to.eql([]);
     });
@@ -675,8 +675,8 @@ import {
 
       expect(Array.from(bodyFacts.observedChains || [])).to.not.contain('a');
       expect(Array.from(bodyFacts.observedChains || [])).to.not.contain('b');
-      expect(Array.from(bodyFacts.mutatedChains || [])).to.contain('a');
-      expect(Array.from(bodyFacts.mutatedChains || [])).to.contain('b');
+      expect(Array.from(bodyFacts.mutatedChains || [])).to.not.contain('a');
+      expect(Array.from(bodyFacts.mutatedChains || [])).to.not.contain('b');
     });
 
     it('should mark guard body and recovery as buffer-backed scopes', function () {
@@ -720,12 +720,13 @@ import {
       const bodyNode = collectNodesByType(ast, 'Guard')[0].body._analysis;
       const recoveryNode = collectNodesByType(ast, 'Guard.Recover')[0]._analysis;
 
-      expect((bodyNode.observedChains || new Set()).has('local')).to.be(true);
+      expect((bodyNode.observedChains || new Set()).has('local')).to.be(false);
       expect((bodyNode.mutatedChains || new Set()).has('local')).to.be(false);
+      expect(isStoredDirectly(bodyNode.declarations.get('local'))).to.be(true);
+      expect(isStoredDirectly(bodyNode.declarations.get('failed'))).to.be(true);
       expect((guardNode.observedChains || new Set()).has('local')).to.be(false);
       expect((guardNode.mutatedChains || new Set()).has('local')).to.be(false);
-      expect(guardNode.guardFacts.bodyErrorChains).to.contain('local');
-      expect(guardNode.guardFacts.bodyErrorChains).to.contain('failed');
+      expect(Object.prototype.hasOwnProperty.call(guardNode.guardFacts, 'bodyErrorChains')).to.be(false);
       expect((guardNode.boundaryLinkedChains || new Set()).has('local')).to.be(false);
       expect((recoveryNode.mutatedChains || new Set()).has('err')).to.be(true);
       expect((recoveryNode.boundaryLinkedChains || new Set()).has('err')).to.be(false);
@@ -770,13 +771,13 @@ import {
         'direct-macro-chain-facts.njk'
       );
       const macroNode = collectNodesByType(ast, 'Macro')[0];
-      const rootDecl = ast._analysis.declaredChains.get('greet');
+      const rootDecl = ast._analysis.declarations.get('greet');
       const macroCalls = collectNodesByType(ast, 'FunCall')
         .filter((node) => node.name.value === 'greet');
 
-      expect(rootDecl.storage).to.be(DECLARATION_STORAGE.DIRECT);
+      expect(isStoredDirectly(rootDecl)).to.be(true);
       expect(rootDecl.type).to.be(undefined);
-      expect(macroNode._analysis.declaredChains.has('greet')).to.be(false);
+      expect(macroNode._analysis.declarations.has('greet')).to.be(false);
       expect(macroCalls).to.have.length(2);
       macroCalls.forEach((call) => {
         expect(call._analysis.staticCallableCall.declaration).to.be(rootDecl);
@@ -795,10 +796,59 @@ import {
         'return x'
       ].join('\n'), 'var-initializer-chain-facts.casc');
       const setNode = collectNodesByType(ast, 'Set')[0];
+      const declaration = ast._analysis.declarations.get('x');
 
       expect(setNode._analysis.mutates).to.eql([]);
-      expect((ast._analysis.observedChains || new Set()).has('x')).to.be(true);
+      expect(isStoredDirectly(declaration)).to.be(true);
+      expect(declaration.jsVar).to.match(/^t_\d+$/);
+      expect((ast._analysis.usedChains || new Set()).has('x')).to.be(false);
+      expect((ast._analysis.observedChains || new Set()).has('x')).to.be(false);
       expect((ast._analysis.mutatedChains || new Set()).has('x')).to.be(false);
+    });
+
+    it('should keep vars chain-backed when nested branches mutate them', function () {
+      const ast = analyzeScriptSource([
+        'var x = 1',
+        'if flag',
+        '  x = 2',
+        'endif',
+        'return x'
+      ].join('\n'), 'nested-var-mutation-chain-facts.casc');
+      const declaration = ast._analysis.declarations.get('x');
+
+      expect(isStoredDirectly(declaration)).to.be(false);
+      expect(declaration.type).to.be('var');
+      expect((ast._analysis.usedChains || new Set()).has('x')).to.be(true);
+      expect((ast._analysis.mutatedChains || new Set()).has('x')).to.be(true);
+    });
+
+    it('should derive read-only macro arguments and loop variables to direct storage', function () {
+      const macroAst = analyzeTemplateSource(
+        '{% macro show(x, y = "ok") %}{{ x }}{{ y }}{% endmacro %}{{ show("a") }}',
+        'direct-argument-chain-facts.njk'
+      );
+      const macroNode = collectNodesByType(macroAst, 'Macro')[0];
+      const xDecl = macroNode._analysis.declarations.get('x');
+      const yDecl = macroNode._analysis.declarations.get('y');
+
+      expect(isStoredDirectly(xDecl)).to.be(true);
+      expect(xDecl.jsVar).to.be('l_x');
+      expect(isStoredDirectly(yDecl)).to.be(true);
+      expect(yDecl.jsVar).to.be('l_y');
+      expect((macroNode._analysis.usedChains || new Set()).has('x')).to.be(false);
+      expect((macroNode._analysis.usedChains || new Set()).has('y')).to.be(false);
+
+      const loopAst = analyzeTemplateSource(
+        '{% for item in items %}{{ item }}{% endfor %}',
+        'direct-loop-var-chain-facts.njk'
+      );
+      const forNode = collectNodesByType(loopAst, 'For')[0];
+      const itemDecl = forNode.body._analysis.declarations.get('item');
+
+      expect(isStoredDirectly(itemDecl)).to.be(true);
+      expect(itemDecl.jsVar).to.be('item');
+      expect((forNode.body._analysis.usedChains || new Set()).has('item')).to.be(false);
+      expect((forNode.body._analysis.boundaryLinkedChains || new Set()).has('item')).to.be(false);
     });
 
     it('should derive short-circuit expression links only when command effects are present', function () {
@@ -849,9 +899,9 @@ import {
       );
       const importedCall = collectNodesByType(ast, 'FunCall')
         .find((node) => node._analysis.staticCallableCall?.kind === DECLARATION_IMPORT_KIND.NAMESPACE);
-      const importDecl = ast._analysis.declaredChains.get('m');
+      const importDecl = ast._analysis.declarations.get('m');
 
-      expect(importDecl.storage).to.be(DECLARATION_STORAGE.DIRECT);
+      expect(isStoredDirectly(importDecl)).to.be(true);
       expect(importDecl.type).to.be(undefined);
       expect(importedCall._analysis.staticCallableCall.localPath).to.be('m.hi');
       expect(importedCall._analysis.wantsLinkedChildBuffer).to.be(true);

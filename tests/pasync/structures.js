@@ -1,7 +1,7 @@
 import expect from 'expect.js';
 import {delay} from '../util.js';
 
-const {AsyncEnvironment} = typeof window !== 'undefined'
+const {AsyncEnvironment, AsyncTemplate} = typeof window !== 'undefined'
   ? window.nunjucks
   : await import('../../src/environment/environment.js');
 
@@ -540,7 +540,8 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
       it('should correctly propagate errors from deep nested promises', async () => {
         const context = {
           async getSuccess() { return 'ok'; },
-          async getFail() { throw new Error('DeepFailure'); }
+          async getFail() { throw new Error('DeepFailure'); },
+          check() { return 'unused'; }
         };
         const template = `
           {% set item = {
@@ -551,7 +552,7 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
                 }
              }
           } %}
-          {{ item.good }}
+          {{ check(item) }}
         `;
 
         try {
@@ -565,14 +566,15 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
       it('should collect ALL errors from multiple failing branches', async () => {
         const context = {
           async fail1() { await delay(2); throw new Error('ErrorOne'); },
-          async fail2() { await delay(2); throw new Error('ErrorTwo'); }
+          async fail2() { await delay(2); throw new Error('ErrorTwo'); },
+          check() { return 'unused'; }
         };
         const template = `
           {% set item = {
              a: fail1(),
              b: [ fail2() ]
           } %}
-          {{ item.a }}
+          {{ check(item) }}
         `;
 
         try {
@@ -581,6 +583,31 @@ const {AsyncEnvironment} = typeof window !== 'undefined'
         } catch (err) {
           expect(err.message).to.contain('ErrorOne');
           expect(err.message).to.contain('ErrorTwo');
+        }
+      });
+
+      it('should read direct read-only vars without whole-value error inspection', async () => {
+        const template = `
+          {% set item = {
+             a: fail1(),
+             b: [ fail2() ]
+          } %}
+          {{ item.a }}
+        `;
+        const source = new AsyncTemplate(template, env, 'direct-read-deep-errors.njk').compileSource();
+
+        expect(source).not.to.contain('runtime.observeDirectStorageValue');
+        expect(source).not.to.contain('runtime.declareBufferChain(output, "item", "var"');
+
+        try {
+          await env.renderTemplateString(template, {
+            async fail1() { await delay(2); throw new Error('DirectErrorOne'); },
+            async fail2() { await delay(2); throw new Error('DirectErrorTwo'); }
+          });
+          expect().fail('Should have thrown an error');
+        } catch (err) {
+          expect(err.message).to.contain('DirectErrorOne');
+          expect(err.message).not.to.contain('DirectErrorTwo');
         }
       });
 

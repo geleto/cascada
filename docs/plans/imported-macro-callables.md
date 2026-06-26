@@ -503,7 +503,7 @@ Add async tests for:
 ## Architectural Guardrails
 
 - Source lookup uses `visibleDeclarations`; static callable lookup uses `visibleCallableDeclarations`; ownership/aggregation can use finalized declaration maps.
-- Declaration conflicts are semantic, not storage-based. Do not treat every `storage: DIRECT` declaration as an immutable macro/import-like binding; direct storage can also be an optimization for ordinary variables.
+- Declaration conflicts are semantic, not storage-based. Do not treat every `directStorage: true` declaration as an immutable macro/import-like binding; direct storage can also be an optimization for ordinary variables.
 - Local macro calls and imported static calls stay as separate analysis facts but share the same static-call-target marker for validation.
 - Clean-scope imported callable access is a classified callable transport, not ordinary variable visibility.
 - Runtime callable type handling belongs at the call site: macros dispatch through `invokeMacro`, functions dispatch through the normal async call wrapper, and non-callables use normal call-target diagnostics.

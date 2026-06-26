@@ -2190,8 +2190,8 @@ guard out, db!, status
 | Selector | Meaning |
 |----------|---------|
 | `guard` (no selectors) | Global guard: protects all channels, sequence objects, and sequential paths touched inside the block |
-| `guard *` | Protect everything (all channels, sequence objects, all sequential paths, all variables written inside the guard) |
-| `guard var` | Protect all variables written inside the guard |
+| `guard *` | Protect everything (all channels, sequence objects, all sequential paths, all visible variables written inside the guard) |
+| `guard var` | Protect all visible variables written inside the guard |
 | `guard data` | Protect all `data` channel declarations touched inside the guard |
 | `guard text` | Protect all `text` channel declarations touched inside the guard |
 | `guard sequence` | Protect all `sequence` declarations touched inside the guard |
@@ -2245,7 +2245,7 @@ endguard
 ```
 
 **Performance warning**
-When variables are protected (via `guard *` or explicit variable names), any code that depends on such variables must wait for the guard to finish. This can reduce concurrency. Use `guard *` only for small, tightly scoped operations.
+When variables are protected (via `guard *`, `guard var`, or explicit variable names), any code that depends on such variables must wait for the guard to finish. This can reduce concurrency. Use `guard *` only for small, tightly scoped operations.
 
 ---
 

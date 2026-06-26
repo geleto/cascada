@@ -667,6 +667,26 @@ async function expectRejects(promise) {
       expect(result).to.equal('async-export');
     });
 
+    it('should re-export read-only root vars through resolved exports', async () => {
+      loader.addTemplate('lib-direct-var.njk', '{% set x = slowValue() %}');
+      loader.addTemplate('middle-direct-var.njk', '{% from "lib-direct-var.njk" import x %}{% set y = x %}');
+      loader.addTemplate('main.njk', '{% from "middle-direct-var.njk" import y %}{{ y }}');
+
+      env = new AsyncEnvironment(loader);
+      env.addGlobal('slowValue', () => Promise.resolve('direct-reexport'));
+
+      const middleSource = new AsyncTemplate(
+        '{% from "lib-direct-var.njk" import x %}{% set y = x %}',
+        env,
+        'middle-direct-var.njk'
+      ).compileSource();
+      expect(middleSource).to.contain('context.addResolvedExport("y"');
+      expect(middleSource).to.not.contain('context.addDeferredExport("y"');
+
+      const result = await env.renderTemplate('main.njk', {});
+      expect(result).to.equal('direct-reexport');
+    });
+
     it('From import with async macro and values', async () => {
       loader.addTemplate('utils.njk', `
         {% macro formatUser(user) %}

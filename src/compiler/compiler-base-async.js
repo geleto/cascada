@@ -28,10 +28,6 @@ const scriptArithmeticOps = {
   '%': '%'
 };
 
-const ERROR_OBSERVATION_COMPONENT = 'component';
-const ERROR_OBSERVATION_SHARED_CHAIN = 'shared-chain';
-const ERROR_OBSERVATION_CHAIN = 'chain';
-
 class CompilerBaseAsync extends CompilerCommon {
   init(options) {
     super.init({ ...options, asyncMode: true });
@@ -62,7 +58,7 @@ class CompilerBaseAsync extends CompilerCommon {
     });
   }
 
-  analyzeSymbol(node, analysisPass) {
+  analyzeSymbol(node) {
     // Symbol targets introduce or update a name; they are not expression reads
     // and should not perform source/context lookup.
     if (
@@ -174,14 +170,14 @@ class CompilerBaseAsync extends CompilerCommon {
       );
     }
     if (declaredChain.shared) {
-      this.inheritance.emitSharedChainObservation(name, node, 'snapshot', true);
+      this.chain.emitChainObservation(name, node, 'snapshot', true, true);
       return;
     }
     if (!this.scriptMode && this.inBlock) {
       this.emit(`runtime.chainLookup("${name}", ${this.buffer.currentBuffer}, ${this.emitErrorContext(node)})`);
       return;
     }
-    this.buffer.emitAddSnapshot(name, node);
+    this.chain.emitChainObservation(name, node);
   }
 
   _compileAmbientSymbolLookup(node, name) {
@@ -282,26 +278,14 @@ class CompilerBaseAsync extends CompilerCommon {
     this.emit('})');
   }
 
-  postAnalyzeIs(node) {
-    const isTest = this._getIsTestFacts(node);
-    return {
-      isTest,
-      errorObservation: isTest.errorObservation || null
-    };
-  }
-
   compileIs(node) {
-    const testFacts =
-      node._analysis.isTest ||
-      this._getIsTestFacts(node);
+    const testFacts = this._getIsTestFacts(node);
     const testName = testFacts.name;
     const testFunc = `env.getTest("${testName}")`;
     const failMsg = `test not found: ${testName}`.replace(/"/g, '\\"');
 
     if (testFacts.isError) {
-      const observationFacts = testFacts.errorObservation;
-      if (observationFacts) {
-        this._emitErrorObservation(observationFacts, node.left, 'isError');
+      if (this._compileErrorObservation(node.left, 'isError')) {
         return;
       }
       this.emit('runtime.isError(');
@@ -345,18 +329,8 @@ class CompilerBaseAsync extends CompilerCommon {
     this._compileAsyncBinOpShortCircuit(node, false);
   }
 
-  postAnalyzePeekError(node) {
-    return {
-      errorObservation: this._getErrorObservationFacts(node.target)
-    };
-  }
-
   compilePeekError(node) {
-    const observationFacts =
-      node._analysis.errorObservation ||
-      this._getErrorObservationFacts(node.target);
-    if (observationFacts) {
-      this._emitErrorObservation(observationFacts, node.target, 'getError');
+    if (this._compileErrorObservation(node.target, 'getError')) {
       return;
     }
     this.emit('runtime.peekError(');
@@ -669,25 +643,29 @@ class CompilerBaseAsync extends CompilerCommon {
     this.emit(`, function(target){return runtime.poisonIfNaN(${operator}target, ${this.emitErrorContext(node)});})`);
   }
 
-  _emitErrorObservation(observationFacts, targetNode, mode) {
-    if (observationFacts.kind === ERROR_OBSERVATION_COMPONENT) {
+  _compileErrorObservation(targetNode, mode) {
+    const componentBindingRoot = this.component.findBindingRoot(targetNode);
+    if (componentBindingRoot && componentBindingRoot.staticPath.length === 2) {
       this.component.emitChainObservation({
-        bindingName: observationFacts.bindingName,
-        chainName: observationFacts.chainName,
+        bindingName: componentBindingRoot.bindingName,
+        chainName: renameSharedName(componentBindingRoot.staticPath[1]),
         mode,
         implicitVarRead: false
       }, targetNode);
-      return;
+      return true;
     }
-    if (observationFacts.kind === ERROR_OBSERVATION_SHARED_CHAIN) {
-      this.inheritance.emitSharedChainObservation(observationFacts.chainName, targetNode, mode);
-      return;
+
+    const observation = this._getErrorObservationChain(targetNode);
+    if (!observation) {
+      return false;
     }
-    if (mode === 'isError') {
-      this.buffer.emitAddIsError(observationFacts.chainName, targetNode);
-      return;
-    }
-    this.buffer.emitAddGetError(observationFacts.chainName, targetNode);
+
+    return this.chain.emitChainObservation(
+      observation.chainName,
+      targetNode,
+      mode,
+      observation.shared
+    );
   }
 
   _getIsTestFacts(node) {
@@ -696,69 +674,46 @@ class CompilerBaseAsync extends CompilerCommon {
     return {
       name,
       isError,
-      hasArgs: !!(node.right.args && node.right.args.children.length > 0),
-      errorObservation: isError ? this._getErrorObservationFacts(node.left) : null
+      hasArgs: !!(node.right.args && node.right.args.children.length > 0)
     };
   }
 
-  _getErrorObservationFacts(targetNode) {
-    const componentBindingRoot = this.component.findBindingRoot(targetNode);
-    if (componentBindingRoot && componentBindingRoot.staticPath.length === 2) {
-      return {
-        kind: ERROR_OBSERVATION_COMPONENT,
-        bindingName: componentBindingRoot.bindingName,
-        chainName: renameSharedName(componentBindingRoot.staticPath[1])
-      };
-    }
-
-    const chainName = this._getObservedChainName(targetNode);
-    if (!chainName) {
-      return null;
-    }
-    const chainDecl = this._getVisibleDeclaration(targetNode, chainName);
-    return {
-      kind: chainDecl && chainDecl.shared ? ERROR_OBSERVATION_SHARED_CHAIN : ERROR_OBSERVATION_CHAIN,
-      chainName
-    };
-  }
-
-  _getObservedChainName(targetNode) {
+  _getErrorObservationChain(targetNode) {
     if (!this.scriptMode || !targetNode || targetNode.sequential) {
       return null;
     }
 
-    const thisSharedFacts = this.chain.analyzeThisSharedAccess(targetNode);
+    const thisSharedFacts = this.chain.findThisSharedAccessFacts(targetNode);
     if (thisSharedFacts && thisSharedFacts.chainPath.length === 1) {
-      return thisSharedFacts.chainName;
+      return {
+        chainName: thisSharedFacts.chainName,
+        shared: true
+      };
     }
 
-    if (targetNode instanceof nodes.Symbol) {
-      const name = targetNode.value;
-      const chainDecl = this._getVisibleDeclaration(targetNode, name);
-      if (chainDecl) {
-        if (isStoredDirectly(chainDecl) || (this.scriptMode && chainDecl.shared)) {
-          return null;
-        }
-        return name;
-      }
+    const expectedPathLength = targetNode instanceof nodes.Symbol
+      ? 1
+      : targetNode instanceof nodes.FunCall
+        ? 2
+        : 0;
+    if (!expectedPathLength) {
       return null;
     }
 
-    if (targetNode instanceof nodes.FunCall) {
-      const candidate = this.sequential.extractStaticPathRoot(targetNode.name, 2);
-      if (candidate) {
-        const chainDecl = this._getVisibleDeclaration(targetNode.name, candidate);
-        if (chainDecl) {
-          if (isStoredDirectly(chainDecl) || (this.scriptMode && chainDecl.shared)) {
-            return null;
-          }
-          return candidate;
-        }
-      }
+    const pathNode = targetNode instanceof nodes.FunCall ? targetNode.name : targetNode;
+    const staticPath = this.sequential.extractStaticPath(pathNode);
+    if (!staticPath.isStatic || staticPath.segments.length !== expectedPathLength) {
       return null;
     }
 
-    return null;
+    const declaration = this._getVisibleDeclaration(staticPath.rootNode, staticPath.root);
+    if (!declaration || isStoredDirectly(declaration) || declaration.shared) {
+      return null;
+    }
+    return {
+      chainName: staticPath.root,
+      shared: false
+    };
   }
 }
 

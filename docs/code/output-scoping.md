@@ -53,7 +53,7 @@ or are mutually exclusive at runtime.
 
 The current analysis vocabulary is:
 
-- `declaredChains` - chains declared by a scope/boundary
+- `declarations` - source-visible declarations owned by a scope/boundary
 - `usedChains` - chains a node may need to observe or touch
 - `mutatedChains` - chains a node may mutate or otherwise affect through
   command-emitting work

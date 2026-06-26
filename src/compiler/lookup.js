@@ -8,14 +8,14 @@ class CompileLookup {
     this.emit = this.compiler.emit;
   }
 
-  analyzeLookupVal(node, analysisPass) {
+  analyzeLookupVal(node) {
     if (node._analysis?.operationOwnedPath) {
       return {};
     }
     const facts = this._createAnalysisFacts();
     this.compiler.chain.recordDataPathLookup(node);
 
-    this._collectSequenceLockLookup(node, analysisPass, facts);
+    this._collectSequenceLockLookup(node, facts);
     if (this._collectThisSharedLookup(node, facts)) {
       return facts;
     }
@@ -66,14 +66,11 @@ class CompileLookup {
     return {
       observes: [],
       mutates: [],
-      sequenceChainLookup: null,
-      componentBindingRoot: null,
-      componentBindingFacts: null,
       inheritedMethodCallName: null
     };
   }
 
-  _collectSequenceLockLookup(node, analysisPass, facts) {
+  _collectSequenceLockLookup(node, facts) {
     const compiler = this.compiler;
     const sequenceLockLookup = compiler.sequential.recordSequenceLockLookup(node);
     node.addAnalysis({ sequenceLockLookup });
@@ -95,27 +92,15 @@ class CompileLookup {
       facts.declareInRootOnEnter = thisSharedFacts.declareInRootOnEnter;
     }
     facts.observes.push(thisSharedFacts.chainName);
-    if (
-      compiler.scriptMode &&
-      thisSharedFacts.chainType === 'sequence' &&
-      thisSharedFacts.chainPath.length >= 2 &&
-      thisSharedFacts.propertyName !== 'snapshot'
-    ) {
-      facts.sequenceChainLookup = {
-        chainName: thisSharedFacts.chainName,
-        path: thisSharedFacts.chainPath.slice(1)
-      };
-    }
     return true;
   }
 
   _collectComponentBindingLookup(node, facts) {
     const compiler = this.compiler;
-    facts.componentBindingRoot = compiler.component.findBindingRoot(node);
-    facts.componentBindingFacts = compiler.component.findBindingFacts(node);
-    if (facts.componentBindingRoot) {
+    const componentBindingRoot = compiler.component.findBindingRoot(node);
+    if (componentBindingRoot) {
       compiler.chain.markOperationOwnedPath(node);
-      facts.mutates.push(facts.componentBindingRoot.bindingName);
+      facts.mutates.push(componentBindingRoot.bindingName);
     }
   }
 
@@ -128,7 +113,6 @@ class CompileLookup {
     const lookupFacts = this._collectSequenceChainLookupFacts(node);
     if (lookupFacts) {
       facts.observes.push(lookupFacts.chainName);
-      facts.sequenceChainLookup = lookupFacts;
     }
   }
 
@@ -190,7 +174,7 @@ class CompileLookup {
       );
     }
     if (thisSharedFacts.chainPath.length === 1) {
-      compiler.inheritance.emitSharedChainObservation(thisSharedFacts.chainName, node, 'snapshot', true);
+      compiler.chain.emitChainObservation(thisSharedFacts.chainName, node, 'snapshot', true, true);
       return true;
     }
     this._emitThisSharedVarNestedLookup(thisSharedFacts, node);
@@ -199,12 +183,8 @@ class CompileLookup {
 
   _compileComponentBindingLookup(node) {
     const compiler = this.compiler;
-    const componentBindingRoot =
-      node._analysis.componentBindingRoot ||
-      compiler.component.findBindingRoot(node);
-    const componentBindingFacts =
-      node._analysis.componentBindingFacts ||
-      compiler.component.findBindingFacts(node);
+    const componentBindingRoot = compiler.component.findBindingRoot(node);
+    const componentBindingFacts = compiler.component.findBindingFacts(node);
     if (componentBindingFacts && componentBindingFacts.kind === COMPONENT_BINDING_SHARED_READ) {
       compiler.component.emitChainObservation(componentBindingFacts, node);
       return true;
@@ -225,8 +205,7 @@ class CompileLookup {
 
   _compileAnalyzedSequenceChainLookup(node) {
     const compiler = this.compiler;
-    const sequenceChainLookup =
-      node._analysis.sequenceChainLookup;
+    const sequenceChainLookup = this._getSequenceChainLookup(node);
     if (compiler.scriptMode && sequenceChainLookup) {
       compiler.buffer.emitAddSequenceGet(
         sequenceChainLookup.chainName,
@@ -236,6 +215,23 @@ class CompileLookup {
       return true;
     }
     return false;
+  }
+
+  _getSequenceChainLookup(node) {
+    const thisSharedFacts = this.compiler.chain.findThisSharedAccessFacts(node);
+    if (
+      this.compiler.scriptMode &&
+      thisSharedFacts &&
+      thisSharedFacts.chainType === 'sequence' &&
+      thisSharedFacts.chainPath.length >= 2 &&
+      thisSharedFacts.propertyName !== 'snapshot'
+    ) {
+      return {
+        chainName: thisSharedFacts.chainName,
+        path: thisSharedFacts.chainPath.slice(1)
+      };
+    }
+    return this._collectSequenceChainLookupFacts(node);
   }
 
   _compileSequenceLockedLookup(node) {
@@ -280,7 +276,7 @@ class CompileLookup {
     nestedPath.forEach(() => {
       this.emit(`runtime.${memberLookupHelper}((`);
     });
-    compiler.inheritance.emitSharedChainObservation(thisSharedFacts.chainName, node, 'snapshot', true);
+    compiler.chain.emitChainObservation(thisSharedFacts.chainName, node, 'snapshot', true, true);
     nestedPath.forEach((propertyName) => {
       this.emit(`), ${JSON.stringify(propertyName)}, ${compiler.emitErrorContext(node)}, ${compiler.buffer.currentBuffer})`);
     });

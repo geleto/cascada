@@ -1168,7 +1168,7 @@ class Parser extends Obj {
         } else if (rawSelector.endsWith('!')) {
           sequenceTargets.push(rawSelector);
         } else if (this.scriptMode && rawSelector === 'var') {
-          // `guard var` protects all variables written inside the guard block.
+          // `guard var` protects visible variables written inside the guard block.
           hasVarSelector = true;
         } else if (isReservedDeclarationName(rawSelector)) {
           typeTargets.push(rawSelector);
@@ -1232,7 +1232,8 @@ class Parser extends Obj {
       body,
       chainTargets.length > 0 ? chainTargets : null,
       typeTargets.length > 0 ? typeTargets : null,
-      (guardExpandsAllVariables || hasVarSelector) ? '*' : (variableTargets.length > 0 ? variableTargets : null),
+      variableTargets.length > 0 ? variableTargets : null,
+      guardExpandsAllVariables || hasVarSelector,
       sequenceTargets.length > 0 ? sequenceTargets : null,
       recoveryBody,
       errorVar

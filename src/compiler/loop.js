@@ -263,11 +263,18 @@ class CompileLoop {
 
         const compileIterationBody = () => {
           const buffer = this.compiler.buffer.currentBuffer;
-          loopVars.forEach((name) => {
-            this.compiler.emit.line(`runtime.declareBufferChain(${buffer}, "${name}", "var", context, null);`);
-          });
+          const declarations = node.body._analysis.declarations || new Map();
           this._emitLoopIterationBindings(node, loopVars, loopVarNames, (varName, valueExpr) => {
-            this._emitLoopValueAssignment(node, varName, valueExpr);
+            const declaration = declarations.get(varName) || null;
+            this.compiler.chain.emitLocalVarBindings(buffer, [{
+              name: varName,
+              declaration,
+              emitInitializerExpression: () => {
+                this.compiler.emit(valueExpr);
+              },
+              initializerJsVarName: valueExpr,
+              reservedJsVarName: varName
+            }], declarations);
           });
 
           if (whileConditionNode) {
@@ -391,12 +398,6 @@ class CompileLoop {
 
     const varName = loopVarNames ? loopVars[0] : node.name.value;
     emitBinding(varName, varName);
-  }
-
-  _emitLoopValueAssignment(node, chainName, valueExpr) {
-    this.compiler.emit.line(
-      `${this.compiler.buffer.currentBuffer}.addCommand(new runtime.VarCommand({ chainName: '${chainName}', args: [${valueExpr}], errorContext: ${this.compiler.emitErrorContext(node)} }), '${chainName}');`
-    );
   }
 
   _compileSyncLegacyCallbackLoopBindings(node, arr, i, len) {

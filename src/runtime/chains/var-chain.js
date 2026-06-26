@@ -59,4 +59,4 @@ function normalizeVarValue(value) {
   return unwrapped;
 }
 
-export {VarChain};
+export {VarChain, normalizeVarValue};

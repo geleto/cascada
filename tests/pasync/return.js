@@ -622,8 +622,9 @@ return made`;
     it('keeps guard/recover branches attached to the original guard block', async function () {
       const events = [];
       const result = await env.renderScriptString([
-        'guard',
-        '  var failed = fail()',
+        'data result',
+        'guard result',
+        '  result.failed = fail()',
         'recover err',
         '  return "recover"',
         'endguard',
