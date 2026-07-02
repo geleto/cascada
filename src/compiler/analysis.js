@@ -938,7 +938,7 @@ class CompileAnalysis {
       return false;
     }
     if (analysis.expressionControlFlowBoundary) {
-      return analysis.boundaryLinkedMutatedChains !== null;
+      return this._hasParentLaneCommandsInExpressionBoundary(analysis);
     }
     return true;
   }
@@ -988,7 +988,15 @@ class CompileAnalysis {
     if (!analysis.expressionControlFlowBoundary) {
       return true;
     }
-    return analysis.boundaryLinkedMutatedChains !== null;
+    return this._hasParentLaneCommandsInExpressionBoundary(analysis);
+  }
+
+  _hasParentLaneCommandsInExpressionBoundary(analysis) {
+    // InlineIf/And/Or evaluate selected operands later. If that delayed operand
+    // observes or mutates a parent-owned chain lane, reserve a child-buffer slot
+    // at the expression's source position. Broad "used" facts are only metadata.
+    return analysis.boundaryLinkedObservedChains !== null ||
+      analysis.boundaryLinkedMutatedChains !== null;
   }
 
   _createsLinkableChildBuffer(analysis) {

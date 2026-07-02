@@ -17,6 +17,13 @@ const {AsyncEnvironment, AsyncTemplate, Environment, Script} = typeof window !==
       env = new AsyncEnvironment();
     });
 
+    const renderWithTimeout = (promise, ms = 500) => Promise.race([
+      promise,
+      delay(ms).then(() => {
+        throw new Error(`render timed out after ${ms}ms`);
+      })
+    ]);
+
     describe('Sync-first generated expression shapes', () => {
       it('emits a plain continuation for non-linked inline if expressions', () => {
         const source = new AsyncTemplate('{{ "A" if cond else "B" }}', env, 'inline-if-source.njk').compileSource();
@@ -45,6 +52,126 @@ const {AsyncEnvironment, AsyncTemplate, Environment, Script} = typeof window !==
 
         expect(scriptSingle).to.not.match(/async function\(\[[^,\]]+, [^\]]+\]\)\{/);
         expect(scriptChained).to.match(/async function\(\[[^,\]]+, [^\]]+\]\)\{/);
+      });
+    });
+
+    describe('Inline-if expression boundary chain observations', () => {
+      it('observes the selected branch before later var writes', async () => {
+        const scalar = await env.renderScriptString([
+          'var result = 0',
+          'var seen = result if result == 0 else 99',
+          'result = 1',
+          'return seen'
+        ].join('\n'));
+
+        const object = await env.renderScriptString([
+          'var result = { ok: false, error: "old error" }',
+          'var seen = result.error if result.ok == false else "empty"',
+          'result = { ok: true, error: "new error" }',
+          'return seen'
+        ].join('\n'));
+
+        expect(scalar).to.equal(0);
+        expect(object).to.equal('old error');
+      });
+
+      it('observes the selected else branch before later var writes', async () => {
+        const scalar = await env.renderScriptString([
+          'var result = false',
+          'var seen = 99 if result else result',
+          'result = true',
+          'return seen'
+        ].join('\n'));
+
+        const object = await env.renderScriptString([
+          'var result = { ok: true, error: "old error" }',
+          'var seen = "empty" if result.ok == false else result.error',
+          'result = { ok: false, error: "new error" }',
+          'return seen'
+        ].join('\n'));
+
+        expect(scalar).to.be(false);
+        expect(object).to.equal('old error');
+      });
+
+      it('does not self-wait when assigning an inline-if read back to the same var', async () => {
+        const result = await renderWithTimeout(env.renderScriptString([
+          'var result = false',
+          'result = result if result == false else true',
+          'return result'
+        ].join('\n')));
+
+        expect(result).to.be(false);
+      });
+
+      it('does not self-wait for inline-if reads inside a while body before reassignment', async () => {
+        const result = await renderWithTimeout(env.renderScriptString([
+          'var result = { ok: false, error: "old error" }',
+          'while result.ok == false',
+          '  var reason = result.error if result.ok == false else "empty"',
+          '  result = { ok: true }',
+          'endwhile',
+          'return result'
+        ].join('\n')));
+
+        expect(result).to.eql({ ok: true });
+      });
+    });
+
+    describe('And/or expression boundary chain observations', () => {
+      it('observes selected and/or right operands before later var writes', async () => {
+        const andResult = await env.renderScriptString([
+          'var result = true',
+          'var seen = result and result',
+          'result = false',
+          'return seen'
+        ].join('\n'));
+
+        const orResult = await env.renderScriptString([
+          'var result = false',
+          'var seen = result or result',
+          'result = true',
+          'return seen'
+        ].join('\n'));
+
+        expect(andResult).to.be(true);
+        expect(orResult).to.be(false);
+      });
+
+      it('observes selected and/or member operands before later var writes', async () => {
+        const andResult = await env.renderScriptString([
+          'var result = { ok: true, error: "old error" }',
+          'var seen = result.ok and result.error',
+          'result = { ok: false, error: "new error" }',
+          'return seen'
+        ].join('\n'));
+
+        const orResult = await env.renderScriptString([
+          'var result = { ok: false, error: "old error" }',
+          'var seen = result.ok or result.error',
+          'result = { ok: true, error: "new error" }',
+          'return seen'
+        ].join('\n'));
+
+        expect(andResult).to.equal('old error');
+        expect(orResult).to.equal('old error');
+      });
+
+      it('does not self-wait when assigning selected and/or reads back to the same var', async () => {
+        const andResult = await renderWithTimeout(env.renderScriptString([
+          'var result = true',
+          'result = result and result',
+          'return result'
+        ].join('\n')));
+
+        const orResult = await renderWithTimeout(env.renderScriptString([
+          'var result = false',
+          'result = result or result',
+          'return result'
+        ].join('\n')));
+
+        expect(andResult).to.be(true);
+        expect(orResult).to.be(false);
       });
     });
 

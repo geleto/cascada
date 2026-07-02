@@ -235,8 +235,7 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   compileInlineIf(node) {
-    const hasBoundaryLinkedMutations = node._analysis.boundaryLinkedMutatedChains !== null;
-    if (hasBoundaryLinkedMutations) {
+    if (node._analysis.createsLinkedChildBuffer) {
       this.boundaries.compileExpressionControlFlowBoundary(this.buffer, node, function() {
         this.emit('return runtime.resolveThen(');
         this.compile(node.cond, null);
@@ -542,8 +541,7 @@ class CompilerBaseAsync extends CompilerCommon {
   }
 
   _compileAsyncBinOpShortCircuit(node, isOr) {
-    const hasBoundaryLinkedMutations = node._analysis.boundaryLinkedMutatedChains !== null;
-    if (hasBoundaryLinkedMutations) {
+    if (node._analysis.createsLinkedChildBuffer) {
       this.boundaries.compileExpressionControlFlowBoundary(this.buffer, node, function() {
         this.emit('return runtime.resolveThen(');
         this.compile(node.left, null);

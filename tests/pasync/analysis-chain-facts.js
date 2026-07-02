@@ -549,6 +549,46 @@ import {
       expect(Array.from(inlineIfNode._analysis.boundaryLinkedMutatedChains || [])).to.eql(['result']);
     });
 
+    it('should derive inline-if boundary links for parent-owned observations', function () {
+      const ast = analyzeScriptSource([
+        'var result = 0',
+        'var seen = result if result == 0 else 99',
+        'result = 1',
+        'return seen'
+      ].join('\n'), 'inline-if-observed-linked-analysis.casc');
+      const inlineIfNode = collectNodesByType(ast, 'InlineIf')[0];
+
+      expect(inlineIfNode._analysis.wantsLinkedChildBuffer).to.be(true);
+      expect(inlineIfNode._analysis.createsLinkedChildBuffer).to.be(true);
+      expect(Array.from(inlineIfNode._analysis.observedChainsFromParent || [])).to.eql(['result']);
+      expect(inlineIfNode._analysis.mutatedChainsFromParent).to.be(null);
+      expect(Array.from(inlineIfNode._analysis.boundaryLinkedChains || [])).to.eql(['result']);
+      expect(Array.from(inlineIfNode._analysis.boundaryLinkedObservedChains || [])).to.eql(['result']);
+      expect(inlineIfNode._analysis.boundaryLinkedMutatedChains).to.be(null);
+    });
+
+    it('should derive and/or expression boundary links for parent-owned observations', function () {
+      const ast = analyzeScriptSource([
+        'var result = true',
+        'var andSeen = result and result',
+        'var orSeen = result or result',
+        'result = false',
+        'return { andSeen: andSeen, orSeen: orSeen }'
+      ].join('\n'), 'short-circuit-observed-linked-analysis.casc');
+      const andNode = collectNodesByType(ast, 'And')[0];
+      const orNode = collectNodesByType(ast, 'Or')[0];
+
+      [andNode, orNode].forEach((node) => {
+        expect(node._analysis.wantsLinkedChildBuffer).to.be(true);
+        expect(node._analysis.createsLinkedChildBuffer).to.be(true);
+        expect(Array.from(node._analysis.observedChainsFromParent || [])).to.eql(['result']);
+        expect(node._analysis.mutatedChainsFromParent).to.be(null);
+        expect(Array.from(node._analysis.boundaryLinkedChains || [])).to.eql(['result']);
+        expect(Array.from(node._analysis.boundaryLinkedObservedChains || [])).to.eql(['result']);
+        expect(node._analysis.boundaryLinkedMutatedChains).to.be(null);
+      });
+    });
+
     it('should classify component binding side-lane work as parent-visible mutation facts', function () {
       const ast = analyzeScriptSource([
         'component "Component.script" as ns',
@@ -851,7 +891,7 @@ import {
       expect((forNode.body._analysis.boundaryLinkedChains || new Set()).has('item')).to.be(false);
     });
 
-    it('should derive short-circuit expression links only when command effects are present', function () {
+    it('should skip expression control-flow links when no parent command lanes are present', function () {
       const valueOnlyAst = analyzeTemplateSource(
         '{% set x = "a" %}{{ x and "b" }}{{ x or "c" }}{{ "a" if x else "b" }}',
         'value-only-short-circuit-analysis.njk'
