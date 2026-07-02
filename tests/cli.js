@@ -136,7 +136,9 @@ import {fileURLToPath} from 'url';
           done(err);
           return;
         }
-        expect(stdout).to.contain('runtime.declareBufferChain(output, "x", "var"');
+        expect(stdout).to.contain('function root(ownerState, context');
+        expect(stdout).to.contain('context.lookupScript("value"');
+        expect(stdout).to.contain('context.addResolvedExport("x"');
         expect(stdout).to.contain('new runtime.VarCommand');
         expect(filterDebuggerMessages(stderr)).to.equal('');
         done();
