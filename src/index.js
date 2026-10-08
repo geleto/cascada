@@ -5,6 +5,7 @@ import {FileSystemLoader, WebLoader} from './loader/loaders.js';
 
 export {Environment, AsyncEnvironment, Template, AsyncTemplate, Script} from './environment/environment.js';
 export {Loader} from './loader/loader.js';
+export {NotFoundError} from './loader/errors.js';
 export {FileSystemLoader, NodeResolveLoader, PrecompiledLoader, WebLoader} from './loader/loaders.js';
 export {SafeString, markSafe} from './runtime/safe-output.js';
 export {CascadaError, CompileError, isCompileError} from './errors.js';

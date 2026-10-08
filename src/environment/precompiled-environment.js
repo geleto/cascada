@@ -1,6 +1,7 @@
 import {isFunction} from '../lib.js';
 import {BaseEnvironment} from './base-environment.js';
 import {callbackAsap} from './utils.js';
+import {NotFoundError} from '../loader/errors.js';
 import * as precompiledTemplate from './precompiled-template.js';
 
 const {
@@ -70,7 +71,7 @@ class AsyncPrecompiledEnvironment extends BaseEnvironment {
     ctx = ctx || {};
     const tmpl = await this.getTemplate(templateName, false, null, false);
     if (!tmpl) {
-      throw new Error(`Template not found: ${templateName}`);
+      throw new NotFoundError(templateName);
     }
     return tmpl.render(ctx);
   }
@@ -83,7 +84,7 @@ class AsyncPrecompiledEnvironment extends BaseEnvironment {
     ctx = ctx || {};
     const script = await this.getScript(scriptName, false, null, false);
     if (!script) {
-      throw new Error(`Script not found: ${scriptName}`);
+      throw new NotFoundError(scriptName);
     }
     return script.render(ctx);
   }

@@ -101,6 +101,13 @@ export class CascadaError extends Error {
   label: string | null;
 }
 
+/** The requested resource was absent from every loader in the chain. */
+export class NotFoundError extends Error {
+  constructor(resourceName: string);
+  name: 'NotFoundError';
+  resourceName: string;
+}
+
 export abstract class CompileError extends CascadaError {
   name: string;
   cause?: Error | undefined;

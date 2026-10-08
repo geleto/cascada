@@ -30,6 +30,12 @@ export function renderScriptString(src: string, context?: object): Promise<Recor
 
 export function loadString(key: string, loader: ILoaderAny | ILoaderAny[]): Promise<string> | string;
 export function clearStringCache(loader: ILoaderAny, key?: string): void;
+/** The requested resource was absent from every loader in the chain. */
+export class NotFoundError extends Error {
+  constructor(resourceName: string);
+  name: 'NotFoundError';
+  resourceName: string;
+}
 export function raceLoaders(loaders: ILoaderAny[]): LoaderInterface;
 
 /** @deprecated Use compileTemplate instead */

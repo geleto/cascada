@@ -23,25 +23,39 @@ class WebLoader extends Loader {
   }
 
   resolve(from, to) {
-    throw new Error('relative templates not support in the browser yet');
+    return new URL(to, this._getURL(from)).href;
+  }
+
+  _getURL(name) {
+    const pageURL = typeof document !== 'undefined' ? document.baseURI :
+      (typeof window !== 'undefined' ? window.location.href : undefined);
+    const baseURL = new URL(this.baseURL, pageURL);
+    if (!baseURL.pathname.endsWith('/')) {
+      baseURL.pathname += '/';
+    }
+    return new URL(name, baseURL).href;
   }
 
   getSource(name, cb) {
     var useCache = this.useCache;
     var result;
-    this.fetch(this.baseURL + '/' + name, (err, src) => {
+    const url = this._getURL(name);
+    this.fetch(url, (err, src) => {
       if (err) {
-        if (cb) {
-          cb(err.content);
-        } else if (err.status === 404) {
+        if (err.status === 404) {
           result = null;
+          if (cb) {
+            cb(null, null);
+          }
+        } else if (cb) {
+          cb(err.content);
         } else {
           throw err.content;
         }
       } else {
         result = {
           src: src,
-          path: name,
+          path: url,
           noCache: !useCache
         };
         this.emit('load', name, result);

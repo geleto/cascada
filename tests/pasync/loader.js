@@ -35,7 +35,7 @@ const {AsyncEnvironment, AsyncTemplate} = typeof window !== 'undefined'
           expect().fail('Expected an error to be thrown');
         } catch (error) {
           expect(error instanceof Error).to.equal(true);
-          expect(error.message).to.contain('Template not found');
+          expect(error.message).to.contain('Resource not found');
         }
       });
     });

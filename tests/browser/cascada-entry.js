@@ -4,6 +4,7 @@ import {WebLoader} from '../../src/loader/web-loaders.js';
 
 export {Environment, AsyncEnvironment, Template, AsyncTemplate, Script} from '../../src/environment/browser-environment.js';
 export {Loader} from '../../src/loader/loader.js';
+export {NotFoundError} from '../../src/loader/errors.js';
 export {WebLoader, PrecompiledLoader} from '../../src/loader/web-loaders.js';
 export {SafeString, markSafe} from '../../src/runtime/safe-output.js';
 export {CompileError} from '../../src/errors.js';

@@ -1,11 +1,38 @@
 
 import {asyncIter} from '../lib.js';
 import {EmitterObj} from '../object.js';
+import {subscribeLoaderEvent} from './loader-events.js';
+import {NotFoundError} from './errors.js';
 
 // WeakMap to store resource caches for each loader (no mutation of loader objects)
 const resourceCaches = new WeakMap();
 
-// Corrected loadString function for loader-utils.js
+function createRacePathRegistry(owner) {
+  // Keep the registry on the race itself: a shared source may outlive many
+  // groups, and must not keep their cleanup registrations alive globally.
+  return new FinalizationRegistry(entry => {
+    const group = owner.deref();
+    const paths = entry.deref();
+    if (group && paths) group._forgetPaths(paths);
+  });
+}
+
+function onRaceUpdate(race, loader, name, fullname) {
+  for (const entry of race.pathLoaders.values()) {
+    if (entry.loader === loader && (entry.names.includes(name) || entry.names.includes(fullname))) {
+      race._forgetPaths(entry);
+    }
+  }
+  race.emit('update', name, fullname);
+}
+
+function onStringUpdate(cache, loader, name, fullname) {
+  for (const [key, source] of cache) {
+    if (key === name || source.path === name || (fullname != null && source.path === fullname)) {
+      cache.delete(key);
+    }
+  }
+}
 
 /**
  * Loads a string from the specified loader(s) with caching.
@@ -19,51 +46,25 @@ const resourceCaches = new WeakMap();
  */
 function loadString(key, loader) {
   const loaders = Array.isArray(loader) ? loader : [loader];
+  return loadStringFromLoaders(key, loaders, 0);
+}
 
-  for (let i = 0; i < loaders.length; i++) {
-    const candidateLoader = loaders[i];
+function loadStringFromLoaders(key, loaders, start, firstError) {
+  for (let i = start; i < loaders.length; i++) {
     try {
-      const result = loadStringFromNativeLoader(key, candidateLoader);
-
+      const result = loadStringFromNativeLoader(key, loaders[i]);
       if (isPromise(result)) {
-        // asynchronous mode
-        // We've encountered an async loader. The rest of the chain MUST be handled asynchronously.
-        // We return a promise that starts with the current loader's promise.
-
-        const remainingLoaders = loaders.slice(i + 1);
-        let promiseChain = result;
-
-        // On failure, chain the next loader.
-        for (const nextLoader of remainingLoaders) {
-          promiseChain = promiseChain.catch(() => {
-            // This ensures subsequent loaders are also tried.
-            return loadStringFromNativeLoader(key, nextLoader);
-          });
-        }
-
-        // If the entire chain fails, reject with a final error.
-        return promiseChain.catch(() => {
-          throw new Error(`Resource '${key}' not found in any loader`);
+        return result.catch(error => {
+          const failure = error instanceof NotFoundError ? firstError : (firstError ?? error);
+          return loadStringFromLoaders(key, loaders, i + 1, failure);
         });
       }
-
-      // Synchronous mode:
-      if (result || result === '') {
-        // Sync success, return immediately.
-        return result;
-      }
-      // If result is null/falsy, it's a sync failure; the loop continues.
-
+      return result;
     } catch (error) {
-      // A synchronous loader threw an error (e.g., file not found).
-      // We treat this as a failure and continue to the next loader.
-      continue;
+      if (!(error instanceof NotFoundError)) firstError ??= error;
     }
   }
-
-  // If the loop completes without returning, it means all loaders
-  // were synchronous and all of them failed. Throw a synchronous error.
-  throw new Error(`Resource '${key}' not found in any loader`);
+  throw firstError ?? new NotFoundError(key);
 }
 
 /**
@@ -81,7 +82,7 @@ function clearStringCache(loader, key) {
     return;
   }
 
-  if (key) {
+  if (key !== undefined) {
     // Clear specific resource
     loaderResourceCache.delete(key);
   } else {
@@ -110,13 +111,15 @@ function isPromise(value) {
 function loadStringFromNativeLoader(key, loader) {
   // Get or create resource cache for this loader
   if (!resourceCaches.has(loader)) {
-    resourceCaches.set(loader, new Map());
+    const cache = new Map();
+    resourceCaches.set(loader, cache);
+    subscribeLoaderEvent(loader, 'update', cache, onStringUpdate);
   }
   const loaderResourceCache = resourceCaches.get(loader);
 
   // Check if already cached
   if (loaderResourceCache.has(key)) {
-    return loaderResourceCache.get(key);
+    return loaderResourceCache.get(key).src;
   }
 
   let result;
@@ -137,14 +140,12 @@ function loadStringFromNativeLoader(key, loader) {
         loader.getSource(key, (err, src) => {
           if (err) {
             reject(err);
-          } else if (src || src === '') {
-            const content = typeof src === 'string' ? src : src.src;
-            if (!src.noCache) {
-              loaderResourceCache.set(key, content);
-            }
-            resolve(content);
           } else {
-            reject(new Error(`Resource '${key}' not found`));
+            try {
+              resolve(cacheStringSource(loaderResourceCache, key, src));
+            } catch (error) {
+              reject(error);
+            }
           }
         });
       });
@@ -157,45 +158,20 @@ function loadStringFromNativeLoader(key, loader) {
 
   // Check if result is a Promise
   if (isPromise(result)) {
-    return result.then((content) => {
-      if (!content && content !== '') {
-        throw new Error(`Resource '${key}' not found`);
-      }
-
-      // content may be a LoaderSource or a string
-      if (typeof content === 'object' && typeof content.src === 'string') {
-        const finalContent = content.src;
-        if (!content.noCache) {
-          loaderResourceCache.set(key, finalContent);
-        }
-        return finalContent;
-      } else {
-        // string
-        const finalContent = content;
-        loaderResourceCache.set(key, finalContent);
-        return finalContent;
-      }
-    });
-  } else {
-    // Synchronous result
-    if (!result && result !== '') {
-      throw new Error(`Resource '${key}' not found`);
-    }
-
-    if (typeof result === 'object' && typeof result.src === 'string') {
-      const content = result.src;
-      if (!result.noCache) {
-        loaderResourceCache.set(key, content);
-      }
-      return content;
-    } else {
-      const content = result; // string
-      loaderResourceCache.set(key, content);
-      return content;
-    }
+    return result.then(source => cacheStringSource(loaderResourceCache, key, source));
   }
+  return cacheStringSource(loaderResourceCache, key, result);
 }
 
+function cacheStringSource(cache, key, source) {
+  if (!source && source !== '') throw new NotFoundError(key);
+  const content = typeof source === 'string' ? source : source.src;
+  if (typeof content !== 'string') throw new TypeError('Resource is not a string: ' + key);
+  if (!source.noCache) {
+    cache.set(key, {src: content, path: typeof source === 'string' ? key : source.path});
+  }
+  return content;
+}
 
 /**
  * Validates that a loader is properly implemented
@@ -272,8 +248,8 @@ function callLoaders(loaders, name, resolveFromLoader, callback, sourceCaches) {
  * @returns {Object} A single, standardized loader object with a `load` method.
  */
 function raceLoaders(loaders) {
-  if (!Array.isArray(loaders) || loaders.length === 0) {
-    throw new Error('raceLoaders requires a non-empty array of loaders.');
+  if (!Array.isArray(loaders)) {
+    throw new TypeError('raceLoaders requires an array of loaders.');
   }
 
   return new RaceLoader(loaders);
@@ -285,11 +261,10 @@ class RaceLoader extends EmitterObj {
     this.async = true;
     this.loaders = loaders;
     this.pathLoaders = new Map();
+    this.pathFinalizer = createRacePathRegistry(new WeakRef(this));
     this.sourceLoaders = new WeakMap();
     for (const loader of loaders) {
-      if (typeof loader.on === 'function') {
-        loader.on('update', (name, fullname) => this.emit('update', name, fullname));
-      }
+      subscribeLoaderEvent(loader, 'update', this, onRaceUpdate);
     }
   }
 
@@ -298,8 +273,36 @@ class RaceLoader extends EmitterObj {
   }
 
   resolve(from, to) {
-    const loader = this.pathLoaders.get(from);
-    return loader?.isRelative?.(to) && loader.resolve ? loader.resolve(from, to) : to;
+    const entry = this.pathLoaders.get(from);
+    if (!entry) return to;
+    const source = entry.source.deref();
+    if (!source) {
+      this._forgetPaths(entry);
+      return to;
+    }
+    return this._resolveSource(source, from, to);
+  }
+
+  _forgetPaths(entry) {
+    for (const name of entry.names) {
+      if (this.pathLoaders.get(name) === entry) this.pathLoaders.delete(name);
+    }
+    this.pathFinalizer.unregister(entry);
+  }
+
+  _rememberSource(name, source, loader) {
+    this.sourceLoaders.set(source, loader);
+    for (const path of [name, source.path]) {
+      const previous = this.pathLoaders.get(path);
+      if (previous) this._forgetPaths(previous);
+    }
+    // Rendered sources use sourceLoaders directly, including concurrent noCache
+    // sources with identical paths. String-only resolution needs aliases only
+    // while a cacheable, relative-capable source is still alive.
+    if (source.noCache || typeof loader.isRelative !== 'function' || typeof loader.resolve !== 'function') return;
+    const entry = {loader, source: new WeakRef(source), names: [name, source.path]};
+    for (const path of entry.names) this.pathLoaders.set(path, entry);
+    this.pathFinalizer.register(source, new WeakRef(entry), entry);
   }
 
   _resolveSource(source, from, to) {
@@ -312,6 +315,7 @@ class RaceLoader extends EmitterObj {
   }
 
   load(name) {
+    if (!this.loaders.length) return Promise.resolve(null);
     return new Promise((resolve, reject) => {
       let remaining = this.loaders.length;
       let settled = false;
@@ -323,9 +327,7 @@ class RaceLoader extends EmitterObj {
             firstError ??= error instanceof Error ? error : new Error(String(error));
           } else if (source && !settled) {
             settled = true;
-            this.pathLoaders.set(name, loader);
-            this.pathLoaders.set(source.path, loader);
-            this.sourceLoaders.set(source, loader);
+            this._rememberSource(name, source, loader);
             try {
               this.emit('load', name, source);
             } catch (eventError) {
@@ -374,12 +376,7 @@ function callLoader(loader, name, callback) {
         try {
           loader.getSource(name, (err, src) => {
             if (err) {
-              // Convert WebLoader 404 errors to the expected format
-              if (typeof err === 'string' && err.includes('404 Not Found')) {
-                callback(new Error(`Template not found: ${name}`), null);
-              } else {
-                callback(err, null);
-              }
+              callback(err, null);
             } else {
               callback(null, typeof src === 'string' ? createSourceObject(src, name) : src);
             }

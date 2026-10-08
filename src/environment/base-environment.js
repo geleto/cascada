@@ -6,6 +6,23 @@ import {EmitterObj} from '../object.js';
 import {createSyncRuntimeError} from '../runtime/errors.js';
 import {express as expressApp} from './express-app.js';
 import {clearStringCache, callLoaders} from '../loader/loader-utils.js';
+import {subscribeLoaderEvent} from '../loader/loader-events.js';
+import {NotFoundError} from '../loader/errors.js';
+
+function onLoaderUpdate(environment, loader, name, fullname) {
+  for (const cache of [environment._compiledCaches.get(loader), environment._sourceCaches.get(loader)]) {
+    for (const [key, value] of cache) {
+      if (key === name || value.path === name || (fullname != null && value.path === fullname)) {
+        cache.delete(key);
+      }
+    }
+  }
+  environment.emit('update', name, fullname, loader);
+}
+
+function onLoaderLoad(environment, loader, name, source) {
+  environment.emit('load', name, source, loader);
+}
 
 const LOAD_FAILURE_KINDS = new Set(['import', 'component', 'include']);
 let DefaultFileSystemLoader = null;
@@ -163,21 +180,8 @@ class BaseEnvironment extends EmitterObj {
       if (!this._sourceCaches.get(loader)) {
         this._sourceCaches.set(loader, new Map());
       }
-      if (typeof loader.on === 'function') {
-        loader.on('update', (name, fullname) => {
-          for (const cache of [this._compiledCaches.get(loader), this._sourceCaches.get(loader)]) {
-            for (const [key, value] of cache) {
-              if (key === name || value.path === name || (fullname != null && value.path === fullname)) {
-                cache.delete(key);
-              }
-            }
-          }
-          this.emit('update', name, fullname, loader);
-        });
-        loader.on('load', (name, source) => {
-          this.emit('load', name, source, loader);
-        });
-      }
+      subscribeLoaderEvent(loader, 'update', this, onLoaderUpdate);
+      subscribeLoaderEvent(loader, 'load', this, onLoaderLoad);
     });
   }
 
@@ -206,7 +210,7 @@ class BaseEnvironment extends EmitterObj {
         if (error) {
           reject(error);
         } else if (!source) {
-          reject(new Error('Resource not found: ' + name));
+          reject(new NotFoundError(name));
         } else if (typeof source.src !== 'string') {
           reject(new TypeError('Resource is not a string: ' + name));
         } else {
@@ -408,7 +412,7 @@ class BaseEnvironment extends EmitterObj {
 
     const createTemplate = (err, info, resolvedName) => {
       if (!info && !err && !ignoreMissing) {
-        err = new Error(`${scriptMode ? 'Script' : 'Template'} not found: ` + name);
+        err = new NotFoundError(name);
       }
 
       if (err) {

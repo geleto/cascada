@@ -319,6 +319,11 @@ synchronously. If using any async loaders, you must use the async API.
 The builtin loaders do not require this. See
 [asynchronous support](#asynchronous-support) and [loaders](#loader).
 
+When no loader finds a requested template, script, or text resource, loading
+throws or rejects with an exported `NotFoundError`. Its `resourceName` property
+contains the requested name, and its message is `Resource not found: <name>`.
+Errors raised by a loader retain their original type.
+
 ```js
 var tmpl = env.getTemplate('page.html');
 
@@ -469,6 +474,10 @@ This is only available in the browser. **baseURL** is the URL to load
 templates from (must be the same domain), and it defaults to the
 current relative directory.
 
+Relative includes and imports resolve against the URL of the loaded parent
+source, including inside `raceLoaders` groups. Relative base URLs resolve
+against the page's base URL; loaded source paths are absolute URLs.
+
 **opts** is an object with the following optional properties:
 
 * **useCache** if `true`, templates will be forever cached and you
@@ -492,6 +501,14 @@ var env = new nunjucks.Environment(new nunjucks.WebLoader('/views'))
 {% raw %}
 
 ### Writing a Loader
+
+Loaders can be shared across environments and `raceLoaders` groups. Each loader
+uses one internal subscription per event, and subscribers are held weakly so
+unused environments and groups can be collected. An `update` event invalidates
+both environment caches and the standalone `loadString` cache. Emit the requested
+name, or supply the source path as the second argument, to invalidate aliases.
+An empty `raceLoaders([])` group returns `null` for every name, allowing outer
+loaders to provide a fallback.
 
 You can write loaders for more complex loading, like from a database.
 If you want to do this, just create an object that has a method

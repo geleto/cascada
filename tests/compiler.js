@@ -790,7 +790,7 @@ const {Template, Environment} = typeof window !== 'undefined'
         function templateRender() {
           tmpl.render();
         }
-        expect(templateRender).to.throwException(/Template not found: doesnotexist/);
+        expect(templateRender).to.throwException(/Resource not found: doesnotexist/);
       });
 
       it('should include error line in raised CompileError', function (done) {
@@ -845,7 +845,7 @@ const {Template, Environment} = typeof window !== 'undefined'
       function templateRender() {
         render('{% include "broken-import.njk" %}', { str: 'abc' });
       }
-      expect(templateRender).to.throwException(/Template not found: doesnotexist/);
+      expect(templateRender).to.throwException(/Resource not found: doesnotexist/);
     });
 
     it('should pass errors from included templates to callback when async', function (done) {
@@ -854,7 +854,7 @@ const {Template, Environment} = typeof window !== 'undefined'
         { str: 'abc' },
         { noThrow: true },
         function (err, res) {
-          expect(err).to.match(/Template not found: doesnotexist/);
+          expect(err).to.match(/Resource not found: doesnotexist/);
           expect(res).to.be(undefined);
           done();
         });
@@ -1511,7 +1511,7 @@ const {Template, Environment} = typeof window !== 'undefined'
         },
         function (err, res) {
           expect(res).to.be(undefined);
-          expect(err).to.match(/Template not found: missing.njk/);
+          expect(err).to.match(/Resource not found: missing.njk/);
         }
       );
 

@@ -210,7 +210,7 @@ const {FileSystemLoader, NodeResolveLoader} = nodeLoaders;
       });
 
       it('records ownership only for the winner and preserves source metadata', async function() {
-        const source = {src: 'winner', path: 'canonical/main', noCache: true, metadata: {version: 1}};
+        const source = {src: 'winner', path: 'canonical/main', noCache: false, metadata: {version: 1}};
         let completeLoser;
         const loser = new Promise(resolve => { completeLoser = resolve; });
         const winnerLoader = {load: () => source, isRelative: () => true, resolve: () => 'winner/part'};
@@ -850,7 +850,7 @@ const {FileSystemLoader, NodeResolveLoader} = nodeLoaders;
           result.then(function() {
             done(new Error('Should have thrown an error'));
           }).catch(function(err) {
-            expect(err.message).to.contain('Resource \'nonexistent-file.njk\' not found in any loader');
+            expect(err.message).to.contain('Resource not found: nonexistent-file.njk');
             done();
           });
         } else {
@@ -859,7 +859,7 @@ const {FileSystemLoader, NodeResolveLoader} = nodeLoaders;
         }
       } catch (error) {
         // Sync case - error was thrown synchronously
-        expect(error.message).to.contain('Resource \'nonexistent-file.njk\' not found in any loader');
+        expect(error.message).to.contain('Resource not found: nonexistent-file.njk');
         done();
       }
     });
