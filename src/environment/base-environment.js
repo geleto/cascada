@@ -5,16 +5,16 @@ import {createGlobals} from '../builtins/globals.js';
 import {EmitterObj} from '../object.js';
 import {createSyncRuntimeError} from '../runtime/errors.js';
 import {express as expressApp} from './express-app.js';
-import {clearStringCache, callLoaders} from '../loader/loader-utils.js';
+import {clearStringCache, callLoaders, SourceCache} from '../loader/loader-utils.js';
 import {subscribeLoaderEvent} from '../loader/loader-events.js';
 import {NotFoundError} from '../loader/errors.js';
 
 function onLoaderUpdate(environment, loader, name, fullname) {
-  for (const cache of [environment._compiledCaches.get(loader), environment._sourceCaches.get(loader)]) {
-    for (const [key, value] of cache) {
-      if (key === name || value.path === name || (fullname != null && value.path === fullname)) {
-        cache.delete(key);
-      }
+  const cache = environment._compiledCaches.get(loader);
+  for (const [key, {acquisition}] of cache) {
+    if (acquisition.name === name || acquisition.origin.path === name ||
+        (fullname != null && acquisition.origin.path === fullname)) {
+      cache.delete(key);
     }
   }
   environment.emit('update', name, fullname, loader);
@@ -178,7 +178,7 @@ class BaseEnvironment extends EmitterObj {
         this._compiledCaches.set(loader, new Map());
       }
       if (!this._sourceCaches.get(loader)) {
-        this._sourceCaches.set(loader, new Map());
+        this._sourceCaches.set(loader, new SourceCache(loader));
       }
       subscribeLoaderEvent(loader, 'update', this, onLoaderUpdate);
       subscribeLoaderEvent(loader, 'load', this, onLoaderLoad);
@@ -206,15 +206,15 @@ class BaseEnvironment extends EmitterObj {
         reject(new TypeError('resource names must be a string: ' + name));
         return;
       }
-      this._getSource(name, parentName, (error, source) => {
+      this._getSource(name, parentName, (error, acquisition) => {
         if (error) {
           reject(error);
-        } else if (!source) {
+        } else if (!acquisition) {
           reject(new NotFoundError(name));
-        } else if (typeof source.src !== 'string') {
+        } else if (typeof acquisition.source.src !== 'string') {
           reject(new TypeError('Resource is not a string: ' + name));
         } else {
-          resolve(source.src);
+          resolve(acquisition.source.src);
         }
       });
     });
@@ -286,31 +286,18 @@ class BaseEnvironment extends EmitterObj {
     return this.tests[name];
   }
 
-  _resolveFromLoader(loader, parentName, filename) {
-    var isRelative = (loader.isRelative && parentName) ? loader.isRelative(filename) : false;
-    return (isRelative && loader.resolve) ? loader.resolve(parentName, filename) : filename;
+  _resolveFromLoader(loader, parentName, filename, origin) {
+    const resolver = origin?.loader === loader ? origin.owner : loader;
+    const isRelative = resolver.isRelative && parentName && resolver.isRelative(filename);
+    return isRelative && resolver.resolve ? resolver.resolve(parentName, filename) : filename;
   }
 
   _getSource(name, parentName, callback) {
+    const origin = parentName && typeof parentName === 'object' ? parentName : undefined;
+    const parentPath = origin ? origin.path : parentName;
     return callLoaders(this.loaders, name, (loader, filename) => {
-      return this._resolveFromLoader(loader, parentName, filename);
-    }, callback, this._sourceCaches);
-  }
-
-  _sourceEnvironment(source) {
-    const loader = source.loader;
-    const sourceAware = typeof loader._resolveSource === 'function';
-    if (!sourceAware && this._resolveFromLoader === BaseEnvironment.prototype._resolveFromLoader) return this;
-    // Keep each loaded source's origin even when noCache races reuse a path.
-    const environment = Object.create(this);
-    const path = source.path;
-    environment._resolveFromLoader = (candidate, parentName, filename) => {
-      if (sourceAware && candidate === loader && parentName === path) {
-        return loader._resolveSource(source, parentName, filename);
-      }
-      return BaseEnvironment.prototype._resolveFromLoader.call(environment, candidate, parentName, filename);
-    };
-    return environment;
+      return this._resolveFromLoader(loader, parentPath, filename, origin);
+    }, callback, this._sourceCaches, parentPath);
   }
 
   _getCompiledTemplate(name, eagerCompile, parentName, ignoreMissing, asyncMode, cb) {
@@ -374,7 +361,16 @@ class BaseEnvironment extends EmitterObj {
     }
     let syncResult;
 
-    const createCompiledScript = (info, resolvedName) => {
+    const cacheCompiled = (acquisition, compiled) => {
+      compiled.sourceOrigin = acquisition.origin;
+      const loader = acquisition.origin.loader;
+      if (this._sourceCaches.get(loader).has(acquisition)) {
+        this._compiledCaches.get(loader).set(acquisition.cacheKey, {acquisition, compiled});
+      }
+      return compiled;
+    };
+
+    const createCompiledScript = (info) => {
       if (!ScriptClass) {
         throw new Error('Script rendering is not available in this environment');
       }
@@ -382,16 +378,10 @@ class BaseEnvironment extends EmitterObj {
         return new ScriptClass(noopTmplSrcAsync, this, '', eagerCompile);
       }
 
-      const compiled = new ScriptClass(info.src, this._sourceEnvironment(info), info.path, eagerCompile);
-      if (!info.noCache) {
-        const compiledCache = this._compiledCaches.get(info.loader) || new Map();
-        compiledCache.set(resolvedName, compiled);
-        this._compiledCaches.set(info.loader, compiledCache);
-      }
-      return compiled;
+      return cacheCompiled(info, new ScriptClass(info.source.src, this, info.origin.path, eagerCompile));
     };
 
-    const createCompiledTemplate = (info, resolvedName) => {
+    const createCompiledTemplate = (info) => {
       let compiled;
       if (!info) {
         compiled = asyncMode
@@ -399,13 +389,9 @@ class BaseEnvironment extends EmitterObj {
           : new TemplateClass(noopTmplSrc, this, '', eagerCompile);
       } else {
         compiled = asyncMode
-          ? new AsyncTemplateClass(info.src, this._sourceEnvironment(info), info.path, eagerCompile)
-          : new TemplateClass(info.src, this._sourceEnvironment(info), info.path, eagerCompile);
-        if (!info.noCache) {
-          const compiledCache = this._compiledCaches.get(info.loader) || new Map();
-          compiledCache.set(resolvedName, compiled);
-          this._compiledCaches.set(info.loader, compiledCache);
-        }
+          ? new AsyncTemplateClass(info.source.src, this, info.origin.path, eagerCompile)
+          : new TemplateClass(info.source.src, this, info.origin.path, eagerCompile);
+        cacheCompiled(info, compiled);
       }
       return compiled;
     };
@@ -423,18 +409,28 @@ class BaseEnvironment extends EmitterObj {
           throw err;
         }
       }
-      let newCompiled = info && !info.noCache && this._compiledCaches.get(info.loader).get(resolvedName);
-      if (newCompiled) {
-        if (!!newCompiled.asyncMode !== asyncMode) {
-          throw new Error('The same template can not be compiled in both async and sync mode');
+      let newCompiled;
+      try {
+        const cached = info && this._compiledCaches.get(info.origin.loader).get(resolvedName);
+        newCompiled = cached && cached.acquisition === info ? cached.compiled : null;
+        if (newCompiled) {
+          if (!!newCompiled.asyncMode !== asyncMode) {
+            throw new Error('The same template can not be compiled in both async and sync mode');
+          }
+          if (eagerCompile) {
+            newCompiled.compile();
+          }
+        } else {
+          newCompiled = scriptMode
+            ? createCompiledScript(info)
+            : createCompiledTemplate(info);
         }
-        if (eagerCompile) {
-          newCompiled.compile();
+      } catch (error) {
+        if (cb) {
+          cb(error);
+          return;
         }
-      } else {
-        newCompiled = scriptMode
-          ? createCompiledScript(info, resolvedName)
-          : createCompiledTemplate(info, resolvedName);
+        throw error;
       }
       if (cb) {
         cb(null, newCompiled);

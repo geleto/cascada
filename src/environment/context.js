@@ -1,5 +1,5 @@
 
-import {extend, keys, indexOf} from '../lib.js';
+import {extend, keys} from '../lib.js';
 import {CompileError} from '../errors.js';
 import {Obj} from '../object.js';
 import {createPoison, markPromiseHandled, PoisonError, valueWithOrigin} from '../runtime/errors.js';
@@ -151,7 +151,9 @@ class Context extends Obj {
   }
 
   getSyncSuper(env, name, block, frame, runtime, cb) {
-    var idx = indexOf(this.blocks[name] || [], block);
+    var idx = (this.blocks[name] || []).findIndex(candidate =>
+      candidate === block || candidate.originalBlock === block
+    );
     var blk = this.blocks[name][idx + 1];
     var context = this;
 
@@ -204,6 +206,7 @@ class Context extends Obj {
     newContext.compositionContextVars = this.compositionContextVars;
     newContext.compositionPayloadVars = this.compositionPayloadVars;
     newContext.path = newPath;
+    newContext.sourceOrigin = this.sourceOrigin;
 
     return newContext;
   }
@@ -216,6 +219,7 @@ class Context extends Obj {
     const payloadVars = compositionPayloadVars === undefined ? (ctx || {}) : (compositionPayloadVars || {});
     const newContext = new Context(ctx || {}, {}, this.env, null, this.scriptMode, renderCtx, payloadVars, this.executionState);
     newContext.path = newPath;
+    newContext.sourceOrigin = this.sourceOrigin;
 
     return newContext;
   }

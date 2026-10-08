@@ -14,14 +14,22 @@ class LoaderEvents {
   subscribe(event, target, callback) {
     let listeners = this.events.get(event);
     if (!listeners) {
-      listeners = {entries: new Set(), dispatch: (...args) => this.dispatch(event, args)};
+      listeners = {
+        entries: new Set(),
+        targets: new WeakMap(),
+        dispatch: (...args) => this.dispatch(event, args)
+      };
       this.events.set(event, listeners);
       this.loader.deref().on(event, listeners.dispatch);
     }
-    for (const entry of listeners.entries) {
-      if (entry.target.deref() === target && entry.callback === callback) return;
+    let callbacks = listeners.targets.get(target);
+    if (!callbacks) {
+      callbacks = new Map();
+      listeners.targets.set(target, callbacks);
     }
+    if (callbacks.has(callback)) return;
     const entry = {target: new WeakRef(target), callback};
+    callbacks.set(callback, entry);
     listeners.entries.add(entry);
     subscriptions.register(target, {hub: new WeakRef(this), event, entry}, entry);
   }
@@ -44,6 +52,12 @@ class LoaderEvents {
     const listeners = this.events.get(event);
     if (!listeners) return;
     listeners.entries.delete(entry);
+    const target = entry.target.deref();
+    if (target) {
+      const callbacks = listeners.targets.get(target);
+      callbacks.delete(entry.callback);
+      if (!callbacks.size) listeners.targets.delete(target);
+    }
     subscriptions.unregister(entry);
     if (!listeners.entries.size) {
       const loader = this.loader.deref();

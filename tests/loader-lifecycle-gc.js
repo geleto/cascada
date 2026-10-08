@@ -110,6 +110,46 @@ describe('loader garbage collection', function() {
     assert.doesNotMatch(stderr, /MaxListenersExceededWarning/);
   });
 
+  it('releases a noCache parent source while its cached child remains live', async function() {
+    this.timeout(15000);
+    const probe = `
+      import assert from 'node:assert/strict';
+      import {AsyncEnvironment, Loader, raceLoaders} from ${JSON.stringify(entryURL)};
+      let parentReference;
+      class Sources extends Loader {
+        resolve(from, to) {
+          return new URL(to, new URL(from, 'https://loader.test/')).pathname.slice(1);
+        }
+        load(name) {
+          if (name === 'parent') {
+            const source = {src: '{% include "./child" %}', path: 'store/parent', noCache: true};
+            parentReference = new WeakRef(source);
+            return source;
+          }
+          return name === 'store/child' ? {src: 'child', path: name} : null;
+        }
+      }
+      const environment = new AsyncEnvironment(raceLoaders([new Sources()]));
+      assert.equal(await environment.renderTemplate('parent'), 'child');
+      const child = await environment.getTemplate('store/child');
+      assert.equal(await child.render(), 'child');
+      for (let attempt = 0; attempt < 100; attempt++) {
+        await new Promise(resolve => setImmediate(resolve));
+        globalThis.gc();
+        await new Promise(resolve => setImmediate(resolve));
+        if (parentReference.deref() === undefined) break;
+      }
+      assert.equal(parentReference.deref(), undefined);
+      assert.equal(child.env, environment);
+      assert.equal(await child.render(), 'child');
+      process.stdout.write('released parent');
+    `;
+    const {stdout} = await run(process.execPath, ['--expose-gc', '--input-type=module', '-e', probe], {
+      timeout: 12000
+    });
+    assert.equal(stdout, 'released parent');
+  });
+
   it('collects per-race finalizers while a member keeps their source alive', async function() {
     this.timeout(15000);
     const probe = `

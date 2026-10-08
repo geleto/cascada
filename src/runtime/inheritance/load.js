@@ -28,6 +28,7 @@ function loadEntry(templateOrScript, errorContext, ownerState, context, entryRoo
     renderState: ownerState.renderState,
     templateOrScript,
     path,
+    sourceOrigin: templateOrScript.sourceOrigin,
     scriptMode: !!templateOrScript.scriptMode,
     errorContextTable: templateOrScript.getErrorContexts(ownerState.runtime, path, ownerState.renderState)
   });
@@ -60,14 +61,20 @@ async function resolveLoadedParent(entry, context) {
 
 async function loadInheritanceChain({ templateOrScript, ownerState, context, errorContext, directCallableBindings }) {
   const entries = [];
-  const seen = new Set();
+  const seenByOwner = new Map();
   let currentTemplateOrScript = templateOrScript;
   let selectedByErrorContext = errorContext;
   let isEntry = true;
 
   while (currentTemplateOrScript) {
-    // Path is the stable source identity; pathless synthetic objects fall back
-    // to reference identity.
+    // Canonical paths identify sources within their owning loader. Different
+    // race members can use the same path for independent sources.
+    const sourceOwner = currentTemplateOrScript.sourceOrigin?.owner;
+    let seen = seenByOwner.get(sourceOwner);
+    if (!seen) {
+      seen = new Set();
+      seenByOwner.set(sourceOwner, seen);
+    }
     const cycleIdentity = currentTemplateOrScript.path ?? currentTemplateOrScript;
     if (seen.has(cycleIdentity)) {
       RuntimeError.reportAndThrow(

@@ -1,52 +1,120 @@
-
 import {asyncIter} from '../lib.js';
 import {EmitterObj} from '../object.js';
 import {subscribeLoaderEvent} from './loader-events.js';
 import {NotFoundError} from './errors.js';
 
-// WeakMap to store resource caches for each loader (no mutation of loader objects)
 const resourceCaches = new WeakMap();
 
-function createRacePathRegistry(owner) {
-  // Keep the registry on the race itself: a shared source may outlive many
-  // groups, and must not keep their cleanup registrations alive globally.
-  return new FinalizationRegistry(entry => {
-    const group = owner.deref();
-    const paths = entry.deref();
-    if (group && paths) group._forgetPaths(paths);
-  });
+function isPromise(value) {
+  return value != null && typeof value.then === 'function';
 }
 
-function onRaceUpdate(race, loader, name, fullname) {
-  for (const entry of race.pathLoaders.values()) {
-    if (entry.loader === loader && (entry.names.includes(name) || entry.names.includes(fullname))) {
-      race._forgetPaths(entry);
+function normalizeError(error) {
+  return Error.isError(error) ? error : new Error(String(error));
+}
+
+function acquiredSource(loader, name, value) {
+  if (!value && value !== '') return null;
+  const source = typeof value === 'string' ? {src: value, path: name, noCache: false} : value;
+  return {source, origin: {loader, owner: loader, path: source.path ?? name}};
+}
+
+// All entry points share the loader protocol and preserve the original source
+// object. Ownership belongs to this acquisition, not to a mutable source object.
+function loadSource(loader, name, parentName) {
+  if (loader instanceof RaceLoader) return loader._loadSource(name, parentName);
+  let result;
+  try {
+    if (typeof loader === 'function') {
+      result = loader(name);
+    } else if (loader && typeof loader.load === 'function') {
+      result = loader.load(name);
+    } else if (loader && typeof loader.getSource === 'function') {
+      if (loader.async === true) {
+        return new Promise((resolve, reject) => {
+          try {
+            loader.getSource(name, (error, value) => {
+              if (error) reject(normalizeError(error));
+              else resolve(acquiredSource(loader, name, value));
+            });
+          } catch (error) {
+            reject(normalizeError(error));
+          }
+        });
+      }
+      result = loader.getSource(name);
+    } else {
+      throw new TypeError('Invalid loader: must be a function, object with load method, or legacy loader with getSource method');
+    }
+  } catch (error) {
+    throw normalizeError(error);
+  }
+  if (isPromise(result)) {
+    return Promise.resolve(result).then(value => acquiredSource(loader, name, value), error => {
+      throw normalizeError(error);
+    });
+  }
+  return acquiredSource(loader, name, result);
+}
+
+function onSourceUpdate(cache, loader, name, fullname) {
+  cache.clear(name, fullname);
+}
+
+class SourceCache {
+  constructor(loader) {
+    this.loader = loader;
+    this.entries = new Map();
+    this.generation = 0;
+    subscribeLoaderEvent(loader, 'update', this, onSourceUpdate);
+  }
+
+  clear(name, fullname) {
+    // Pending acquisitions from an older generation may finish for their
+    // original caller, but must never repopulate an invalidated cache.
+    this.generation++;
+    if (name === undefined) {
+      this.entries.clear();
+      return;
+    }
+    for (const [key, acquisition] of this.entries) {
+      if (acquisition.name === name || acquisition.origin.path === name ||
+          (fullname != null && acquisition.origin.path === fullname)) {
+        this.entries.delete(key);
+      }
     }
   }
-  race.emit('update', name, fullname);
-}
 
-function onStringUpdate(cache, loader, name, fullname) {
-  for (const [key, source] of cache) {
-    if (key === name || source.path === name || (fullname != null && source.path === fullname)) {
-      cache.delete(key);
-    }
+  has(acquisition) {
+    return this.entries.get(acquisition.cacheKey) === acquisition;
+  }
+
+  load(name, parentName) {
+    // A race without a cached parent alias resolves relative names per member.
+    // Distinguish those requests from the same name under other parents.
+    const relativeParent = this.loader instanceof RaceLoader && parentName && this.loader.isRelative(name)
+      ? parentName : null;
+    const cacheKey = JSON.stringify([relativeParent, name]);
+    const cached = this.entries.get(cacheKey);
+    if (cached) return cached;
+    const generation = this.generation;
+    const remember = acquisition => {
+      if (!acquisition) return null;
+      acquisition.name = name;
+      acquisition.cacheKey = cacheKey;
+      if (!acquisition.source.noCache && generation === this.generation) {
+        this.entries.set(cacheKey, acquisition);
+      }
+      return acquisition;
+    };
+    const result = loadSource(this.loader, name, relativeParent);
+    return isPromise(result) ? result.then(remember) : remember(result);
   }
 }
 
-/**
- * Loads a string from the specified loader(s) with caching.
- * Tries loaders sequentially.
- * Behaves synchronously and throws on failure if all loaders are synchronous.
- * Returns a Promise if any loader in the chain is asynchronous.
- *
- * @param {string} key The resource key/name to load
- * @param {ILoaderAny|ILoaderAny[]} loader The loader instance or array of loaders
- * @returns {Promise<string>|string} The loaded string content.
- */
+/** Load literal text sequentially, falling back after misses or loader errors. */
 function loadString(key, loader) {
-  const loaders = Array.isArray(loader) ? loader : [loader];
-  return loadStringFromLoaders(key, loaders, 0);
+  return loadStringFromLoaders(key, Array.isArray(loader) ? loader : [loader], 0);
 }
 
 function loadStringFromLoaders(key, loaders, start, firstError) {
@@ -67,191 +135,66 @@ function loadStringFromLoaders(key, loaders, start, firstError) {
   throw firstError ?? new NotFoundError(key);
 }
 
-/**
- * Clears the string cache for a specific loader
- * @param {ILoaderAny} loader The loader to clear string cache for
- * @param {string} [key] Optional specific resource key to clear
- */
 function clearStringCache(loader, key) {
-  if (!loader) {
-    return;
-  }
-
-  const loaderResourceCache = resourceCaches.get(loader);
-  if (!loaderResourceCache) {
-    return;
-  }
-
-  if (key !== undefined) {
-    // Clear specific resource
-    loaderResourceCache.delete(key);
-  } else {
-    // Clear all resources for this loader
-    loaderResourceCache.clear();
-  }
+  resourceCaches.get(loader)?.clear(key);
 }
 
-/**
- * Detects if a value is a Promise
- * @param {any} value The value to check
- * @returns {boolean} True if the value is a Promise
- * @private
- */
-function isPromise(value) {
-  return value && typeof value === 'object' && typeof value.then === 'function';
-}
-
-/**
- * Loads a string from a native loader (function or object with load method) with caching
- * @param {string} key The resource key/name to load
- * @param {Function|Object} loader The native loader (function or object with load method)
- * @returns {Promise<string>|string} The loaded string content - Promise for async loaders, string for sync loaders
- * @private
- */
 function loadStringFromNativeLoader(key, loader) {
-  // Get or create resource cache for this loader
-  if (!resourceCaches.has(loader)) {
-    const cache = new Map();
+  let cache = resourceCaches.get(loader);
+  if (!cache) {
+    cache = new SourceCache(loader);
     resourceCaches.set(loader, cache);
-    subscribeLoaderEvent(loader, 'update', cache, onStringUpdate);
   }
-  const loaderResourceCache = resourceCaches.get(loader);
-
-  // Check if already cached
-  if (loaderResourceCache.has(key)) {
-    return loaderResourceCache.get(key).src;
-  }
-
-  let result;
-
-  // Function-based loader
-  if (typeof loader === 'function') {
-    result = loader(key);
-  }
-  // Object-based loader with load method
-  else if (loader && typeof loader === 'object' && typeof loader.load === 'function') {
-    result = loader.load(key);
-  }
-  // Legacy loader with getSource method
-  else if (loader && typeof loader === 'object' && typeof loader.getSource === 'function') {
-    // Check if it's async by looking at the .async property (legacy)
-    if (loader.async) {
-      return new Promise((resolve, reject) => {
-        loader.getSource(key, (err, src) => {
-          if (err) {
-            reject(err);
-          } else {
-            try {
-              resolve(cacheStringSource(loaderResourceCache, key, src));
-            } catch (error) {
-              reject(error);
-            }
-          }
-        });
-      });
-    } else {
-      result = loader.getSource(key);
-    }
-  } else {
-    throw new Error('Invalid loader: must be a function, object with load method, or legacy loader with getSource method');
-  }
-
-  // Check if result is a Promise
-  if (isPromise(result)) {
-    return result.then(source => cacheStringSource(loaderResourceCache, key, source));
-  }
-  return cacheStringSource(loaderResourceCache, key, result);
-}
-
-function cacheStringSource(cache, key, source) {
-  if (!source && source !== '') throw new NotFoundError(key);
-  const content = typeof source === 'string' ? source : source.src;
-  if (typeof content !== 'string') throw new TypeError('Resource is not a string: ' + key);
-  if (!source.noCache) {
-    cache.set(key, {src: content, path: typeof source === 'string' ? key : source.path});
-  }
-  return content;
-}
-
-/**
- * Validates that a loader is properly implemented
- * @param {any} loader The loader to validate
- * @throws {Error} If the loader is invalid
- */
-function validateLoader(loader) {
-  if (typeof loader === 'function') return;
-  if (loader && typeof loader === 'object' && typeof loader.load === 'function') return;
-  if (loader && typeof loader === 'object' && typeof loader.getSource === 'function') return;
-
-  throw new Error('Invalid loader: must be a function, object with load method, or legacy loader with getSource method');
-}
-
-/**
- * Creates a standardized source object for loaders
- * @param {string|Object} src The template source content or object
- * @param {string} path The template path/name
- * @param {boolean} noCache Whether to disable caching
- * @returns {Object} Standardized source object
- */
-function createSourceObject(src, path, noCache = false) {
-  return {
-    src: src,
-    path: path,
-    noCache: noCache
+  const text = acquisition => {
+    if (!acquisition) throw new NotFoundError(key);
+    if (typeof acquisition.source.src !== 'string') throw new TypeError('Resource is not a string: ' + key);
+    return acquisition.source.src;
   };
+  const result = cache.load(key);
+  return isPromise(result) ? result.then(text) : text(result);
 }
 
-/**
- * Calls multiple loaders sequentially and returns the first successful result
- * @param {Array} loaders Array of loaders to try
- * @param {string} name The resource name to load
- * @param {Function} resolveFromLoader Function to resolve name relative to parentName
- * @param {Function} callback The callback function (err, result, resolvedName)
- * @param {WeakMap} [sourceCaches] Environment-local source caches
- */
-function callLoaders(loaders, name, resolveFromLoader, callback, sourceCaches) {
-  // Preserve the original sequential loader iteration behavior.
+/** Calls loaders sequentially, preserving synchronous results for sync APIs. */
+function callLoaders(loaders, name, resolveFromLoader, callback, sourceCaches, parentName) {
   asyncIter(loaders, (loader, i, next, done) => {
-    function handle(err, src) {
-      if (err) {
-        done(err);
-      } else if (src) {
-        src.loader = loader;
-        if (!src.noCache && sourceCaches) {
-          sourceCaches.get(loader).set(resolvedName, src);
-        }
-        done(null, src, resolvedName);
-      } else {
-        next();
-      }
+    let result;
+    try {
+      const resolvedName = resolveFromLoader(loader, name);
+      result = sourceCaches.get(loader).load(resolvedName, parentName);
+    } catch (error) {
+      done(error);
+      return;
     }
-
-    // Resolve name relative to parentName
-    const resolvedName = resolveFromLoader(loader, name);
-
-    // Use native loader support instead of checking .async property
-    const cached = sourceCaches?.get(loader).get(resolvedName);
-    if (cached) {
-      handle(null, cached);
-    } else {
-      callLoader(loader, resolvedName, handle);
-    }
+    const handle = acquisition => {
+      if (acquisition) done(null, acquisition, acquisition.cacheKey);
+      else next();
+    };
+    if (isPromise(result)) result.then(handle, error => done(error));
+    else handle(result);
   }, callback);
 }
 
-/**
- * Creates a single loader that runs multiple loaders concurrently and
- * returns the result from the first one that succeeds. This is the primary
- * concurrency primitive for Cascada.
- *
- * @param {Array<Object|Function>} loaders An array of loader instances.
- * @returns {Object} A single, standardized loader object with a `load` method.
- */
-function raceLoaders(loaders) {
-  if (!Array.isArray(loaders)) {
-    throw new TypeError('raceLoaders requires an array of loaders.');
-  }
+function createRacePathRegistry(owner) {
+  return new FinalizationRegistry(entry => {
+    const group = owner.deref();
+    const paths = entry.deref();
+    if (group && paths) group._forgetPaths(paths);
+  });
+}
 
+function onRaceUpdate(race, loader, name, fullname) {
+  race.generation++;
+  for (const entry of race.pathLoaders.values()) {
+    if (entry.member === loader && (entry.names.includes(name) || entry.names.includes(fullname))) {
+      race._forgetPaths(entry);
+    }
+  }
+  race.emit('update', name, fullname);
+}
+
+/** Run loaders concurrently and return the first source, or null if all miss. */
+function raceLoaders(loaders) {
+  if (!Array.isArray(loaders)) throw new TypeError('raceLoaders requires an array of loaders.');
   return new RaceLoader(loaders);
 }
 
@@ -262,10 +205,8 @@ class RaceLoader extends EmitterObj {
     this.loaders = loaders;
     this.pathLoaders = new Map();
     this.pathFinalizer = createRacePathRegistry(new WeakRef(this));
-    this.sourceLoaders = new WeakMap();
-    for (const loader of loaders) {
-      subscribeLoaderEvent(loader, 'update', this, onRaceUpdate);
-    }
+    this.generation = 0;
+    for (const loader of loaders) subscribeLoaderEvent(loader, 'update', this, onRaceUpdate);
   }
 
   isRelative(name) {
@@ -275,12 +216,11 @@ class RaceLoader extends EmitterObj {
   resolve(from, to) {
     const entry = this.pathLoaders.get(from);
     if (!entry) return to;
-    const source = entry.source.deref();
-    if (!source) {
+    if (!entry.source.deref()) {
       this._forgetPaths(entry);
       return to;
     }
-    return this._resolveSource(source, from, to);
+    return entry.origin.owner.isRelative(to) ? entry.origin.owner.resolve(entry.origin.path, to) : to;
   }
 
   _forgetPaths(entry) {
@@ -290,138 +230,67 @@ class RaceLoader extends EmitterObj {
     this.pathFinalizer.unregister(entry);
   }
 
-  _rememberSource(name, source, loader) {
-    this.sourceLoaders.set(source, loader);
-    for (const path of [name, source.path]) {
+  _rememberSource(name, acquisition, member) {
+    const {source, origin} = acquisition;
+    const names = [...new Set([name, origin.path])];
+    for (const path of names) {
       const previous = this.pathLoaders.get(path);
       if (previous) this._forgetPaths(previous);
     }
-    // Rendered sources use sourceLoaders directly, including concurrent noCache
-    // sources with identical paths. String-only resolution needs aliases only
-    // while a cacheable, relative-capable source is still alive.
-    if (source.noCache || typeof loader.isRelative !== 'function' || typeof loader.resolve !== 'function') return;
-    const entry = {loader, source: new WeakRef(source), names: [name, source.path]};
-    for (const path of entry.names) this.pathLoaders.set(path, entry);
+    if (source.noCache || typeof origin.owner.isRelative !== 'function' || typeof origin.owner.resolve !== 'function') return;
+    const entry = {member, origin, source: new WeakRef(source), names};
+    for (const path of names) this.pathLoaders.set(path, entry);
     this.pathFinalizer.register(source, new WeakRef(entry), entry);
   }
 
-  _resolveSource(source, from, to) {
-    const loader = this.sourceLoaders.get(source);
-    if (!loader?.isRelative?.(to)) return to;
-    if (typeof loader._resolveSource === 'function') {
-      return loader._resolveSource(source, from, to);
-    }
-    return loader.resolve ? loader.resolve(from, to) : to;
+  load(name) {
+    return this._loadSource(name).then(acquisition => (acquisition ? acquisition.source : null));
   }
 
-  load(name) {
+  _loadSource(name, parentName) {
     if (!this.loaders.length) return Promise.resolve(null);
+    const generation = this.generation;
     return new Promise((resolve, reject) => {
       let remaining = this.loaders.length;
       let settled = false;
       let firstError;
+      const complete = (member, error, result) => {
+        remaining--;
+        if (error) {
+          firstError ??= normalizeError(error);
+        } else if (result && !settled) {
+          settled = true;
+          const acquisition = {source: result.source, origin: {
+            loader: this, owner: result.origin.owner, path: result.origin.path
+          }};
+          try {
+            if (generation === this.generation) this._rememberSource(name, acquisition, member);
+            this.emit('load', name, acquisition.source);
+            resolve(acquisition);
+          } catch (eventError) {
+            reject(normalizeError(eventError));
+          }
+        }
+        if (!remaining && !settled) {
+          if (firstError) reject(firstError);
+          else resolve(null);
+        }
+      };
       for (const loader of this.loaders) {
-        callLoader(loader, name, (error, source) => {
-          remaining--;
-          if (error) {
-            firstError ??= error instanceof Error ? error : new Error(String(error));
-          } else if (source && !settled) {
-            settled = true;
-            this._rememberSource(name, source, loader);
-            try {
-              this.emit('load', name, source);
-            } catch (eventError) {
-              reject(eventError instanceof Error ? eventError : new Error(String(eventError)));
-              return;
-            }
-            resolve(source);
-          }
-          if (!remaining && !settled) {
-            if (firstError) {
-              reject(firstError);
-            } else {
-              resolve(null);
-            }
-          }
-        });
+        let result;
+        try {
+          const resolvedName = parentName && loader.isRelative?.(name) && loader.resolve
+            ? loader.resolve(parentName, name) : name;
+          result = loadSource(loader, resolvedName, parentName);
+        } catch (error) {
+          complete(loader, error);
+          continue;
+        }
+        if (isPromise(result)) result.then(value => complete(loader, null, value), error => complete(loader, error));
+        else complete(loader, null, result);
       }
     });
   }
 }
 
-/**
- * Calls a loader and handles both sync and async cases with callback
- * @param {Object|Function} loader The loader to call
- * @param {string} name The resource name to load
- * @param {Function} callback The callback function (err, result)
- */
-function callLoader(loader, name, callback) {
-  let result;
-  try {
-    validateLoader(loader);
-
-    // Function-based loader
-    if (typeof loader === 'function') {
-      result = loader(name);
-    }
-    // Object-based loader with load method
-    else if (loader && typeof loader === 'object' && typeof loader.load === 'function') {
-      result = loader.load(name);
-    }
-    // Legacy loader with getSource method
-    else if (loader && typeof loader === 'object' && typeof loader.getSource === 'function') {
-      // Legacy loader with getSource: prefer sync path for sync loaders to preserve sync semantics
-      if (loader.async === true) {
-        // Async loader: use callback form
-        try {
-          loader.getSource(name, (err, src) => {
-            if (err) {
-              callback(err, null);
-            } else {
-              callback(null, typeof src === 'string' ? createSourceObject(src, name) : src);
-            }
-          });
-          return;
-        } catch (e) {
-          // Fallback to synchronous usage if calling with a callback throws
-          // (some sync loaders may not accept a callback)
-        }
-      }
-      // Synchronous loader or callback form not desired: call without a callback
-      result = loader.getSource(name);
-    }
-  } catch (error) {
-    // Handle synchronous errors by passing them to the callback
-    callback(error instanceof Error ? error : new Error(String(error)), null);
-    return;
-  }
-
-  // Check if result is a Promise
-  if (isPromise(result)) {
-    result
-      .then((content) => {
-        if (content || content === '') {
-          // Handle both {src: string} and string formats
-          const src = typeof content === 'string' ? createSourceObject(content, name, false) : content;
-          callback(null, src);
-        } else {
-          callback(null, null);
-        }
-      })
-      .catch((err) => {
-        callback(err instanceof Error ? err : new Error(String(err)), null);
-      });
-  } else {
-    // Synchronous result
-    if (result || result === '') {
-      // Handle both {src: string} and string formats
-      const src = typeof result === 'string' ? createSourceObject(result, name, false) : result;
-      callback(null, src);
-    } else {
-      callback(null, null);
-    }
-  }
-}
-
-
-export { loadString, clearStringCache, loadStringFromNativeLoader, callLoaders, raceLoaders };
+export {loadString, clearStringCache, loadStringFromNativeLoader, callLoaders, raceLoaders, SourceCache};

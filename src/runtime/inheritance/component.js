@@ -139,6 +139,7 @@ async function createComponentInstance(spec) {
     ownerContext.getRenderContextVariables(),
     payloadContext
   );
+  componentContext.sourceOrigin = templateOrScript.sourceOrigin;
   const componentErrorContext = cloneWithAddedContext(errorContext, { componentName: bindingName || 'component' });
   ownerState.renderState.throwIfFatalErrorReported();
   const rootBuffer = new CommandBuffer(componentContext, null, null, null, null, componentErrorContext, ownerBuffer || null, ownerState.renderState);

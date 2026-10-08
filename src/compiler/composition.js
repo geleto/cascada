@@ -29,7 +29,7 @@ class CompileComposition {
 
   compileAsyncResolveTargetFile(node, eagerCompile, ignoreMissing, allowNoParent = false, loadFailureKind = null) {
     const targetVar = this.compiler._tmpid();
-    const parentName = JSON.stringify(this.compiler.sourcePath);
+    const parentName = `(ownerState.sourceOrigin ?? ${JSON.stringify(this.compiler.sourcePath)})`;
     const eagerCompileArg = eagerCompile ? 'true' : 'false';
     const ignoreMissingArg = ignoreMissing ? 'true' : 'false';
     const positionNode = node.template || node;
@@ -60,7 +60,8 @@ class CompileComposition {
   compileSyncResolveTargetFile(node, frame, eagerCompile, ignoreMissing, allowNoParent = false) {
     const targetVar = this.compiler._tmpid();
     const errId = this.compiler._tmpid();
-    const parentName = JSON.stringify(this.compiler.sourcePath);
+    const sourcePath = JSON.stringify(this.compiler.sourcePath);
+    const parentName = `(context.sourceOrigin?.path === ${sourcePath} ? context.sourceOrigin : ${sourcePath})`;
     const eagerCompileArg = eagerCompile ? 'true' : 'false';
     const ignoreMissingArg = ignoreMissing ? 'true' : 'false';
     const resolvedTargetValue = this.compiler._tmpid();
@@ -310,7 +311,7 @@ class CompileComposition {
       this.emit.line(`let ${templateVar}_resolved;`);
       this.emit.line('try {');
       this.emit.line(`  ${templateNameVar}_resolved = await runtime.resolveSingle(${templateNameVar});`);
-      this.emit.line(`  let ${templateVar} = env.getTemplate.bind(env)(${templateNameVar}_resolved, false, ${JSON.stringify(this.compiler.sourcePath)}, ${node.ignoreMissing ? 'true' : 'false'});`);
+      this.emit.line(`  let ${templateVar} = env.getTemplate.bind(env)(${templateNameVar}_resolved, false, (ownerState.sourceOrigin ?? ${JSON.stringify(this.compiler.sourcePath)}), ${node.ignoreMissing ? 'true' : 'false'});`);
       this.emit.line(`  ${templateVar}_resolved = await runtime.resolveSingle(${templateVar});`);
       this.emit.line(`} catch (${includeError}) {`);
       this.emit.line(`  if (runtime.isRuntimeError(${includeError})) {`);

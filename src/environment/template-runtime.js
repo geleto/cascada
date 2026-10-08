@@ -194,7 +194,9 @@ class TemplateRuntime extends Obj {
   }
 
   _createContext(ctx, renderCtx, compositionPayloadVars) {
-    return new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode, renderCtx, compositionPayloadVars);
+    const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode, renderCtx, compositionPayloadVars);
+    context.sourceOrigin = this.sourceOrigin;
+    return context;
   }
 
   _createOwnerState(context, renderState) {
@@ -204,6 +206,7 @@ class TemplateRuntime extends Obj {
       renderState,
       templateOrScript: this,
       path: context.path,
+      sourceOrigin: this.sourceOrigin,
       scriptMode: this.scriptMode,
       errorContextTable: this.getErrorContexts(globalRuntime, context.path, renderState)
     };
@@ -286,7 +289,13 @@ class TemplateRuntime extends Obj {
     keys(props).forEach((k) => {
       if (k.slice(0, 2) === 'b_') {
         const blockName = k.slice(2);
-        blocks[blockName] = props[k];
+        const block = props[k];
+        blocks[blockName] = (env, context, frame, runtime, cb) => {
+          const blockContext = context.forkForPath(this.path);
+          blockContext.sourceOrigin = this.sourceOrigin;
+          return block(env, blockContext, frame, runtime, cb);
+        };
+        blocks[blockName].originalBlock = block;
         blocks[blockName].blockContract = (blockContracts && blockContracts[blockName]) || null;
         blocks[blockName].templatePath = this.path == null ? '__anonymous__' : String(this.path);
       }

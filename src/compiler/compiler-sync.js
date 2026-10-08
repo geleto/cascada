@@ -293,6 +293,7 @@ class CompilerSync extends CompilerBaseSync {
   _emitSyncRootCompletion() {
     this.emit.line('if(parentTemplate) {');
     this.emit.line('  let parentContext = context.forkForPath(parentTemplate.path);');
+    this.emit.line('  parentContext.sourceOrigin = parentTemplate.sourceOrigin;');
     this.emit.line('  parentTemplate.rootRenderFunc(env, parentContext, frame, runtime, cb);');
     this.emit.line('} else {');
     this.emit.line(`  cb(null, ${this.buffer.currentBuffer});`);

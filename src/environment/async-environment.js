@@ -1,7 +1,6 @@
 import {BaseEnvironment} from './base-environment.js';
 import {AsyncTemplate} from './template.js';
 import {Script} from './script.js';
-import {NotFoundError} from '../loader/errors.js';
 
 class AsyncEnvironment extends BaseEnvironment {
   init(loaders, opts) {
@@ -77,9 +76,6 @@ class AsyncEnvironment extends BaseEnvironment {
       if (namedTemplate) {
         // render template
         this.getTemplate(template, false, null, false).then((tmpl) => {
-          if (!tmpl) {
-            throw new NotFoundError(template);
-          }
           tmpl.render(ctx, callback);
         }).catch(err => {
           reject(err);
@@ -107,9 +103,6 @@ class AsyncEnvironment extends BaseEnvironment {
       if (namedScript) {
         // render script object
         this.getScript(script, false, null, false).then((scr) => {
-          if (!scr) {
-            throw new NotFoundError(script);
-          }
           scr.render(ctx, callback);
         }).catch(err => {
           reject(err);
