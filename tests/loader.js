@@ -113,6 +113,7 @@ const {FileSystemLoader, NodeResolveLoader} = nodeLoaders;
         const first = name => (preferred ? {
           src: name === 'script' ? 'return "preferred"' : 'preferred', path: name, noCache: true
         } : null);
+        first.cachePolicy = 'reload';
         const fallback = name => (name === 'script' ? 'return "fallback"' : 'fallback');
         const env = new AsyncEnvironment([first, fallback]);
         expect(await env.renderTemplate('template')).to.be('fallback');
@@ -136,7 +137,7 @@ const {FileSystemLoader, NodeResolveLoader} = nodeLoaders;
         loader.emit('update', 'dir/part.njk', 'store/dir/part.njk');
         expect(await env.loadString('./part.njk', 'store/dir/main.njk')).to.be('second');
         expect(await env.renderTemplate('dir/main.njk')).to.be('second');
-        expect(loads).to.eql(['dir/main.njk', 'store/dir/part.njk', 'store/dir/part.njk']);
+        expect(loads).to.eql(['dir/main.njk', './part.njk', './part.njk']);
       });
 
       it('supports empty raw text through the environment loader chain', async function() {
@@ -219,8 +220,7 @@ const {FileSystemLoader, NodeResolveLoader} = nodeLoaders;
         expect(await group.load('main')).to.be(source);
         completeLoser({src: 'loser', path: source.path});
         await loser;
-        expect(group.resolve(source.path, './part')).to.be('winner/part');
-        expect(group.resolve('main', './part')).to.be('winner/part');
+        expect(source.metadata).to.eql({version: 1});
       });
 
       it('allows outer fallback when all raced members miss', async function() {

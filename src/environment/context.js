@@ -199,19 +199,23 @@ class Context extends Obj {
     return exported;
   }
 
-  forkForPath(newPath) {
-    const newContext = new Context({}, {}, this.env, null, this.scriptMode, this.renderCtx, this.compositionPayloadVars, this.executionState);
+  forkForPath(newPath, sourceOrigin) {
+    // A path-only fork shares render data and execution state with its caller.
+    const newContext = Object.create(Context.prototype);
+    newContext.env = this.env;
+    newContext.scriptMode = this.scriptMode;
+    newContext.executionState = this.executionState;
     newContext.ctx = this.ctx;
     newContext.renderCtx = this.renderCtx;
     newContext.compositionContextVars = this.compositionContextVars;
     newContext.compositionPayloadVars = this.compositionPayloadVars;
     newContext.path = newPath;
-    newContext.sourceOrigin = this.sourceOrigin;
+    newContext.sourceOrigin = sourceOrigin;
 
     return newContext;
   }
 
-  forkForComposition(newPath, ctx, renderCtx, compositionPayloadVars = undefined) {
+  forkForComposition(newPath, ctx, renderCtx, compositionPayloadVars = undefined, sourceOrigin = undefined) {
     // Fresh composition context that keeps shared structural state such as
     // blocks/exports, but does not share the mutable variable object with the
     // caller. This lets composition boundaries receive explicit inputs without
@@ -219,17 +223,18 @@ class Context extends Obj {
     const payloadVars = compositionPayloadVars === undefined ? (ctx || {}) : (compositionPayloadVars || {});
     const newContext = new Context(ctx || {}, {}, this.env, null, this.scriptMode, renderCtx, payloadVars, this.executionState);
     newContext.path = newPath;
-    newContext.sourceOrigin = this.sourceOrigin;
+    newContext.sourceOrigin = sourceOrigin;
 
     return newContext;
   }
 
-  forkForCompositionPayload(newPath, compositionPayload, renderCtx) {
+  forkForCompositionPayload(newPath, compositionPayload, renderCtx, sourceOrigin) {
     return this.forkForComposition(
       newPath,
       compositionPayload.rootContext,
       renderCtx,
-      compositionPayload.payloadContext
+      compositionPayload.payloadContext,
+      sourceOrigin
     );
   }
 }

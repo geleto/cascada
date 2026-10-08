@@ -219,7 +219,6 @@ class CompileInheritanceEmit {
       `context, ${isScriptMethod ? 'true' : 'false'}, ${invocationPath}, blockPayload, blockRenderCtx` +
       `);`
     );
-    this.emit.line('context.sourceOrigin = ownerState.sourceOrigin;');
   }
 
   callableEntryParentLinks(callableNode, isScriptMethod) {

@@ -40,7 +40,7 @@ describe('loader garbage collection', function() {
     assert.doesNotMatch(stderr, /MaxListenersExceededWarning/);
   });
 
-  it('releases path aliases when cacheable sources are no longer reachable', async function() {
+  it('does not retain sources loaded through a live race group', async function() {
     this.timeout(15000);
     const probe = `
       import assert from 'node:assert/strict';
@@ -50,16 +50,18 @@ describe('loader garbage collection', function() {
         isRelative: name => name.startsWith('./'),
         resolve: (from, to) => from + ':' + to
       }]);
-      for (let i = 0; i < 1000; i++) await group.load('name-' + i);
+      const references = [];
+      for (let i = 0; i < 1000; i++) references.push(new WeakRef(await group.load('name-' + i)));
       const retained = await group.load('retained');
       for (let attempt = 0; attempt < 100; attempt++) {
         await new Promise(resolve => setImmediate(resolve));
         globalThis.gc();
         await new Promise(resolve => setImmediate(resolve));
-        if (group.pathLoaders.size <= 2) break;
+        if (references.every(reference => reference.deref() === undefined)) break;
       }
-      assert.equal(group.pathLoaders.size, 2);
-      assert.equal(group.resolve(retained.path, './part'), 'store/retained:./part');
+      assert.equal(references.filter(reference => reference.deref() !== undefined).length, 0);
+      assert.equal(retained.src, 'retained');
+      assert.equal((await group.load('current')).src, 'current');
       process.stdout.write('released');
     `;
     const {stdout} = await run(process.execPath, ['--expose-gc', '--input-type=module', '-e', probe], {
@@ -150,7 +152,7 @@ describe('loader garbage collection', function() {
     assert.equal(stdout, 'released parent');
   });
 
-  it('collects per-race finalizers while a member keeps their source alive', async function() {
+  it('collects race groups while a member keeps their source alive', async function() {
     this.timeout(15000);
     const probe = `
       import assert from 'node:assert/strict';
@@ -164,10 +166,10 @@ describe('loader garbage collection', function() {
       async function loadOnce() {
         const group = raceLoaders([loader]);
         assert.equal(await group.load('cached'), cachedSource);
-        return [new WeakRef(group), new WeakRef(group.pathFinalizer)];
+        return new WeakRef(group);
       }
       const references = [];
-      for (let i = 0; i < 100; i++) references.push(...await loadOnce());
+      for (let i = 0; i < 100; i++) references.push(await loadOnce());
       for (let attempt = 0; attempt < 100; attempt++) {
         await new Promise(resolve => setImmediate(resolve));
         globalThis.gc();
@@ -179,12 +181,12 @@ describe('loader garbage collection', function() {
       assert.equal(loader.listenerCount('update'), 0);
       assert.equal(loader.load(), cachedSource);
       assert.equal(cachedSource.src, 'cached');
-      process.stdout.write('collected finalizers');
+      process.stdout.write('collected groups');
     `;
     const {stdout, stderr} = await run(process.execPath, ['--expose-gc', '--input-type=module', '-e', probe], {
       timeout: 12000
     });
-    assert.equal(stdout, 'collected finalizers');
+    assert.equal(stdout, 'collected groups');
     assert.doesNotMatch(stderr, /MaxListenersExceededWarning/);
   });
 });

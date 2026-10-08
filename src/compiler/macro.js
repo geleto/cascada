@@ -766,7 +766,7 @@ class CompileMacro {
 
     compiler.emit.line(`return ${returnStatement};`);
     compiler.emit.line('}).call(this, frame);');
-    compiler.emit.line('});');
+    compiler.emit.line('}, context.sourceOrigin);');
     compiler.emit.line('});');
 
     compiler.sequential.isCompilingMacroBody = oldIsCompilingMacroBody;

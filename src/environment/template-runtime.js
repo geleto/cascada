@@ -195,7 +195,9 @@ class TemplateRuntime extends Obj {
 
   _createContext(ctx, renderCtx, compositionPayloadVars) {
     const context = new Context(ctx || {}, this.blocks, this.env, this.path, this.scriptMode, renderCtx, compositionPayloadVars);
-    context.sourceOrigin = this.sourceOrigin;
+    if (!this.asyncMode) {
+      context.sourceOrigin = this.sourceOrigin;
+    }
     return context;
   }
 
@@ -291,8 +293,7 @@ class TemplateRuntime extends Obj {
         const blockName = k.slice(2);
         const block = props[k];
         blocks[blockName] = (env, context, frame, runtime, cb) => {
-          const blockContext = context.forkForPath(this.path);
-          blockContext.sourceOrigin = this.sourceOrigin;
+          const blockContext = context.forkForPath(this.path, this.sourceOrigin);
           return block(env, blockContext, frame, runtime, cb);
         };
         blocks[blockName].originalBlock = block;

@@ -117,27 +117,27 @@ class AsyncEnvironment extends BaseEnvironment {
   }
 
   //returns a Promise, unlike the sync version
-  getTemplate(name, eagerCompile, parentName, ignoreMissing) {
+  getTemplate(name, eagerCompile, parentName, ignoreMissing, origin) {
     if (typeof name.then === 'function') { // the name is a promise
       return name.then((resolvedName) => {
-        return this._getCompiledTemplateAsync(resolvedName, eagerCompile, parentName, ignoreMissing);
+        return this._getCompiledTemplateAsync(resolvedName, eagerCompile, parentName, ignoreMissing, origin);
       });
     }
-    return this._getCompiledTemplateAsync(name, eagerCompile, parentName, ignoreMissing);
+    return this._getCompiledTemplateAsync(name, eagerCompile, parentName, ignoreMissing, origin);
   }
 
   //@todo - in script mode use instead of getTemplate
   //or maybe it's not needed, just use getCompiled?
-  getScript(name, eagerCompile, parentName, ignoreMissing) {
+  getScript(name, eagerCompile, parentName, ignoreMissing, origin) {
     if (typeof name.then === 'function') { // the name is a promise
       return name.then((resolvedName) => {
-        return this._getCompiledScriptPromise(resolvedName, eagerCompile, parentName, ignoreMissing);
+        return this._getCompiledScriptPromise(resolvedName, eagerCompile, parentName, ignoreMissing, origin);
       });
     }
-    return this._getCompiledScriptPromise(name, eagerCompile, parentName, ignoreMissing);
+    return this._getCompiledScriptPromise(name, eagerCompile, parentName, ignoreMissing, origin);
   }
 
-  _getCompiledTemplateAsync(name, eagerCompile, parentName, ignoreMissing) {
+  _getCompiledTemplateAsync(name, eagerCompile, parentName, ignoreMissing, origin) {
     return new Promise((resolve, reject) => {
       this._getCompiledTemplate(name, eagerCompile, parentName, ignoreMissing, true, (err, tmpl) => {
         if (err) {
@@ -145,11 +145,11 @@ class AsyncEnvironment extends BaseEnvironment {
         } else {
           resolve(tmpl);
         }
-      });
+      }, origin);
     });
   }
 
-  _getCompiledScriptPromise(name, eagerCompile, parentName, ignoreMissing) {
+  _getCompiledScriptPromise(name, eagerCompile, parentName, ignoreMissing, origin) {
     return new Promise((resolve, reject) => {
       this._getCompiledScript(name, eagerCompile, parentName, ignoreMissing, (err, tmpl) => {
         if (err) {
@@ -157,7 +157,7 @@ class AsyncEnvironment extends BaseEnvironment {
         } else {
           resolve(tmpl);
         }
-      });
+      }, origin);
     });
   }
 

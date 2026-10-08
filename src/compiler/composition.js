@@ -29,7 +29,7 @@ class CompileComposition {
 
   compileAsyncResolveTargetFile(node, eagerCompile, ignoreMissing, allowNoParent = false, loadFailureKind = null) {
     const targetVar = this.compiler._tmpid();
-    const parentName = `(ownerState.sourceOrigin ?? ${JSON.stringify(this.compiler.sourcePath)})`;
+    const parentName = JSON.stringify(this.compiler.sourcePath);
     const eagerCompileArg = eagerCompile ? 'true' : 'false';
     const ignoreMissingArg = ignoreMissing ? 'true' : 'false';
     const positionNode = node.template || node;
@@ -48,9 +48,9 @@ class CompileComposition {
       this.emit.line('  }');
     }
     if (loadFailureKind) {
-      this.emit.line(`  return Promise.resolve().then(() => ${getTargetFunc}(resolvedTargetName, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg})).catch((e) => runtime.handleLoadFailure(e, ${errorContext}, "${loadFailureKind}", env));`);
+      this.emit.line(`  return Promise.resolve().then(() => ${getTargetFunc}(resolvedTargetName, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg}, ownerState.sourceOrigin)).catch((e) => runtime.handleLoadFailure(e, ${errorContext}, "${loadFailureKind}", env));`);
     } else {
-      this.emit.line(`  return ${getTargetFunc}(resolvedTargetName, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg});`);
+      this.emit.line(`  return ${getTargetFunc}(resolvedTargetName, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg}, ownerState.sourceOrigin);`);
     }
     this.emit.line(`}), ${errorContext}, "LoadFailed");`);
 
@@ -60,8 +60,7 @@ class CompileComposition {
   compileSyncResolveTargetFile(node, frame, eagerCompile, ignoreMissing, allowNoParent = false) {
     const targetVar = this.compiler._tmpid();
     const errId = this.compiler._tmpid();
-    const sourcePath = JSON.stringify(this.compiler.sourcePath);
-    const parentName = `(context.sourceOrigin?.path === ${sourcePath} ? context.sourceOrigin : ${sourcePath})`;
+    const parentName = JSON.stringify(this.compiler.sourcePath);
     const eagerCompileArg = eagerCompile ? 'true' : 'false';
     const ignoreMissingArg = ignoreMissing ? 'true' : 'false';
     const resolvedTargetValue = this.compiler._tmpid();
@@ -74,10 +73,10 @@ class CompileComposition {
       this.emit.line(`  if (${resolvedTargetValue} === null || ${resolvedTargetValue} === undefined) {`);
       this.emit.line('    cb(null, null);');
       this.emit.line('  } else {');
-      this.emit.line(`    env.getTemplate(${resolvedTargetValue}, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg}, cb);`);
+      this.emit.line(`    env.getTemplate(${resolvedTargetValue}, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg}, cb, context.sourceOrigin);`);
       this.emit.line('  }');
     } else {
-      this.emit.line(`  env.getTemplate(${resolvedTargetValue}, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg}, cb);`);
+      this.emit.line(`  env.getTemplate(${resolvedTargetValue}, ${eagerCompileArg}, ${parentName}, ${ignoreMissingArg}, cb, context.sourceOrigin);`);
     }
     this.emit.line(`})(function(${errId}, ${targetVar}) {`);
     this.emit.line(`if(${errId}) { cb(${errId}); return; }`);
@@ -311,7 +310,7 @@ class CompileComposition {
       this.emit.line(`let ${templateVar}_resolved;`);
       this.emit.line('try {');
       this.emit.line(`  ${templateNameVar}_resolved = await runtime.resolveSingle(${templateNameVar});`);
-      this.emit.line(`  let ${templateVar} = env.getTemplate.bind(env)(${templateNameVar}_resolved, false, (ownerState.sourceOrigin ?? ${JSON.stringify(this.compiler.sourcePath)}), ${node.ignoreMissing ? 'true' : 'false'});`);
+      this.emit.line(`  let ${templateVar} = env.getTemplate(${templateNameVar}_resolved, false, ${JSON.stringify(this.compiler.sourcePath)}, ${node.ignoreMissing ? 'true' : 'false'}, ownerState.sourceOrigin);`);
       this.emit.line(`  ${templateVar}_resolved = await runtime.resolveSingle(${templateVar});`);
       this.emit.line(`} catch (${includeError}) {`);
       this.emit.line(`  if (runtime.isRuntimeError(${includeError})) {`);
@@ -326,15 +325,6 @@ class CompileComposition {
       this.emit.line('  }');
       this.emit.line('}');
       this.emit.line('renderState.throwIfFatalErrorReported();');
-      this.emit.line(`if (${shouldRenderInclude}) {`);
-      this.emit.line(`  if (!${templateVar}_resolved) {`);
-      this.emit.line(`    if (${node.ignoreMissing ? 'true' : '!runtime.isLoadFailureFatal(env, "include")'}) {`);
-      this.emit.line(`      ${shouldRenderInclude} = false;`);
-      this.emit.line('    } else {');
-      this.emit.line(`      runtime.RuntimeError.reportAndThrow(new Error("Template not found: " + ${templateNameVar}_resolved), ${this.compiler.emitErrorContext(node)});`);
-      this.emit.line('    }');
-      this.emit.line('  }');
-      this.emit.line('}');
       this.emit.line(`if (${shouldRenderInclude}) {`);
       this.emit.line(`  ${templateVar}_resolved.compile();`);
       this.emit.line(`  let ${includeTextValue} = ${templateVar}_resolved._renderIncludeText(${includeContextVar}, ${node.withContext ? 'context.getRenderContextVariables()' : 'null'}, renderState);`);

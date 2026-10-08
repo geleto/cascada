@@ -175,7 +175,8 @@ export class Environment {
   addGlobal(name: string, value: any): Environment;
   getGlobal(name: string): any;
 
-  getTemplate(name: string, eagerCompile?: boolean): Template;
+  getTemplate(name: string, eagerCompile?: boolean, parentName?: string | null, ignoreMissing?: boolean, callback?: undefined, origin?: SourceOrigin): Template;
+  getTemplate(name: string, eagerCompile: boolean, parentName: string | null, ignoreMissing: boolean, callback: Callback<Error, Template>, origin?: SourceOrigin): void;
   getTemplate(name: string, eagerCompile: boolean, callback: Callback<Error, Template>): void;
   getTemplate(name: string, callback: Callback<Error, Template>): void;
 
@@ -204,8 +205,8 @@ export class AsyncEnvironment {
   renderTemplateString(src: string, context?: object, opts?: RenderOptions): Promise<string>;
   renderScriptString(src: string, context?: object, opts?: RenderOptions): Promise<Record<string, any> | string | null>;
 
-  getTemplate(name: string, eagerCompile?: boolean): Promise<AsyncTemplate>;
-  getScript(name: string, eagerCompile?: boolean): Promise<Script>;
+  getTemplate(name: string | Promise<string>, eagerCompile?: boolean, parentName?: string | null, ignoreMissing?: boolean, origin?: SourceOrigin): Promise<AsyncTemplate>;
+  getScript(name: string | Promise<string>, eagerCompile?: boolean, parentName?: string | null, ignoreMissing?: boolean, origin?: SourceOrigin): Promise<Script>;
 
   addFilter(name: string, func: (...args: any[]) => any, async?: boolean): AsyncEnvironment;
   getFilter(name: string): (...args: any[]) => any;
@@ -265,11 +266,18 @@ export function installJinjaCompat(): void;
 
 export function reset(): void;
 
+export type LoaderCachePolicy = 'cache' | 'reload';
+
+export interface LoaderCacheOptions {
+  /** Defaults to 'cache'. 'reload' disables completed-result, miss, and pending-request caching. */
+  cachePolicy?: LoaderCachePolicy;
+}
+
 /** Function-based loader that returns Promise<string> | string */
-export type LoaderFunction = (name: string) => Promise<string | LoaderSource | null> | string | LoaderSource | null;
+export type LoaderFunction = ((name: string) => Promise<string | LoaderSource | null> | string | LoaderSource | null) & LoaderCacheOptions;
 
 /** Class-based loader interface */
-export interface LoaderInterface {
+export interface LoaderInterface extends LoaderCacheOptions {
   load(name: string): Promise<string | LoaderSource | null> | string | LoaderSource | null;
 
   // Optional event hooks for cache invalidation and load notifications
@@ -289,14 +297,21 @@ export type ILoaderAny = ILoader | ILoaderAsync | WebLoader | LoaderFunction | L
 // WebLoader is part of the union because it can be both sync or async depending
 // on its constructor arguments, which possibly could only be known on runtime.
 
+/** Declaring-source identity supplied by compiled composition. Getter overrides must forward it unchanged. */
+export interface SourceOrigin {
+  readonly loader: ILoaderAny;
+  readonly owner: ILoaderAny;
+  readonly path: string;
+}
+
 /** A synchronous loader. Return null instead of throwing error to handle properly ignoreMissing */
-export interface ILoader {
+export interface ILoader extends LoaderCacheOptions {
   async?: false | undefined;
   getSource: (name: string) => LoaderSource | null;
 }
 
 /** An asynchronous loader. */
-export interface ILoaderAsync {
+export interface ILoaderAsync extends LoaderCacheOptions {
   async: true;
   getSource(name: string, callback: Callback<Error, LoaderSource | null>): void;
   getSource(name: string): Promise<LoaderSource | null>;
@@ -305,6 +320,7 @@ export interface ILoaderAsync {
 // Needs both Loader and ILoader since nunjucks uses a custom object system
 // Object system is also responsible for the extend methods
 export class Loader {
+  cachePolicy?: LoaderCachePolicy;
   on(name: string, func: (...args: any[]) => any): void;
   emit(name: string, ...args: any[]): void;
   resolve(from: string, to: string): string;

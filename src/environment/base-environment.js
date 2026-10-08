@@ -5,18 +5,12 @@ import {createGlobals} from '../builtins/globals.js';
 import {EmitterObj} from '../object.js';
 import {createSyncRuntimeError} from '../runtime/errors.js';
 import {express as expressApp} from './express-app.js';
-import {clearStringCache, callLoaders, SourceCache} from '../loader/loader-utils.js';
+import {SourceCache} from '../loader/loader-utils.js';
 import {subscribeLoaderEvent} from '../loader/loader-events.js';
 import {NotFoundError} from '../loader/errors.js';
 
 function onLoaderUpdate(environment, loader, name, fullname) {
-  const cache = environment._compiledCaches.get(loader);
-  for (const [key, {acquisition}] of cache) {
-    if (acquisition.name === name || acquisition.origin.path === name ||
-        (fullname != null && acquisition.origin.path === fullname)) {
-      cache.delete(key);
-    }
-  }
+  for (const cache of environment._sourceCaches.values()) cache.clear(name, fullname);
   environment.emit('update', name, fullname, loader);
 }
 
@@ -151,6 +145,8 @@ class BaseEnvironment extends EmitterObj {
       this.loaders = lib.isArray(loaders) ? loaders : [loaders];
     }
 
+    this._sourceCaches = new Map();
+    this._compiledCaches = {sync: new WeakMap(), async: new WeakMap(), script: new WeakMap()};
     this._initLoaders();
 
     this.globals = createGlobals();
@@ -165,38 +161,14 @@ class BaseEnvironment extends EmitterObj {
   }
 
   _initLoaders() {
-    // Per-loader compiled template caches (internal, non-mutating)
-    if (!this._compiledCaches) {
-      this._compiledCaches = new WeakMap();
-    }
-    if (!this._sourceCaches) {
-      this._sourceCaches = new WeakMap();
-    }
     this.loaders.forEach((loader) => {
-      // Initialize compiled cache map for this loader
-      if (!this._compiledCaches.get(loader)) {
-        this._compiledCaches.set(loader, new Map());
-      }
-      if (!this._sourceCaches.get(loader)) {
-        this._sourceCaches.set(loader, new SourceCache(loader));
-      }
       subscribeLoaderEvent(loader, 'update', this, onLoaderUpdate);
       subscribeLoaderEvent(loader, 'load', this, onLoaderLoad);
     });
   }
 
   invalidateCache() {
-    this.loaders.forEach((loader) => {
-      const cache = this._compiledCaches && this._compiledCaches.get(loader);
-      if (cache) {
-        cache.clear();
-      } else if (this._compiledCaches) {
-        this._compiledCaches.set(loader, new Map());
-      }
-      this._sourceCaches.get(loader).clear();
-      // Also clear the string cache for this loader
-      clearStringCache(loader);
-    });
+    for (const cache of this._sourceCaches.values()) cache.clear();
   }
 
   /** Loads literal text through this environment's loader chain and source cache. */
@@ -286,29 +258,46 @@ class BaseEnvironment extends EmitterObj {
     return this.tests[name];
   }
 
-  _resolveFromLoader(loader, parentName, filename, origin) {
-    const resolver = origin?.loader === loader ? origin.owner : loader;
-    const isRelative = resolver.isRelative && parentName && resolver.isRelative(filename);
-    return isRelative && resolver.resolve ? resolver.resolve(parentName, filename) : filename;
+  _resolveFromLoader(loader, parentName, filename) {
+    const isRelative = loader.isRelative && parentName && loader.isRelative(filename);
+    return isRelative && loader.resolve ? loader.resolve(parentName, filename) : filename;
   }
 
-  _getSource(name, parentName, callback) {
-    const origin = parentName && typeof parentName === 'object' ? parentName : undefined;
-    const parentPath = origin ? origin.path : parentName;
-    return callLoaders(this.loaders, name, (loader, filename) => {
-      return this._resolveFromLoader(loader, parentPath, filename, origin);
-    }, callback, this._sourceCaches, parentPath);
+  _getSource(name, parentName, callback, origin) {
+    parentName = origin?.path ?? parentName;
+    const loaders = origin && origin.owner.isRelative?.(name) ? [origin.owner] : this.loaders;
+    return lib.asyncIter(loaders, (loader, i, next, done) => {
+      let result;
+      try {
+        const resolvedName = this._resolveFromLoader(loader, parentName, name);
+        let cache = this._sourceCaches.get(loader);
+        if (!cache) {
+          cache = new SourceCache(loader, false);
+          this._sourceCaches.set(loader, cache);
+        }
+        result = cache.load(resolvedName, parentName);
+      } catch (error) {
+        done(error);
+        return;
+      }
+      const handle = acquisition => {
+        if (acquisition) done(null, acquisition);
+        else next();
+      };
+      if (result && typeof result.then === 'function') result.then(handle, error => done(error));
+      else handle(result);
+    }, callback);
   }
 
-  _getCompiledTemplate(name, eagerCompile, parentName, ignoreMissing, asyncMode, cb) {
-    return this._getCompiledByMode(name, eagerCompile, parentName, ignoreMissing, asyncMode, false, cb);
+  _getCompiledTemplate(name, eagerCompile, parentName, ignoreMissing, asyncMode, cb, origin) {
+    return this._getCompiledByMode(name, eagerCompile, parentName, ignoreMissing, asyncMode, false, cb, origin);
   }
 
-  _getCompiledScript(name, eagerCompile, parentName, ignoreMissing, cb) {
-    return this._getCompiledByMode(name, eagerCompile, parentName, ignoreMissing, true, true, cb);
+  _getCompiledScript(name, eagerCompile, parentName, ignoreMissing, cb, origin) {
+    return this._getCompiledByMode(name, eagerCompile, parentName, ignoreMissing, true, true, cb, origin);
   }
 
-  _getCompiledByMode(name, eagerCompile, parentName, ignoreMissing, asyncMode, scriptMode, cb) {
+  _getCompiledByMode(name, eagerCompile, parentName, ignoreMissing, asyncMode, scriptMode, cb, origin) {
     var tmpl = null;
     if (name && name.raw) {
       // this fixes autoescape for templates referenced in symbols
@@ -363,12 +352,10 @@ class BaseEnvironment extends EmitterObj {
 
     const cacheCompiled = (acquisition, compiled) => {
       compiled.sourceOrigin = acquisition.origin;
-      const loader = acquisition.origin.loader;
-      if (this._sourceCaches.get(loader).has(acquisition)) {
-        this._compiledCaches.get(loader).set(acquisition.cacheKey, {acquisition, compiled});
-      }
+      compiledCache.set(acquisition, compiled);
       return compiled;
     };
+    const compiledCache = this._compiledCaches[scriptMode ? 'script' : asyncMode ? 'async' : 'sync'];
 
     const createCompiledScript = (info) => {
       if (!ScriptClass) {
@@ -396,7 +383,7 @@ class BaseEnvironment extends EmitterObj {
       return compiled;
     };
 
-    const createTemplate = (err, info, resolvedName) => {
+    const createTemplate = (err, info) => {
       if (!info && !err && !ignoreMissing) {
         err = new NotFoundError(name);
       }
@@ -411,12 +398,8 @@ class BaseEnvironment extends EmitterObj {
       }
       let newCompiled;
       try {
-        const cached = info && this._compiledCaches.get(info.origin.loader).get(resolvedName);
-        newCompiled = cached && cached.acquisition === info ? cached.compiled : null;
+        newCompiled = info && compiledCache.get(info);
         if (newCompiled) {
-          if (!!newCompiled.asyncMode !== asyncMode) {
-            throw new Error('The same template can not be compiled in both async and sync mode');
-          }
           if (eagerCompile) {
             newCompiled.compile();
           }
@@ -439,7 +422,7 @@ class BaseEnvironment extends EmitterObj {
       }
     };
 
-    this._getSource(name, parentName, createTemplate);
+    this._getSource(name, parentName, createTemplate, origin);
 
     return syncResult;
   }

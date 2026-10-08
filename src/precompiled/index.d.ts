@@ -1,6 +1,15 @@
 export type RenderCallback<T> = (err: CascadaRenderError | Error | null, res: T | null) => void;
 
-export class Loader {}
+export class Loader {
+  cachePolicy?: 'cache' | 'reload';
+}
+
+/** Declaring-source identity supplied by compiled composition. Getter overrides must forward it unchanged. */
+export interface SourceOrigin {
+  readonly loader: Loader;
+  readonly owner: Loader;
+  readonly path: string;
+}
 
 export class PrecompiledLoader extends Loader {
   constructor(compiledTemplates?: Record<string, object>);
@@ -33,7 +42,8 @@ export class AsyncTemplate {
 
 export class PrecompiledTemplate extends Template {}
 export class AsyncPrecompiledTemplate extends AsyncTemplate {}
-export class AsyncPrecompiledScript extends AsyncTemplate {
+export class AsyncPrecompiledScript {
+  constructor(src: PrecompiledTemplateSource, env?: AsyncEnvironment, path?: string, eagerCompile?: boolean);
   render(context?: object): Promise<Record<string, any> | string | null>;
 }
 export class Script extends AsyncPrecompiledScript {}
@@ -48,7 +58,7 @@ export class Environment {
   renderTemplate(name: string, context?: object): string;
   renderTemplate(name: string, callback: RenderCallback<string>): void;
   renderTemplate(name: string, context: object, callback?: RenderCallback<string>): void;
-  getTemplate(name: string, eagerCompile?: boolean, parentName?: string, ignoreMissing?: boolean, cb?: RenderCallback<Template>): Template | void;
+  getTemplate(name: string, eagerCompile?: boolean, parentName?: string | null, ignoreMissing?: boolean, cb?: RenderCallback<Template>, origin?: SourceOrigin): Template | void;
   addGlobal(name: string, value: any): this;
   addFilter(name: string, func: Function, async?: boolean): this;
   addTest(name: string, func: Function): this;
@@ -61,8 +71,8 @@ export class AsyncEnvironment {
   invalidateCache(): void;
   renderTemplate(name: string, context?: object): Promise<string>;
   renderScript(name: string, context?: object): Promise<Record<string, any> | string | null>;
-  getTemplate(name: string | Promise<string>, eagerCompile?: boolean, parentName?: string, ignoreMissing?: boolean): Promise<AsyncTemplate>;
-  getScript(name: string | Promise<string>, eagerCompile?: boolean, parentName?: string, ignoreMissing?: boolean): Promise<AsyncPrecompiledScript>;
+  getTemplate(name: string | Promise<string>, eagerCompile?: boolean, parentName?: string | null, ignoreMissing?: boolean, origin?: SourceOrigin): Promise<AsyncTemplate>;
+  getScript(name: string | Promise<string>, eagerCompile?: boolean, parentName?: string | null, ignoreMissing?: boolean, origin?: SourceOrigin): Promise<AsyncPrecompiledScript>;
   addGlobal(name: string, value: any): this;
   addFilter(name: string, func: Function, async?: boolean): this;
   addFilterAsync(name: string, func: Function): this;

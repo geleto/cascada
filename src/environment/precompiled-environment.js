@@ -17,8 +17,8 @@ class PrecompiledEnvironment extends BaseEnvironment {
     this.ScriptClass = null;
   }
 
-  getTemplate(name, eagerCompile, parentName, ignoreMissing, cb) {
-    return this._getCompiledTemplate(name, eagerCompile, parentName, ignoreMissing, false, cb);
+  getTemplate(name, eagerCompile, parentName, ignoreMissing, cb, origin) {
+    return this._getCompiledTemplate(name, eagerCompile, parentName, ignoreMissing, false, cb, origin);
   }
 
   renderTemplate(name, ctx, cb) {
@@ -86,25 +86,25 @@ class AsyncPrecompiledEnvironment extends BaseEnvironment {
     return Promise.reject(new Error('Script rendering is not available in a precompiled environment'));
   }
 
-  getTemplate(name, eagerCompile, parentName, ignoreMissing) {
+  getTemplate(name, eagerCompile, parentName, ignoreMissing, origin) {
     if (typeof name.then === 'function') {
       return name.then((resolvedName) => {
-        return this._getCompiledTemplateAsync(resolvedName, eagerCompile, parentName, ignoreMissing);
+        return this._getCompiledTemplateAsync(resolvedName, eagerCompile, parentName, ignoreMissing, origin);
       });
     }
-    return this._getCompiledTemplateAsync(name, eagerCompile, parentName, ignoreMissing);
+    return this._getCompiledTemplateAsync(name, eagerCompile, parentName, ignoreMissing, origin);
   }
 
-  getScript(name, eagerCompile, parentName, ignoreMissing) {
+  getScript(name, eagerCompile, parentName, ignoreMissing, origin) {
     if (typeof name.then === 'function') {
       return name.then((resolvedName) => {
-        return this._getCompiledScriptPromise(resolvedName, eagerCompile, parentName, ignoreMissing);
+        return this._getCompiledScriptPromise(resolvedName, eagerCompile, parentName, ignoreMissing, origin);
       });
     }
-    return this._getCompiledScriptPromise(name, eagerCompile, parentName, ignoreMissing);
+    return this._getCompiledScriptPromise(name, eagerCompile, parentName, ignoreMissing, origin);
   }
 
-  _getCompiledTemplateAsync(name, eagerCompile, parentName, ignoreMissing) {
+  _getCompiledTemplateAsync(name, eagerCompile, parentName, ignoreMissing, origin) {
     return new Promise((resolve, reject) => {
       this._getCompiledTemplate(name, eagerCompile, parentName, ignoreMissing, true, (err, tmpl) => {
         if (err) {
@@ -112,11 +112,11 @@ class AsyncPrecompiledEnvironment extends BaseEnvironment {
         } else {
           resolve(tmpl);
         }
-      });
+      }, origin);
     });
   }
 
-  _getCompiledScriptPromise(name, eagerCompile, parentName, ignoreMissing) {
+  _getCompiledScriptPromise(name, eagerCompile, parentName, ignoreMissing, origin) {
     return new Promise((resolve, reject) => {
       this._getCompiledScript(name, eagerCompile, parentName, ignoreMissing, (err, script) => {
         if (err) {
@@ -124,7 +124,7 @@ class AsyncPrecompiledEnvironment extends BaseEnvironment {
         } else {
           resolve(script);
         }
-      });
+      }, origin);
     });
   }
 

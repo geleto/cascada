@@ -8,6 +8,11 @@ import {PrecompiledLoader} from './precompiled-loader.js';
 
 const resolvePackagePath = createRequire(process.cwd() + path.sep).resolve;
 
+function isWithinPath(basePath, filename) {
+  const relative = path.relative(basePath, filename);
+  return relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative);
+}
+
 class FileSystemLoader extends Loader {
   constructor(searchPaths, opts) {
     super();
@@ -22,6 +27,7 @@ class FileSystemLoader extends Loader {
     opts = opts || {};
     this.pathsToNames = {};
     this.noCache = !!opts.noCache;
+    this.cachePolicy = this.noCache ? 'reload' : 'cache';
 
     if (searchPaths) {
       searchPaths = Array.isArray(searchPaths) ? searchPaths : [searchPaths];
@@ -34,12 +40,35 @@ class FileSystemLoader extends Loader {
     if (opts.watch) {
       // Watch all the templates in the paths and fire an event when
       // they change
-      const paths = this.searchPaths.filter(fs.existsSync);
-      const watcher = chokidar.watch(paths);
+      // On Windows, ready can precede Chokidar's fallback watcher for a missing
+      // root. Start at its existing ancestor and ignore unrelated sibling trees.
+      const paths = [...new Set(this.searchPaths.map(searchPath => {
+        let root = path.resolve(searchPath);
+        while (!fs.existsSync(root)) {
+          const parent = path.dirname(root);
+          if (parent === root) break;
+          root = parent;
+        }
+        return root;
+      }))];
+      const watcher = this.watcher = chokidar.watch(paths, {
+        ignoreInitial: true,
+        ignored: filename => !this.searchPaths.some(searchPath =>
+          isWithinPath(searchPath, filename) || isWithinPath(filename, searchPath))
+      });
       watcher.on('all', (event, fullname) => {
         fullname = path.resolve(fullname);
-        if (event === 'change' && fullname in this.pathsToNames) {
-          this.emit('update', this.pathsToNames[fullname], fullname);
+        if (event === 'add' || event === 'change' || event === 'unlink') {
+          const names = new Set();
+          for (const searchPath of this.searchPaths) {
+            const relative = path.relative(path.resolve(searchPath), fullname);
+            if (relative && isWithinPath(searchPath, fullname)) {
+              names.add(relative.replace(/\\/g, '/'));
+            }
+          }
+          const loadedName = this.pathsToNames[fullname];
+          if (loadedName) names.add(loadedName);
+          for (const name of names) this.emit('update', name, fullname);
         }
       });
       watcher.on('error', (error) => {
@@ -58,7 +87,7 @@ class FileSystemLoader extends Loader {
 
       // Only allow the current directory and anything
       // underneath it to be searched
-      if (p.indexOf(basePath) === 0 && fs.existsSync(p)) {
+      if (isWithinPath(basePath, p) && fs.existsSync(p)) {
         fullpath = p;
         break;
       }
@@ -86,6 +115,7 @@ class NodeResolveLoader extends Loader {
     opts = opts || {};
     this.pathsToNames = {};
     this.noCache = !!opts.noCache;
+    this.cachePolicy = this.noCache ? 'reload' : 'cache';
 
     if (opts.watch) {
       this.watcher = chokidar.watch();

@@ -2915,7 +2915,9 @@ Loaders are objects that tell the environment how to find and load your scripts 
     ```
 
     **Running Loaders Concurrently:**
-    The `raceLoaders(loaders)` function creates a single loader that runs multiple loaders concurrently and returns the result from the first one that succeeds. Relative dependencies resolve through the member that supplied the parent source. If every member returns `null`, the environment continues to its next loader; loader failures remain errors when no member succeeds.
+    The `raceLoaders(loaders)` function creates a single loader that runs multiple loaders concurrently and returns the result from the first one that succeeds. Relative dependencies of compiled sources resolve and load exclusively through the member that supplied the declaring source. String parent names passed directly to environment loading methods have no owner: each member resolves against that string and races independently. If every member returns `null`, the environment continues to its next loader; loader failures remain errors when no member succeeds.
+
+    Loaders default to `cachePolicy: 'cache'`, caching hits and misses and sharing pending requests. Emit `update` or call `env.invalidateCache()` after adding or changing resources. Dynamic loaders can set `cachePolicy: 'reload'` to bypass all caching and keep requests independent. A source's `noCache: true` prevents retention after completion; it does not disable pending-request sharing. A race uses `'reload'` when any member does.
 
     ```javascript
     import { raceLoaders, FileSystemLoader, WebLoader } from 'cascada-engine';

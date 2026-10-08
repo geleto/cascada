@@ -23,7 +23,7 @@ async function resolveInheritanceParent(ownerState, target, inheritedErrorContex
 
   const loadMethod = ownerState.scriptMode ? 'getScript' : 'getTemplate';
   try {
-    const parentTemplateOrScript = await ownerState.env[loadMethod](target, true, ownerState.sourceOrigin ?? context.path, false);
+    const parentTemplateOrScript = await ownerState.env[loadMethod](target, true, ownerState.path, false, ownerState.sourceOrigin);
     return { parentTemplateOrScript, errorContext: inheritedErrorContext };
   } catch (error) {
     RuntimeError.reportAndThrow(error, inheritedErrorContext);

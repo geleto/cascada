@@ -6,6 +6,38 @@ const run = promisify(execFile);
 const moduleURL = new URL('../src/loader/loader-events.js', import.meta.url).href;
 
 describe('loader subscription garbage collection', function() {
+  it('collects loaders while their subscriber target stays alive', async function() {
+    this.timeout(15000);
+    const probe = `
+      import assert from 'node:assert/strict';
+      import {EventEmitter} from 'node:events';
+      import {subscribeLoaderEvent} from ${JSON.stringify(moduleURL)};
+      const target = {calls: 0};
+      function record(subscriber) { subscriber.calls++; }
+      function subscribeOnce() {
+        const loader = new EventEmitter();
+        subscribeLoaderEvent(loader, 'update', target, record);
+        loader.emit('update');
+        return new WeakRef(loader);
+      }
+      const reference = subscribeOnce();
+      for (let attempt = 0; attempt < 100; attempt++) {
+        await new Promise(resolve => setImmediate(resolve));
+        globalThis.gc();
+        await new Promise(resolve => setImmediate(resolve));
+        if (reference.deref() === undefined) break;
+      }
+      assert.equal(reference.deref(), undefined);
+      assert.equal(target.calls, 1);
+      process.stdout.write('collected loader');
+    `;
+    const {stdout, stderr} = await run(process.execPath, ['--expose-gc', '--input-type=module', '-e', probe], {
+      timeout: 12000
+    });
+    assert.equal(stdout, 'collected loader');
+    assert.equal(stderr, '');
+  });
+
   it('can subscribe again after collected targets with and without listener removal', async function() {
     this.timeout(15000);
     const probe = `

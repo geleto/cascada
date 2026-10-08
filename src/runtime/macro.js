@@ -66,8 +66,10 @@ function getImportedExport(exported, exportedName, missingErrorContext) {
   return exported[exportedName];
 }
 
-function withPath(context, path, func) {
-  const executionContext = (path && context.path !== path) ? context.forkForPath(path) : context;
+function withPath(context, path, func, sourceOrigin) {
+  const executionContext = (path && (context.path !== path || context.sourceOrigin !== sourceOrigin))
+    ? context.forkForPath(path, sourceOrigin)
+    : context;
   return func.call(executionContext);
 }
 

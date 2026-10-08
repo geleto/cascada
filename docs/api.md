@@ -324,6 +324,14 @@ throws or rejects with an exported `NotFoundError`. Its `resourceName` property
 contains the requested name, and its message is `Resource not found: <name>`.
 Errors raised by a loader retain their original type.
 
+The full getter signatures are
+`Environment.getTemplate(name, eagerCompile, parentName, ignoreMissing, callback, origin)`
+and `AsyncEnvironment.getTemplate/getScript(name, eagerCompile, parentName, ignoreMissing, origin)`.
+`parentName` remains a string. Compiled includes, imports, and inheritance also
+supply an optional `SourceOrigin` identifying the declaring source and its loader.
+Getter overrides must forward this final argument unchanged (or forward `...args`)
+so relative dependencies retain their owning loader. Ordinary callers can omit it.
+
 ```js
 var tmpl = env.getTemplate('page.html');
 
@@ -471,12 +479,17 @@ WebLoader
 new WebLoader([baseURL], [opts])
 
 This is only available in the browser. **baseURL** is the URL to load
-templates from (must be the same domain), and it defaults to the
-current relative directory.
+templates from, and it defaults to the current relative directory. Every
+requested template must stay on that base URL's origin and inside its directory.
+An absolute base URL may use another origin if that server permits browser access.
 
 Relative includes and imports resolve against the URL of the loaded parent
 source, including inside `raceLoaders` groups. Relative base URLs resolve
 against the page's base URL; loaded source paths are absolute URLs.
+Absolute source URLs and root-relative paths are accepted only inside the
+configured base directory. Traversal and other-origin requests fail before fetching.
+HTTP 404 is a loader miss. Other HTTP failures are `Error` objects with `status`,
+`url`, and `responseText` properties.
 
 **opts** is an object with the following optional properties:
 
@@ -507,8 +520,43 @@ uses one internal subscription per event, and subscribers are held weakly so
 unused environments and groups can be collected. An `update` event invalidates
 both environment caches and the standalone `loadString` cache. Emit the requested
 name, or supply the source path as the second argument, to invalidate aliases.
+An `update` event without a name invalidates all sources. Pending requests may
+finish for their existing callers, but cannot restore invalidated cache entries.
 An empty `raceLoaders([])` group returns `null` for every name, allowing outer
 loaders to provide a fallback.
+
+Loaders default to `cachePolicy: 'cache'`: successful sources and misses are
+cached, and concurrent requests for the same source share one pending load.
+Emit `update` or call `env.invalidateCache()` after resources are added or changed.
+Filesystem loaders with `watch: true` invalidate additions, changes, and deletions.
+Set `cachePolicy: 'reload'` on a dynamic loader to disable all three caches and
+keep requests independent, including checks before a cached fallback loader.
+For a function loader, assign this property to the function itself. Filesystem
+`noCache: true` and WebLoader's default `useCache: false` select `'reload'`.
+A source's `noCache: true` skips retention of that completed source; use the
+loader's `'reload'` policy when pending loads and misses must also be independent.
+Race groups default to `'reload'` when any member does; assigning the group's
+`cachePolicy` overrides that default.
+
+Relative dependencies of compiled templates and scripts load exclusively through
+the member that supplied the declaring source. Public string parents, such as
+`env.loadString('./part', 'dir/main')`, carry no ownership information: each race
+member resolves the name against that parent and the first successful load wins.
+This rule does not depend on caching or previous requests.
+
+`env.loadString(name, parentName)` always returns a Promise, including on the
+synchronous `Environment`. It uses environment-local source caching and stops on
+loader errors, just like template acquisition. Standalone `loadString(name, loaders)`
+returns a string for synchronous loaders or a Promise for asynchronous loaders,
+and tries later loaders after errors as well as misses. If none succeeds, it
+preserves the first loader error. `env.invalidateCache()` clears only that
+environment; use `clearStringCache(loader)` to clear standalone text caches.
+
+Direct missing-resource acquisition throws or rejects with `NotFoundError`, whose
+`resourceName` identifies the request and whose message is `Resource not found: name`.
+This loader error is separate from `CascadaError`. Nested includes and imports
+attach execution context by wrapping the cause in `RuntimeError` under the default
+fatal loading policy; nonfatal loading paths use the existing poison model.
 
 You can write loaders for more complex loading, like from a database.
 If you want to do this, just create an object that has a method

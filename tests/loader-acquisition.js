@@ -129,25 +129,23 @@ describe('loader acquisitions', function() {
     });
   }
 
-  it('keeps compiled entries matched to their selected concurrent source acquisitions', async function() {
-    const textSource = deferred();
-    const templateSource = deferred();
+  it('shares one pending source between text and compiled acquisitions', async function() {
+    const source = deferred();
     let calls = 0;
     const env = new AsyncEnvironment({
-      load() { return ++calls === 1 ? textSource.promise : templateSource.promise; }
+      load() { calls++; return source.promise; }
     });
     const text = env.loadString('same');
     const template = env.getTemplate('same');
-    templateSource.resolve({src: 'template source', path: 'same'});
-    const originalTemplate = await template;
-    expect(await originalTemplate.render()).to.be('template source');
-    expect(await env.loadString('same')).to.be('template source');
-    textSource.resolve({src: 'text source', path: 'same'});
-    expect(await text).to.be('text source');
-    expect(await env.loadString('same')).to.be('text source');
-    expect(await env.renderTemplate('same')).to.be('text source');
-    expect(await originalTemplate.render()).to.be('template source');
-    expect(calls).to.be(2);
+    const secondTemplate = env.getTemplate('same');
+    source.resolve({src: 'shared source', path: 'same'});
+    const compiled = await template;
+    expect(await text).to.be('shared source');
+    expect(await compiled.render()).to.be('shared source');
+    expect(await secondTemplate).to.be(compiled);
+    expect(await env.loadString('same')).to.be('shared source');
+    expect(await env.renderTemplate('same')).to.be('shared source');
+    expect(calls).to.be(1);
   });
 
   it('rejects eager compilation errors from an asynchronous source acquisition', async function() {
@@ -197,17 +195,25 @@ describe('loader acquisitions', function() {
     }
   }
 
-  it('does not restore stale race path aliases after an update during acquisition', async function() {
-    const pending = deferred();
-    const loader = new Sources({});
-    loader.load = () => pending.promise;
-    const group = raceLoaders([loader]);
-    const result = group.load('dir/main');
-    loader.emit('update', 'dir/main', 'store/dir/main');
-    pending.resolve({src: 'old', path: 'store/dir/main'});
-    expect((await result).src).to.be('old');
-    expect(group.pathLoaders.size).to.be(0);
-    expect(group.resolve('store/dir/main', './child')).to.be('./child');
+  it('resolves string parents through every race member regardless of source cacheability', async function() {
+    for (const noCache of [false, true]) {
+      const first = {
+        load(name) {
+          if (name === 'main') return {src: 'parent', path: 'store/main', noCache};
+          return name === 'A/part' ? Promise.resolve({src: 'A-part', path: name, noCache}) : null;
+        },
+        isRelative: name => name.startsWith('./'),
+        resolve: () => 'A/part'
+      };
+      const second = {
+        load: name => (name === 'B/part' ? {src: 'B-part', path: name, noCache} : null),
+        isRelative: name => name.startsWith('./'),
+        resolve: () => 'B/part'
+      };
+      const env = new AsyncEnvironment(raceLoaders([raceLoaders([first, second])]));
+      expect(await env.loadString('main')).to.be('parent');
+      expect(await env.loadString('./part', 'main')).to.be('B-part');
+    }
   });
 
   it('starts a fresh acquisition after an update while the obsolete one is still pending', async function() {
@@ -241,5 +247,16 @@ describe('loader acquisitions', function() {
       expect(await env.loadString('dir/main')).to.be('parent');
       expect(await env.loadString('./part', 'store/dir/main')).to.be('part');
     }
+  });
+
+  it('clears leaf caches before environment update handlers request relative dependencies', async function() {
+    const loader = new Sources({'dir/main': '{% include "./child" %}', 'dir/child': 'old'});
+    const env = new AsyncEnvironment(raceLoaders([raceLoaders([loader])]));
+    expect(await env.renderTemplate('dir/main')).to.be('old');
+    let updatedRender;
+    env.on('update', () => { updatedRender = env.renderTemplate('dir/main'); });
+    loader.sources['dir/child'] = 'new';
+    loader.emit('update', 'dir/child', 'store/dir/child');
+    expect(await updatedRender).to.be('new');
   });
 });

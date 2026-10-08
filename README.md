@@ -7,6 +7,8 @@ Cascada is a data-orchestration engine for JavaScript and TypeScript application
 
 **⚠️ Under active development:** Cascada is evolving rapidly - bugs are possible. Issues and contributions are very welcome.
 
+Requires Node.js 24 or later. Browser use requires native ESM, top-level await, and `Error.isError`.
+
 Cascada is designed to make complex asynchronous workflows clear and low-boilerplate. It comes in two flavors sharing the same powerful execution model:
 
 - [CascadaScript](https://geleto.github.io/cascada-script/) - A clean, Python- and JavaScript-like scripting language for orchestrating APIs, databases, and LLM calls

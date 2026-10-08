@@ -1158,7 +1158,9 @@ const networkLoader = async (name) => {
 //   resolve(from, to)  optional — string
 //   on(event, handler) optional — env events
 // raceLoaders(loaders) — runs loaders concurrently; first success wins.
-// Relative dependencies use the parent's winning member; all-null races allow outer fallback.
+// Relative compiled dependencies resolve AND load through their declaring member.
+// String parents resolve independently through every member; all-null races allow outer fallback.
+// cachePolicy defaults to 'cache' (hits, misses, pending sharing); 'reload' keeps requests independent.
 // Source caching is per environment; noCache and loader update events apply to text/templates/scripts.
 const fast = raceLoaders([ new WebLoader('https://cdn.x/'), new FileSystemLoader('scripts/backup/') ]);
 ```

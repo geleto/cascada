@@ -13,6 +13,7 @@ class WebLoader extends Loader {
     // and compiled each time. (Remember, PRECOMPILE YOUR
     // TEMPLATES in production!)
     this.useCache = !!opts.useCache;
+    this.cachePolicy = this.useCache ? 'cache' : 'reload';
 
     // We default `async` to false so that the simple synchronous
     // API can be used when you aren't doing anything async in
@@ -23,17 +24,27 @@ class WebLoader extends Loader {
   }
 
   resolve(from, to) {
-    return new URL(to, this._getURL(from)).href;
+    return this._getURL(to, this._getURL(from));
   }
 
-  _getURL(name) {
+  _getURL(name, from) {
     const pageURL = typeof document !== 'undefined' ? document.baseURI :
       (typeof window !== 'undefined' ? window.location.href : undefined);
     const baseURL = new URL(this.baseURL, pageURL);
     if (!baseURL.pathname.endsWith('/')) {
       baseURL.pathname += '/';
     }
-    return new URL(name, baseURL).href;
+    const url = new URL(name, from ?? baseURL);
+    const namePath = name.split(/[?#]/, 1)[0];
+    // Absolute source paths are useful for subsequent relative resolution, but
+    // names must stay inside the configured template directory. Reject encoded
+    // separators too: servers may decode them before normalizing a pathname.
+    if (/^[\\/]{2}/.test(name) || url.origin !== baseURL.origin ||
+        url.protocol !== baseURL.protocol || !url.pathname.startsWith(baseURL.pathname) ||
+        url.username || url.password || /%2f|%5c|%00/i.test(namePath)) {
+      throw new Error('Template URL is outside the WebLoader base URL: ' + url.href);
+    }
+    return url.href;
   }
 
   getSource(name, cb) {
@@ -47,10 +58,16 @@ class WebLoader extends Loader {
           if (cb) {
             cb(null, null);
           }
-        } else if (cb) {
-          cb(err.content);
         } else {
-          throw err.content;
+          const error = new Error('HTTP ' + err.status + ' loading template: ' + url);
+          error.status = err.status;
+          error.url = url;
+          error.responseText = err.content;
+          if (cb) {
+            cb(error);
+          } else {
+            throw error;
+          }
         }
       } else {
         result = {

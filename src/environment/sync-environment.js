@@ -12,8 +12,8 @@ class Environment extends BaseEnvironment {
     this.ScriptClass = null;
   }
 
-  getTemplate(name, eagerCompile, parentName, ignoreMissing, cb) {
-    return this._getCompiledTemplate(name, eagerCompile, parentName, ignoreMissing, false, cb);
+  getTemplate(name, eagerCompile, parentName, ignoreMissing, cb, origin) {
+    return this._getCompiledTemplate(name, eagerCompile, parentName, ignoreMissing, false, cb, origin);
   }
 
   /** @deprecated Use renderTemplate instead */

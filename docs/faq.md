@@ -9,8 +9,8 @@ pageid: faq
 
 ## Can I use nunjucks in node and the browser/client-side?
 
-Yes. Nunjucks supports all modern browsers and any version of Node.js
-[currently supported by the Node.js Foundation](https://github.com/nodejs/Release#release-schedule1).
+Yes. Cascada requires Node.js 24 or later, or a browser with native ESM,
+top-level await, and `Error.isError`.
 
 ## Can I precompile templates for server-side use (Node/Express)?
 

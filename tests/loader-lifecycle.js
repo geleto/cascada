@@ -153,7 +153,7 @@ describe('loader lifecycle', function() {
     expect(await env.renderTemplate('template')).to.be('fallback');
   });
 
-  it('does not retain path entries for non-relative or noCache sources', async function() {
+  it('returns dynamic sources without requiring path ownership storage', async function() {
     const literalGroup = raceLoaders([{
       load: name => ({src: name, path: 'store/' + name})
     }]);
@@ -166,28 +166,9 @@ describe('loader lifecycle', function() {
       expect((await literalGroup.load(name)).src).to.be(name);
       expect((await dynamicGroup.load(name)).src).to.be(name);
     }
-    expect(literalGroup.pathLoaders.size).to.be(0);
-    expect(dynamicGroup.pathLoaders.size).to.be(0);
   });
 
-  it('removes both aliases of cached relative ownership on a member update', async function() {
-    const loader = new UpdatingLoader({'dir/main': 'main'});
-    const group = raceLoaders([loader]);
-    const source = await group.load('dir/main');
-    expect(group.pathLoaders.size).to.be(2);
-    expect(group.resolve(source.path, './part')).to.be('store/dir/part');
-
-    loader.emit('update', 'dir/main');
-    expect(group.pathLoaders.size).to.be(0);
-    expect(group.resolve(source.path, './part')).to.be('./part');
-
-    const reloaded = await group.load('dir/main');
-    expect(group.pathLoaders.size).to.be(2);
-    loader.emit('update', 'unrelated', reloaded.path);
-    expect(group.pathLoaders.size).to.be(0);
-  });
-
-  it('resolves noCache parents through their source without retaining path entries', async function() {
+  it('resolves noCache parents through their source origins', async function() {
     const loader = new UpdatingLoader({
       'dir/main.njk': '{% include "./part.njk" %}',
       'dir/part.njk': 'first'
@@ -198,6 +179,5 @@ describe('loader lifecycle', function() {
     expect(await env.renderTemplate('dir/main.njk')).to.be('first');
     loader.sources['dir/part.njk'] = 'second';
     expect(await env.renderTemplate('dir/main.njk')).to.be('second');
-    expect(group.pathLoaders.size).to.be(0);
   });
 });

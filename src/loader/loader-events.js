@@ -7,7 +7,7 @@ const subscriptions = new FinalizationRegistry(({hub, event, entry}) => {
 
 class LoaderEvents {
   constructor(loader) {
-    this.loader = new WeakRef(loader);
+    this.loader = loader;
     this.events = new Map();
   }
 
@@ -20,7 +20,7 @@ class LoaderEvents {
         dispatch: (...args) => this.dispatch(event, args)
       };
       this.events.set(event, listeners);
-      this.loader.deref().on(event, listeners.dispatch);
+      this.loader.on(event, listeners.dispatch);
     }
     let callbacks = listeners.targets.get(target);
     if (!callbacks) {
@@ -35,7 +35,7 @@ class LoaderEvents {
   }
 
   dispatch(event, args) {
-    const loader = this.loader.deref();
+    const loader = this.loader;
     const listeners = this.events.get(event);
     if (!listeners) return;
     for (const entry of Array.from(listeners.entries)) {
@@ -60,8 +60,8 @@ class LoaderEvents {
     }
     subscriptions.unregister(entry);
     if (!listeners.entries.size) {
-      const loader = this.loader.deref();
-      const remove = loader?.off || loader?.removeListener;
+      const loader = this.loader;
+      const remove = loader.off || loader.removeListener;
       if (remove) {
         remove.call(loader, event, listeners.dispatch);
         this.events.delete(event);

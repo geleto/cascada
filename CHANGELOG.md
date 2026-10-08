@@ -4,6 +4,28 @@ All notable changes to `cascada-engine` are documented here.
 
 This project follows SemVer. While Cascada is still in `0.x`, minor releases may include breaking language and runtime changes.
 
+## Unreleased
+
+### Changed
+
+- Require Node.js 24 or later. Browser targets require native ESM, top-level await, and `Error.isError`.
+- Unify missing-resource errors as `NotFoundError` with `resourceName` and the message `Resource not found: name`, including synchronous template loading. Nested rendering failures retain this error as their cause.
+- WebLoader source paths are canonical absolute URLs. Requests must stay within the configured base origin and directory; HTTP failures expose status, URL, and response text.
+- Loaders cache hits and misses and share pending requests by default. Dynamic loaders can select `cachePolicy: 'reload'`; source-level `noCache` prevents completed-source retention. Filesystem watchers invalidate added and deleted sources as well as changes.
+- Relative dependencies of compiled sources stay with their declaring race member. String parents resolve independently through race members, consistently across cache policies.
+- Environment getter overrides receive an optional final `SourceOrigin` argument and must forward it to preserve relative dependency ownership; `parentName` remains a string.
+- `raceLoaders([])` now returns a loader that finds nothing instead of throwing.
+- Environment cache invalidation is local; standalone text caches use `clearStringCache` or loader update events.
+
+### Fixed
+
+- Compile empty template and script sources, and accept empty loaded text.
+- Correct `PrecompiledLoader` constructor typing to a name-keyed object map, and distinguish precompiled script return values from template strings.
+- Keep loader subscriptions bounded and allow unused environments, groups, and sources to be collected.
+- Prevent pending loads from restoring invalidated caches and separate compiled template/script modes by acquisition.
+- Preserve errors across JavaScript realms and string parent names in environment getter overrides.
+- Resolve relative dependencies through nested races, inherited blocks, macros, and component methods.
+
 ## [0.5.1] - 2026-04-29
 
 ### Fixed
