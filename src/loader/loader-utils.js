@@ -62,15 +62,28 @@ function onSourceUpdate(cache, loader, name, fullname) {
 }
 
 class SourceCache {
-  constructor(loader, subscribe = true) {
+  constructor(loader, subscribe = true, policyLoader = loader) {
     this.loader = loader;
+    this.policyLoader = policyLoader;
+    this.ownerCaches = new Map();
     this.entries = new Map();
     this.pending = new Map();
     this.generation = 0;
     if (subscribe) subscribeLoaderEvent(loader, 'update', this, onSourceUpdate);
   }
 
+  forOwner(owner) {
+    if (owner === this.loader) return this;
+    let cache = this.ownerCaches.get(owner);
+    if (!cache) {
+      cache = new SourceCache(owner, false, this.policyLoader);
+      this.ownerCaches.set(owner, cache);
+    }
+    return cache;
+  }
+
   clear(name, fullname) {
+    for (const cache of this.ownerCaches.values()) cache.clear(name, fullname);
     // Pending acquisitions from an older generation may finish for their
     // original caller, but must never repopulate an invalidated cache.
     this.generation++;
@@ -90,12 +103,17 @@ class SourceCache {
   load(name, parentName) {
     const relativeParent = parentName && this.loader.isRelative?.(name) ? parentName : null;
     const cacheKey = JSON.stringify([relativeParent, name]);
-    const cacheRequests = this.loader.cachePolicy !== 'reload';
+    const cacheRequests = this.policyLoader.cachePolicy !== 'reload';
     const cached = this.entries.get(cacheKey);
     if (cacheRequests && cached) return cached.acquisition;
     if (cacheRequests && this.pending.has(cacheKey)) return this.pending.get(cacheKey);
     const generation = this.generation;
     const remember = acquisition => {
+      if (acquisition && this.policyLoader !== this.loader) {
+        // Pin resolution to the source owner while retaining the group's policy
+        // for this source and its subsequent relative dependencies.
+        acquisition = {source: acquisition.source, origin: {...acquisition.origin, loader: this.policyLoader}};
+      }
       if (cacheRequests && generation === this.generation && (!acquisition || !acquisition.source.noCache)) {
         this.entries.set(cacheKey, {name, acquisition});
       }

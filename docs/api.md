@@ -470,6 +470,12 @@ As the name suggests, this is also only available in node. It will load
 templates from the filesystem using node's
 [package resolution algorithm](https://nodejs.org/api/packages.html).
 
+Names are passed to `require.resolve()` after rejecting absolute paths,
+drive-relative paths, leading `./` paths, and every `..` path segment with either
+slash separator. Rejected names are loader misses. This also rejects safe internal
+traversal: normalize `pkg/views/../layout.html` to `pkg/layout.html` before loading.
+Exports, extension lookup, and symlinks follow Node's normal resolution behavior.
+
 **opts** is an object which takes the same properties as
 [`FileSystemLoader`](#filesystemloader).
 {% endapi %}
@@ -536,7 +542,8 @@ For a function loader, assign this property to the function itself. Filesystem
 A source's `noCache: true` skips retention of that completed source; use the
 loader's `'reload'` policy when pending loads and misses must also be independent.
 Race groups default to `'reload'` when any member does; assigning the group's
-`cachePolicy` overrides that default.
+`cachePolicy` overrides that default. The group's policy also applies to relative
+dependencies, including dependencies loaded through further relative includes or imports.
 
 Relative dependencies of compiled templates and scripts load exclusively through
 the member that supplied the declaring source. Public string parents, such as
@@ -557,6 +564,8 @@ Direct missing-resource acquisition throws or rejects with `NotFoundError`, whos
 This loader error is separate from `CascadaError`. Nested includes and imports
 attach execution context by wrapping the cause in `RuntimeError` under the default
 fatal loading policy; nonfatal loading paths use the existing poison model.
+For includes, `ignore missing` suppresses absent sources only; other loader errors
+still follow the configured `loadFailFatal` policy.
 
 You can write loaders for more complex loading, like from a database.
 If you want to do this, just create an object that has a method

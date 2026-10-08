@@ -8,7 +8,7 @@ class PrecompiledLoader extends Loader {
   }
 
   getSource(name) {
-    if (this.precompiled[name]) {
+    if (Object.hasOwn(this.precompiled, name) && this.precompiled[name]) {
       return {
         src: {
           type: 'code',

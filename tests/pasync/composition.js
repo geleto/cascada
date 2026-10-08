@@ -597,6 +597,107 @@ async function expectRejects(promise) {
         expect(result).to.be('ab');
       });
 
+      it('should let ignore missing silence asynchronous acquisition misses', async () => {
+        loader.getSource = () => Promise.resolve(null);
+        env = new AsyncEnvironment(loader);
+
+        const result = await env.renderTemplateString('a{% include "missing.njk" ignore missing %}b');
+
+        expect(result).to.be('ab');
+      });
+
+      for (const asynchronous of [false, true]) {
+        it(`should keep ${asynchronous ? 'asynchronous' : 'synchronous'} loader errors fatal with ignore missing`, async () => {
+          const loadError = new Error('database unavailable');
+          loadError._errorContext = [7, 3, 'loader', 'loader-origin.njk', null, null];
+          loader.getSource = () => {
+            if (asynchronous) return Promise.reject(loadError);
+            throw loadError;
+          };
+          env = new AsyncEnvironment(loader);
+
+          const err = await expectRejects(
+            env.renderTemplateString('a{% include "part.njk" ignore missing %}b')
+          );
+
+          expect(runtime.isRuntimeError(err)).to.be(true);
+          expect(err.cause).to.be(loadError);
+          expect(err.context.path).to.be('loader-origin.njk');
+          expect(err.context.lineno).to.be(7);
+          expect(err.message).to.contain('database unavailable');
+        });
+      }
+
+      it('should respect an explicit non-fatal include policy with ignore missing', async () => {
+        loader.getSource = () => Promise.reject(new Error('database unavailable'));
+        for (const loadFailFatal of [false, ['import']]) {
+          env = new AsyncEnvironment(loader, { loadFailFatal });
+
+          const result = await env.renderTemplateString('a{% include "part.njk" ignore missing %}b');
+
+          expect(result).to.be('ab');
+        }
+      });
+
+      it('should respect an explicit fatal include policy with ignore missing', async () => {
+        const loadError = new Error('database unavailable');
+        loader.getSource = () => Promise.reject(loadError);
+        env = new AsyncEnvironment(loader, { loadFailFatal: ['include'] });
+
+        const err = await expectRejects(
+          env.renderTemplateString('a{% include "part.njk" ignore missing %}b')
+        );
+
+        expect(runtime.isRuntimeError(err)).to.be(true);
+        expect(err.cause).to.be(loadError);
+      });
+
+      it('should not let ignore missing silence included template constructor failures', async () => {
+        loader.getSource = () => ({ src: { type: 'invalid' }, path: 'bad.njk' });
+        env = new AsyncEnvironment(loader);
+
+        const err = await expectRejects(
+          env.renderTemplateString('a{% include "bad.njk" ignore missing %}b')
+        );
+
+        expect(runtime.isRuntimeError(err)).to.be(true);
+        expect(err.message).to.contain('Unexpected template object type invalid');
+      });
+
+      it('should preserve poisoned include targets with ignore missing', async () => {
+        const targetError = runtime.PoisonError.create(
+          'target poisoned',
+          [2, 4, 'target', 'target-origin.njk', null, null],
+          'UserCallThrew'
+        );
+        const target = runtime.createPoison(targetError);
+        env = new AsyncEnvironment(loader);
+
+        const err = await expectRejects(
+          env.renderTemplateString('a{% include target ignore missing %}b', { target })
+        );
+
+        expect(runtime.isPoisonError(err)).to.be(true);
+        expect(err).to.be(targetError);
+        expect(err.context.path).to.be('target-origin.njk');
+      });
+
+      it('should preserve fatal loader errors with ignore missing under a non-fatal policy', async () => {
+        const loadError = runtime.RuntimeError.create(
+          'loader contract failed',
+          [2, 4, 'loader', 'loader-origin.njk', null, null]
+        );
+        loader.getSource = () => Promise.reject(loadError);
+        env = new AsyncEnvironment(loader, { loadFailFatal: false });
+
+        const err = await expectRejects(
+          env.renderTemplateString('a{% include "part.njk" ignore missing %}b')
+        );
+
+        expect(err).to.be(loadError);
+        expect(err.context.path).to.be('loader-origin.njk');
+      });
+
       it('should not let ignore missing silence invalid included templates', async () => {
         loader.addTemplate('bad.njk', '{% if %}broken{% endif %}');
         loader.addTemplate('main.njk', 'a{% include "bad.njk" ignore missing %}b');

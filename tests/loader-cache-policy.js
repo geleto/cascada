@@ -1,4 +1,5 @@
 import expect from 'expect.js';
+import {isPoisonError} from '../src/runtime/errors.js';
 
 const isBrowser = typeof window !== 'undefined';
 const {Environment, AsyncEnvironment, Loader, loadString, raceLoaders} = isBrowser
@@ -223,6 +224,93 @@ describe('loader cache policy', function() {
     const cachedEnv = new AsyncEnvironment(cacheGroup);
     expect(await cachedEnv.loadString('text')).to.be('3');
     expect(await cachedEnv.loadString('text')).to.be('3');
+  });
+
+  for (const EnvironmentClass of [Environment, AsyncEnvironment]) {
+    for (const policy of ['explicit', 'derived']) {
+      it(`applies ${policy} race reload policy to nested relative ${EnvironmentClass.name} includes`, async function() {
+        let version = 'old';
+        const calls = [];
+        const owner = {
+          isRelative: name => name.startsWith('./'),
+          resolve: (from, to) => to.slice(2),
+          load(name) {
+            calls.push(name);
+            return {src: name === 'main' ? '{% include "./part" %}'
+              : name === 'part' ? '{% include "./leaf" %}' : version, path: name};
+          }
+        };
+        const members = policy === 'derived' ? [owner, {cachePolicy: 'reload', load: () => null}] : [owner];
+        const group = raceLoaders([raceLoaders(members)]);
+        if (policy === 'explicit') group.cachePolicy = 'reload';
+        const env = new EnvironmentClass(group);
+        const render = () => {
+          if (EnvironmentClass === AsyncEnvironment) return env.renderTemplate('main');
+          return new Promise((resolve, reject) => {
+            env.renderTemplate('main', {}, (error, result) => {
+              if (error) reject(error);
+              else resolve(result);
+            });
+          });
+        };
+        expect(await render()).to.be('old');
+        version = 'new';
+        expect(await render()).to.be('new');
+        expect(calls).to.eql(['main', 'part', 'leaf', 'main', 'part', 'leaf']);
+      });
+    }
+  }
+
+  it('applies an explicit cache policy to relative sources from a reload member', async function() {
+    let version = 'old';
+    const calls = [];
+    const owner = {
+      cachePolicy: 'reload',
+      isRelative: name => name.startsWith('./'),
+      resolve: (from, to) => to.slice(2),
+      load(name) {
+        calls.push(name);
+        return {src: name === 'main' ? '{% include "./part" %}' : version, path: name};
+      }
+    };
+    const group = raceLoaders([owner]);
+    group.cachePolicy = 'cache';
+    const env = new AsyncEnvironment(group);
+    expect(await env.renderTemplate('main')).to.be('old');
+    version = 'new';
+    expect(await env.renderTemplate('main')).to.be('old');
+    expect(calls).to.eql(['main', 'part']);
+  });
+
+  it('preserves poison and retries relative imports under a race reload policy', async function() {
+    let fail = false;
+    let value = 1;
+    const failure = new Error('relative import failed');
+    const owner = {
+      isRelative: name => name.startsWith('./'),
+      resolve: (from, to) => to.slice(2),
+      async load(name) {
+        if (name === 'main') return {src: 'import "./lib" as lib\nreturn lib.value', path: name};
+        if (fail) throw failure;
+        return {src: `var value = ${value}`, path: name};
+      }
+    };
+    const group = raceLoaders([raceLoaders([owner])]);
+    group.cachePolicy = 'reload';
+    const env = new AsyncEnvironment(group, {loadFailFatal: false});
+    expect(await env.renderScript('main')).to.be(1);
+    fail = true;
+    let rejected;
+    try {
+      await env.renderScript('main');
+    } catch (error) {
+      rejected = error;
+    }
+    expect(isPoisonError(rejected)).to.be(true);
+    expect(rejected.cause).to.be(failure);
+    fail = false;
+    value = 2;
+    expect(await env.renderScript('main')).to.be(2);
   });
 
   it('keeps standalone caches independent from environment invalidation', async function() {

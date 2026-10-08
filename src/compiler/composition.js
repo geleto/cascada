@@ -318,7 +318,8 @@ class CompileComposition {
       this.emit.line(`  } else if (runtime.isPoisonError(${includeError})) {`);
       this.emit.line(`    ${this.compiler.buffer.currentBuffer}.addCommand(new runtime.TextCommand({ chainName: "${this.compiler.buffer.currentTextChainName}", args: [runtime.createPoison(${includeError})], errorContext: ${this.compiler.emitErrorContext(node)} }), "${this.compiler.buffer.currentTextChainName}");`);
       this.emit.line(`    ${shouldRenderInclude} = false;`);
-      this.emit.line(`  } else if (${node.ignoreMissing ? 'false' : 'runtime.isLoadFailureFatal(env, "include")'}) {`);
+      // ignoreMissing resolves absent templates to a no-op; genuine load errors follow the policy.
+      this.emit.line('  } else if (runtime.isLoadFailureFatal(env, "include")) {');
       this.emit.line(`    runtime.RuntimeError.reportAndThrow(${includeError}, ${this.compiler.emitErrorContext(node)});`);
       this.emit.line('  } else {');
       this.emit.line(`    ${shouldRenderInclude} = false;`);

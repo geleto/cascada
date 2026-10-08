@@ -265,17 +265,19 @@ class BaseEnvironment extends EmitterObj {
 
   _getSource(name, parentName, callback, origin) {
     parentName = origin?.path ?? parentName;
-    const loaders = origin && origin.owner.isRelative?.(name) ? [origin.owner] : this.loaders;
+    const relativeOrigin = origin && origin.owner.isRelative?.(name) ? origin : null;
+    const loaders = relativeOrigin ? [relativeOrigin.owner] : this.loaders;
     return lib.asyncIter(loaders, (loader, i, next, done) => {
       let result;
       try {
         const resolvedName = this._resolveFromLoader(loader, parentName, name);
-        let cache = this._sourceCaches.get(loader);
+        const policyLoader = relativeOrigin ? relativeOrigin.loader : loader;
+        let cache = this._sourceCaches.get(policyLoader);
         if (!cache) {
-          cache = new SourceCache(loader, false);
-          this._sourceCaches.set(loader, cache);
+          cache = new SourceCache(policyLoader, false);
+          this._sourceCaches.set(policyLoader, cache);
         }
-        result = cache.load(resolvedName, parentName);
+        result = cache.forOwner(loader).load(resolvedName, parentName);
       } catch (error) {
         done(error);
         return;

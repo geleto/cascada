@@ -16,6 +16,7 @@ This project follows SemVer. While Cascada is still in `0.x`, minor releases may
 - Environment getter overrides receive an optional final `SourceOrigin` argument and must forward it to preserve relative dependency ownership; `parentName` remains a string.
 - `raceLoaders([])` now returns a loader that finds nothing instead of throwing.
 - Environment cache invalidation is local; standalone text caches use `clearStringCache` or loader update events.
+- `NodeResolveLoader` requires normalized package subpaths: every `..` segment is rejected, including paths that would stay within a package. Other resolution, including symlinks, follows Node.
 
 ### Fixed
 
@@ -25,6 +26,11 @@ This project follows SemVer. While Cascada is still in `0.x`, minor releases may
 - Prevent pending loads from restoring invalidated caches and separate compiled template/script modes by acquisition.
 - Preserve errors across JavaScript realms and string parent names in environment getter overrides.
 - Resolve relative dependencies through nested races, inherited blocks, macros, and component methods.
+- Apply race-group cache policies to all relative dependencies without changing their source owner.
+- Reject absolute and drive-relative filesystem names in `NodeResolveLoader`, and restore its watch mode.
+- Ignore inherited properties when looking up precompiled templates.
+- Preserve genuine include loading errors when `ignore missing` is used.
+- Allow distinct inline inheritance participants to share a diagnostic path while still detecting real cycles.
 
 ## [0.5.1] - 2026-04-29
 

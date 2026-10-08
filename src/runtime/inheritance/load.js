@@ -67,15 +67,17 @@ async function loadInheritanceChain({ templateOrScript, ownerState, context, err
   let isEntry = true;
 
   while (currentTemplateOrScript) {
-    // Canonical paths identify sources within their owning loader. Different
-    // race members can use the same path for independent sources.
+    // Canonical paths identify sources within their owning loader. Inline
+    // participants have only diagnostic paths, so use their object identity.
     const sourceOwner = currentTemplateOrScript.sourceOrigin?.owner;
     let seen = seenByOwner.get(sourceOwner);
     if (!seen) {
       seen = new Set();
       seenByOwner.set(sourceOwner, seen);
     }
-    const cycleIdentity = currentTemplateOrScript.path ?? currentTemplateOrScript;
+    const cycleIdentity = sourceOwner
+      ? (currentTemplateOrScript.path ?? currentTemplateOrScript)
+      : currentTemplateOrScript;
     if (seen.has(cycleIdentity)) {
       RuntimeError.reportAndThrow(
         `inheritance cycle detected at ${currentTemplateOrScript.path ?? '<anonymous>'}`,

@@ -118,7 +118,7 @@ class NodeResolveLoader extends Loader {
     this.cachePolicy = this.noCache ? 'reload' : 'cache';
 
     if (opts.watch) {
-      this.watcher = chokidar.watch();
+      this.watcher = chokidar.watch([]);
 
       this.watcher.on('change', (fullname) => {
         this.emit('update', this.pathsToNames[fullname], fullname);
@@ -134,11 +134,10 @@ class NodeResolveLoader extends Loader {
   }
 
   getSource(name) {
-    // Don't allow file-system traversal
-    if ((/^\.?\.?(\/|\\)/).test(name)) {
-      return null;
-    }
-    if ((/^[A-Z]:/).test(name)) {
+    // Reject explicit filesystem paths and parent-directory segments before Node resolution.
+    if ((/^\.[/\\]/).test(name) || path.posix.isAbsolute(name) ||
+      path.win32.isAbsolute(name) || (/^[a-z]:/i).test(name) ||
+      name.split(/[/\\]/).includes('..')) {
       return null;
     }
 

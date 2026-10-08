@@ -2,7 +2,7 @@ import expect from 'expect.js';
 import {isPoisonError} from '../src/runtime/errors.js';
 
 const indexModule = typeof window !== 'undefined' ? window.nunjucks : await import('../src/index.js');
-const {AsyncEnvironment, Environment, Loader, raceLoaders} = indexModule;
+const {AsyncEnvironment, AsyncTemplate, Environment, Loader, raceLoaders} = indexModule;
 
 class SourceLoader extends Loader {
   constructor(sources, prefix, noCache = true) {
@@ -113,6 +113,43 @@ describe('source origin transport through compiled execution', function() {
       throw new Error('Expected inheritance cycle to fail');
     } catch (error) {
       expect(error.message).to.contain('inheritance cycle detected');
+    }
+  });
+
+  it('allows distinct inline inheritance participants with the same diagnostic path', async function() {
+    const env = new AsyncEnvironment();
+    const parent = new AsyncTemplate('[{% block body %}BASE{% endblock %}]', env, 'inline.njk');
+    const child = new AsyncTemplate(
+      '{% extends parent %}{% block body %}CHILD{{ super() }}{% endblock %}', env, 'inline.njk'
+    );
+    expect(await child.render({parent})).to.be('[CHILDBASE]');
+  });
+
+  it('preserves poison from an inline parent with the same diagnostic path', async function() {
+    const env = new AsyncEnvironment();
+    const parent = new AsyncTemplate('{% block body %}{{ fail() }}{% endblock %}', env, 'inline.njk');
+    const child = new AsyncTemplate('{% extends parent %}', env, 'inline.njk');
+    try {
+      await child.render({
+        parent,
+        async fail() { throw new Error('parent value failed'); }
+      });
+      throw new Error('Expected parent value to fail');
+    } catch (error) {
+      expect(isPoisonError(error)).to.be(true);
+      expect(error.message).to.contain('parent value failed');
+    }
+  });
+
+  it('still rejects an inline inheritance cycle through the same object', async function() {
+    const env = new AsyncEnvironment();
+    const template = new AsyncTemplate('{% extends parent %}', env, 'inline.njk');
+    try {
+      await template.render({parent: template});
+      throw new Error('Expected inheritance cycle to fail');
+    } catch (error) {
+      expect(error.message).to.contain('inheritance cycle detected');
+      expect(error.path).to.be('inline.njk');
     }
   });
 
