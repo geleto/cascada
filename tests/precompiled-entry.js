@@ -5,10 +5,12 @@ import {fileURLToPath, pathToFileURL} from 'url';
 import expect from 'expect.js';
 import {
   precompileScriptString,
+  precompileTemplateString,
   precompileTemplateStringAsync
 } from '../src/precompile.js';
 import {AsyncEnvironment as FullAsyncEnvironment} from '../src/index.js';
 import {
+  Environment,
   AsyncEnvironment,
   PrecompiledLoader
 } from '../src/precompiled/index.js';
@@ -58,6 +60,19 @@ function collectStaticImports(entry, seen = new Set()) {
 }
 
 describe('precompiled runtime entry', function() {
+  it('should render empty and whitespace-only precompiled sources', async function() {
+    for (const source of ['', ' \t\r\n']) {
+      const options = {name: 'empty', format: 'esm'};
+      const syncTemplates = (await importGeneratedModule(precompileTemplateString(source, options))).default;
+      const asyncTemplates = (await importGeneratedModule(precompileTemplateStringAsync(source, options))).default;
+      const scripts = (await importGeneratedModule(precompileScriptString(source, options))).default;
+
+      expect(new Environment(new PrecompiledLoader(syncTemplates)).renderTemplate('empty')).to.be(source);
+      expect(await new AsyncEnvironment(new PrecompiledLoader(asyncTemplates)).renderTemplate('empty')).to.be(source);
+      expect(await new AsyncEnvironment(new PrecompiledLoader(scripts)).renderScript('empty')).to.be(null);
+    }
+  });
+
   it('should render async precompiled templates without the full entry', async function() {
     const source = precompileTemplateStringAsync('Hello {{ getName() }}', {
       name: 'hello.njk',

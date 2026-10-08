@@ -30,7 +30,7 @@ export function renderScriptString(src: string, context?: object): Promise<Recor
 
 export function loadString(key: string, loader: ILoaderAny | ILoaderAny[]): Promise<string> | string;
 export function clearStringCache(loader: ILoaderAny, key?: string): void;
-export function raceLoaders(loaders: ILoaderAny[]): ILoaderAsync;
+export function raceLoaders(loaders: ILoaderAny[]): LoaderInterface;
 
 /** @deprecated Use compileTemplate instead */
 export function compile(src: string, env?: Environment, path?: string, eagerCompile?: boolean): Template;
@@ -131,6 +131,8 @@ export class Environment {
   };
 
   constructor(loader?: ILoaderAny | ILoaderAny[] | null, opts?: ConfigureOptions);
+  loadString(name: string, parentName?: string): Promise<string>;
+  invalidateCache(): void;
   /** @deprecated Use renderTemplate instead */
   render(name: string, context?: object): string;
   /** @deprecated Use renderTemplate instead */
@@ -186,6 +188,9 @@ export class AsyncEnvironment {
   };
 
   constructor(loader?: ILoaderAny | ILoaderAny[] | null, opts?: ConfigureOptions);
+
+  loadString(name: string, parentName?: string): Promise<string>;
+  invalidateCache(): void;
 
   renderTemplate(name: string, context?: object): Promise<string>;
   renderScript(name: string, context?: object): Promise<Record<string, any> | string | null>;

@@ -18,6 +18,18 @@ const Loader = isBrowser ? window.nunjucks.WebLoader : loaderModule.FileSystemLo
       env = new Environment(new Loader(templatesPath));
     });
 
+    it('should render empty and whitespace-only inline and named templates', function() {
+      const loader = new util.StringLoader();
+      const emptyEnv = new Environment(loader);
+
+      for (const source of ['', ' \t\r\n']) {
+        loader.addTemplate('empty.njk', source);
+        emptyEnv.invalidateCache();
+        expect(emptyEnv.renderTemplateString(source)).to.be(source);
+        expect(emptyEnv.renderTemplate('empty.njk')).to.be(source);
+      }
+    });
+
     it('should always force compilation of parent template', function() {
 
       var child = env.getTemplate('base-inherit.njk');

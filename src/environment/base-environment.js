@@ -152,16 +152,25 @@ class BaseEnvironment extends EmitterObj {
     if (!this._compiledCaches) {
       this._compiledCaches = new WeakMap();
     }
+    if (!this._sourceCaches) {
+      this._sourceCaches = new WeakMap();
+    }
     this.loaders.forEach((loader) => {
       // Initialize compiled cache map for this loader
       if (!this._compiledCaches.get(loader)) {
         this._compiledCaches.set(loader, new Map());
       }
+      if (!this._sourceCaches.get(loader)) {
+        this._sourceCaches.set(loader, new Map());
+      }
       if (typeof loader.on === 'function') {
         loader.on('update', (name, fullname) => {
-          const cache = this._compiledCaches.get(loader);
-          if (cache) {
-            cache.delete(name);
+          for (const cache of [this._compiledCaches.get(loader), this._sourceCaches.get(loader)]) {
+            for (const [key, value] of cache) {
+              if (key === name || value.path === name || (fullname != null && value.path === fullname)) {
+                cache.delete(key);
+              }
+            }
           }
           this.emit('update', name, fullname, loader);
         });
@@ -180,8 +189,30 @@ class BaseEnvironment extends EmitterObj {
       } else if (this._compiledCaches) {
         this._compiledCaches.set(loader, new Map());
       }
+      this._sourceCaches.get(loader).clear();
       // Also clear the string cache for this loader
       clearStringCache(loader);
+    });
+  }
+
+  /** Loads literal text through this environment's loader chain and source cache. */
+  loadString(name, parentName) {
+    return new Promise((resolve, reject) => {
+      if (typeof name !== 'string') {
+        reject(new TypeError('resource names must be a string: ' + name));
+        return;
+      }
+      this._getSource(name, parentName, (error, source) => {
+        if (error) {
+          reject(error);
+        } else if (!source) {
+          reject(new Error('Resource not found: ' + name));
+        } else if (typeof source.src !== 'string') {
+          reject(new TypeError('Resource is not a string: ' + name));
+        } else {
+          resolve(source.src);
+        }
+      });
     });
   }
 
@@ -256,6 +287,28 @@ class BaseEnvironment extends EmitterObj {
     return (isRelative && loader.resolve) ? loader.resolve(parentName, filename) : filename;
   }
 
+  _getSource(name, parentName, callback) {
+    return callLoaders(this.loaders, name, (loader, filename) => {
+      return this._resolveFromLoader(loader, parentName, filename);
+    }, callback, this._sourceCaches);
+  }
+
+  _sourceEnvironment(source) {
+    const loader = source.loader;
+    const sourceAware = typeof loader._resolveSource === 'function';
+    if (!sourceAware && this._resolveFromLoader === BaseEnvironment.prototype._resolveFromLoader) return this;
+    // Keep each loaded source's origin even when noCache races reuse a path.
+    const environment = Object.create(this);
+    const path = source.path;
+    environment._resolveFromLoader = (candidate, parentName, filename) => {
+      if (sourceAware && candidate === loader && parentName === path) {
+        return loader._resolveSource(source, parentName, filename);
+      }
+      return BaseEnvironment.prototype._resolveFromLoader.call(environment, candidate, parentName, filename);
+    };
+    return environment;
+  }
+
   _getCompiledTemplate(name, eagerCompile, parentName, ignoreMissing, asyncMode, cb) {
     return this._getCompiledByMode(name, eagerCompile, parentName, ignoreMissing, asyncMode, false, cb);
   }
@@ -265,7 +318,6 @@ class BaseEnvironment extends EmitterObj {
   }
 
   _getCompiledByMode(name, eagerCompile, parentName, ignoreMissing, asyncMode, scriptMode, cb) {
-    var that = this;
     var tmpl = null;
     if (name && name.raw) {
       // this fixes autoescape for templates referenced in symbols
@@ -302,19 +354,6 @@ class BaseEnvironment extends EmitterObj {
       tmpl = name;
     } else if (typeof name !== 'string') {
       throw new Error('template names must be a string: ' + name);
-    } else {
-      for (let i = 0; i < this.loaders.length; i++) {
-        const loader = this.loaders[i];
-        const cache = this._compiledCaches && this._compiledCaches.get(loader);
-        const key = this._resolveFromLoader(loader, parentName, name);
-        tmpl = cache ? cache.get(key) : undefined;
-        if (tmpl) {
-          if (!!tmpl.asyncMode !== asyncMode) {
-            throw new Error('The same template can not be compiled in both async and sync mode');
-          }
-          break;
-        }
-      }
     }
 
     if (tmpl) {
@@ -331,7 +370,7 @@ class BaseEnvironment extends EmitterObj {
     }
     let syncResult;
 
-    const createCompiledScript = (info) => {
+    const createCompiledScript = (info, resolvedName) => {
       if (!ScriptClass) {
         throw new Error('Script rendering is not available in this environment');
       }
@@ -339,16 +378,16 @@ class BaseEnvironment extends EmitterObj {
         return new ScriptClass(noopTmplSrcAsync, this, '', eagerCompile);
       }
 
-      const compiled = new ScriptClass(info.src, this, info.path, eagerCompile);
+      const compiled = new ScriptClass(info.src, this._sourceEnvironment(info), info.path, eagerCompile);
       if (!info.noCache) {
         const compiledCache = this._compiledCaches.get(info.loader) || new Map();
-        compiledCache.set(name, compiled);
+        compiledCache.set(resolvedName, compiled);
         this._compiledCaches.set(info.loader, compiledCache);
       }
       return compiled;
     };
 
-    const createCompiledTemplate = (info) => {
+    const createCompiledTemplate = (info, resolvedName) => {
       let compiled;
       if (!info) {
         compiled = asyncMode
@@ -356,18 +395,18 @@ class BaseEnvironment extends EmitterObj {
           : new TemplateClass(noopTmplSrc, this, '', eagerCompile);
       } else {
         compiled = asyncMode
-          ? new AsyncTemplateClass(info.src, this, info.path, eagerCompile)
-          : new TemplateClass(info.src, this, info.path, eagerCompile);
+          ? new AsyncTemplateClass(info.src, this._sourceEnvironment(info), info.path, eagerCompile)
+          : new TemplateClass(info.src, this._sourceEnvironment(info), info.path, eagerCompile);
         if (!info.noCache) {
           const compiledCache = this._compiledCaches.get(info.loader) || new Map();
-          compiledCache.set(name, compiled);
+          compiledCache.set(resolvedName, compiled);
           this._compiledCaches.set(info.loader, compiledCache);
         }
       }
       return compiled;
     };
 
-    const createTemplate = (err, info) => {
+    const createTemplate = (err, info, resolvedName) => {
       if (!info && !err && !ignoreMissing) {
         err = new Error(`${scriptMode ? 'Script' : 'Template'} not found: ` + name);
       }
@@ -380,9 +419,19 @@ class BaseEnvironment extends EmitterObj {
           throw err;
         }
       }
-      const newCompiled = scriptMode
-        ? createCompiledScript(info)
-        : createCompiledTemplate(info);
+      let newCompiled = info && !info.noCache && this._compiledCaches.get(info.loader).get(resolvedName);
+      if (newCompiled) {
+        if (!!newCompiled.asyncMode !== asyncMode) {
+          throw new Error('The same template can not be compiled in both async and sync mode');
+        }
+        if (eagerCompile) {
+          newCompiled.compile();
+        }
+      } else {
+        newCompiled = scriptMode
+          ? createCompiledScript(info, resolvedName)
+          : createCompiledTemplate(info, resolvedName);
+      }
       if (cb) {
         cb(null, newCompiled);
       } else {
@@ -390,9 +439,7 @@ class BaseEnvironment extends EmitterObj {
       }
     };
 
-    callLoaders(this.loaders, name, (loader, templateName) => {
-      return that._resolveFromLoader(loader, parentName, templateName);
-    }, createTemplate);
+    this._getSource(name, parentName, createTemplate);
 
     return syncResult;
   }

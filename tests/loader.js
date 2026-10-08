@@ -1,5 +1,6 @@
 import expect from 'expect.js';
 import {StringLoader, delay} from './util.js';
+import {isPoisonError} from '../src/runtime/errors.js';
 
 const isBrowser = typeof window !== 'undefined';
 const indexModule = isBrowser ? window.nunjucks : await import('../src/index.js');
@@ -9,6 +10,7 @@ const nodeLoaders = isBrowser ? {} : await import('../src/loader/node-loaders.js
 const {
   Environment,
   AsyncEnvironment,
+  Loader,
   Template,
   loadString,
   clearStringCache,
@@ -25,6 +27,239 @@ const {FileSystemLoader, NodeResolveLoader} = nodeLoaders;
   var templatesPath = isBrowser ? '../templates' : 'tests/templates';
 
   describe('loader', function() {
+    describe('Environment sources and relative race groups', function() {
+      class MapLoader extends Loader {
+        constructor(sources, prefix = 'store/') {
+          super();
+          this.sources = sources;
+          this.prefix = prefix;
+          this.calls = [];
+          this.noCache = false;
+        }
+
+        resolve(from, to) {
+          const parts = [];
+          for (const part of (from.slice(0, from.lastIndexOf('/') + 1) + to).split('/')) {
+            if (part === '..') parts.pop();
+            else if (part && part !== '.') parts.push(part);
+          }
+          return parts.join('/');
+        }
+
+        load(name) {
+          this.calls.push(name);
+          const key = name.startsWith(this.prefix) ? name.slice(this.prefix.length) : name;
+          if (!Object.hasOwn(this.sources, key)) return null;
+          return {src: this.sources[key], path: this.prefix + key, noCache: this.noCache};
+        }
+      }
+
+      async function rejection(promise) {
+        try {
+          await promise;
+        } catch (error) {
+          return error;
+        }
+        throw new Error('Expected rejection');
+      }
+
+      it('loads empty strings through native and legacy utility loaders', async function() {
+        expect(loadString('empty', () => '')).to.be('');
+        expect(await loadString('empty', async () => '')).to.be('');
+        expect(loadString('empty', {load: () => ({src: '', path: 'empty'})})).to.be('');
+        expect(await loadString('empty', {
+          async: true,
+          getSource(name, callback) { callback(null, {src: '', path: name}); }
+        })).to.be('');
+      });
+
+      it('loads literal text and shares source caching with templates and scripts', async function() {
+        const loader = new MapLoader({'text.njk': '{{ value }}', 'script.casc': 'return 42'});
+        const env = new AsyncEnvironment(loader);
+        expect(await env.loadString('text.njk')).to.be('{{ value }}');
+        expect(await env.renderTemplate('text.njk', {value: 'rendered'})).to.be('rendered');
+        expect(await env.loadString('script.casc')).to.be('return 42');
+        expect(await env.renderScript('script.casc')).to.be(42);
+        expect(loader.calls).to.eql(['text.njk', 'script.casc']);
+      });
+
+      it('keeps raw source caches local to each environment', async function() {
+        let calls = 0;
+        const loader = () => String(++calls);
+        const first = new AsyncEnvironment(loader);
+        const second = new AsyncEnvironment(loader);
+        expect(await first.loadString('text')).to.be('1');
+        expect(await second.loadString('text')).to.be('2');
+        expect(await first.loadString('text')).to.be('1');
+        first.invalidateCache();
+        expect(await first.loadString('text')).to.be('3');
+      });
+
+      it('honors noCache for raw sources and compiled templates', async function() {
+        const loader = new MapLoader({'text.njk': 'first'});
+        loader.noCache = true;
+        const env = new AsyncEnvironment(raceLoaders([loader]));
+        expect(await env.loadString('text.njk')).to.be('first');
+        loader.sources['text.njk'] = 'second';
+        expect(await env.renderTemplate('text.njk')).to.be('second');
+        loader.sources['text.njk'] = 'third';
+        expect(await env.loadString('text.njk')).to.be('third');
+        expect(await env.renderTemplate('text.njk')).to.be('third');
+        expect(loader.calls.length).to.be(4);
+      });
+
+      it('tries an earlier dynamic loader before reusing a cached fallback', async function() {
+        let preferred = false;
+        const first = name => (preferred ? {
+          src: name === 'script' ? 'return "preferred"' : 'preferred', path: name, noCache: true
+        } : null);
+        const fallback = name => (name === 'script' ? 'return "fallback"' : 'fallback');
+        const env = new AsyncEnvironment([first, fallback]);
+        expect(await env.renderTemplate('template')).to.be('fallback');
+        expect(await env.renderScript('script')).to.be('fallback');
+        preferred = true;
+        expect(await env.loadString('template')).to.be('preferred');
+        expect(await env.renderTemplate('template')).to.be('preferred');
+        expect(await env.loadString('script')).to.be('return "preferred"');
+        expect(await env.renderScript('script')).to.be('preferred');
+      });
+
+      it('invalidates raw and compiled sources through nested race updates', async function() {
+        const loader = new MapLoader({'dir/main.njk': '{% include "./part.njk" %}', 'dir/part.njk': 'first'});
+        const group = raceLoaders([raceLoaders([loader])]);
+        const env = new AsyncEnvironment(group);
+        const loads = [];
+        env.on('load', name => loads.push(name));
+        expect(await env.renderTemplate('dir/main.njk')).to.be('first');
+        expect(await env.loadString('./part.njk', 'store/dir/main.njk')).to.be('first');
+        loader.sources['dir/part.njk'] = 'second';
+        loader.emit('update', 'dir/part.njk', 'store/dir/part.njk');
+        expect(await env.loadString('./part.njk', 'store/dir/main.njk')).to.be('second');
+        expect(await env.renderTemplate('dir/main.njk')).to.be('second');
+        expect(loads).to.eql(['dir/main.njk', 'store/dir/part.njk', 'store/dir/part.njk']);
+      });
+
+      it('supports empty raw text through the environment loader chain', async function() {
+        const env = new AsyncEnvironment([() => '', () => 'fallback']);
+        expect(await env.loadString('empty')).to.be('');
+        expect(await env.renderTemplate('empty')).to.be('');
+        expect(await new AsyncEnvironment({async: true, getSource(name, callback) {
+          callback(null, '');
+        }}).loadString('empty')).to.be('');
+      });
+
+      it('uses sequential fallback for raw text and preserves loader failures', async function() {
+        const env = new AsyncEnvironment([() => null, async () => 'literal {% invalid syntax']);
+        expect(await env.loadString('text')).to.be('literal {% invalid syntax');
+        const failure = new Error('loader failed');
+        expect(await rejection(new AsyncEnvironment(() => { throw failure; }).loadString('text'))).to.be(failure);
+        expect((await rejection(new AsyncEnvironment(() => null).loadString('missing'))).message).to.contain('Resource not found');
+      });
+
+      it('resolves includes from winning source paths through nested groups', async function() {
+        const loader = new MapLoader({
+          'dir/main.njk': '{% include "./part.njk" %}{% include "../tail.njk" %}',
+          'dir/part.njk': 'PART',
+          'tail.njk': 'TAIL'
+        });
+        const env = new AsyncEnvironment(raceLoaders([() => null, raceLoaders([loader])]));
+        expect(await env.renderTemplate('dir/main.njk')).to.be('PARTTAIL');
+        expect(await env.renderTemplate('dir/main.njk')).to.be('PARTTAIL');
+        expect(loader.calls).to.eql(['dir/main.njk', 'store/dir/part.njk', 'store/tail.njk']);
+      });
+
+      it('resolves relative script imports through a race group', async function() {
+        const loader = new MapLoader({
+          'dir/main.casc': 'import "./lib.casc" as lib\nreturn lib.value',
+          'dir/lib.casc': 'var value = 42'
+        });
+        const env = new AsyncEnvironment(raceLoaders([loader]));
+        expect(await env.renderScript('dir/main.casc')).to.be(42);
+      });
+
+      it('preserves poison flow for a missing relative import', async function() {
+        const loader = new MapLoader({'dir/main.njk': '{% import "./missing.njk" as lib %}{{ lib.value }}'});
+        const env = new AsyncEnvironment(raceLoaders([loader]), {loadFailFatal: false});
+        const error = await rejection(env.renderTemplate('dir/main.njk'));
+        expect(isPoisonError(error)).to.be(true);
+        expect(error.message).to.contain('./missing.njk');
+      });
+
+      it('retains each source origin when concurrent noCache parents reuse a path', async function() {
+        let first = true;
+        function member(id) {
+          return {
+            load(name) {
+              if (name === 'main') {
+                const wins = first ? id === 'A' : id === 'B';
+                return wins ? {src: '{% include "./child" %}', path: 'shared/main', noCache: true} : null;
+              }
+              return name === id + '/child' ? {src: id, path: name, noCache: true} : null;
+            },
+            isRelative: name => name.startsWith('./'),
+            resolve: () => id + '/child'
+          };
+        }
+        const env = new AsyncEnvironment(raceLoaders([raceLoaders([member('A'), member('B')])]));
+        const a = await env.getTemplate('main');
+        first = false;
+        const b = await env.getTemplate('main');
+        expect(a.path).to.be('shared/main');
+        expect(b.path).to.be('shared/main');
+        expect(await Promise.all([a.render(), b.render()])).to.eql(['A', 'B']);
+      });
+
+      it('records ownership only for the winner and preserves source metadata', async function() {
+        const source = {src: 'winner', path: 'canonical/main', noCache: true, metadata: {version: 1}};
+        let completeLoser;
+        const loser = new Promise(resolve => { completeLoser = resolve; });
+        const winnerLoader = {load: () => source, isRelative: () => true, resolve: () => 'winner/part'};
+        const loserLoader = {load: () => loser, isRelative: () => true, resolve: () => 'loser/part'};
+        const group = raceLoaders([winnerLoader, loserLoader]);
+        expect(await group.load('main')).to.be(source);
+        completeLoser({src: 'loser', path: source.path});
+        await loser;
+        expect(group.resolve(source.path, './part')).to.be('winner/part');
+        expect(group.resolve('main', './part')).to.be('winner/part');
+      });
+
+      it('allows outer fallback when all raced members miss', async function() {
+        const group = raceLoaders([() => null, async () => null]);
+        expect(await group.load('missing')).to.be(null);
+        expect(await new AsyncEnvironment([group, () => 'fallback']).loadString('text')).to.be('fallback');
+        expect(await new AsyncEnvironment(group).renderTemplateString('{% include "missing" ignore missing %}')).to.be('');
+      });
+
+      it('preserves the first observed real error after every member misses or fails', async function() {
+        const failure = new Error('first failure');
+        const group = raceLoaders([
+          async () => { throw new Error('later failure'); },
+          () => { throw failure; },
+          () => null
+        ]);
+        expect(await rejection(group.load('text'))).to.be(failure);
+        // eslint-disable-next-line prefer-promise-reject-errors
+        expect((await rejection(raceLoaders([() => Promise.reject('failed')]).load('text'))).message).to.be('failed');
+        expect(await raceLoaders([() => { throw failure; }, () => 'success']).load('text')).to.eql({
+          src: 'success', path: 'text', noCache: false
+        });
+      });
+
+      it('rejects when a raced load event listener throws', async function() {
+        const failure = new Error('listener failed');
+        const group = raceLoaders([async () => 'text']);
+        group.on('load', () => { throw failure; });
+        expect(await rejection(group.load('text'))).to.be(failure);
+      });
+
+      if (FileSystemLoader) {
+        it('preserves filesystem relative includes inside a race group', async function() {
+          const env = new AsyncEnvironment(raceLoaders([new FileSystemLoader(templatesPath)]));
+          expect(await env.renderTemplate('relative/test-cache.njk')).to.be('Test1\nTest2');
+        });
+      }
+    });
+
     it('should allow a simple loader to be created', function() {
       // From Docs: http://mozilla.github.io/nunjucks/api.html#writing-a-loader
       // We should be able to create a loader that only exposes getSource

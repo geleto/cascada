@@ -2915,7 +2915,7 @@ Loaders are objects that tell the environment how to find and load your scripts 
     ```
 
     **Running Loaders Concurrently:**
-    The `raceLoaders(loaders)` function creates a single loader that runs multiple loaders concurrently and returns the result from the first one that succeeds.
+    The `raceLoaders(loaders)` function creates a single loader that runs multiple loaders concurrently and returns the result from the first one that succeeds. Relative dependencies resolve through the member that supplied the parent source. If every member returns `null`, the environment continues to its next loader; loader failures remain errors when no member succeeds.
 
     ```javascript
     import { raceLoaders, FileSystemLoader, WebLoader } from 'cascada-engine';
@@ -2929,6 +2929,12 @@ Loaders are objects that tell the environment how to find and load your scripts 
     ```
 
 #### Compilation and Caching
+
+*   `asyncEnvironment.loadString(name, parentName?)`
+    Loads literal text without interpreting template syntax. Empty sources return `''`. Text, templates, and scripts share the environment's loader chain and source cache, respecting `noCache` and loader update events.
+
+*   `asyncEnvironment.invalidateCache()`
+    Clears this environment's source and compiled caches.
 
 *   `asyncEnvironment.getScript(scriptName)`
     Retrieves a compiled `Script` object, loading and caching it if not already cached.

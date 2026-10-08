@@ -1132,6 +1132,8 @@ const r4 = await env.renderTemplateString(source, context);  // string → strin
 // [API-03] Compilation / caching:
 const s = await env.getScript('name.casc');     // reusable Script;  s.render(ctx)
 const t = await env.getTemplate('page.njk');    // reusable AsyncTemplate; t.render(ctx)
+const raw = await env.loadString('prompt.txt'); // literal text, including ''; no template parsing
+env.invalidateCache();                        // clear environment source and compiled caches
 
 // [API-04] Globals / extensions:
 env.addGlobal(name, value);
@@ -1156,6 +1158,8 @@ const networkLoader = async (name) => {
 //   resolve(from, to)  optional — string
 //   on(event, handler) optional — env events
 // raceLoaders(loaders) — runs loaders concurrently; first success wins.
+// Relative dependencies use the parent's winning member; all-null races allow outer fallback.
+// Source caching is per environment; noCache and loader update events apply to text/templates/scripts.
 const fast = raceLoaders([ new WebLoader('https://cdn.x/'), new FileSystemLoader('scripts/backup/') ]);
 ```
 

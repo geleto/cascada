@@ -40,6 +40,8 @@ export class Script extends AsyncPrecompiledScript {}
 
 export class Environment {
   constructor(loaders?: Loader | Loader[], opts?: object);
+  loadString(name: string, parentName?: string): Promise<string>;
+  invalidateCache(): void;
   render(name: string, context?: object): string;
   render(name: string, callback: RenderCallback<string>): void;
   render(name: string, context: object, callback?: RenderCallback<string>): void;
@@ -55,6 +57,8 @@ export class Environment {
 
 export class AsyncEnvironment {
   constructor(loaders?: Loader | Loader[], opts?: object);
+  loadString(name: string, parentName?: string): Promise<string>;
+  invalidateCache(): void;
   renderTemplate(name: string, context?: object): Promise<string>;
   renderScript(name: string, context?: object): Promise<Record<string, any> | string | null>;
   getTemplate(name: string | Promise<string>, eagerCompile?: boolean, parentName?: string, ignoreMissing?: boolean): Promise<AsyncTemplate>;

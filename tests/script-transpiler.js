@@ -973,10 +973,10 @@ endif`;
       expect(template).to.equal('');
     });
 
-    it('should handle input with only whitespace', () => {
-      const script = '   ';
-      const template = scriptTranspiler.scriptToTemplate(script);
-      expect(template).to.equal('   ');
+    it('should handle input with only whitespace as an empty script', () => {
+      for (const script of ['   ', '\t', '\r\n', ' \t\n\n  ']) {
+        expect(scriptTranspiler.scriptToTemplate(script)).to.equal('');
+      }
     });
 
     it('should handle special characters', () => {

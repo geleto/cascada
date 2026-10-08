@@ -106,6 +106,19 @@ const parser = typeof window !== 'undefined' ? window.nunjucks.parser : await im
   }
 
   describe('parser', function() {
+    it('should parse empty input as an empty root at the start of the source', function() {
+      const ast = parser.parse('');
+
+      expect(ast.typename).to.be('Root');
+      expect(ast.children).to.eql([]);
+      expect(ast.lineno).to.be(0);
+      expect(ast.colno).to.be(0);
+    });
+
+    it('should still reject incomplete nonempty input', function() {
+      expect(() => parser.parse('{{')).to.throwException(/expected expression, got end of file/);
+    });
+
     it('should parse block signatures', function() {
       const ast = parser.parse('{% block content(user) %}{{ user }}{% endblock %}');
       const block = ast.findAll(nodes.Block)[0];

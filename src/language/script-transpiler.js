@@ -2153,6 +2153,9 @@ class ScriptTranspiler {
    * @return {Object} Object with template string and possible error
    */
   scriptToTemplate(scriptStr, options = {}) {
+    if (scriptStr.trim() === '') {
+      return '';
+    }
     const { processedLines } = this._prepareScriptLines(scriptStr, options);
     this._applyReturnGuards(processedLines);
     return this._renderProcessedLines(processedLines);

@@ -2,6 +2,7 @@
 import expect from 'expect.js';
 import {AsyncEnvironment, AsyncTemplate, Script} from '../../src/environment/environment.js';
 import {createPoison, PoisonError} from '../../src/runtime/runtime.js';
+import {StringLoader} from '../util.js';
 
 const TEST_POISON_EC = [1, 1, 'ScriptVar.TestPoison', 'script-var.casc', null, null];
 const testPoison = (message) => createPoison(PoisonError.create(message, TEST_POISON_EC, 'UserCallThrew'));
@@ -12,6 +13,22 @@ describe('Cascada Script: Variables', function () {
   // For each test, create a fresh environment.
   beforeEach(() => {
     env = new AsyncEnvironment();
+  });
+
+  it('should render empty and whitespace-only inline and named sources', async function () {
+    const loader = new StringLoader();
+    const emptyEnv = new AsyncEnvironment(loader);
+
+    for (const source of ['', ' \t\r\n', '\n\n']) {
+      loader.addTemplate('empty.njk', source);
+      loader.addTemplate('empty.casc', source);
+      emptyEnv.invalidateCache();
+
+      expect(await emptyEnv.renderTemplateString(source)).to.be(source);
+      expect(await emptyEnv.renderTemplate('empty.njk')).to.be(source);
+      expect(await emptyEnv.renderScriptString(source)).to.be(null);
+      expect(await emptyEnv.renderScript('empty.casc')).to.be(null);
+    }
   });
 
   describe('Variable Declaration with var', function () {

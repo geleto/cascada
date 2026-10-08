@@ -2102,10 +2102,9 @@ class Parser extends Obj {
   }
 
   parseAsRoot() {
-    //return new nodes.Root(0, 0, this.parseNodes());
     const start = this.peekToken();
     const parsedNodes = this.parseNodes();
-    return new nodes.Root(start.lineno, start.colno, parsedNodes);
+    return new nodes.Root(start?.lineno ?? 0, start?.colno ?? 0, parsedNodes);
   }
 }
 

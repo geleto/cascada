@@ -1,5 +1,6 @@
 
 import {asyncIter} from '../lib.js';
+import {EmitterObj} from '../object.js';
 
 // WeakMap to store resource caches for each loader (no mutation of loader objects)
 const resourceCaches = new WeakMap();
@@ -47,7 +48,7 @@ function loadString(key, loader) {
       }
 
       // Synchronous mode:
-      if (result) {
+      if (result || result === '') {
         // Sync success, return immediately.
         return result;
       }
@@ -136,8 +137,8 @@ function loadStringFromNativeLoader(key, loader) {
         loader.getSource(key, (err, src) => {
           if (err) {
             reject(err);
-          } else if (src) {
-            const content = src.src;
+          } else if (src || src === '') {
+            const content = typeof src === 'string' ? src : src.src;
             if (!src.noCache) {
               loaderResourceCache.set(key, content);
             }
@@ -157,7 +158,7 @@ function loadStringFromNativeLoader(key, loader) {
   // Check if result is a Promise
   if (isPromise(result)) {
     return result.then((content) => {
-      if (!content) {
+      if (!content && content !== '') {
         throw new Error(`Resource '${key}' not found`);
       }
 
@@ -177,7 +178,7 @@ function loadStringFromNativeLoader(key, loader) {
     });
   } else {
     // Synchronous result
-    if (!result) {
+    if (!result && result !== '') {
       throw new Error(`Resource '${key}' not found`);
     }
 
@@ -195,46 +196,6 @@ function loadStringFromNativeLoader(key, loader) {
   }
 }
 
-
-/**
- * Resolves the first successful Promise from an array of Promises
- * @param {Promise[]} promises Array of Promises to race
- * @param {string} key The resource key for error messages
- * @returns {Promise<string>} The first successful result
- * @private
- */
-function resolveFirstSuccessfulPromise(promises, key) {
-  return new Promise((resolve, reject) => {
-    let completedCount = 0;
-    let resolved = false;
-    const errors = [];
-
-    if (promises.length === 0) {
-      reject(new Error(`Resource '${key}' not found in any loader`));
-      return;
-    }
-
-    promises.forEach((promise, index) => {
-      promise
-        .then((result) => {
-          // First successful result wins - prevent multiple resolves
-          if (!resolved) {
-            resolved = true;
-            resolve(result);
-          }
-        })
-        .catch((error) => {
-          errors[index] = error;
-          completedCount++;
-
-          // If all promises have completed and none succeeded
-          if (completedCount === promises.length && !resolved) {
-            reject(new Error(`Resource '${key}' not found in any loader`));
-          }
-        });
-    });
-  });
-}
 
 /**
  * Validates that a loader is properly implemented
@@ -269,9 +230,10 @@ function createSourceObject(src, path, noCache = false) {
  * @param {Array} loaders Array of loaders to try
  * @param {string} name The resource name to load
  * @param {Function} resolveFromLoader Function to resolve name relative to parentName
- * @param {Function} callback The callback function (err, result)
+ * @param {Function} callback The callback function (err, result, resolvedName)
+ * @param {WeakMap} [sourceCaches] Environment-local source caches
  */
-function callLoaders(loaders, name, resolveFromLoader, callback) {
+function callLoaders(loaders, name, resolveFromLoader, callback, sourceCaches) {
   // Preserve the original sequential loader iteration behavior.
   asyncIter(loaders, (loader, i, next, done) => {
     function handle(err, src) {
@@ -279,7 +241,10 @@ function callLoaders(loaders, name, resolveFromLoader, callback) {
         done(err);
       } else if (src) {
         src.loader = loader;
-        done(null, src);
+        if (!src.noCache && sourceCaches) {
+          sourceCaches.get(loader).set(resolvedName, src);
+        }
+        done(null, src, resolvedName);
       } else {
         next();
       }
@@ -289,7 +254,12 @@ function callLoaders(loaders, name, resolveFromLoader, callback) {
     const resolvedName = resolveFromLoader(loader, name);
 
     // Use native loader support instead of checking .async property
-    callLoader(loader, resolvedName, handle);
+    const cached = sourceCaches?.get(loader).get(resolvedName);
+    if (cached) {
+      handle(null, cached);
+    } else {
+      callLoader(loader, resolvedName, handle);
+    }
   }, callback);
 }
 
@@ -306,40 +276,75 @@ function raceLoaders(loaders) {
     throw new Error('raceLoaders requires a non-empty array of loaders.');
   }
 
-  // Return a new loader object that encapsulates the race logic.
-  return {
-    // Make it an async loader so it's always handled as a promise.
-    async: true,
+  return new RaceLoader(loaders);
+}
 
-    /**
-     * The load method that will be called by the engine.
-     * @param {string} name The name of the resource to load.
-     * @returns {Promise<Object|null>} A promise that resolves with the source
-     * object from the first successful loader.
-     */
-    load: function(name) {
-      const promises = loaders.map(loader => {
-        return new Promise((resolve, reject) => {
-          // Use the existing, robust `callLoader` utility.
-          callLoader(loader, name, (err, result) => {
-            if (err) {
-              // Reject on error to signal failure for this loader.
-              reject(err);
-            } else if (result) {
-              // Resolve with the result on success.
-              resolve(result);
-            } else {
-              // Reject if not found, so Promise.any can skip it.
-              reject(new Error(`Resource '${name}' not found by this loader.`));
-            }
-          });
-        });
-      });
-
-      // Race all the promises and return the first one that resolves.
-      return resolveFirstSuccessfulPromise(promises, name);
+class RaceLoader extends EmitterObj {
+  constructor(loaders) {
+    super();
+    this.async = true;
+    this.loaders = loaders;
+    this.pathLoaders = new Map();
+    this.sourceLoaders = new WeakMap();
+    for (const loader of loaders) {
+      if (typeof loader.on === 'function') {
+        loader.on('update', (name, fullname) => this.emit('update', name, fullname));
+      }
     }
-  };
+  }
+
+  isRelative(name) {
+    return this.loaders.some(loader => typeof loader.isRelative === 'function' && loader.isRelative(name));
+  }
+
+  resolve(from, to) {
+    const loader = this.pathLoaders.get(from);
+    return loader?.isRelative?.(to) && loader.resolve ? loader.resolve(from, to) : to;
+  }
+
+  _resolveSource(source, from, to) {
+    const loader = this.sourceLoaders.get(source);
+    if (!loader?.isRelative?.(to)) return to;
+    if (typeof loader._resolveSource === 'function') {
+      return loader._resolveSource(source, from, to);
+    }
+    return loader.resolve ? loader.resolve(from, to) : to;
+  }
+
+  load(name) {
+    return new Promise((resolve, reject) => {
+      let remaining = this.loaders.length;
+      let settled = false;
+      let firstError;
+      for (const loader of this.loaders) {
+        callLoader(loader, name, (error, source) => {
+          remaining--;
+          if (error) {
+            firstError ??= error instanceof Error ? error : new Error(String(error));
+          } else if (source && !settled) {
+            settled = true;
+            this.pathLoaders.set(name, loader);
+            this.pathLoaders.set(source.path, loader);
+            this.sourceLoaders.set(source, loader);
+            try {
+              this.emit('load', name, source);
+            } catch (eventError) {
+              reject(eventError instanceof Error ? eventError : new Error(String(eventError)));
+              return;
+            }
+            resolve(source);
+          }
+          if (!remaining && !settled) {
+            if (firstError) {
+              reject(firstError);
+            } else {
+              resolve(null);
+            }
+          }
+        });
+      }
+    });
+  }
 }
 
 /**
@@ -376,7 +381,7 @@ function callLoader(loader, name, callback) {
                 callback(err, null);
               }
             } else {
-              callback(null, src);
+              callback(null, typeof src === 'string' ? createSourceObject(src, name) : src);
             }
           });
           return;
@@ -390,7 +395,7 @@ function callLoader(loader, name, callback) {
     }
   } catch (error) {
     // Handle synchronous errors by passing them to the callback
-    callback(error, null);
+    callback(error instanceof Error ? error : new Error(String(error)), null);
     return;
   }
 
@@ -398,7 +403,7 @@ function callLoader(loader, name, callback) {
   if (isPromise(result)) {
     result
       .then((content) => {
-        if (content) {
+        if (content || content === '') {
           // Handle both {src: string} and string formats
           const src = typeof content === 'string' ? createSourceObject(content, name, false) : content;
           callback(null, src);
@@ -407,11 +412,11 @@ function callLoader(loader, name, callback) {
         }
       })
       .catch((err) => {
-        callback(err, null);
+        callback(err instanceof Error ? err : new Error(String(err)), null);
       });
   } else {
     // Synchronous result
-    if (result) {
+    if (result || result === '') {
       // Handle both {src: string} and string formats
       const src = typeof result === 'string' ? createSourceObject(result, name, false) : result;
       callback(null, src);
