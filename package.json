@@ -62,7 +62,7 @@
     "serialize-javascript": "^7.0.5"
   },
   "engines": {
-    "node": ">=22.18.0"
+    "node": ">=24"
   },
   "scripts": {
     "postinstall": "node scripts/dev-install.js",

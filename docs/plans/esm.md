@@ -24,16 +24,17 @@ Cascada is not released yet, so this migration does not need to preserve CommonJ
 
 ## Runtime Targets
 
-Node support should target Node `>=22`.
+Node support should target Node `>=24`.
 
 Reasons:
 
 - native ESM behavior is stable and current,
+- native `Error.isError(...)` provides exact cross-realm Error recognition,
 - `import.meta.resolve(...)` is available without experimental flags,
 - modern Mocha and `c8` ESM workflows are well supported,
 - this lets the migration avoid compatibility code for old Node releases.
 
-Browser support targets current evergreen browsers with native ESM and top-level `await` in modules. Cascada should not transpile ESM or syntax for old browsers.
+Browser support targets current evergreen browsers with native ESM, top-level `await` in modules, and native `Error.isError(...)`. Cascada should not transpile ESM or syntax for old browsers or approximate native Error recognition.
 
 ## Package Shape
 
@@ -45,7 +46,7 @@ The package should use native ESM:
   "main": "./dist/index.js",
   "types": "./dist/types/index.d.ts",
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "exports": {
     ".": {
@@ -861,7 +862,7 @@ Replace:
 
 ## Migration Order
 
-1. Set the Node engine target to `>=22`.
+1. Set the Node engine target to `>=24`.
 2. Convert `src` modules to ESM.
 3. Merge the current `src/index.mjs` ESM facade into the canonical `src/index.js` entry, then delete `src/index.mjs`.
 4. Replace CommonJS globals and resolver APIs.

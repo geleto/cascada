@@ -105,7 +105,7 @@ When docs and implementation disagree, prefer current source and tests.
 
 Write and modify JavaScript for `cascada-engine`: implement features, fix bugs, write tests. All work aligns with **Implicitly Parallel, Explicitly Sequential**.
 
-Development and tests require Node `>=22`.
+Development and tests require Node `>=24`.
 
 ### Golden Rules (DOs and DON'Ts)
 

@@ -341,7 +341,7 @@ export class WebLoader extends Loader {
 }
 
 export class PrecompiledLoader extends Loader implements ILoader {
-  constructor(compiledTemplates?: any[]);
+  constructor(compiledTemplates?: Record<string, object>);
   getSource(name: string): LoaderSource;
 }
 
