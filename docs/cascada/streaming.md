@@ -197,3 +197,113 @@ After recovery, `results` contains only `[0, 3]`.
 - Recovery is **atomic**: either all emissions inside the guard apply, or none do
 - Source-order visibility is preserved across guard boundaries
 - Streams are never left in a partially written state
+
+---
+
+## JavaScript Stream Integration
+
+The proposed integration lets native JavaScript consume Cascada streams as async iterables and produce unordered streams for Cascada to consume. The `indexed()`, `indexedPath()`, and `at()` APIs described here are not yet implemented or exported by the current package. Ordinary JavaScript async iterable inputs, described above, are already supported.
+
+Chunk availability and source-order position are separate: a chunk may be ready before earlier chunks, while its position still determines where it belongs in the assembled result.
+
+In the following consumption examples, `stream` is a live stream handle exposed to JavaScript. A `snapshot()` result is a materialized array, not a live stream.
+
+### Ordered Iteration
+
+```javascript
+for await (const chunk of stream) {
+  console.log(chunk);
+}
+```
+
+Ordered iteration delivers chunks in source order. Each chunk is delivered once it and all preceding chunks are available; a slow earlier chunk can delay later chunks that are already ready.
+
+### Unordered Iteration with Index
+
+Unordered iteration delivers chunks as they become available, together with their source-order positions:
+
+```javascript
+for await (const { chunk, index } of stream.indexed()) {
+  console.log({ chunk, index });
+}
+```
+
+**Index semantics:**
+
+- `index` is the chunk's zero-based position in the flattened, source-ordered stream
+- When the position is already known, `index` is a `number`
+- When nested concurrent regions leave preceding item counts unknown, `index` is a `Promise<number>`
+- The promise resolves once enough preceding structure is known to determine the position
+
+The consumer can process a chunk immediately and resolve its numeric index separately when needed. Awaiting an unresolved index inside the loop body delays consumption of subsequent chunks.
+
+### Unordered Iteration with Index Path
+
+For immediate hierarchical position information, use `indexedPath()`:
+
+```javascript
+for await (const { chunk, indexpath } of stream.indexedPath()) {
+  console.log(`[${indexpath.join('.')}]: ${chunk}`);
+}
+```
+
+**Index path semantics:**
+
+- `indexpath` is an array of numbers representing hierarchical source position, such as `[1, 4, 7, 8]`
+- Each number represents the position at that nesting level
+- Paths are available at emission time, without waiting for preceding regions to finish or their total item counts to become known
+- Paths are compared lexicographically by numeric elements; if one path is a prefix of another, the shorter path comes first
+
+For example:
+
+| Earlier path | Later path | Reason |
+|---|---|---|
+| `[1, 8, 9]` | `[2, 0]` | First differing element: `1 < 2` |
+| `[1, 2, 5]` | `[1, 3, 0]` | First differing element: `2 < 3` |
+| `[1, 2]` | `[1, 2, 0]` | The shorter path is a prefix |
+
+This comparison is a stream ordering rule, not JavaScript's built-in `<` comparison between arrays. Paths let JavaScript position or preview chunks as they arrive without waiting for a flattened numeric index.
+
+### Creating Unordered Streams from JavaScript
+
+The proposed `at(chunk, index)` helper tags an emitted chunk with its logical position, allowing arrival order to differ from assembly order:
+
+```javascript
+async function* createUnorderedStream() {
+  yield at("world", 1);
+  yield at("Hello ", 0);
+  // Logical order: "Hello ", "world"
+}
+```
+
+The native integration would use these tags to assemble `"Hello world"`, despite receiving `"world"` first.
+
+The index may also be a promise when the producer cannot yet determine the flattened position:
+
+```javascript
+async function* hierarchicalStream() {
+  const index = determinePositionAsync(); // Promise<number>
+  yield at("data", index);
+}
+```
+
+**Rules:**
+
+- `index` can be a `number` or `Promise<number>`
+- Final order cannot be determined until the required index promises resolve
+- Tagged chunks are assembled by their logical positions, regardless of arrival order
+- Ordinary untagged async iterables retain yield order; Cascada cannot infer a different intended order from their values
+
+For example, the proposed tagged-stream integration could be consumed into a text channel:
+
+```javascript
+text output
+
+for chunk in createUnorderedStream()
+  output(chunk)
+endfor
+
+return output.snapshot()
+```
+
+The intended result is `"Hello world"`. This requires the proposed position-aware integration; it is not the behavior of ordinary async iterable inputs in the current runtime.
