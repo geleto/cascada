@@ -1,5 +1,5 @@
 
-import {RESOLVE_MARKER, isWrappedResolvedValue, unwrapResolvedValue} from '../resolve.js';
+import {cloneDataValue, inspectTargetForErrors} from '../data-values.js';
 
 import {
   PoisonError,
@@ -212,7 +212,7 @@ class Chain {
 
   _captureGuardState() {
     return {
-      target: cloneSnapshotValue(this._target)
+      target: cloneDataValue(this._target)
     };
   }
 
@@ -276,27 +276,7 @@ function createCallableChainFacade(chain) {
   });
 }
 
-export { Chain, createCallableChainFacade, cloneSnapshotValue, inspectTargetForErrors };
-
-function cloneSnapshotValue(value) {
-  if (Array.isArray(value)) {
-    return value.map((item) => cloneSnapshotValue(item));
-  }
-  if (isPlainObject(value)) {
-    const out = {};
-    for (const key in value) {
-      if (Object.prototype.hasOwnProperty.call(value, key)) {
-        out[key] = cloneSnapshotValue(value[key]);
-      }
-    }
-    return out;
-  }
-  return value;
-}
-
-function isPlainObject(value) {
-  return value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype;
-}
+export { Chain, createCallableChainFacade };
 
 function getPoisonError(value) {
   if (isPoison(value)) {
@@ -306,140 +286,4 @@ function getPoisonError(value) {
     return value;
   }
   return null;
-}
-
-function inspectTargetForErrors(target) {
-  const state = {
-    seenObjects: new Set(),
-    queuedMarkers: new Set(),
-    errors: [],
-    pending: []
-  };
-
-  visitTargetForErrors(target, state);
-
-  if (state.pending.length > 0) {
-    return inspectPendingTargetErrors(state);
-  }
-
-  return getInspectionError(state.errors);
-}
-
-async function inspectPendingTargetErrors(state) {
-  let checked = 0;
-  let fatalError = null;
-  // Pending inspection callbacks can discover more pending work while this
-  // function awaits. Drain in waves so every discovered promise gets a handler.
-  // If any branch reports a fatal error, keep draining first to avoid late
-  // unhandled rejections, then rethrow the first fatal error.
-  while (checked < state.pending.length) {
-    const batch = state.pending.slice(checked);
-    checked = state.pending.length;
-    const results = await Promise.allSettled(batch);
-    for (const result of results) {
-      if (result.status === 'rejected' && !fatalError) {
-        fatalError = result.reason;
-      }
-    }
-  }
-  if (fatalError) {
-    throw fatalError;
-  }
-  return getInspectionError(state.errors);
-}
-
-function getInspectionError(errors) {
-  return errors.length === 0 ? null : PoisonError.group(errors);
-}
-
-function addInspectionError(state, err) {
-  if (err) {
-    state.errors.push(err);
-  }
-}
-
-function addInspectionErrors(state, list) {
-  if (!Array.isArray(list)) {
-    return;
-  }
-  for (const err of list) {
-    addInspectionError(state, err);
-  }
-}
-
-function collectOrThrowInspectionError(state, err) {
-  if (isPoisonError(err)) {
-    addInspectionErrors(state, err.errors);
-    return;
-  }
-  // This diagnostic walker has no source context of its own; raw
-  // promise/marker failures must surface unchanged as fatal errors.
-  throw err;
-}
-
-function queueResolvedInspection(value, state, onResolved) {
-  state.pending.push(Promise.resolve(value).then(
-    onResolved,
-    (err) => collectOrThrowInspectionError(state, err)
-  ));
-}
-
-function queueMarkerInspection(value, state) {
-  if (state.queuedMarkers.has(value)) {
-    return;
-  }
-  state.queuedMarkers.add(value);
-  // Once the marker has finalized the object in place, revisit the same object
-  // but skip marker handling so normal array/object traversal can inspect the
-  // resolved leaves.
-  queueResolvedInspection(value[RESOLVE_MARKER], state, () => visitTargetForErrors(value, state, true));
-}
-
-function visitTargetForErrors(value, state, markerAlreadyResolved = false) {
-  if (isWrappedResolvedValue(value)) {
-    visitTargetForErrors(unwrapResolvedValue(value), state, markerAlreadyResolved);
-    return;
-  }
-
-  if (isPoison(value)) {
-    addInspectionErrors(state, value.errors);
-    return;
-  }
-
-  if (value && typeof value.then === 'function') {
-    queueResolvedInspection(value, state, (resolved) => visitTargetForErrors(resolved, state));
-    return;
-  }
-
-  if (value && value[RESOLVE_MARKER] && !markerAlreadyResolved) {
-    queueMarkerInspection(value, state);
-    return;
-  }
-
-  if (!value || typeof value !== 'object') {
-    return;
-  }
-
-  if (state.seenObjects.has(value)) {
-    return;
-  }
-  state.seenObjects.add(value);
-
-  if (Array.isArray(value)) {
-    for (const entry of value) {
-      visitTargetForErrors(entry, state);
-    }
-    return;
-  }
-
-  if (isPlainObject(value)) {
-    for (const key of Object.keys(value)) {
-      const descriptor = Object.getOwnPropertyDescriptor(value, key);
-      // Error inspection must not trigger accessor side effects on external objects.
-      if (descriptor && (typeof descriptor.get === 'function' || typeof descriptor.set === 'function')) {
-        continue;
-      }
-      visitTargetForErrors(value[key], state);
-    }
-  }
 }

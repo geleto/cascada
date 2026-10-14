@@ -1,7 +1,8 @@
 import {isPoisonError, isRuntimeError, markPromiseHandled, RuntimeError} from './errors.js';
 
 class RenderState {
-  constructor(onError = null) {
+  constructor(onError = null, replayAsyncIterables = true) {
+    this.replayAsyncIterables = replayAsyncIterables;
     this.error = null;
     this.onError = onError;
     this.fatalPromise = new Promise((_resolve, reject) => {
@@ -70,8 +71,8 @@ class RenderState {
   }
 }
 
-function createRenderState(onError = null) {
-  return new RenderState(onError);
+function createRenderState(onError = null, replayAsyncIterables = true) {
+  return new RenderState(onError, replayAsyncIterables);
 }
 
 export {RenderState, createRenderState};

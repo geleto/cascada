@@ -1,9 +1,9 @@
-import {RESOLVE_MARKER} from '../resolve.js';
-import {createPoison, isPoison, isPoisonError, PoisonError} from '../errors.js';
+import {createPoison, isPoison, PoisonError} from '../errors.js';
 import {isObservableCommand} from '../commands/base.js';
 import {DataCommand} from '../commands/data.js';
 import {DataChainTarget} from './data-target.js';
-import {Chain, cloneSnapshotValue} from './base.js';
+import {Chain} from './base.js';
+import {cloneDataValue, inspectSettledTargetForErrors} from '../data-values.js';
 
 class DataChain extends Chain {
   constructor(buffer, chainName, context, chainType) {
@@ -89,7 +89,7 @@ class DataChain extends Chain {
       return;
     }
 
-    const cloned = cloneSnapshotValue(this._target);
+    const cloned = cloneDataValue(this._target);
     this._setTarget(cloned);
     this._base.data = cloned;
     this._snapshotShared = false;
@@ -97,7 +97,7 @@ class DataChain extends Chain {
 
   _captureGuardState() {
     return {
-      target: cloneSnapshotValue(this._target)
+      target: cloneDataValue(this._target)
     };
   }
 
@@ -139,57 +139,6 @@ function getPoisonError(value) {
     return PoisonError.group(value.errors);
   }
   return null;
-}
-
-// In the future we will handle promises, partial snapshot,
-// copy-on-write paths, etc.. This one only handles settled
-// targets with possible poison values
-function inspectSettledTargetForErrors(target) {
-  const seenObjects = new Set();
-  const errors = [];
-
-  const visit = (value) => {
-    if (isPoison(value)) {
-      errors.push(...value.errors);
-      return;
-    }
-    if (!value || typeof value !== 'object') {
-      return;
-    }
-    if (isPoisonError(value)) {
-      throw new TypeError('DataChain target contains a raw PoisonError instead of a PoisonedValue');
-    }
-    if (typeof value.then === 'function' || value[RESOLVE_MARKER]) {
-      throw new TypeError('DataChain target contains an unresolved async value after command application');
-    }
-    if (seenObjects.has(value)) {
-      return;
-    }
-    seenObjects.add(value);
-
-    if (Array.isArray(value)) {
-      for (const entry of value) {
-        visit(entry);
-      }
-      return;
-    }
-
-    if (Object.getPrototypeOf(value) !== Object.prototype) {
-      return;
-    }
-
-    for (const key of Object.keys(value)) {
-      const descriptor = Object.getOwnPropertyDescriptor(value, key);
-      if (descriptor && (typeof descriptor.get === 'function' || typeof descriptor.set === 'function')) {
-        continue;
-      }
-      visit(value[key]);
-    }
-  };
-
-  visit(target);
-
-  return errors.length === 0 ? null : PoisonError.group(errors);
 }
 
 export {DataChain};

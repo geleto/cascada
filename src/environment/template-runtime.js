@@ -83,7 +83,7 @@ class TemplateRuntime extends Obj {
       }
     };
 
-    const renderState = globalRuntime.createRenderState((err) => report(err));
+    const renderState = globalRuntime.createRenderState((err) => report(err), this.env.opts.replayAsyncIterables);
     const rootResult = this._invokeRoot(this._createOwnerState(context, renderState), context);
 
     const normalized = globalRuntime.normalizeFinalPromise(rootResult);
@@ -339,7 +339,7 @@ class AsyncTemplateRuntime extends TemplateRuntime {
     this.compile();
 
     const context = this._createContext(ctx, renderCtx, ctx || null);
-    const activeRenderState = renderState || globalRuntime.createRenderState();
+    const activeRenderState = renderState || globalRuntime.createRenderState(null, this.env.opts.replayAsyncIterables);
     const rootResult = this._invokeRoot(this._createOwnerState(context, activeRenderState), context);
     if (rootResult && typeof rootResult.then === 'function') {
       globalRuntime.markPromiseHandled(rootResult);

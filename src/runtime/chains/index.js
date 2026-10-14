@@ -1,5 +1,6 @@
 
-import {Chain, inspectTargetForErrors} from './base.js';
+import {Chain} from './base.js';
+import {inspectTargetForErrors} from '../data-values.js';
 import {applyChainInitializer, createChain} from '../../chain-types.js';
 import {TextChain} from './text-chain.js';
 import {VarChain} from './var-chain.js';

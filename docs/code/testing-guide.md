@@ -2,6 +2,9 @@
 
 Detailed reference for writing and debugging tests. See `AGENTS.md` for the short version of test commands and task pointers.
 
+Run `npm run test:types` to check the shared iterable declarations for both public
+entry points. The full `npm test` pipeline includes this check.
+
 ---
 
 ## Development Scenarios

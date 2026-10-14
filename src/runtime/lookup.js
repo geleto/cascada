@@ -15,7 +15,7 @@ import {formatDiagnosticValue} from './error-format.js';
 import {isScalarPrimitive} from '../lib.js';
 import {isMacro} from './macro.js';
 /**
- * Sync member lookup for templates.
+ * Read a member and bind methods to their receiver.
  * Returns undefined if obj is undefined or null.
  */
 function memberLookupImpl(obj, val) {
@@ -38,29 +38,20 @@ function formatLookupValue(value) {
   return formatDiagnosticValue(value, new Set());
 }
 
-function memberLookupScriptResolved(obj, val, errorContext) {
-  if (obj === undefined || obj === null) {
+function memberLookupResolved(obj, val, errorContext, scriptMode = false) {
+  if (scriptMode && (obj === undefined || obj === null)) {
     return createPoison(PoisonError.create(`Cannot read property ${formatLookupValue(val)} of ${formatLookupValue(obj)}`, errorContext, 'NullLookup'));
   }
 
-  let value;
   try {
-    value = obj[val];//some APIs (vercel ai result.elementStream) do not like multiple reads
+    const value = memberLookupImpl(obj, val);
+    if (scriptMode && value === undefined && isScalarPrimitive(obj)) {
+      return createPoison(PoisonError.create(`Cannot read property ${formatLookupValue(val)} of ${formatLookupValue(obj)}`, errorContext, 'ScalarLookup'));
+    }
+    return valueWithOrigin(value, errorContext, 'LookupThrew');
   } catch (err) {
     return createPoison(PoisonError.wrap(err, errorContext, 'LookupThrew'));
   }
-
-  if (value === undefined && isScalarPrimitive(obj)) {
-    return createPoison(PoisonError.create(`Cannot read property ${formatLookupValue(val)} of ${formatLookupValue(obj)}`, errorContext, 'ScalarLookup'));
-  }
-  if (isMacro(value)) {
-    return value;
-  }
-  if (typeof value === 'function') {
-    return (...args) => obj[val](...args);//use obj lookup so that 'this' binds correctly
-  }
-
-  return valueWithOrigin(value, errorContext, 'LookupThrew');
 }
 
 /**
@@ -94,8 +85,7 @@ function memberLookupAsync(obj, val, errorContext, currentBuffer = null) {
   }
 
   // No errors - proceed with lookup
-  const result = memberLookup(obj, val);
-  return valueWithOrigin(result, errorContext, 'LookupThrew');
+  return memberLookupResolved(obj, val, errorContext);
 }
 
 async function _memberLookupAsyncComplex(obj, val, errorContext, currentBuffer = null) {
@@ -110,12 +100,7 @@ async function _memberLookupAsyncComplex(obj, val, errorContext, currentBuffer =
     return poisonOrReport(err, errorContext);
   }
 
-  try {
-    const result = memberLookup(resolvedObj, resolvedVal);
-    return valueWithOrigin(result, errorContext, 'LookupThrew');
-  } catch (err) {
-    return createPoison(PoisonError.wrap(err, errorContext, 'LookupThrew'));
-  }
+  return memberLookupResolved(resolvedObj, resolvedVal, errorContext);
 }
 
 /**
@@ -148,7 +133,7 @@ function memberLookupScript(obj, val, errorContext, currentBuffer = null) {
     return val;
   }
 
-  return memberLookupScriptResolved(obj, val, errorContext);
+  return memberLookupResolved(obj, val, errorContext, true);
 }
 
 async function _memberLookupScriptComplex(obj, val, errorContext, currentBuffer = null) {
@@ -163,7 +148,7 @@ async function _memberLookupScriptComplex(obj, val, errorContext, currentBuffer 
     return poisonOrReport(err, errorContext);
   }
 
-  return memberLookupScriptResolved(resolvedObj, resolvedVal, errorContext);
+  return memberLookupResolved(resolvedObj, resolvedVal, errorContext, true);
 }
 
 function _addObservationCommand(targetBuffer, chainName, errorContext, mode) {

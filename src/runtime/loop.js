@@ -12,15 +12,12 @@ import {
   valueWithOrigin,
 } from './errors.js';
 
-import {VarCommand} from './commands/var.js';
 import {ErrorCommand} from './commands/errors.js';
 import {ReturnIsUnsetCommand} from './commands/observation.js';
 import {isFatalReported} from './error-context.js';
+import {asyncIteratorNext, asyncIteratorClose} from './iterator.js';
+import {getAsyncIterator} from './shared-iterable.js';
 
-const arrayFrom = Array.from;
-const supportsIterators = (
-  typeof Symbol === 'function' && Symbol.iterator && typeof arrayFrom === 'function'
-);
 function asyncEach(arr, dimen, iter, cb) {
   if (isArray(arr)) {
     const len = arr.length;
@@ -107,8 +104,8 @@ function asyncAll(arr, dimen, func, cb) {
 function fromIterator(arr) {
   if (typeof arr !== 'object' || arr === null || isArray(arr)) {
     return arr;
-  } else if (supportsIterators && Symbol.iterator in arr) {
-    return arrayFrom(arr);
+  } else if (Symbol.iterator in arr) {
+    return Array.from(arr);
   } else {
     return arr;
   }
@@ -124,22 +121,14 @@ function createLoopBindings(index, len, last) {
   };
 
   if (len && typeof len.then === 'function') {
-    loopMeta.revindex = len.then(l => l - index);
-    loopMeta.revindex0 = len.then(l => l - index - 1);
+    loopMeta.revindex = markPromiseHandled(len.then(l => l - index));
+    loopMeta.revindex0 = markPromiseHandled(len.then(l => l - index - 1));
   } else {
     loopMeta.revindex = len - index;
     loopMeta.revindex0 = len - index - 1;
   }
 
   return loopMeta;
-}
-
-function setLoopValueBindings(chainName, index, len, last, errorContext) {
-  return new VarCommand({
-    chainName,
-    args: [createLoopBindings(index, len, last)],
-    errorContext
-  });
 }
 
 function addPoisonCommands(buffer, chainNames, poisonError, errorContext) {
@@ -159,7 +148,11 @@ function poisonIterationEffects(buffer, asyncOptions, poisonError) {
 }
 
 function normalizeLoopValue(value, errorContext) {
-  return valueWithOrigin(value, errorContext, 'IteratorThrew');
+  try {
+    return valueWithOrigin(value, errorContext, 'IteratorThrew');
+  } catch (error) {
+    return createPoison(PoisonError.wrap(error, errorContext, 'IteratorThrew'));
+  }
 }
 
 function getDestructuredLoopArgs(value, loopVars, errorContext, buffer, asyncOptions) {
@@ -175,27 +168,35 @@ function getDestructuredLoopArgs(value, loopVars, errorContext, buffer, asyncOpt
   return null;
 }
 
-async function iterateAsyncSequential(arr, loopBody, loopVars, errorContext, returnAdvanceCheck = null, buffer = null, asyncOptions = null) {
-  let didIterate = false;
-  let i = 0;
-
+function acquireAsyncIterator(iterable, errorContext, replay) {
   try {
-    for await (let value of arr) { // value is now mutable
-      if (isFatalReported(errorContext)) {
-        break;
-      }
-      didIterate = true;
+    const iterator = getAsyncIterator(iterable, replay);
+    return iterator ? {iterator, next: iterator.next} : null;
+  } catch (error) {
+    throw PoisonError.wrap(error, errorContext, 'IteratorThrew');
+  }
+}
 
+async function iterateAsyncSequential({iterator, next}, loopBody, loopVars, errorContext, returnAdvanceCheck, buffer, asyncOptions, progress) {
+  let i = 0;
+  let needsClose = true;
+  let failure = null;
+  try {
+    while (!isFatalReported(errorContext)) {
+      // A failed next() or normal exhaustion does not call return().
+      needsClose = false;
+      const result = await asyncIteratorNext(iterator, next, errorContext);
+      if (result.done) break;
+      needsClose = true;
+      progress.didIterate = true;
+      let value = result.value;
       if (value instanceof Error) {
-        // Soft error: generator yielded an error. Preserve the yielded error's
-        // own origin when present; otherwise use the iterator source boundary.
         value = createPoison(PoisonError.wrap(value, errorContext, 'IteratorThrew'));
       }
       value = normalizeLoopValue(value, errorContext);
 
       let res;
       if (loopVars.length === 1) {
-        // `while` loops pass `undefined` for len/last, which is correct.
         res = loopBody(value, i, undefined, false, errorContext);
       } else {
         const args = getDestructuredLoopArgs(value, loopVars, errorContext, buffer, asyncOptions);
@@ -206,179 +207,89 @@ async function iterateAsyncSequential(arr, loopBody, loopVars, errorContext, ret
         res = loopBody(...args, i, undefined, false, errorContext);
       }
 
-      // Sequential loops await the compiled body result directly.
-      // For async while loops, `false` is the explicit break sentinel.
-      const resVal = await res;
-
-      if (resVal === false) {
-        break;
-      }
-
-      if (returnAdvanceCheck && !(await returnAdvanceCheck())) {
-        break;
-      }
-
+      // While bodies return false; each bodies can return from the script.
+      if (await res === false) break;
+      if (returnAdvanceCheck && !(await returnAdvanceCheck())) break;
       i++;
     }
-  } catch (err) {
-    const poisonError = PoisonError.wrap(err, errorContext, 'IteratorThrew');
-    poisonError.didIterate = didIterate;
-    poisonError.errors[poisonError.errors.length - 1].didIterate = didIterate;
-    throw poisonError;
+  } catch (error) {
+    failure = {error};
   }
-
-  return didIterate;
+  if (needsClose) {
+    try {
+      await asyncIteratorClose(iterator);
+    } catch (error) {
+      // As in native iteration, cleanup must not replace a body failure.
+      if (!failure) throw PoisonError.wrap(error, errorContext, 'IteratorThrew');
+    }
+  }
+  if (failure) throw failure.error;
 }
 
-async function iterateAsyncParallel(arr, loopBody, loopVars, errorContext, buffer = null, asyncOptions = null) {
-  let didIterate = false;
-  // PARALLEL PATH
-  // This logic allows for `loop.length` and `loop.last` to work
-  // by resolving promises only after the entire iterator is consumed. This
-  // only works when loop bodies are fired in parallel (sequential=false)
-  const iterator = arr[Symbol.asyncIterator]();
-  let result;
+async function iterateAsyncParallel({iterator, next}, loopBody, loopVars, errorContext, buffer, asyncOptions, progress) {
+  // Unbounded bodies can wait for source length without blocking further pulls.
   let i = 0;
 
-  let lastPromiseResolve;
-  let lastPromise = new Promise(resolve => {
-    lastPromiseResolve = resolve;
-  });
+  let resolveLast;
 
-  // This promise is used for the completion and error propagation
-  let iterationComplete;
+  let resolveLength;
+  let rejectLength;
   const lenPromise = new Promise((resolve, reject) => {
-    let length = 0;
-    // This IIFE runs "in the background" to exhaust the iterator
-    iterationComplete = (async () => {
-      try {
-        while (true) {
-          if (isFatalReported(errorContext)) {
-            break;
-          }
-          // Async generators await yielded values. If a generator yields a thenable that rejects,
-          // iterator.next() will throw. We catch PoisonErrors as soft errors and continue iteration.
-          // Non-PoisonErrors from the generator are treated as hard errors.
-          result = await iterator.next();
-
-          // Check if iterator is done
-          if (result.done) {
-            break;
-          }
-
-          length++;
-          didIterate = true;
-          let value = result.value;
-          if (value instanceof Error) {
-            // Soft error: generator yielded an error. Preserve the yielded error's
-            // own origin when present; otherwise use the iterator source boundary.
-            value = createPoison(PoisonError.wrap(value, errorContext, 'IteratorThrew'));
-          }
-          value = normalizeLoopValue(value, errorContext);
-
-          // Resolve the previous iteration's lastPromise
-          if (lastPromiseResolve) {
-            lastPromiseResolve(false);
-            lastPromise = new Promise(resolveNew => {
-              lastPromiseResolve = resolveNew;
-            });
-          }
-
-          if (loopVars.length === 1) {
-            loopBody(value, i, lenPromise, lastPromise, errorContext);
-          } else {
-            const args = getDestructuredLoopArgs(value, loopVars, errorContext, buffer, asyncOptions);
-            if (!args) {
-              i++;
-              continue;
-            }
-            loopBody(...args, i, lenPromise, lastPromise, errorContext);
-          }
-          i++;
-        }
-
-        // Resolve final lastPromise
-        if (lastPromiseResolve) {
-          lastPromiseResolve(true);
-        }
-
-        // Resolve length to unblock any loop bodies waiting for loop.length
-        resolve(length);
-
-      } catch (error) {
-        // Hard error from iterator.next() or loop body
-        if (lastPromiseResolve) {
-          lastPromiseResolve(true);
-        }
-
-        const rejectionError = PoisonError.wrap(error, errorContext, 'IteratorThrew');
-        // Preserve the loop-else decision on both the aggregate PoisonError and
-        // its leaf error, since callers inspect both shapes in existing paths.
-        rejectionError.didIterate = didIterate;
-        rejectionError.errors[rejectionError.errors.length - 1].didIterate = didIterate;
-        reject(rejectionError);
-      }
-    })();
+    resolveLength = resolve;
+    rejectLength = reject;
   });
+  markPromiseHandled(lenPromise);
 
-  // Wait for iteration to complete (including loop bodies)
-  // lenPromise resolves with length, iterationComplete handles errors
-  await lenPromise;
-  await iterationComplete;
+  try {
+    while (!isFatalReported(errorContext)) {
+      const result = await asyncIteratorNext(iterator, next, errorContext);
+      if (result.done) {
+        break;
+      }
 
-  return didIterate;
+      progress.didIterate = true;
+      let value = result.value;
+      if (value instanceof Error) {
+        value = createPoison(PoisonError.wrap(value, errorContext, 'IteratorThrew'));
+      }
+      value = normalizeLoopValue(value, errorContext);
+
+      // A new item proves the preceding iteration was not the last one.
+      resolveLast?.(false);
+      const lastPromise = new Promise(resolve => { resolveLast = resolve; });
+
+      const index = i++;
+      if (loopVars.length === 1) {
+        loopBody(value, index, lenPromise, lastPromise, errorContext);
+      } else {
+        const args = getDestructuredLoopArgs(value, loopVars, errorContext, buffer, asyncOptions);
+        if (args) {
+          loopBody(...args, index, lenPromise, lastPromise, errorContext);
+        }
+      }
+    }
+    resolveLength(i);
+  } catch (error) {
+    rejectLength(error);
+    throw error;
+  } finally {
+    resolveLast?.(true);
+  }
 }
 
-async function iterateAsyncLimited(arr, loopBody, loopVars, errorContext, limit, buffer = null, asyncOptions = null) {
-  const iterator = arr[Symbol.asyncIterator]();
-  let didIterate = false;
+async function iterateAsyncLimited({iterator, next}, loopBody, loopVars, errorContext, limit, buffer, asyncOptions, progress) {
   let index = 0;
   let iteratorDone = false;
   let firstBodyError = null;
   let activeCount = 0;
-  let slotResolvers = [];
-  const iteratorDoneToken = Symbol('ASYNC_ITERATOR_DONE');
-
-  function wakeSlotWaiters() {
-    const resolvers = slotResolvers;
-    slotResolvers = [];
-    for (const resolve of resolvers) {
-      resolve();
-    }
-  }
+  let resumeSlot = null;
+  const workerCount = Math.max(1, Math.floor(limit));
 
   function waitForSlot() {
-    if (activeCount === 0 || activeCount < Math.max(1, Math.floor(limit)) || firstBodyError) {
+    if (activeCount < workerCount || firstBodyError) {
       return undefined;
     }
-    return new Promise(resolve => slotResolvers.push(resolve));
-  }
-
-  async function getNext() {
-    if (iteratorDone || isFatalReported(errorContext)) {
-      iteratorDone = true;
-      return iteratorDoneToken;
-    }
-
-    try {
-      const result = await iterator.next();
-
-      if (result.done) {
-        iteratorDone = true;
-        return iteratorDoneToken;
-      }
-
-      return result.value;
-    } catch (err) {
-      // iterator.next() is a value-consumption boundary: convert raw
-      // generator failures to poison so the loop effects can be poisoned
-      // without aborting unrelated work.
-      const poisonError = PoisonError.wrap(err, errorContext, 'IteratorThrew');
-      poisonError.didIterate = didIterate;
-      poisonError.errors[poisonError.errors.length - 1].didIterate = didIterate;
-      iteratorDone = true;
-      throw poisonError;
-    }
+    return new Promise(resolve => { resumeSlot = resolve; });
   }
 
   function runIteration(i, value) {
@@ -389,19 +300,17 @@ async function iterateAsyncLimited(arr, loopBody, loopVars, errorContext, limit,
     }
     value = normalizeLoopValue(value, errorContext);
 
-    const res = callLoopBodyLimited(loopBody, loopVars, value, i, undefined, false, errorContext, buffer, asyncOptions);
-    return res;
+    return callLoopBodyLimited(loopBody, loopVars, value, i, undefined, false, errorContext, buffer, asyncOptions);
   }
 
   function finishIteration(err = null) {
     activeCount--;
     if (err && !firstBodyError) {
-      if (!isPoisonError(err)) {
-        err.didIterate = didIterate;
-      }
       firstBodyError = err;
     }
-    wakeSlotWaiters();
+    const resume = resumeSlot;
+    resumeSlot = null;
+    resume?.();
   }
 
   function startIteration(i, value) {
@@ -425,20 +334,19 @@ async function iterateAsyncLimited(arr, loopBody, loopVars, errorContext, limit,
     });
   }
 
-  const workerCount = Math.max(1, Math.floor(limit));
-
   while (!iteratorDone && !firstBodyError && !isFatalReported(errorContext)) {
     while (activeCount < workerCount && !iteratorDone && !firstBodyError && !isFatalReported(errorContext)) {
-      const value = await getNext();
-      if (value === iteratorDoneToken) {
+      const result = await asyncIteratorNext(iterator, next, errorContext);
+      if (result.done) {
+        iteratorDone = true;
         break;
       }
       const currentIndex = index++;
-      didIterate = true;
-      startIteration(currentIndex, value);
+      progress.didIterate = true;
+      startIteration(currentIndex, result.value);
     }
     const slot = waitForSlot();
-    if (slot && typeof slot.then === 'function') {
+    if (slot) {
       await slot;
     }
   }
@@ -446,8 +354,6 @@ async function iterateAsyncLimited(arr, loopBody, loopVars, errorContext, limit,
   if (firstBodyError) {
     throw firstBodyError;
   }
-
-  return didIterate;
 }
 
 /**
@@ -708,20 +614,20 @@ function poisonLoopEffects(buffer, asyncOptions, poisonError, didIterate) {
 }
 
 function canUseSyncArrayDispatch(iterable, asyncOptions) {
+  if (!Array.isArray(iterable)) return false;
   if (asyncOptions) {
     if (
-      (iterable && typeof iterable.then === 'function') ||
-      (iterable && typeof iterable[Symbol.asyncIterator] === 'function') ||
+      'then' in iterable ||
+      Symbol.asyncIterator in iterable ||
       asyncOptions.sequential ||
       asyncOptions.returnCheckChainName ||
-      (asyncOptions.concurrentLimit !== null && asyncOptions.concurrentLimit !== undefined) ||
-      (asyncOptions.scriptMode && (typeof iterable === 'string' || isScalarPrimitive(iterable)))
+      (asyncOptions.concurrentLimit !== null && asyncOptions.concurrentLimit !== undefined)
     ) {
       return false;
     }
   }
 
-  return Array.isArray(iterable);
+  return true;
 }
 
 function iterateSync(arr, loopBody, loopElse, buffer, loopVars, asyncOptions, errorContext) {
@@ -745,6 +651,7 @@ async function iterateAsync(arr, loopBody, loopElse, buffer, loopVars = [], asyn
 
   // Handle poison detection if in async mode
   if (asyncOptions) {
+    arr = normalizeLoopValue(arr, errorContext);
     // Check for synchronous poison first
     if (isPoison(arr)) {
       // Array expression evaluated to poison - poison both body and else
@@ -769,11 +676,11 @@ async function iterateAsync(arr, loopBody, loopElse, buffer, loopVars = [], asyn
     // Note: After await, arr cannot be poison (await converts poison to PoisonError)
   }
 
-  let sequential = asyncOptions ? asyncOptions.sequential : false;
+  const sequential = asyncOptions ? asyncOptions.sequential : false;
   let limitSequentialOverride = false;
   const isAsync = asyncOptions !== null;
 
-  let didIterate = false;
+  const progress = {didIterate: false};
   // Called between sequential iterations. The ordered chain observation may
   // be async because it is enqueued on the loop's command buffer.
   const returnAdvanceCheck = asyncOptions && asyncOptions.returnCheckChainName
@@ -794,15 +701,6 @@ async function iterateAsync(arr, loopBody, loopElse, buffer, loopVars = [], asyn
       return;
     }
 
-    if (arr && typeof arr === 'object' && !Array.isArray(arr) && !(isAsync && typeof arr[Symbol.asyncIterator] === 'function')) {
-      arr = fromIterator(arr);
-      if (arr && !Array.isArray(arr) && loopVars.length !== 2) {
-        throw new Error(
-          `Expected two variables for key/value iteration, got ${loopVars.length} : ${loopVars.join(', ')}`
-        );
-      }
-    }
-
     // Resolve and validate concurrentLimit if present
     let maxConcurrency = asyncOptions ? asyncOptions.concurrentLimit : null;
 
@@ -817,12 +715,6 @@ async function iterateAsync(arr, loopBody, loopElse, buffer, loopVars = [], asyn
       if (typeof maxConcurrency.then === 'function') {
         try {
           maxConcurrency = await maxConcurrency;
-          // After await, if it was a PoisonedValue, it would have thrown a PoisonError
-          // which is caught by the outer catch. Check for poison after await.
-          if (isPoison(maxConcurrency)) {
-            poisonLoopEffects(buffer, asyncOptions, PoisonError.group(maxConcurrency.errors), false);
-            return;
-          }
         } catch (err) {
           // Promise rejected - poison both body and else
           if (!isPoisonError(err)) {
@@ -838,8 +730,7 @@ async function iterateAsync(arr, loopBody, loopElse, buffer, loopVars = [], asyn
         // null / undefined / 0 → ignore, treated as "no limit"
         maxConcurrency = null;
       } else {
-        const numericLimit = Number(maxConcurrency);
-        if (typeof maxConcurrency !== 'number' || !Number.isFinite(numericLimit) || numericLimit <= 0) {
+        if (typeof maxConcurrency !== 'number' || !Number.isFinite(maxConcurrency) || maxConcurrency <= 0) {
           poisonLoopEffects(
             buffer,
             asyncOptions,
@@ -848,55 +739,49 @@ async function iterateAsync(arr, loopBody, loopElse, buffer, loopVars = [], asyn
           );
           return;
         }
-        maxConcurrency = numericLimit;
-        if (numericLimit === 1) {
+        if (maxConcurrency === 1) {
           limitSequentialOverride = true;
           maxConcurrency = null;
         }
       }
     }
-    if (isAsync && arr && typeof arr[Symbol.asyncIterator] === 'function') {
-      // We must have two separate code paths. The `lenPromise` and `lastPromise`
-      // mechanism is fundamentally incompatible with sequential execution, as it
-      // would create a deadlock.
-
-      const effectiveSequential = sequential || limitSequentialOverride;
-
-      if (effectiveSequential) {
-        // Used for `while` and `each` loops and
-        // any `for` loop marked as sequential. It does NOT support `loop.length`
-        // or `loop.last` for async iterators, as that is impossible to know
-        // without first consuming the entire iterator.
-        didIterate = await iterateAsyncSequential(arr, loopBody, loopVars, errorContext, returnAdvanceCheck, buffer, asyncOptions);
-      } else if (maxConcurrency) {
-        // Limited concurrency path: behaves like while loops for metadata
-        didIterate = await iterateAsyncLimited(arr, loopBody, loopVars, errorContext, maxConcurrency, buffer, asyncOptions);
-      } else {
-        // PARALLEL PATH
-        // This complex logic allows for `loop.length` and `loop.last` to work
-        // by resolving promises only after the entire iterator is consumed. This
-        // only works when loop bodies are fired in parallel (sequential=false)
-        didIterate = await iterateAsyncParallel(arr, loopBody, loopVars, errorContext, buffer, asyncOptions);
+    if (isFatalReported(errorContext)) return;
+    const asyncIterator = isAsync ? acquireAsyncIterator(arr, errorContext, asyncOptions.replayAsyncIterables !== false) : null;
+    if (arr && typeof arr === 'object' && !Array.isArray(arr) && !asyncIterator) {
+      try {
+        arr = fromIterator(arr);
+      } catch (error) {
+        if (!isAsync) throw error;
+        throw PoisonError.wrap(error, errorContext, 'IteratorThrew');
+      }
+      if (arr && !Array.isArray(arr) && loopVars.length !== 2) {
+        throw new Error(
+          `Expected two variables for key/value iteration, got ${loopVars.length} : ${loopVars.join(', ')}`
+        );
       }
     }
-    else if (arr) {
-      if (Array.isArray(arr)) {
-        const len = arr.length;
-        const effectiveSequential = sequential || limitSequentialOverride;
 
+    const effectiveSequential = sequential || limitSequentialOverride;
+    if (asyncIterator) {
+      // Length/last promises require unbounded parallel bodies to avoid deadlock.
+      if (effectiveSequential) {
+        await iterateAsyncSequential(asyncIterator, loopBody, loopVars, errorContext, returnAdvanceCheck, buffer, asyncOptions, progress);
+      } else if (maxConcurrency) {
+        await iterateAsyncLimited(asyncIterator, loopBody, loopVars, errorContext, maxConcurrency, buffer, asyncOptions, progress);
+      } else {
+        await iterateAsyncParallel(asyncIterator, loopBody, loopVars, errorContext, buffer, asyncOptions, progress);
+      }
+    } else if (arr) {
+      if (Array.isArray(arr)) {
         if (effectiveSequential) {
-          didIterate = await iterateArraySequential(arr, loopBody, loopVars, errorContext, returnAdvanceCheck, buffer, asyncOptions);
-        } else if (maxConcurrency && maxConcurrency < len) {
-          didIterate = await iterateArrayLimited(arr, loopBody, loopVars, errorContext, maxConcurrency, buffer, asyncOptions);
+          progress.didIterate = await iterateArraySequential(arr, loopBody, loopVars, errorContext, returnAdvanceCheck, buffer, asyncOptions);
+        } else if (maxConcurrency && maxConcurrency < arr.length) {
+          progress.didIterate = await iterateArrayLimited(arr, loopBody, loopVars, errorContext, maxConcurrency, buffer, asyncOptions);
         } else {
-          // Sync: returns boolean directly. Async: await to handle Promise (though it's not async)
-          const result = iterateArrayParallel(arr, loopBody, loopVars, errorContext, buffer, asyncOptions);
-          didIterate = asyncOptions ? await result : result;
+          progress.didIterate = iterateArrayParallel(arr, loopBody, loopVars, errorContext, buffer, asyncOptions);
         }
       } else {
-        // object iteration
-        const effectiveSequential = sequential || limitSequentialOverride;
-        didIterate = await iterateObject(arr, loopBody, loopVars, errorContext, effectiveSequential, maxConcurrency, returnAdvanceCheck, buffer, asyncOptions);
+        progress.didIterate = await iterateObject(arr, loopBody, loopVars, errorContext, effectiveSequential, maxConcurrency, returnAdvanceCheck, buffer, asyncOptions);
       }
     }
   } catch (err) {
@@ -906,14 +791,13 @@ async function iterateAsync(arr, loopBody, loopElse, buffer, loopVars = [], asyn
     if (!isPoisonError(err)) {
       RuntimeError.reportAndThrow(err, errorContext);
     }
-    didIterate = err.errors[err.errors.length - 1]?.didIterate || false;
     // if we had at least one iteration, we won't poison the else side-effects
-    poisonLoopEffects(buffer, asyncOptions, err, didIterate);
+    poisonLoopEffects(buffer, asyncOptions, err, progress.didIterate);
     return;
   }
 
   // Handle else execution.
-  if (!didIterate && loopElse) {
+  if (!progress.didIterate && loopElse) {
     if (asyncOptions) {
       await loopElse();
     } else {
@@ -928,14 +812,10 @@ async function* whileIterator() {
   let i = 0;
   while (true) {
     // This generator yields loop indices indefinitely.
-    // The consumer (iterateAsyncSequential) controls termination.
-    // When the compiled while-loop body returns false,
-    // the consumer breaks its 'for await' loop.
-    // This triggers the implicit .return() on this iterator,
-    // safely terminating this generator execution.
+    // The sequential consumer closes this private iterator when the body stops.
     yield i++;
   }
 }
 
-export { asyncEach, asyncAll, fromIterator, createLoopBindings, setLoopValueBindings, iterateAsyncSequential, iterateAsyncParallel, poisonLoopEffects, iterate, whileIterator };
+export { asyncEach, asyncAll, fromIterator, createLoopBindings, poisonLoopEffects, iterate, whileIterator };
 

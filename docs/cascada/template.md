@@ -11,6 +11,9 @@ This document focuses on the differences between CascadaScript and Cascada Templ
 
 Cascada Templates provide an alternative syntax for writing Cascada workflows using a template-based approach similar to Nunjucks/Jinja2. While CascadaScript is optimized for data orchestration with explicit channel declarations, Cascada Templates are ideal for text generation with embedded logic.
 
+Async template loops share [replayable external async iterables](async-iterables.md).
+Every loop sees the full sequence; early termination requires explicit source disposal.
+
 Cascada maintains full compatibility with Nunjucks when running in non-async mode.
 
 **⚠️ Under active development:** Cascada is evolving rapidly - bugs are possible. Issues and contributions are very welcome.

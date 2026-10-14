@@ -7,6 +7,7 @@ import {
   SnapshotCommand,
   TextCommand,
   createRenderState,
+  makeSharedIterable,
   declareBufferChain,
   isPoisonError,
   isRuntimeError,
@@ -67,6 +68,48 @@ import {
         });
       }
       expect(messages.every((m) => m === messages[0])).to.be(true);
+    });
+
+    it('does not leak unused async loop metadata rejections after a source failure', async () => {
+      const seen = [];
+      const onUnhandled = error => seen.push(error);
+      process.on('unhandledRejection', onUnhandled);
+      try {
+        const makeSource = () => (async function* () { yield 'a'; throw new Error('source failed'); })();
+        expect(await env.renderScriptString(
+          'for x in source\nvar unused = x\nendfor\nreturn "ok"', {source: makeSource()}
+        )).to.be('ok');
+        let failure;
+        try {
+          await env.renderTemplateString('{% for x in source %}{{x}}{% endfor %}', {source: makeSource()});
+        } catch (error) { failure = error; }
+        expect(isPoisonError(failure)).to.be(true);
+        await new Promise(resolve => setTimeout(resolve, 30));
+        expect(seen).to.eql([]);
+      } finally {
+        process.removeListener('unhandledRejection', onUnhandled);
+      }
+    });
+
+    it('handles a rejected late stream chunk after disposal', async () => {
+      const seen = [];
+      const onUnhandled = error => seen.push(error);
+      process.on('unhandledRejection', onUnhandled);
+      let controller;
+      const source = new ReadableStream({start(value) { controller = value; }});
+      const shared = makeSharedIterable(source);
+      try {
+        const pending = shared[Symbol.asyncIterator]().next().catch(error => error);
+        const cleanup = shared.dispose();
+        controller.enqueue(Promise.reject(new Error('late chunk failed')));
+        await cleanup;
+        expect((await pending).name).to.be('SharedSourceDisposedError');
+        expect(source.locked).to.be(false);
+        await new Promise(resolve => setTimeout(resolve, 30));
+        expect(seen).to.eql([]);
+      } finally {
+        process.removeListener('unhandledRejection', onUnhandled);
+      }
     });
 
     // Regression guard: fatal delivery belongs to the render state and

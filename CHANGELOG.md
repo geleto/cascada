@@ -8,6 +8,11 @@ This project follows SemVer. While Cascada is still in `0.x`, minor releases may
 
 ### Changed
 
+- Cascada loops share async iterable consumption automatically through one replay factory per source, including across aliases and renders. Each loop walks the retained history from the beginning before reaching new items, so later renders can repeat loop-body side effects. Long-lived sources accumulate history until disposal or collection of the source and its shared iterable. Disposal permanently ends replay for that object; later default-mode loops produce `IteratorThrew` poison caused by `SharedSourceDisposedError`. For incremental work, pass a fresh batch to each render; see [shared async iteration](docs/cascada/async-iterables.md).
+- Shared async sources retain their native identity, properties and methods outside loops. JavaScript consumers can share synchronous or async sources with `makeSharedIterable`, preserving the source protocol and preferring async when both exist. The helper is the only public sharing export; returned iterables expose iteration and disposal only. Ordinary synchronous loops remain native unless passed the shared wrapper. Use `{ replayAsyncIterables: false }` for native async loop consumption, with early-exit cleanup in sequential loops; that cleanup may close or cancel the source. Explicit replay in native mode requires passing the shared wrapper itself to the render.
+- Throwing property getters in async templates now produce `LookupThrew` poison, matching scripts. The error surfaces when the value is consumed; an unused assignment such as `{% set x = o.bad %}ok` can render successfully. Synchronous template behavior is unchanged.
+- Type declarations require TypeScript 5.2 or later for `Symbol.asyncDispose` support.
+- Data merging and snapshots clone plain records, null-prototype dictionaries and arrays consistently. Async iterables and nested class instances remain opaque; `merge` and `deepMerge` require data records as merge roots.
 - Require Node.js 24 or later. Browser targets require native ESM, top-level await, and `Error.isError`.
 - Unify missing-resource errors as `NotFoundError` with `resourceName` and the message `Resource not found: name`, including synchronous template loading. Nested rendering failures retain this error as their cause.
 - WebLoader source paths are canonical absolute URLs. Requests must stay within the configured base origin and directory; HTTP failures expose status, URL, and response text.
@@ -20,6 +25,7 @@ This project follows SemVer. While Cascada is still in `0.x`, minor releases may
 
 ### Fixed
 
+- Synchronous iterator consumption failures in async loops produce `IteratorThrew` poison, preserving existing poison and fatal errors.
 - Compile empty template and script sources, and accept empty loaded text.
 - Correct `PrecompiledLoader` constructor typing to a name-keyed object map, and distinguish precompiled script return values from template strings.
 - Keep loader subscriptions bounded and allow unused environments, groups, and sources to be collected.

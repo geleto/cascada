@@ -91,7 +91,7 @@ function compileProps(src, options = {}) {
   return new Function('runtime', source)(runtime);
 }
 
-function createPropsOwnerState(props, { path = 'compiled.casc', scriptMode = false, env = null, renderState = null } = {}) {
+function createPropsOwnerState(props, { path = 'compiled.casc', scriptMode = false, env = null, renderState = createTestRenderState() } = {}) {
   return createTestOwnerState({
     path,
     scriptMode,
