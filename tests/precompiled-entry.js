@@ -3,6 +3,7 @@ import path from 'path';
 import {Buffer} from 'buffer';
 import {fileURLToPath, pathToFileURL} from 'url';
 import expect from 'expect.js';
+import {Readable, Writable} from 'node:stream';
 import {
   precompileScriptString,
   precompileTemplateString,
@@ -60,6 +61,37 @@ function collectStaticImports(entry, seen = new Set()) {
 }
 
 describe('precompiled runtime entry', function() {
+  it('preserves native Node stream exports and methods', async function() {
+    const compiled = precompileScriptString('return source', {name: 'stream.casc', format: 'esm'});
+    const scripts = (await importGeneratedModule(compiled)).default;
+    const loader = new PrecompiledLoader(scripts);
+    const source = Readable.from(['a', 'b']);
+    const exported = await new AsyncEnvironment(loader).renderScript('stream.casc', {source});
+    expect(exported).to.be(source);
+    const chunks = [];
+    const sink = new Writable({write(chunk, encoding, callback) { chunks.push(String(chunk)); callback(); }});
+    await new Promise((resolve, reject) => {
+      sink.on('finish', resolve);
+      sink.on('error', reject);
+      exported.pipe(sink);
+    });
+    expect(chunks).to.eql(['a', 'b']);
+  });
+
+  it('chooses loop replay at runtime in precompiled code', async function() {
+    const compiled = precompileScriptString(
+      'text output\nfor x in source\noutput(x)\nendfor\nreturn output.snapshot()',
+      {name: 'loop.casc', format: 'esm'}
+    );
+    const scripts = (await importGeneratedModule(compiled)).default;
+    for (const replayAsyncIterables of [true, false]) {
+      const env = new AsyncEnvironment(new PrecompiledLoader(scripts), {replayAsyncIterables});
+      const source = Readable.from(['a', 'b']);
+      expect(await env.renderScript('loop.casc', {source})).to.be('ab');
+      expect(await env.renderScript('loop.casc', {source})).to.be(replayAsyncIterables ? 'ab' : '');
+    }
+  });
+
   it('should render empty and whitespace-only precompiled sources', async function() {
     for (const source of ['', ' \t\r\n']) {
       const options = {name: 'empty', format: 'esm'};

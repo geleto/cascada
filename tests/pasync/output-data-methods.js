@@ -1,6 +1,7 @@
 
 import expect from 'expect.js';
 import {AsyncEnvironment} from '../../src/environment/environment.js';
+import {isPoisonError, PoisonError, createPoison} from '../../src/runtime/errors.js';
 
 describe('Cascada Script: @data String and Array Methods', function () {
   let env;
@@ -8,6 +9,68 @@ describe('Cascada Script: @data String and Array Methods', function () {
   // For each test, create a fresh environment.
   beforeEach(() => {
     env = new AsyncEnvironment();
+  });
+
+  it('deep-clones records and arrays while preserving opaque objects through snapshots', async () => {
+    class Item { constructor() { this.id = 1; } }
+    const opaque = [new Item(), new Date(0), new Map([['a', 1]])];
+    const input = Object.assign(Object.create(null), {nested: {items: opaque}});
+    const result = await env.renderScriptString(`
+      data output
+      output.deepMerge(input)
+      var before = output.snapshot()
+      output.extra = true
+      return [before, output.snapshot()]
+    `, {input});
+    for (const snapshot of result) {
+      expect(snapshot.nested).not.to.be(input.nested);
+      expect(snapshot.nested.items).not.to.be(opaque);
+      snapshot.nested.items.forEach((value, i) => expect(value).to.be(opaque[i]));
+    }
+    expect(result[0].extra).to.be(undefined);
+    expect(result[1].extra).to.be(true);
+  });
+
+  it('clones null-prototype dictionaries without changing their keys or prior snapshots', async () => {
+    const dictionary = Object.assign(Object.create(null), {nested: {value: 1}});
+    dictionary.__proto__ = {label: 'data'};
+    const result = await env.renderScriptString(`
+      data output
+      output.dictionary = dictionary
+      var before = output.snapshot()
+      output.dictionary.nested.value = 2
+      return [before, output.snapshot()]
+    `, {dictionary});
+    expect(result[0].dictionary.nested.value).to.be(1);
+    expect(result[1].dictionary.nested.value).to.be(2);
+    expect(dictionary.nested.value).to.be(1);
+    for (const snapshot of result) {
+      expect(Object.getPrototypeOf(snapshot.dictionary)).to.be(null);
+      expect(snapshot.dictionary.__proto__).to.eql({label: 'data'});
+    }
+  });
+
+  it('rejects opaque merge roots through poison flow instead of treating them as records', async () => {
+    for (const method of ['merge', 'deepMerge']) {
+      for (const input of [new Date(0), new Map()]) {
+        let failure;
+        try {
+          await env.renderScriptString(`data output\noutput.${method}(input)\nreturn output.snapshot()`, {input});
+        } catch (error) { failure = error; }
+        expect(isPoisonError(failure)).to.be(true);
+        expect(failure.message).to.contain('must be a plain object');
+      }
+    }
+  });
+
+  it('preserves poison in a null-prototype dictionary snapshot', async () => {
+    const cause = PoisonError.create('failed field', [0, 0, 'source', 'source.casc', null, null], 'UserCallThrew');
+    const dictionary = Object.assign(Object.create(null), {value: createPoison(cause)});
+    let failure;
+    try {
+      await env.renderScriptString('data output\noutput.dictionary = dictionary\nreturn output.snapshot()', {dictionary});
+    } catch (error) { failure = error; }
+    expect(failure).to.be(cause);
   });
 
   describe('Auto-initialization of sub-properties', function () {

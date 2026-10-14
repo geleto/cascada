@@ -3199,3 +3199,238 @@ return output.snapshot()`;
   }); // End Cascada Script Loops
 
 })();
+
+describe('Async iterable loops', () => {
+  async function rejection(promise) {
+    try {
+      await promise;
+    } catch (error) {
+      return error;
+    }
+    throw new Error('Expected rejection');
+  }
+
+  it('skips native acquisition after a sibling fails while the loop limit is pending', async () => {
+    let releaseLimit;
+    const limit = new Promise(resolve => { releaseLimit = resolve; });
+    const state = runtime.createRenderState();
+    const errorContext = [1, 1, 'Loop.Test', 'loops.js', null, state];
+    const source = new ReadableStream({start(controller) { controller.close(); }});
+    let acquisitions = 0;
+    const acquire = source[Symbol.asyncIterator];
+    source[Symbol.asyncIterator] = function () { acquisitions++; return acquire.call(this); };
+    let bodies = 0;
+    const iteration = iterate(source, () => { bodies++; }, null, null, ['x'], createAsyncLoopOptions({
+      concurrentLimit: limit, replayAsyncIterables: false, errorContext
+    }));
+    const fatal = runtime.RuntimeError.create('sibling failed', errorContext);
+    state.reportFatalError(fatal);
+    releaseLimit(1);
+    await iteration;
+    expect(acquisitions).to.be(0);
+    expect(bodies).to.be(0);
+    expect(source.locked).to.be(false);
+    expect(state.error).to.be(fatal);
+  });
+
+  it('closes an acquired native iterator if fatal state stops its first pull', async () => {
+    const state = runtime.createRenderState();
+    const errorContext = [1, 1, 'Loop.Test', 'loops.js', null, state];
+    const fatal = runtime.RuntimeError.create('acquisition failed fatally', errorContext);
+    let closes = 0;
+    let pulls = 0;
+    const source = {[Symbol.asyncIterator]() {
+      state.reportFatalError(fatal);
+      return {
+        next() { pulls++; return {done: true}; },
+        return() { closes++; return {done: true}; }
+      };
+    }};
+    await iterate(source, () => {}, null, null, ['x'], createAsyncLoopOptions({
+      sequential: true, replayAsyncIterables: false, errorContext
+    }));
+    expect(pulls).to.be(0);
+    expect(closes).to.be(1);
+    expect(state.error).to.be(fatal);
+  });
+
+  it('preserves body failures when native early-exit cleanup also fails', async () => {
+    const cause = new Error('body failed');
+    let closes = 0;
+    const source = {[Symbol.asyncIterator]() {
+      return {
+        next: () => ({value: 'a', done: false}),
+        return() { closes++; throw new Error('cleanup failed'); }
+      };
+    }};
+    const error = await rejection(iterate(source, () => { throw cause; }, null, null, ['x'],
+      createAsyncLoopOptions({sequential: true, replayAsyncIterables: false})));
+    expect(runtime.isRuntimeError(error)).to.be(true);
+    expect(error.cause).to.be(cause);
+    expect(closes).to.be(1);
+  });
+
+  it('preserves invalid native close results as iterator poison', async () => {
+    const source = {
+      [Symbol.asyncIterator]() {
+        return {next: async () => ({done: false, value: 'value'}), return: async () => null};
+      }
+    };
+    const env = new AsyncEnvironment(null, {replayAsyncIterables: false});
+    const error = await rejection(env.renderScriptString('each x in source\nreturn x\nendeach', {source}));
+    expect(runtime.isPoisonError(error)).to.be(true);
+    expect(error.kind).to.be('IteratorThrew');
+    expect(error.cause).to.be.a(TypeError);
+  });
+
+  it('captures a sequential iterator next method once at acquisition', async () => {
+    let reads = 0;
+    const source = {
+      [Symbol.asyncIterator]() {
+        return {
+          index: 0,
+          get next() {
+            reads++;
+            return async function () {
+              return this.index < 2 ? {value: ++this.index, done: false} : {done: true};
+            };
+          }
+        };
+      }
+    };
+    const env = new AsyncEnvironment(null, {replayAsyncIterables: false});
+    expect(await env.renderScriptString('text output\neach x in source\noutput(x)\nendeach\nreturn output.snapshot()', {source})).to.be('12');
+    expect(reads).to.be(1);
+  });
+
+  it('preserves sequential next getter failures as iterator poison', async () => {
+    const cause = new Error('next getter failed');
+    const source = {[Symbol.asyncIterator]() { return {get next() { throw cause; }}; }};
+    const env = new AsyncEnvironment(null, {replayAsyncIterables: false});
+    const error = await rejection(env.renderScriptString('text output\neach x in source\noutput(x)\nendeach\nreturn output.snapshot()', {source}));
+    expect(runtime.isPoisonError(error)).to.be(true);
+    expect(error.kind).to.be('IteratorThrew');
+    expect(error.cause).to.be(cause);
+  });
+
+  for (const sequential of [false, true]) {
+    it(`keeps ${sequential ? 'sequential' : 'parallel'} body runtime failures fatal`, async () => {
+      const cause = new Error('unexpected body failure');
+      const source = (async function* () { yield 'value'; })();
+      const error = await rejection(runtime.iterate(source, () => { throw cause; }, null, null, ['x'], {
+        sequential,
+        bodyPoisonChains: [],
+        elsePoisonChains: [],
+        concurrentLimit: null,
+        returnCheckChainName: null,
+        scriptMode: true,
+        errorContext: [0, 0, 'loop', 'loops.casc', null, null]
+      }));
+      expect(runtime.isRuntimeError(error)).to.be(true);
+      expect(error.cause).to.be(cause);
+    });
+  }
+
+  for (const loop of ['for x in source', 'each x in source', 'for x in source of 2']) {
+    for (const failure of ['null', 'done', 'value']) {
+      it(`preserves native ${failure} result failures as iterator poison with ${loop}`, async () => {
+        const cause = new Error(`${failure} result failed`);
+        const result = failure === 'null' ? null : failure === 'done'
+          ? {get done() { throw cause; }}
+          : {done: false, get value() { throw cause; }};
+        const source = {[Symbol.asyncIterator]() { return {next: async () => result}; }};
+        const env = new AsyncEnvironment(null, {replayAsyncIterables: false});
+        const error = await rejection(env.renderScriptString(`
+          text output
+          ${loop}
+            output(x)
+          end${loop.startsWith('each') ? 'each' : 'for'}
+          return output.snapshot()
+        `, {source}));
+        expect(runtime.isPoisonError(error)).to.be(true);
+        expect(error.kind).to.be('IteratorThrew');
+        if (failure !== 'null') expect(error.cause).to.be(cause);
+        else expect(error.cause).to.be.a(TypeError);
+      });
+    }
+
+    for (const replayAsyncIterables of [true, false]) {
+      it(`preserves yielded then getter failures with ${loop} and replay ${replayAsyncIterables}`, async () => {
+        for (const destructured of [false, true]) {
+          const cause = new Error('yielded then getter failed');
+          const failedValue = {get then() { throw cause; }};
+          const value = destructured ? [failedValue, 'other'] : failedValue;
+          const source = {
+            [Symbol.asyncIterator]() {
+              let pulled = false;
+              return {
+                async next() {
+                  if (pulled) return {done: true};
+                  pulled = true;
+                  return {done: false, value};
+                }
+              };
+            }
+          };
+          const env = new AsyncEnvironment(null, {replayAsyncIterables});
+          const loopHeader = destructured ? loop.replace('x in', 'x, y in') : loop;
+          const error = await rejection(env.renderScriptString(`
+            text output
+            ${loopHeader}
+              output(x)
+            end${loop.startsWith('each') ? 'each' : 'for'}
+            return output.snapshot()
+          `, {source}));
+          expect(runtime.isPoisonError(error)).to.be(true);
+          expect(error.kind).to.be('IteratorThrew');
+          expect(error.cause).to.be(cause);
+        }
+      });
+    }
+
+    it(`keeps native acquisition failures in poison flow with ${loop}`, async () => {
+      const cause = new Error('source acquisition failed');
+      const source = {[Symbol.asyncIterator]() { throw cause; }};
+      const env = new AsyncEnvironment(null, {replayAsyncIterables: false});
+      const error = await rejection(env.renderScriptString(`
+        text output
+        ${loop}
+          output(x)
+        end${loop.startsWith('each') ? 'each' : 'for'}
+        return output.snapshot()
+      `, {source}));
+      expect(runtime.isPoisonError(error)).to.be(true);
+      expect(error.kind).to.be('IteratorThrew');
+      expect(error.cause).to.be(cause);
+    });
+
+    it(`consumes promise-valued chunks through normal value flow with ${loop}`, async () => {
+      const env = new AsyncEnvironment();
+      const script = `
+        text output
+        ${loop}
+          output(x)
+        end${loop.startsWith('each') ? 'each' : 'for'}
+        return output.snapshot()
+      `;
+      const sourceFor = (value) => ({
+        [Symbol.asyncIterator]() {
+          let pulled = false;
+          return {
+            async next() {
+              if (pulled) return {done: true};
+              pulled = true;
+              return {done: false, value};
+            }
+          };
+        }
+      });
+      expect(await env.renderScriptString(script, {source: sourceFor(Promise.resolve('value'))})).to.be('value');
+      const cause = new Error('chunk failed');
+      const error = await rejection(env.renderScriptString(script, {source: sourceFor(Promise.reject(cause))}));
+      expect(runtime.isPoisonError(error)).to.be(true);
+      expect(error.kind).to.be('IteratorThrew');
+      expect(error.cause).to.be(cause);
+    });
+  }
+});

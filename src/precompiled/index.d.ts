@@ -1,3 +1,12 @@
+/// <reference lib="esnext.disposable" />
+
+export interface SharedAsyncIterable<T> extends AsyncIterable<T> {
+    dispose(): Promise<void>;
+    [Symbol.asyncDispose](): Promise<void>;
+}
+export function createSharedAsyncIterable<T>(source: AsyncIterable<T>): SharedAsyncIterable<T>;
+export class SharedSourceDisposedError extends Error {}
+
 export type RenderCallback<T> = (err: CascadaRenderError | Error | null, res: T | null) => void;
 
 export class Loader {
@@ -66,7 +75,7 @@ export class Environment {
 }
 
 export class AsyncEnvironment {
-  constructor(loaders?: Loader | Loader[], opts?: object);
+  constructor(loaders?: Loader | Loader[] | null, opts?: { replayAsyncIterables?: boolean; [option: string]: unknown });
   loadString(name: string, parentName?: string): Promise<string>;
   invalidateCache(): void;
   renderTemplate(name: string, context?: object): Promise<string>;

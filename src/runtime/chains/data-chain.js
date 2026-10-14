@@ -3,7 +3,8 @@ import {createPoison, isPoison, isPoisonError, PoisonError} from '../errors.js';
 import {isObservableCommand} from '../commands/base.js';
 import {DataCommand} from '../commands/data.js';
 import {DataChainTarget} from './data-target.js';
-import {Chain, cloneSnapshotValue} from './base.js';
+import {Chain} from './base.js';
+import {isDataRecord, cloneDataValue} from '../../lib.js';
 
 class DataChain extends Chain {
   constructor(buffer, chainName, context, chainType) {
@@ -89,7 +90,7 @@ class DataChain extends Chain {
       return;
     }
 
-    const cloned = cloneSnapshotValue(this._target);
+    const cloned = cloneDataValue(this._target);
     this._setTarget(cloned);
     this._base.data = cloned;
     this._snapshotShared = false;
@@ -97,7 +98,7 @@ class DataChain extends Chain {
 
   _captureGuardState() {
     return {
-      target: cloneSnapshotValue(this._target)
+      target: cloneDataValue(this._target)
     };
   }
 
@@ -174,7 +175,7 @@ function inspectSettledTargetForErrors(target) {
       return;
     }
 
-    if (Object.getPrototypeOf(value) !== Object.prototype) {
+    if (!isDataRecord(value)) {
       return;
     }
 
