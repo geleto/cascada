@@ -12,7 +12,6 @@ export * from './chains/sequential-path-chain.js';
 export * from './error-context.js';
 export * from './errors.js';
 export * from './resolve.js';
-export * from './shared-iterable.js';
 export * from './render-state.js';
 export * from './command-buffer.js';
 export * from './command-iterator.js';

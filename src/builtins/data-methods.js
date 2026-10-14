@@ -1,15 +1,33 @@
-import {isDataRecord, cloneDataValue} from '../lib.js';
-
 // ------------------------------
 // Internal helpers (not exported)
 // ------------------------------
-function assertDataRecord(v, label, opName) {
+function isPlainObject(v) {
+  return v !== null && typeof v === 'object' && !Array.isArray(v);
+}
+
+function assertNonNullPlainObject(v, label, opName) {
   if (v === undefined || v === null) {
     throw new Error(`Error: ${label} for '${opName}' must be a non-null object.`);
   }
-  if (!isDataRecord(v)) {
+  if (!isPlainObject(v)) {
     throw new Error(`Error: ${label} for '${opName}' must be a plain object.`);
   }
+}
+
+function deepClone(v) {
+  if (Array.isArray(v)) {
+    return v.map((x) => deepClone(x));
+  }
+  if (isPlainObject(v)) {
+    const out = {};
+    for (const k in v) {
+      if (Object.prototype.hasOwnProperty.call(v, k)) {
+        out[k] = deepClone(v[k]);
+      }
+    }
+    return out;
+  }
+  return v;
 }
 
 const defaultMethods = {
@@ -42,7 +60,7 @@ const defaultMethods = {
    */
   merge: function (target, value) {
     // Validate source first (even if target doesn't exist yet)
-    assertDataRecord(value, 'Value', 'merge');
+    assertNonNullPlainObject(value, 'Value', 'merge');
 
     // Auto-initialize missing target to a new object
     if (target === undefined) {
@@ -52,7 +70,7 @@ const defaultMethods = {
     if (target === null) {
       throw new Error('Error: Target for \'merge\' cannot be null.');
     }
-    if (isDataRecord(target)) {
+    if (isPlainObject(target)) {
       Object.assign(target, value);
       return target;
     }
@@ -71,16 +89,16 @@ const defaultMethods = {
    */
   deepMerge: function (target, value) {
     // Validate source first
-    assertDataRecord(value, 'Value', 'deepMerge');
+    assertNonNullPlainObject(value, 'Value', 'deepMerge');
 
     // Auto-initialize missing target to a new object
     if (target === undefined) {
-      return cloneDataValue(value);
+      return deepClone(value);
     }
     if (target === null) {
       throw new Error('Error: Target for \'deepMerge\' cannot be null.');
     }
-    if (!isDataRecord(target)) {
+    if (!isPlainObject(target)) {
       throw new Error(`Error: Target for \'deepMerge\' must be a non-null plain object.`);
     }
 
@@ -89,11 +107,11 @@ const defaultMethods = {
       const targetValue = target[key];
       const sourceValue = value[key];
 
-      if (isDataRecord(targetValue) && isDataRecord(sourceValue)) {
+      if (isPlainObject(targetValue) && isPlainObject(sourceValue)) {
         this.deepMerge(targetValue, sourceValue);
       } else {
         // Overwrite primitives/arrays; clone objects to avoid aliasing
-        target[key] = cloneDataValue(sourceValue);
+        target[key] = deepClone(sourceValue);
       }
     }
     return target;

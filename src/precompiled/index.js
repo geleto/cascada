@@ -14,7 +14,6 @@ export {Loader} from '../loader/loader.js';
 export {NotFoundError} from '../loader/errors.js';
 export {PrecompiledLoader} from '../loader/precompiled-loader.js';
 export {SafeString, markSafe} from '../runtime/safe-output.js';
-export {createSharedAsyncIterable, SharedSourceDisposedError} from '../runtime/shared-iterable.js';
 export {CascadaError, CompileError, isCompileError} from '../errors.js';
 export {
   PoisonError,

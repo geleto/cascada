@@ -45,6 +45,4 @@ await import('../globals.js');
 await import('../jinja-compat.js');
 await import('../tests.js');
 
-await import('../pasync/shared-iterables.js');
-
 window.cascadaBrowserTestsLoaded = true;

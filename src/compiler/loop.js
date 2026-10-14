@@ -101,7 +101,6 @@ class CompileLoop {
 
       const asyncOptionsCode = `{
         sequential: ${sequentialLoopBody},
-        replayAsyncIterables: ${whileConditionNode ? 'false' : 'renderState.replayAsyncIterables'},
         bodyPoisonChains: ${JSON.stringify(bodyPoisonChains)},
         elsePoisonChains: ${JSON.stringify(elsePoisonChains)},
         concurrentLimit: ${node.concurrentLimit ? limitVar : 'null'},

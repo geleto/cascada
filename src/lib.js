@@ -46,29 +46,6 @@ function isObject(obj) {
   return ObjProto.toString.call(obj) === '[object Object]';
 }
 
-function isDataRecord(value) {
-  if (value === null || typeof value !== 'object') return false;
-  const prototype = Object.getPrototypeOf(value);
-  return (prototype === Object.prototype || prototype === null) && !(Symbol.asyncIterator in value);
-}
-
-// Async iterables and native instances are capabilities, not data records.
-function cloneDataValue(value) {
-  if (Array.isArray(value) && !(Symbol.asyncIterator in value)) return value.map(item => cloneDataValue(item));
-  if (!isDataRecord(value)) return value;
-  const clone = Object.getPrototypeOf(value) === null ? Object.create(null) : {};
-  for (const key in value) {
-    if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
-    const item = cloneDataValue(value[key]);
-    if (key === '__proto__') {
-      Object.defineProperty(clone, key, {value: item, enumerable: true, writable: true, configurable: true});
-    } else {
-      clone[key] = item;
-    }
-  }
-  return clone;
-}
-
 function isScalarPrimitive(value) {
   const type = typeof value;
   return value !== null &&
@@ -287,8 +264,6 @@ export {
   isArray,
   isString,
   isObject,
-  isDataRecord,
-  cloneDataValue,
   isScalarPrimitive,
   getAttrGetter,
   groupBy,

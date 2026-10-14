@@ -1,12 +1,3 @@
-/// <reference lib="esnext.disposable" />
-
-export interface SharedAsyncIterable<T> extends AsyncIterable<T> {
-    dispose(): Promise<void>;
-    [Symbol.asyncDispose](): Promise<void>;
-}
-export function createSharedAsyncIterable<T>(source: AsyncIterable<T>): SharedAsyncIterable<T>;
-export class SharedSourceDisposedError extends Error {}
-
 export type RenderCallback<T> = (err: CascadaRenderError | Error | null, res: T | null) => void;
 export type Callback<E, T> = (err: E | null, res: T | null) => void;
 
@@ -110,8 +101,6 @@ export class AsyncTemplate {
 }
 
 interface ConfigureOptions {
-  /** Set false to disable automatic async loop replay. Sequential loops close on early exit. Default: true. */
-  replayAsyncIterables?: boolean;
   autoescape?: boolean | undefined;
   throwOnUndefined?: boolean | undefined;
   trimBlocks?: boolean | undefined;

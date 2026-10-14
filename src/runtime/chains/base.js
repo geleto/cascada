@@ -1,6 +1,5 @@
 
 import {RESOLVE_MARKER, isWrappedResolvedValue, unwrapResolvedValue} from '../resolve.js';
-import {isDataRecord, cloneDataValue} from '../../lib.js';
 
 import {
   PoisonError,
@@ -213,7 +212,7 @@ class Chain {
 
   _captureGuardState() {
     return {
-      target: cloneDataValue(this._target)
+      target: cloneSnapshotValue(this._target)
     };
   }
 
@@ -277,7 +276,27 @@ function createCallableChainFacade(chain) {
   });
 }
 
-export { Chain, createCallableChainFacade, inspectTargetForErrors };
+export { Chain, createCallableChainFacade, cloneSnapshotValue, inspectTargetForErrors };
+
+function cloneSnapshotValue(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => cloneSnapshotValue(item));
+  }
+  if (isPlainObject(value)) {
+    const out = {};
+    for (const key in value) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) {
+        out[key] = cloneSnapshotValue(value[key]);
+      }
+    }
+    return out;
+  }
+  return value;
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype;
+}
 
 function getPoisonError(value) {
   if (isPoison(value)) {
@@ -413,7 +432,7 @@ function visitTargetForErrors(value, state, markerAlreadyResolved = false) {
     return;
   }
 
-  if (isDataRecord(value)) {
+  if (isPlainObject(value)) {
     for (const key of Object.keys(value)) {
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
       // Error inspection must not trigger accessor side effects on external objects.

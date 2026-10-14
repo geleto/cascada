@@ -619,11 +619,6 @@ Cascada provides `for`, `while`, and `each` loops for iterating over collections
 ##### `for` Loops: Iterate Concurrently
 Use a `for` loop to iterate over arrays, dictionaries (objects), async iterators, and other iterable data structures. By default, the body of the `for` loop executes concurrently for each item, maximizing I/O throughput for independent operations.
 
-External async iterables are [replayable](async-iterables.md): each loop sees the
-complete sequence. Values retain their native identity outside loops. Early
-termination requires explicit source disposal; JavaScript consumers can opt into
-replay with `createSharedAsyncIterable`.
-
 ```javascript
 // Each iteration runs concurrently, fetching user details
 data result
@@ -1025,11 +1020,6 @@ Below is a detailed list of all available commands and operators.
 |---|---|
 | `name.path.merge(value)` | Merges the properties of an object into the object at `path`. Shallow merge. |
 | `name.path.deepMerge(value)`| Deeply merges the properties of an object into the object at `path`. |
-
-Merge sources and targets must be plain records (ordinary objects or null-prototype
-dictionaries). Deep merging and snapshots clone nested records and arrays; class
-instances such as streams, dates and maps remain opaque values with their identity
-preserved.
 
 **Arithmetic Operations**
 These operators require the target to be a number (must be initialized first).

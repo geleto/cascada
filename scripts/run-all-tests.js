@@ -43,10 +43,6 @@ function nodeRunArgs(args) {
   const buildCode = await run(build.cmd, build.args, { env });
   if (buildCode !== 0) process.exit(buildCode);
 
-  const types = npmRunArgs(['run', 'test:types']);
-  const typesCode = await run(types.cmd, types.args, { env });
-  if (typesCode !== 0) process.exit(typesCode);
-
   const precompileCode = await run('node', ['scripts/runprecompile.js'], { env });
   if (precompileCode !== 0) process.exit(precompileCode);
 
