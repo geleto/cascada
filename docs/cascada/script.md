@@ -1,5 +1,7 @@
 # CascadaScript Documentation
 
+> **Cascada is in active development.** APIs and syntax may change. [Feedback](https://github.com/geleto/cascada/issues) and contributions are welcome.
+
 [Cascada GitHub Project](https://github.com/geleto/cascada)
 
 [Download as Markdown](https://raw.githubusercontent.com/geleto/cascada/master/docs/cascada/script.md)
@@ -13,8 +15,6 @@ CascadaScript inverts the traditional programming model: it is concurrent by def
 CascadaScript is a specialized scripting language designed for orchestrating complex asynchronous workflows in JavaScript and TypeScript applications. It is not a general-purpose programming language; instead, it acts as a data-orchestration layer for coordinating APIs, databases, LLMs, and other I/O-bound operations with maximum concurrency and minimal boilerplate.
 
 It uses familiar syntax and language constructs, while offering language-level support for boilerplate-free concurrent workflows, explicit control over side effects, deterministic output construction, and dataflow-based error handling with recovery rollbacks.
-
-**⚠️ Under active development:** Cascada is evolving rapidly - bugs are possible. Issues and contributions are very welcome.
 
 The core execution model:
 

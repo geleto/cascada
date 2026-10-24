@@ -1,5 +1,7 @@
 # Cascada Template Documentation
 
+> **Cascada is in active development.** APIs and syntax may change. [Feedback](https://github.com/geleto/cascada/issues) and contributions are welcome.
+
 **Reference Documentation:**
 
 * [CascadaScript Documentation](https://geleto.github.io/cascada-script/) - Complete reference for CascadaScript features
@@ -15,8 +17,6 @@ Async template loops share [replayable external async iterables](async-iterables
 Every loop sees the full sequence; early termination requires explicit source disposal.
 
 Cascada maintains full compatibility with Nunjucks when running in non-async mode.
-
-**⚠️ Under active development:** Cascada is evolving rapidly - bugs are possible. Issues and contributions are very welcome.
 
 ## Template vs Script: Key Differences
 
