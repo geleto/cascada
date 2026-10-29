@@ -330,7 +330,7 @@ and `AsyncEnvironment.getTemplate/getScript(name, eagerCompile, parentName, igno
 `parentName` remains a string. Compiled includes, imports, and inheritance also
 supply an optional `SourceOrigin` identifying the declaring source and its loader.
 Getter overrides must forward this final argument unchanged (or forward `...args`)
-so relative dependencies retain their owning loader. Ordinary callers can omit it.
+so relative dependencies retain their declaring resolution scope. Ordinary callers can omit it.
 
 ```js
 var tmpl = env.getTemplate('page.html');
@@ -519,45 +519,54 @@ var env = new nunjucks.Environment(new nunjucks.WebLoader('/views'))
 {% endapi %}
 {% raw %}
 
+### Combining loaders
+
+An array tries loaders in order. `[a, b]` tries B only if A returns `null`.
+A loading error stops the lookup. `raceLoaders([a, b])` tries both together
+and returns the first source found.
+
+Use `raceLoaders` when loaders hold different files, so one lookup need not
+wait for another to report a miss. If both hold the same file, the first one
+to find it wins. Use an array when one copy should take priority.
+
+Arrays can nest: `raceLoaders([[a, b], c])` starts A and C, and tries B only if A
+misses. `raceLoaders` takes one array, including empty or one-loader arrays.
+If all loaders miss, it returns `null`; if none succeeds and one fails, it
+reports an error. Started loads are not cancelled. See
+[combining loaders](cascada/script.md#combining-loaders) for examples.
+
 ### Writing a Loader
 
-Loaders can be shared across environments and `raceLoaders` groups. Each loader
-uses one internal subscription per event, and subscribers are held weakly so
-unused environments and groups can be collected. An `update` event invalidates
-both environment caches and the standalone `loadString` cache. Emit the requested
-name, or supply the source path as the second argument, to invalidate aliases.
-An `update` event without a name invalidates all sources. Pending requests may
-finish for their existing callers, but cannot restore invalidated cache entries.
-An empty `raceLoaders([])` group returns `null` for every name, allowing outer
-loaders to provide a fallback.
+Loaders can be shared across environments. Emit `update` when a file changes;
+this clears matching entries in environment and standalone `loadString` caches.
+Pass the requested name, or add the source path as the second argument to clear
+other names for that file. Omit the name to clear everything. Loads already in
+progress may finish, but their results will not be saved in the cleared cache.
 
-Loaders default to `cachePolicy: 'cache'`: successful sources and misses are
-cached, and concurrent requests for the same source share one pending load.
-Emit `update` or call `env.invalidateCache()` after resources are added or changed.
-Filesystem loaders with `watch: true` invalidate additions, changes, and deletions.
-Set `cachePolicy: 'reload'` on a dynamic loader to disable all three caches and
-keep requests independent, including checks before a cached fallback loader.
-For a function loader, assign this property to the function itself. Filesystem
-`noCache: true` and WebLoader's default `useCache: false` select `'reload'`.
-A source's `noCache: true` skips retention of that completed source; use the
-loader's `'reload'` policy when pending loads and misses must also be independent.
-Race groups default to `'reload'` when any member does; assigning the group's
-`cachePolicy` overrides that default. The group's policy also applies to relative
-dependencies, including dependencies loaded through further relative includes or imports.
+| Setting | Effect |
+| --- | --- |
+| `cachePolicy: 'cache'` (default) | Cache found and missing files; concurrent requests share a load |
+| `cachePolicy: 'reload'` | Check the loader every time, including concurrent requests |
+| A source's `noCache: true` | Do not reuse the result after loading; concurrent requests may still share the load |
 
-Relative dependencies of compiled templates and scripts load exclusively through
-the member that supplied the declaring source. Public string parents, such as
-`env.loadString('./part', 'dir/main')`, carry no ownership information: each race
-member resolves the name against that parent and the first successful load wins.
-This rule does not depend on caching or previous requests.
+Set `cachePolicy` on the loader object or function. Filesystem `noCache: true`
+and WebLoader's default `useCache: false` select `'reload'`. A race uses `'reload'`
+if any of its loaders does, unless you set its policy explicitly. That policy
+also applies to included and imported files. Filesystem `watch: true` clears
+cached files when they are added, changed, or deleted.
 
-`env.loadString(name, parentName)` always returns a Promise, including on the
-synchronous `Environment`. It uses environment-local source caching and stops on
-loader errors, just like template acquisition. Standalone `loadString(name, loaders)`
-returns a string for synchronous loaders or a Promise for asynchronous loaders,
-and tries later loaders after errors as well as misses. If none succeeds, it
-preserves the first loader error. `env.invalidateCache()` clears only that
-environment; use `clearStringCache(loader)` to clear standalone text caches.
+File-loading operations such as `include`, `import`, `extends`, and `component`
+use the configured loaders.
+
+Calls such as `env.loadString('./part', 'dir/main')` supply only a filename,
+so each loader resolves against that name. Previous loads do not affect the choice.
+
+`env.loadString(name, parentName)` always returns a Promise. It uses that
+environment's cache and stops on loading errors, just like template loading.
+Standalone `loadString(name, loaders)` returns a string or Promise, depending on
+the loader. It also tries later loaders after errors; if none succeeds, it
+reports the first error. Use `env.invalidateCache()` to clear one environment,
+or `clearStringCache(loader)` to clear standalone text caches.
 
 Direct missing-resource acquisition throws or rejects with `NotFoundError`, whose
 `resourceName` identifies the request and whose message is `Resource not found: name`.

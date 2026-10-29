@@ -10,11 +10,15 @@ export class Loader {
   cachePolicy?: 'cache' | 'reload';
 }
 
+export type LoaderGroup = Loader | LoaderGroup[];
+
 /** Declaring-source identity supplied by compiled composition. Getter overrides must forward it unchanged. */
 export interface SourceOrigin {
-  readonly loader: Loader;
+  readonly loader: LoaderGroup;
   readonly owner: Loader;
   readonly path: string;
+  readonly scope?: LoaderGroup;
+  readonly name?: string;
 }
 
 export class PrecompiledLoader extends Loader {
@@ -55,7 +59,7 @@ export class AsyncPrecompiledScript {
 export class Script extends AsyncPrecompiledScript {}
 
 export class Environment {
-  constructor(loaders?: Loader | Loader[], opts?: object);
+  constructor(loaders?: LoaderGroup, opts?: object);
   loadString(name: string, parentName?: string): Promise<string>;
   invalidateCache(): void;
   render(name: string, context?: object): string;
@@ -72,7 +76,7 @@ export class Environment {
 }
 
 export class AsyncEnvironment {
-  constructor(loaders?: Loader | Loader[] | null, opts?: { replayAsyncIterables?: boolean; [option: string]: unknown });
+  constructor(loaders?: LoaderGroup | null, opts?: { replayAsyncIterables?: boolean; [option: string]: unknown });
   loadString(name: string, parentName?: string): Promise<string>;
   invalidateCache(): void;
   renderTemplate(name: string, context?: object): Promise<string>;

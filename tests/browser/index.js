@@ -30,6 +30,7 @@ await import('../pasync/structures.js');
 await import('../lexer.js');
 await import('../loader.js');
 await import('../loader-acquisition.js');
+await import('../loader-composition.js');
 await import('../loader-cache-policy.js');
 await import('../loader-events.js');
 await import('../loader-lifecycle.js');

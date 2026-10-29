@@ -181,7 +181,7 @@ describe('source origin transport through compiled execution', function() {
     }
   });
 
-  it('resolves synchronous includes in overridden blocks and nested super calls', function() {
+  it('applies ordered relative overrides in overridden blocks and nested super calls', function() {
     const child = new SourceLoader({
       'main': '{% extends "base" %}{% block body %}{% include "./part" %}{{ super() }}{% endblock %}',
       'part': 'CHILD'
@@ -197,6 +197,23 @@ describe('source origin transport through compiled execution', function() {
     const env = new Environment([child, base, grand]);
     const template = env.getTemplate('main');
     expect(template.env).to.be(env);
-    expect(template.render()).to.be('[CHILDBASEGRAND]');
+    expect(template.render()).to.be('[CHILDCHILDCHILD]');
+  });
+
+  it('retains distinct logical origins for synchronous blocks and nested super calls', function() {
+    const child = new SourceLoader({
+      'child/main': '{% extends "base/main" %}{% block body %}{% include "./part" %}{{ super() }}{% endblock %}',
+      'child/part': 'CHILD'
+    }, 'physical-child/');
+    const base = new SourceLoader({
+      'base/main': '{% extends "grand/main" %}{% block body %}{% include "./part" %}{{ super() }}{% endblock %}',
+      'base/part': 'BASE'
+    }, 'physical-base/');
+    const grand = new SourceLoader({
+      'grand/main': '[{% block body %}{% include "./part" %}{% endblock %}]',
+      'grand/part': 'GRAND'
+    }, 'physical-grand/');
+    const env = new Environment([child, base, grand]);
+    expect(env.getTemplate('child/main').render()).to.be('[CHILDBASEGRAND]');
   });
 });

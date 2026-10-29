@@ -1157,13 +1157,20 @@ const networkLoader = async (name) => {
 //   isRelative(name)   optional — bool
 //   resolve(from, to)  optional — string
 //   on(event, handler) optional — env events
-// raceLoaders(loaders) — runs loaders concurrently; first success wins.
-// Relative compiled dependencies resolve AND load through their declaring member.
-// String parents resolve independently through every member; all-null races allow outer fallback.
-// cachePolicy defaults to 'cache' (hits, misses, pending sharing); 'reload' keeps requests independent.
-// Source caching is per environment; noCache and loader update events apply to text/templates/scripts.
-const fast = raceLoaders([ new WebLoader('https://cdn.x/'), new FileSystemLoader('scripts/backup/') ]);
+// [a, b]: try in order; start b only if a returns null. Loading errors stop lookup.
+// raceLoaders([a, b]): try together; use the first source found.
+// Useful when loaders hold different files. Use an array when one copy should take priority.
+// raceLoaders([[a, b], c]): start a and c; try b only if a misses.
+// Takes one array, including empty or one-loader arrays. All null = miss.
+// No success plus a failure = error. Started loads are not cancelled.
+// File-loading operations such as import and include use the configured loaders.
+// cachePolicy: 'cache' reuses found/missing files and shares concurrent loads.
+// 'reload' checks every time; source noCache skips reuse only after loading completes.
+// Given configured localLoader, remoteA and remoteB:
+const env = new AsyncEnvironment([localLoader, raceLoaders([remoteA, remoteB])]);
 ```
+
+See [combining loaders](script.md#combining-loaders) for details.
 
 ## Browser / ESM
 

@@ -34,15 +34,15 @@ export function renderTemplateString(src: string, context: object, callback?: Re
 export function renderTemplateStringAsync(src: string, context?: object): Promise<string>;
 export function renderScriptString(src: string, context?: object): Promise<Record<string, any> | string | null>;
 
-export function loadString(key: string, loader: ILoaderAny | ILoaderAny[]): Promise<string> | string;
-export function clearStringCache(loader: ILoaderAny, key?: string): void;
+export function loadString(key: string, loader: LoaderGroup): Promise<string> | string;
+export function clearStringCache(loader: LoaderGroup, key?: string): void;
 /** The requested resource was absent from every loader in the chain. */
 export class NotFoundError extends Error {
   constructor(resourceName: string);
   name: 'NotFoundError';
   resourceName: string;
 }
-export function raceLoaders(loaders: ILoaderAny[]): LoaderInterface;
+export function raceLoaders(loaders: LoaderGroup[]): LoaderInterface;
 
 /** @deprecated Use compileTemplate instead */
 export function compile(src: string, env?: Environment, path?: string, eagerCompile?: boolean): Template;
@@ -144,7 +144,7 @@ export class Environment {
     autoescape: boolean;
   };
 
-  constructor(loader?: ILoaderAny | ILoaderAny[] | null, opts?: ConfigureOptions);
+  constructor(loader?: LoaderGroup | null, opts?: ConfigureOptions);
   loadString(name: string, parentName?: string): Promise<string>;
   invalidateCache(): void;
   /** @deprecated Use renderTemplate instead */
@@ -202,7 +202,7 @@ export class AsyncEnvironment {
     autoescape: boolean;
   };
 
-  constructor(loader?: ILoaderAny | ILoaderAny[] | null, opts?: ConfigureOptions);
+  constructor(loader?: LoaderGroup | null, opts?: ConfigureOptions);
 
   loadString(name: string, parentName?: string): Promise<string>;
   invalidateCache(): void;
@@ -302,14 +302,18 @@ export interface LoaderInterface extends LoaderCacheOptions {
 
 /** A synchronous or an asynchronous loader. Supports both legacy and native loader types. */
 export type ILoaderAny = ILoader | ILoaderAsync | WebLoader | LoaderFunction | LoaderInterface;
+/** Recursive ordered chains. An array inside raceLoaders is one chain competitor. */
+export type LoaderGroup = ILoaderAny | LoaderGroup[];
 // WebLoader is part of the union because it can be both sync or async depending
 // on its constructor arguments, which possibly could only be known on runtime.
 
 /** Declaring-source identity supplied by compiled composition. Getter overrides must forward it unchanged. */
 export interface SourceOrigin {
-  readonly loader: ILoaderAny;
+  readonly loader: LoaderGroup;
   readonly owner: ILoaderAny;
   readonly path: string;
+  readonly scope?: LoaderGroup;
+  readonly name?: string;
 }
 
 /** A synchronous loader. Return null instead of throwing error to handle properly ignoreMissing */

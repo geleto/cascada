@@ -77,7 +77,7 @@
     "build:esm": "node scripts/build-esm.mjs",
     "test:quick": "npm run mocha",
     "test:esm": "npm run mocha",
-    "test:types": "tsc --noEmit --strict --target es2022 --module nodenext tests/types/shared-iterables.mts",
+    "test:types": "tsc --noEmit --strict --target es2022 --module nodenext tests/types/shared-iterables.mts tests/types/loader-composition.mts",
     "test:node": "cross-env NODE_ENV=test c8 --include \"src/**/*.js\" --reporter=html --reporter=text --reporter=json node scripts/run-node-tests.js",
     "test:browser": "cross-env NODE_ENV=test node scripts/run-browser-tests.js",
     "test:pasync": "cross-env NODE_ENV=test c8 --include \"src/**/*.js\" --reporter=html --reporter=text node scripts/run-node-tests.js tests/pasync tests/poison",

@@ -33,3 +33,22 @@ const path = {
 };
 
 export default path;
+
+export const posix = {
+  dirname(value) {
+    const index = value.lastIndexOf('/');
+    return index === -1 ? '.' : value.slice(0, index) || '/';
+  },
+
+  join(...parts) {
+    const value = parts.filter(Boolean).join('/');
+    const absolute = value.startsWith('/');
+    const segments = [];
+    for (const segment of value.split('/')) {
+      if (!segment || segment === '.') continue;
+      if (segment === '..' && segments.length && segments[segments.length - 1] !== '..') segments.pop();
+      else if (segment !== '..' || !absolute) segments.push(segment);
+    }
+    return (absolute ? '/' : '') + segments.join('/') || '.';
+  }
+};

@@ -31,6 +31,22 @@ class CanonicalLoader extends Loader {
 
 describe('canonical origins for precompiled resources', function() {
   for (const asynchronous of [false, true]) {
+    it(`overrides a parent relative dependency in ${asynchronous ? 'async' : 'sync'} precompiled chains`, async function() {
+      const compile = asynchronous ? precompileTemplateStringAsync : precompileTemplateString;
+      const main = await compileSource(compile, '{% include "./part" %}', 'pages/main');
+      const basePart = await compileSource(compile, 'BASE', 'pages/part');
+      const override = await compileSource(compile, 'OVERRIDE', 'pages/part');
+      const base = {load: name => {
+        const source = name === 'pages/main' ? main : name === 'pages/part' ? basePart : null;
+        return source ? {src: source, path: 'base/' + name} : null;
+      }};
+      const preferred = {load: name => (name === 'pages/part' ? {src: override, path: 'preferred/' + name} : null)};
+      const env = asynchronous ? new AsyncEnvironment([[preferred], [base]]) : new Environment([[preferred], [base]]);
+      expect(await env.renderTemplate('pages/main')).to.be('OVERRIDE');
+    });
+  }
+
+  for (const asynchronous of [false, true]) {
     it(`resolves ${asynchronous ? 'asynchronous' : 'synchronous'} includes from the loaded canonical path`, async function() {
       const compile = asynchronous ? precompileTemplateStringAsync : precompileTemplateString;
       const main = await compileSource(compile, '{% include "./part" %}', 'logical/main');

@@ -5,7 +5,7 @@ import {createGlobals} from '../builtins/globals.js';
 import {EmitterObj} from '../object.js';
 import {createSyncRuntimeError} from '../runtime/errors.js';
 import {express as expressApp} from './express-app.js';
-import {SourceCache} from '../loader/loader-utils.js';
+import {SourceCache, isRelativeName, resolveLoaderName} from '../loader/loader-utils.js';
 import {subscribeLoaderEvent} from '../loader/loader-events.js';
 import {NotFoundError} from '../loader/errors.js';
 
@@ -259,36 +259,30 @@ class BaseEnvironment extends EmitterObj {
   }
 
   _resolveFromLoader(loader, parentName, filename) {
-    const isRelative = loader.isRelative && parentName && loader.isRelative(filename);
-    return isRelative && loader.resolve ? loader.resolve(parentName, filename) : filename;
+    return resolveLoaderName(loader, parentName, filename);
   }
 
   _getSource(name, parentName, callback, origin) {
-    parentName = origin?.path ?? parentName;
-    const relativeOrigin = origin && origin.owner.isRelative?.(name) ? origin : null;
-    const loaders = relativeOrigin ? [relativeOrigin.owner] : this.loaders;
-    return lib.asyncIter(loaders, (loader, i, next, done) => {
-      let result;
-      try {
-        const resolvedName = this._resolveFromLoader(loader, parentName, name);
-        const policyLoader = relativeOrigin ? relativeOrigin.loader : loader;
-        let cache = this._sourceCaches.get(policyLoader);
-        if (!cache) {
-          cache = new SourceCache(policyLoader, false);
-          this._sourceCaches.set(policyLoader, cache);
-        }
-        result = cache.forOwner(loader).load(resolvedName, parentName);
-      } catch (error) {
-        done(error);
-        return;
+    const scope = origin?.scope ?? origin?.owner;
+    const relative = scope && (Array.isArray(scope) ? isRelativeName(name) : scope.isRelative?.(name));
+    const loader = relative ? scope : this.loaders;
+    parentName = relative ? (Array.isArray(scope) ? origin.name : origin.path) : parentName;
+    const policyLoader = relative ? origin.loader : loader;
+    let result;
+    try {
+      const resolvedName = this._resolveFromLoader(loader, relative ? parentName : undefined, name);
+      let cache = this._sourceCaches.get(policyLoader);
+      if (!cache) {
+        cache = new SourceCache(policyLoader, false);
+        this._sourceCaches.set(policyLoader, cache);
       }
-      const handle = acquisition => {
-        if (acquisition) done(null, acquisition);
-        else next();
-      };
-      if (result && typeof result.then === 'function') result.then(handle, error => done(error));
-      else handle(result);
-    }, callback);
+      result = cache.forOwner(loader).load(resolvedName, parentName);
+    } catch (error) {
+      callback(error);
+      return;
+    }
+    if (result && typeof result.then === 'function') result.then(value => callback(null, value), error => callback(error));
+    else callback(null, result);
   }
 
   _getCompiledTemplate(name, eagerCompile, parentName, ignoreMissing, asyncMode, cb, origin) {

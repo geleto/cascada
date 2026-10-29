@@ -73,6 +73,10 @@ class LoaderEvents {
 // Callbacks receive the target rather than closing over it. Passing a callback
 // that captures the target would defeat the weak subscription.
 function subscribeLoaderEvent(loader, event, target, callback) {
+  if (Array.isArray(loader)) {
+    for (const member of loader) subscribeLoaderEvent(member, event, target, callback);
+    return;
+  }
   if (typeof loader.on !== 'function') return;
   let hub = loaderEvents.get(loader);
   if (!hub) {

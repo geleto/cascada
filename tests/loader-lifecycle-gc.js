@@ -6,12 +6,50 @@ const run = promisify(execFile);
 const entryURL = new URL('../src/index.js', import.meta.url).href;
 
 describe('loader garbage collection', function() {
+  it('releases temporary relative scopes while their environment remains live', async function() {
+    this.timeout(15000);
+    const probe = `
+      import assert from 'node:assert/strict';
+      import {AsyncEnvironment, raceLoaders} from ${JSON.stringify(entryURL)};
+      const references = [];
+      class TrackingEnvironment extends AsyncEnvironment {
+        async getTemplate(...args) {
+          const template = await super.getTemplate(...args);
+          if (args[0] === 'dir/main') references.push(new WeakRef(template.sourceOrigin.scope));
+          return template;
+        }
+      }
+      const loader = {load: name => ({
+        src: name === 'dir/main' ? '{% include "./part" %}' : 'part',
+        path: 'physical/' + name,
+        noCache: true
+      })};
+      const environment = new TrackingEnvironment([raceLoaders([loader, () => null]), () => null]);
+      for (let i = 0; i < 30; i++) assert.equal(await environment.renderTemplate('dir/main'), 'part');
+      for (let attempt = 0; attempt < 100; attempt++) {
+        await new Promise(resolve => setImmediate(resolve));
+        globalThis.gc();
+        await new Promise(resolve => setImmediate(resolve));
+        if (references.every(reference => reference.deref() === undefined)) break;
+      }
+      assert.equal(references.length, 30);
+      assert.equal(references.filter(reference => reference.deref() !== undefined).length, 0);
+      assert.equal(await environment.renderTemplate('dir/main'), 'part');
+      process.stdout.write('released scopes');
+    `;
+    const {stdout} = await run(process.execPath, ['--expose-gc', '--input-type=module', '-e', probe], {
+      timeout: 12000
+    });
+    assert.equal(stdout, 'released scopes');
+  });
+
   it('collects environments and race groups while their shared loader stays alive', async function() {
     this.timeout(15000);
     const probe = `
       import assert from 'node:assert/strict';
       import {AsyncEnvironment, Loader, raceLoaders} from ${JSON.stringify(entryURL)};
-      const loader = new Loader();
+      class EmptyLoader extends Loader { load() { return null; } }
+      const loader = new EmptyLoader();
       const warnings = [];
       process.on('warning', warning => warnings.push(warning.name));
       const references = Array.from({length: 100}, () => [

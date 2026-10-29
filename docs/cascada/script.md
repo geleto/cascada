@@ -2924,21 +2924,32 @@ Loaders are objects that tell the environment how to find and load your scripts 
     }
     ```
 
-    **Running Loaders Concurrently:**
-    The `raceLoaders(loaders)` function creates a single loader that runs multiple loaders concurrently and returns the result from the first one that succeeds. Relative dependencies of compiled sources resolve and load exclusively through the member that supplied the declaring source. String parent names passed directly to environment loading methods have no owner: each member resolves against that string and races independently. If every member returns `null`, the environment continues to its next loader; loader failures remain errors when no member succeeds.
+#### Combining loaders
 
-    Loaders default to `cachePolicy: 'cache'`, caching hits and misses and sharing pending requests. Emit `update` or call `env.invalidateCache()` after adding or changing resources. Dynamic loaders can set `cachePolicy: 'reload'` to bypass all caching and keep requests independent. A source's `noCache: true` prevents retention after completion; it does not disable pending-request sharing. A race uses `'reload'` when any member does.
+Use an array to try loaders in order. Use `raceLoaders` to try them together. Both work for scripts, templates, and literal text:
 
-    ```javascript
-    import { raceLoaders, FileSystemLoader, WebLoader } from 'cascada-engine';
+| Setting | What happens |
+| --- | --- |
+| `[loaderA, loaderB]` | Try A, then B only if A returns `null` |
+| `raceLoaders([loaderA, loaderB])` | Start both; use the first source found |
+| `[localLoader, raceLoaders([remoteA, remoteB])]` | Try local first; if missing, start both remote loaders |
+| `raceLoaders([[loaderA, loaderB], loaderC])` | Start A and C; try B only if A misses |
 
-    const fastLoader = raceLoaders([
-      new WebLoader('https://my-cdn.com/scripts/'),
-      new FileSystemLoader('scripts/backup/')
-    ]);
+Use `raceLoaders` when loaders hold different files, such as billing and support scripts. If both hold the requested file, the first one to return it wins. Use an array when one loader should take priority.
 
-    const env = new AsyncEnvironment(fastLoader);
-    ```
+Given configured `localLoader`, `remoteA` and `remoteB` loaders:
+
+```javascript
+import { AsyncEnvironment, raceLoaders } from 'cascada-engine';
+
+const env = new AsyncEnvironment([localLoader, raceLoaders([remoteA, remoteB])]);
+```
+
+Arrays can nest, as in the last table row. `raceLoaders` takes one array, which may be empty or contain one loader. If all loaders miss, it returns `null`. If none succeeds and one fails, it reports an error. An array stops on a loading error. Started loads are not cancelled.
+
+File-loading operations such as `include`, `import`, `extends`, and `component` use the configured loaders.
+
+By default, loaders cache found and missing files, and concurrent requests share a load. Emit `update` or call `env.invalidateCache()` after files change. Set `cachePolicy: 'reload'` to check the loader every time, including concurrent requests. A source's `noCache: true` only prevents reuse after that load completes. A race uses `'reload'` if any of its loaders does, unless you set its policy explicitly.
 
 #### Compilation and Caching
 

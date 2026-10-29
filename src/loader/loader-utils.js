@@ -1,9 +1,11 @@
 import {EmitterObj} from '../object.js';
 import {subscribeLoaderEvent} from './loader-events.js';
 import {NotFoundError} from './errors.js';
+import {posix} from 'path';
 
 const resourceCaches = new WeakMap();
 const loadAcquisition = Symbol('loadAcquisition');
+const ownerCacheRegistry = new FinalizationRegistry(({references, reference}) => references.delete(reference));
 
 function isPromise(value) {
   return value != null && typeof value.then === 'function';
@@ -21,7 +23,49 @@ function acquiredSource(loader, name, value) {
 
 // All entry points share the loader protocol and preserve the original source
 // object. Ownership belongs to this acquisition, not to a mutable source object.
-function loadSource(loader, name, parentName) {
+function isRelativeName(name) {
+  return name.startsWith('./') || name.startsWith('../');
+}
+
+function resolveLoaderName(loader, parentName, name) {
+  if (!parentName) return name;
+  if (Array.isArray(loader)) {
+    if (!isRelativeName(name)) return name;
+    return parentName.includes('://') ? new URL(name, parentName).href : posix.join(posix.dirname(parentName), name);
+  }
+  return loader.isRelative?.(name) && loader.resolve ? loader.resolve(parentName, name) : name;
+}
+
+function loadChain(loaders, name, parentName, cache, start = 0) {
+  for (let index = start; index < loaders.length; index++) {
+    const loader = loaders[index];
+    const resolvedName = resolveLoaderName(loader, parentName, name);
+    const policy = cache && !Array.isArray(cache.policyLoader) ? cache.policyLoader : loader;
+    const result = cache ? cache.forOwner(loader, policy).load(resolvedName, parentName)
+      : loadSource(loader, resolvedName, parentName);
+    const complete = acquisition => {
+      if (!acquisition) return loadChain(loaders, name, parentName, cache, index + 1);
+      if (loaders.length === 1) return acquisition;
+      // Keep the chain's logical namespace, replacing a selected race with its
+      // winning scope. Other competitors never become relative fallbacks.
+      // Stable acquisition identity also retains the cached compiled form.
+      let scoped = cache?.scopedSources.get(acquisition);
+      if (!scoped) {
+        const selected = acquisition.origin.scope ?? loader;
+        const scope = selected === loader ? loaders : loaders.with(index, selected);
+        scoped = {source: acquisition.source, origin: {...acquisition.origin, loader: loaders, scope, name}};
+        cache?.scopedSources.set(acquisition, scoped);
+      }
+      return scoped;
+    };
+    if (isPromise(result)) return result.then(complete);
+    if (result) return complete(result);
+  }
+  return null;
+}
+
+function loadSource(loader, name, parentName, cache) {
+  if (Array.isArray(loader)) return loadChain(loader, name, parentName, cache);
   if (loader?.[loadAcquisition]) return loader[loadAcquisition](name, parentName);
   let result;
   try {
@@ -65,25 +109,35 @@ class SourceCache {
   constructor(loader, subscribe = true, policyLoader = loader) {
     this.loader = loader;
     this.policyLoader = policyLoader;
-    this.ownerCaches = new Map();
+    // Relative scopes can be temporary; enumerate weak references for invalidation.
+    this.ownerCaches = new WeakMap();
+    this.ownerReferences = new Set();
     this.entries = new Map();
     this.pending = new Map();
     this.generation = 0;
+    this.scopedSources = new WeakMap();
     if (subscribe) subscribeLoaderEvent(loader, 'update', this, onSourceUpdate);
   }
 
-  forOwner(owner) {
-    if (owner === this.loader) return this;
+  forOwner(owner, policyLoader = this.policyLoader) {
+    if (owner === this.loader && policyLoader === this.policyLoader) return this;
     let cache = this.ownerCaches.get(owner);
     if (!cache) {
-      cache = new SourceCache(owner, false, this.policyLoader);
+      cache = new SourceCache(owner, false, policyLoader);
       this.ownerCaches.set(owner, cache);
+      const reference = new WeakRef(cache);
+      this.ownerReferences.add(reference);
+      ownerCacheRegistry.register(cache, {references: this.ownerReferences, reference});
     }
     return cache;
   }
 
   clear(name, fullname) {
-    for (const cache of this.ownerCaches.values()) cache.clear(name, fullname);
+    for (const reference of this.ownerReferences) {
+      const cache = reference.deref();
+      if (cache) cache.clear(name, fullname);
+      else this.ownerReferences.delete(reference);
+    }
     // Pending acquisitions from an older generation may finish for their
     // original caller, but must never repopulate an invalidated cache.
     this.generation++;
@@ -101,9 +155,9 @@ class SourceCache {
   }
 
   load(name, parentName) {
-    const relativeParent = parentName && this.loader.isRelative?.(name) ? parentName : null;
+    const relativeParent = parentName && (Array.isArray(this.loader) ? isRelativeName(name) : this.loader.isRelative?.(name)) ? parentName : null;
     const cacheKey = JSON.stringify([relativeParent, name]);
-    const cacheRequests = this.policyLoader.cachePolicy !== 'reload';
+    const cacheRequests = !reloads(this.policyLoader);
     const cached = this.entries.get(cacheKey);
     if (cacheRequests && cached) return cached.acquisition;
     if (cacheRequests && this.pending.has(cacheKey)) return this.pending.get(cacheKey);
@@ -119,7 +173,7 @@ class SourceCache {
       }
       return acquisition;
     };
-    const result = loadSource(this.loader, name, relativeParent);
+    const result = loadSource(this.loader, name, relativeParent, this);
     if (!isPromise(result)) return remember(result);
     const pending = result.then(remember).finally(() => {
       if (this.pending.get(cacheKey) === pending) this.pending.delete(cacheKey);
@@ -154,9 +208,11 @@ function loadStringFromLoaders(key, loaders, start, firstError) {
 
 function clearStringCache(loader, key) {
   resourceCaches.get(loader)?.clear(key);
+  if (Array.isArray(loader)) for (const member of loader) clearStringCache(member, key);
 }
 
 function loadStringFromLoader(key, loader) {
+  if (Array.isArray(loader)) return loadStringFromLoaders(key, loader, 0);
   let cache = resourceCaches.get(loader);
   if (!cache) {
     cache = new SourceCache(loader);
@@ -175,10 +231,24 @@ function onRaceUpdate(race, loader, name, fullname) {
   race.emit('update', name, fullname);
 }
 
+function reloads(loader) {
+  return Array.isArray(loader) ? loader.some(reloads) : loader.cachePolicy === 'reload';
+}
+
 /** Run loaders concurrently and return the first source, or null if all miss. */
 function raceLoaders(loaders) {
   if (!Array.isArray(loaders)) throw new TypeError('raceLoaders requires an array of loaders.');
+  validateLoaders(loaders);
   return new RaceLoader(loaders);
+}
+
+function validateLoaders(loaders) {
+  for (const loader of loaders) {
+    if (Array.isArray(loader)) validateLoaders(loader);
+    else if (typeof loader !== 'function' && typeof loader?.load !== 'function' && typeof loader?.getSource !== 'function') {
+      throw new TypeError('Invalid loader: expected a loader or an ordered array of loaders.');
+    }
+  }
 }
 
 class RaceLoader extends EmitterObj {
@@ -190,7 +260,7 @@ class RaceLoader extends EmitterObj {
   }
 
   get cachePolicy() {
-    return this._cachePolicy ?? (this.loaders.some(loader => loader.cachePolicy === 'reload') ? 'reload' : 'cache');
+    return this._cachePolicy ?? (this.loaders.some(reloads) ? 'reload' : 'cache');
   }
 
   set cachePolicy(policy) {
@@ -198,7 +268,7 @@ class RaceLoader extends EmitterObj {
   }
 
   isRelative(name) {
-    return this.loaders.some(loader => typeof loader.isRelative === 'function' && loader.isRelative(name));
+    return this.loaders.some(loader => (Array.isArray(loader) ? isRelativeName(name) : loader.isRelative?.(name)));
   }
 
   resolve(from, to) {
@@ -223,8 +293,8 @@ class RaceLoader extends EmitterObj {
           firstError ??= normalizeError(error);
         } else if (result && !settled) {
           settled = true;
-          const acquisition = {source: result.source, origin: {
-            loader: this, owner: result.origin.owner, path: result.origin.path
+          const acquisition = {source: result.source, origin: {...result.origin,
+            loader: this, scope: result.origin.scope ?? result.origin.owner
           }};
           try {
             this.emit('load', name, acquisition.source);
@@ -241,8 +311,7 @@ class RaceLoader extends EmitterObj {
       for (const loader of this.loaders) {
         let result;
         try {
-          const resolvedName = parentName && loader.isRelative?.(name) && loader.resolve
-            ? loader.resolve(parentName, name) : name;
+          const resolvedName = resolveLoaderName(loader, parentName, name);
           result = loadSource(loader, resolvedName, parentName);
         } catch (error) {
           complete(error);
@@ -255,4 +324,4 @@ class RaceLoader extends EmitterObj {
   }
 }
 
-export {loadString, clearStringCache, raceLoaders, SourceCache};
+export {loadString, clearStringCache, raceLoaders, SourceCache, isRelativeName, resolveLoaderName};
