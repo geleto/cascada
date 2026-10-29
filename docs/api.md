@@ -558,6 +558,11 @@ cached files when they are added, changed, or deleted.
 File-loading operations such as `include`, `import`, `extends`, and `component`
 use the configured loaders.
 
+When loaders are tried in order, an earlier loader can provide a relative file
+such as `./part.njk` for a template found by a later loader. With `raceLoaders`,
+relative files must come from the winning loader or list; missing files do not
+fall back to the others.
+
 Calls such as `env.loadString('./part', 'dir/main')` supply only a filename,
 so each loader resolves against that name. Previous loads do not affect the choice.
 

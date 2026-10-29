@@ -2949,6 +2949,8 @@ Arrays can nest, as in the last table row. `raceLoaders` takes one array, which 
 
 File-loading operations such as `include`, `import`, `extends`, and `component` use the configured loaders.
 
+When loaders are tried in order, an earlier loader can provide a relative file such as `./part.njk` for a template found by a later loader. With `raceLoaders`, relative files must come from the winning loader or list; missing files do not fall back to the others.
+
 By default, loaders cache found and missing files, and concurrent requests share a load. Emit `update` or call `env.invalidateCache()` after files change. Set `cachePolicy: 'reload'` to check the loader every time, including concurrent requests. A source's `noCache: true` only prevents reuse after that load completes. A race uses `'reload'` if any of its loaders does, unless you set its policy explicitly.
 
 #### Compilation and Caching
